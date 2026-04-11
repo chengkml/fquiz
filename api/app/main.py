@@ -1,13 +1,25 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config import get_settings
+from .api.router import api_router
+from .core.config import get_settings
+from .core.database import init_db
 
 settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()
+    yield
+
 
 app = FastAPI(
     title=settings.api_name,
     version=settings.api_version,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -27,10 +39,4 @@ def health() -> dict[str, str]:
         "version": settings.api_version,
     }
 
-
-@app.get("/api/v1/ping")
-def ping() -> dict[str, str]:
-    return {
-        "message": "pong",
-        "service": settings.api_name,
-    }
+app.include_router(api_router)

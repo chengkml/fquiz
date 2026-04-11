@@ -1,0 +1,210 @@
+name: fquiz 镜像构建与部署
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: fquiz-build-and-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      api_image: ${{ steps.vars.outputs.api_image }}
+      web_image: ${{ steps.vars.outputs.web_image }}
+      image_tag: ${{ steps.vars.outputs.image_tag }}
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 生成镜像变量
+        id: vars
+        shell: bash
+        run: |
+          OWNER_LC="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "api_image=${{ env.REGISTRY }}/${OWNER_LC}/fquiz-api" >> "$GITHUB_OUTPUT"
+          echo "web_image=${{ env.REGISTRY }}/${OWNER_LC}/fquiz-web" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: 安装 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 构建并推送 API 镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          file: ./api/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.vars.outputs.api_image }}:${{ steps.vars.outputs.image_tag }}
+            ${{ steps.vars.outputs.api_image }}:latest
+          cache-from: type=gha,scope=fquiz-api
+          cache-to: type=gha,mode=max,scope=fquiz-api
+
+      - name: 构建并推送 Web 镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: ./web
+          file: ./web/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=${{ vars.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000' }}
+          tags: |
+            ${{ steps.vars.outputs.web_image }}:${{ steps.vars.outputs.image_tag }}
+            ${{ steps.vars.outputs.web_image }}:latest
+          cache-from: type=gha,scope=fquiz-web
+          cache-to: type=gha,mode=max,scope=fquiz-web
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: 通过 SSH 拉取并更新容器
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          API_IMAGE: ${{ needs.build-and-push.outputs.api_image }}
+          WEB_IMAGE: ${{ needs.build-and-push.outputs.web_image }}
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+          NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000' }}
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          port: 22
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          script_stop: true
+          envs: DEPLOY_PATH,API_IMAGE,WEB_IMAGE,IMAGE_TAG,NEXT_PUBLIC_API_BASE_URL,GHCR_USERNAME,GHCR_TOKEN
+          script: |
+            set -euo pipefail
+
+            DEPLOY_DIR="${DEPLOY_PATH:-/opt/fquiz}"
+            mkdir -p "${DEPLOY_DIR}"
+            cd "${DEPLOY_DIR}"
+
+            cat > docker-compose.prod.yml <<'YAML'
+            services:
+              db:
+                image: postgres:16-alpine
+                container_name: fquiz-db
+                environment:
+                  POSTGRES_DB: ${POSTGRES_DB:-fquiz}
+                  POSTGRES_USER: ${POSTGRES_USER:-fquiz}
+                  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fquiz}
+                ports:
+                  - "5432:5432"
+                volumes:
+                  - fquiz_db_data:/var/lib/postgresql/data
+                healthcheck:
+                  test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fquiz} -d ${POSTGRES_DB:-fquiz}"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 8
+                  start_period: 10s
+                restart: unless-stopped
+
+              api:
+                image: ${API_IMAGE}
+                container_name: fquiz-api
+                depends_on:
+                  db:
+                    condition: service_healthy
+                environment:
+                  API_HOST: ${API_HOST:-0.0.0.0}
+                  API_PORT: ${API_PORT:-8000}
+                  API_CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+                  DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://fquiz:fquiz@db:5432/fquiz}
+                  JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-this-in-production}
+                  ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+                  REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-30}
+                  REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
+                  REFRESH_COOKIE_SAMESITE: ${REFRESH_COOKIE_SAMESITE:-lax}
+                  INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-admin@example.com}
+                  INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}
+                  INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-change-me-strong-password}
+                ports:
+                  - "${API_PORT:-8000}:8000"
+                healthcheck:
+                  test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()"]
+                  interval: 10s
+                  timeout: 3s
+                  retries: 5
+                  start_period: 10s
+                restart: unless-stopped
+
+              web:
+                image: ${WEB_IMAGE}
+                container_name: fquiz-web
+                depends_on:
+                  api:
+                    condition: service_healthy
+                environment:
+                  NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+                  NODE_ENV: production
+                ports:
+                  - "3000:3000"
+                restart: unless-stopped
+
+            volumes:
+              fquiz_db_data:
+            YAML
+
+            if [ ! -f .env ]; then
+            cat > .env <<'ENV'
+            NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+            API_HOST=0.0.0.0
+            API_PORT=8000
+            API_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+            DATABASE_URL=postgresql+psycopg://fquiz:fquiz@db:5432/fquiz
+            JWT_SECRET_KEY=change-this-in-production
+            ACCESS_TOKEN_EXPIRE_MINUTES=15
+            REFRESH_TOKEN_EXPIRE_DAYS=30
+            REFRESH_COOKIE_SECURE=false
+            REFRESH_COOKIE_SAMESITE=lax
+            INITIAL_ADMIN_EMAIL=admin@example.com
+            INITIAL_ADMIN_USERNAME=admin
+            INITIAL_ADMIN_PASSWORD=change-me-strong-password
+            POSTGRES_DB=fquiz
+            POSTGRES_USER=fquiz
+            POSTGRES_PASSWORD=fquiz
+            ENV
+              echo "[warn] .env 不存在，已写入默认模板，请尽快改成生产配置。"
+            fi
+
+            cat > .images.env <<ENV
+            API_IMAGE=${API_IMAGE}:${IMAGE_TAG}
+            WEB_IMAGE=${WEB_IMAGE}:${IMAGE_TAG}
+            NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+            ENV
+
+            echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
+
+            COMPOSE_CMD="docker compose"
+            if ! docker compose version >/dev/null 2>&1; then
+              COMPOSE_CMD="docker-compose"
+            fi
+
+            ${COMPOSE_CMD} --env-file .env --env-file .images.env -f docker-compose.prod.yml pull
+            ${COMPOSE_CMD} --env-file .env --env-file .images.env -f docker-compose.prod.yml up -d --remove-orphans
+            ${COMPOSE_CMD} --env-file .env --env-file .images.env -f docker-compose.prod.yml ps

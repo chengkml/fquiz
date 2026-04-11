@@ -1,10 +1,12 @@
-FROM node:22-alpine AS deps
+ARG NODE_BASE_IMAGE=docker.m.daocloud.io/library/node:22-alpine
+
+FROM ${NODE_BASE_IMAGE} AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN npm ci
 
-FROM node:22-alpine AS builder
+FROM ${NODE_BASE_IMAGE} AS builder
 WORKDIR /app
 
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
@@ -14,7 +16,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM node:22-alpine AS runner
+FROM ${NODE_BASE_IMAGE} AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
