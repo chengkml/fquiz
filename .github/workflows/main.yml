@@ -78,10 +78,25 @@ jobs:
     needs: build-and-push
     if: github.ref == 'refs/heads/main'
     steps:
+      - name: 校验部署参数
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST || vars.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER || vars.SERVER_USER }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [ -n "${SERVER_HOST}" ] || { echo "::error::缺少 SERVER_HOST（请在 Secrets 或 Variables 中配置）"; exit 1; }
+          [ -n "${SERVER_USER}" ] || { echo "::error::缺少 SERVER_USER（请在 Secrets 或 Variables 中配置）"; exit 1; }
+          if [ -z "${SERVER_SSH_KEY}" ] && [ -z "${SERVER_PASSWORD}" ]; then
+            echo "::error::缺少登录凭据：请至少配置 SERVER_SSH_KEY 或 SERVER_PASSWORD"
+            exit 1
+          fi
+
       - name: 通过 SSH 拉取并更新容器
         uses: appleboy/ssh-action@v1.2.0
         env:
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || vars.DEPLOY_PATH }}
           API_IMAGE: ${{ needs.build-and-push.outputs.api_image }}
           WEB_IMAGE: ${{ needs.build-and-push.outputs.web_image }}
           IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
@@ -89,9 +104,9 @@ jobs:
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          port: 22
+          host: ${{ secrets.SERVER_HOST || vars.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER || vars.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT || vars.SERVER_PORT || 22 }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           password: ${{ secrets.SERVER_PASSWORD }}
           script_stop: true
