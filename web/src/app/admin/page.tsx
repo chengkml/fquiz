@@ -49,18 +49,26 @@ export default function AdminHomePage() {
 
   if (visibleCards.length === 0) {
     return (
-      <div className="rounded-2xl border border-black/10 bg-white p-5 text-sm text-zinc-500 shadow-sm dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400">
+      <div className="surface-card text-sm text-muted">
         当前账号暂无可访问的后台模块。
       </div>
     );
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
       {visibleCards.map((item) => (
-        <Link key={item.href} href={item.href} className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/10 dark:bg-zinc-900">
-          <h2 className="text-lg font-semibold">{item.title}</h2>
-          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{item.description}</p>
+        <Link
+          key={item.href}
+          href={item.href}
+          className="surface-card group relative overflow-hidden transition hover:-translate-y-0.5 hover:border-cyan-200"
+        >
+          <div className="pointer-events-none absolute -right-10 -top-10 h-24 w-24 rounded-full bg-cyan-200/40 blur-xl transition group-hover:bg-cyan-300/45" />
+          <h2 className="text-lg font-semibold text-slate-900">{item.title}</h2>
+          <p className="mt-2 text-sm text-muted">{item.description}</p>
+          <p className="mt-5 inline-flex items-center text-xs font-medium text-cyan-700">
+            查看模块
+          </p>
         </Link>
       ))}
     </div>

@@ -102,14 +102,14 @@ function RequirementEditSection({
   const error = updateMutation.error instanceof Error ? updateMutation.error.message : "";
 
   return (
-    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+    <section className="surface-card">
       <div className="mb-4">
         <h3 className="text-lg font-semibold">编辑基础信息</h3>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">支持更新标题、描述、优先级、项目、模块、来源和截止时间。</p>
+        <p className="mt-1 text-sm text-muted">支持更新标题、描述、优先级、项目、模块、来源和截止时间。</p>
       </div>
 
       {error && (
-        <pre className="mb-4 overflow-auto rounded-xl border border-red-500/30 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-300">{error}</pre>
+        <pre className="mb-4 notice notice-error">{error}</pre>
       )}
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -118,7 +118,7 @@ function RequirementEditSection({
           <input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+            className="control w-full"
           />
         </label>
 
@@ -128,7 +128,7 @@ function RequirementEditSection({
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             rows={8}
-            className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+            className="control w-full"
           />
         </label>
 
@@ -137,7 +137,7 @@ function RequirementEditSection({
           <select
             value={priority}
             onChange={(event) => setPriority(event.target.value as RequirementPriority)}
-            className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+            className="control w-full"
           >
             {PRIORITY_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
@@ -149,7 +149,7 @@ function RequirementEditSection({
             type="datetime-local"
             value={dueAt}
             onChange={(event) => setDueAt(event.target.value)}
-            className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+            className="control w-full"
           />
         </label>
 
@@ -158,7 +158,7 @@ function RequirementEditSection({
           <input
             value={projectName}
             onChange={(event) => setProjectName(event.target.value)}
-            className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+            className="control w-full"
           />
         </label>
 
@@ -167,7 +167,7 @@ function RequirementEditSection({
           <input
             value={moduleName}
             onChange={(event) => setModuleName(event.target.value)}
-            className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+            className="control w-full"
           />
         </label>
 
@@ -176,7 +176,7 @@ function RequirementEditSection({
           <input
             value={source}
             onChange={(event) => setSource(event.target.value)}
-            className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+            className="control w-full"
           />
         </label>
       </div>
@@ -184,7 +184,7 @@ function RequirementEditSection({
       <div className="mt-4">
         <button
           type="button"
-          className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+          className="btn-primary"
           onClick={() => updateMutation.mutate()}
           disabled={updateMutation.isPending || !title.trim()}
         >
@@ -276,10 +276,10 @@ function RequirementActionsSection({
 
   return (
     <section className="grid gap-6 lg:grid-cols-2">
-      <div className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+      <div className="surface-card">
         <h3 className="text-lg font-semibold">处理动作</h3>
         {error instanceof Error && (
-          <pre className="mt-4 overflow-auto rounded-xl border border-red-500/30 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-300">{error.message}</pre>
+          <pre className="mt-4 notice notice-error">{error.message}</pre>
         )}
         <div className="mt-4 space-y-4">
           {canAssign && (
@@ -289,14 +289,14 @@ function RequirementActionsSection({
                 <select
                   value={assignUserId}
                   onChange={(event) => setAssignUserId(event.target.value)}
-                  className="flex-1 rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                  className="control flex-1"
                 >
                   <option value="">取消指派</option>
                   {users.map((item) => <option key={item.id} value={item.id}>{item.username}</option>)}
                 </select>
                 <button
                   type="button"
-                  className="rounded-md border border-black/15 px-4 py-2 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                  className="btn-secondary"
                   onClick={() => assignMutation.mutate()}
                   disabled={assignMutation.isPending}
                 >
@@ -310,7 +310,7 @@ function RequirementActionsSection({
             <p className="text-sm font-medium">领取</p>
             <button
               type="button"
-              className="rounded-md border border-black/15 px-4 py-2 text-sm hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+              className="btn-secondary"
               onClick={() => claimMutation.mutate()}
               disabled={claimMutation.isPending}
             >
@@ -325,7 +325,7 @@ function RequirementActionsSection({
                 <select
                   value={currentTransitionStatus}
                   onChange={(event) => setTransitionStatus(event.target.value as RequirementStatus)}
-                  className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                  className="control w-full"
                 >
                   {availableTransitions.map((item) => <option key={item} value={item}>{item}</option>)}
                 </select>
@@ -334,11 +334,11 @@ function RequirementActionsSection({
                   onChange={(event) => setTransitionNote(event.target.value)}
                   rows={3}
                   placeholder="流转备注（可选）"
-                  className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                  className="control w-full"
                 />
                 <button
                   type="button"
-                  className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+                  className="btn-primary"
                   onClick={() => transitionMutation.mutate()}
                   disabled={transitionMutation.isPending}
                 >
@@ -346,15 +346,15 @@ function RequirementActionsSection({
                 </button>
               </>
             ) : (
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">当前状态没有可继续流转的目标状态。</p>
+              <p className="text-sm text-muted">当前状态没有可继续流转的目标状态。</p>
             )}
           </div>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+      <div className="surface-card">
         <h3 className="text-lg font-semibold">当前处理说明</h3>
-        <div className="mt-4 space-y-2 text-sm text-zinc-600 dark:text-zinc-300">
+        <div className="mt-4 space-y-2 text-sm text-muted">
           <p>当前状态：{detail.status}</p>
           <p>当前指派人：{detail.assignee?.username ?? "-"}</p>
           <p>当前评审人：{detail.reviewer?.username ?? "-"}</p>
@@ -402,16 +402,16 @@ function RequirementCommentSection({
   const error = commentMutation.error instanceof Error ? commentMutation.error.message : "";
 
   return (
-    <div className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+    <div className="surface-card">
       <h3 className="text-lg font-semibold">新增评论</h3>
       {error && (
-        <pre className="mt-4 overflow-auto rounded-xl border border-red-500/30 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-300">{error}</pre>
+        <pre className="mt-4 notice notice-error">{error}</pre>
       )}
       <div className="mt-4 space-y-3">
         <select
           value={commentKind}
           onChange={(event) => setCommentKind(event.target.value as RequirementCommentKind)}
-          className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+          className="control w-full"
         >
           {COMMENT_KIND_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
@@ -420,11 +420,11 @@ function RequirementCommentSection({
           onChange={(event) => setCommentContent(event.target.value)}
           rows={6}
           placeholder="写点处理说明、分析结论或修订意见"
-          className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+          className="control w-full"
         />
         <button
           type="button"
-          className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+          className="btn-primary"
           onClick={() => commentMutation.mutate()}
           disabled={commentMutation.isPending || !commentContent.trim()}
         >
@@ -527,18 +527,18 @@ export default function RequirementDetailPage() {
   }, [commentsQuery.error, detailQuery.error, eventsQuery.error, usersQuery.error]);
 
   if (initializing || detailQuery.isLoading) {
-    return <p className="text-sm text-zinc-500">Loading requirement...</p>;
+    return <p className="text-sm text-muted">Loading requirement...</p>;
   }
 
   if (!requirementId) {
-    return <p className="text-sm text-zinc-500">需求 ID 无效。</p>;
+    return <p className="text-sm text-muted">需求 ID 无效。</p>;
   }
 
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">请先登录后再访问需求详情。</p>
-        <Link href="/" className="text-sm underline">返回首页</Link>
+        <p className="text-sm text-muted">请先登录后再访问需求详情。</p>
+        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
       </main>
     );
   }
@@ -546,15 +546,15 @@ export default function RequirementDetailPage() {
   if (!canRead) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">你没有访问该页面的权限（需要 `requirement.read`）。</p>
-        <Link href="/admin/requirements" className="text-sm underline">返回需求列表</Link>
+        <p className="text-sm text-muted">你没有访问该页面的权限（需要 `requirement.read`）。</p>
+        <Link href="/admin/requirements" className="btn-secondary w-fit">返回需求列表</Link>
       </main>
     );
   }
 
   const detail = detailQuery.data;
   if (!detail) {
-    return <p className="text-sm text-zinc-500">需求不存在。</p>;
+    return <p className="text-sm text-muted">需求不存在。</p>;
   }
 
   const comments = commentsQuery.data ?? [];
@@ -564,17 +564,17 @@ export default function RequirementDetailPage() {
   return (
     <div className="space-y-6">
       {anyError && (
-        <pre className="overflow-auto rounded-xl border border-red-500/30 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-300">{anyError}</pre>
+        <pre className="notice notice-error">{anyError}</pre>
       )}
 
-      <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+      <section className="surface-card">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <p className="font-mono text-xs text-zinc-500">{detail.code}</p>
+            <p className="font-mono text-xs text-muted">{detail.code}</p>
             <h2 className="mt-1 text-2xl font-semibold tracking-tight">{detail.title}</h2>
-            <p className="mt-3 whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-200">{detail.description || "暂无描述"}</p>
+            <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{detail.description || "暂无描述"}</p>
           </div>
-          <div className="flex flex-col gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+          <div className="flex flex-col gap-2 text-sm text-muted">
             <Link href="/admin/requirements" className="underline">返回需求列表</Link>
             <span>状态：{detail.status}</span>
             <span>优先级：{detail.priority}</span>
@@ -584,28 +584,28 @@ export default function RequirementDetailPage() {
         </div>
 
         <div className="mt-5 grid gap-3 text-sm md:grid-cols-3 xl:grid-cols-6">
-          <div className="rounded-xl border border-black/10 p-3 dark:border-white/10">
-            <p className="text-xs text-zinc-500">项目</p>
+          <div className="surface-card-muted p-3">
+            <p className="text-xs text-muted">项目</p>
             <p className="mt-1">{detail.project_name ?? "-"}</p>
           </div>
-          <div className="rounded-xl border border-black/10 p-3 dark:border-white/10">
-            <p className="text-xs text-zinc-500">模块</p>
+          <div className="surface-card-muted p-3">
+            <p className="text-xs text-muted">模块</p>
             <p className="mt-1">{detail.module_name ?? "-"}</p>
           </div>
-          <div className="rounded-xl border border-black/10 p-3 dark:border-white/10">
-            <p className="text-xs text-zinc-500">来源</p>
+          <div className="surface-card-muted p-3">
+            <p className="text-xs text-muted">来源</p>
             <p className="mt-1">{detail.source ?? "-"}</p>
           </div>
-          <div className="rounded-xl border border-black/10 p-3 dark:border-white/10">
-            <p className="text-xs text-zinc-500">截止时间</p>
+          <div className="surface-card-muted p-3">
+            <p className="text-xs text-muted">截止时间</p>
             <p className="mt-1">{detail.due_at ? new Date(detail.due_at).toLocaleString() : "-"}</p>
           </div>
-          <div className="rounded-xl border border-black/10 p-3 dark:border-white/10">
-            <p className="text-xs text-zinc-500">完成时间</p>
+          <div className="surface-card-muted p-3">
+            <p className="text-xs text-muted">完成时间</p>
             <p className="mt-1">{detail.closed_at ? new Date(detail.closed_at).toLocaleString() : "-"}</p>
           </div>
-          <div className="rounded-xl border border-black/10 p-3 dark:border-white/10">
-            <p className="text-xs text-zinc-500">更新时间</p>
+          <div className="surface-card-muted p-3">
+            <p className="text-xs text-muted">更新时间</p>
             <p className="mt-1">{new Date(detail.updated_at).toLocaleString()}</p>
           </div>
         </div>
@@ -648,12 +648,12 @@ export default function RequirementDetailPage() {
       )}
 
       <section className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+        <div className="surface-card">
           <h3 className="text-lg font-semibold">评论区</h3>
           <div className="mt-4 space-y-3">
-            {comments.length === 0 ? <p className="text-sm text-zinc-500">暂无评论</p> : comments.map((item) => (
-              <div key={item.id} className="rounded-xl border border-black/10 p-4 dark:border-white/10">
-                <div className="flex items-center justify-between gap-3 text-xs text-zinc-500">
+            {comments.length === 0 ? <p className="text-sm text-muted">暂无评论</p> : comments.map((item) => (
+              <div key={item.id} className="surface-card-muted p-4">
+                <div className="flex items-center justify-between gap-3 text-xs text-muted">
                   <span>{item.author?.username ?? "系统"} · {item.kind}</span>
                   <span>{new Date(item.created_at).toLocaleString()}</span>
                 </div>
@@ -663,18 +663,18 @@ export default function RequirementDetailPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+        <div className="surface-card">
           <h3 className="text-lg font-semibold">操作日志</h3>
           <div className="mt-4 space-y-3">
-            {events.length === 0 ? <p className="text-sm text-zinc-500">暂无日志</p> : events.map((item) => (
-              <div key={item.id} className="rounded-xl border border-black/10 p-4 dark:border-white/10">
-                <div className="flex items-center justify-between gap-3 text-xs text-zinc-500">
+            {events.length === 0 ? <p className="text-sm text-muted">暂无日志</p> : events.map((item) => (
+              <div key={item.id} className="surface-card-muted p-4">
+                <div className="flex items-center justify-between gap-3 text-xs text-muted">
                   <span>{item.actor?.username ?? "系统"} · {item.event_type}</span>
                   <span>{new Date(item.created_at).toLocaleString()}</span>
                 </div>
                 <p className="mt-2 text-sm">{item.from_status ?? "-"} → {item.to_status ?? "-"}</p>
                 {item.payload_json && (
-                  <pre className="mt-2 overflow-auto rounded-lg bg-black/[0.03] p-3 text-xs dark:bg-white/[0.04]">{JSON.stringify(item.payload_json, null, 2)}</pre>
+                  <pre className="mt-2 overflow-auto rounded-lg rounded-lg border border-[var(--border)] bg-cyan-50/70 p-3 text-xs">{JSON.stringify(item.payload_json, null, 2)}</pre>
                 )}
               </div>
             ))}

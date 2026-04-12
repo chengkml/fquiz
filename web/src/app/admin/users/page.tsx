@@ -117,14 +117,14 @@ export default function AdminUsersPage() {
     || (rolesQuery.error instanceof Error ? rolesQuery.error.message : "");
 
   if (initializing || usersQuery.isLoading || rolesQuery.isLoading) {
-    return <p className="text-sm text-zinc-500">Loading users...</p>;
+    return <p className="text-sm text-muted">Loading users...</p>;
   }
 
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">请先登录后再访问用户管理页面。</p>
-        <Link href="/" className="text-sm underline">返回首页</Link>
+        <p className="text-sm text-muted">请先登录后再访问用户管理页面。</p>
+        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
       </main>
     );
   }
@@ -132,8 +132,8 @@ export default function AdminUsersPage() {
   if (!canManage) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">你没有访问该页面的权限（需要 `user.manage`）。</p>
-        <Link href="/" className="text-sm underline">返回首页</Link>
+        <p className="text-sm text-muted">你没有访问该页面的权限（需要 `user.manage`）。</p>
+        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
       </main>
     );
   }
@@ -141,23 +141,23 @@ export default function AdminUsersPage() {
   return (
     <div className="space-y-6">
       {anyError && (
-        <pre className="overflow-auto rounded-xl border border-red-500/30 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-300">{anyError}</pre>
+        <pre className="notice notice-error">{anyError}</pre>
       )}
       {success && (
-        <pre className="overflow-auto rounded-xl border border-emerald-500/30 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-emerald-300">{success}</pre>
+        <pre className="notice notice-success">{success}</pre>
       )}
 
-      <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+      <section className="surface-card">
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">用户列表</h2>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">查看所有用户，并直接调整角色。</p>
+            <p className="mt-1 text-sm text-muted">查看所有用户，并直接调整角色。</p>
           </div>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-black/10 text-left text-sm dark:divide-white/15">
-            <thead className="bg-black/[0.03] dark:bg-white/[0.06]">
+          <table className="table-modern min-w-full text-left text-sm">
+            <thead className="table-head">
               <tr>
                 <th className="px-4 py-3 font-medium">ID</th>
                 <th className="px-4 py-3 font-medium">Email</th>
@@ -168,7 +168,7 @@ export default function AdminUsersPage() {
                 <th className="px-4 py-3 font-medium">操作</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-black/10 dark:divide-white/15">
+            <tbody className="table-body divide-y">
               {users.map((item) => (
                 <tr key={item.id}>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-xs">{item.id}</td>
@@ -180,11 +180,12 @@ export default function AdminUsersPage() {
                       {roleOptions.map((roleCode) => {
                         const checked = item.role_codes.includes(roleCode);
                         return (
-                          <label key={roleCode} className="flex items-center gap-1 rounded-full border border-black/10 px-2 py-1 text-xs dark:border-white/10">
+                          <label key={roleCode} className="flex items-center gap-1 rounded-full border border-[var(--border)] bg-white/80 px-2 py-1 text-xs">
                             <input
                               type="checkbox"
                               checked={checked}
                               disabled={savingUserId === item.id}
+                              className="accent-cyan-600"
                               onChange={(event) => {
                                 const nextRoles = event.target.checked
                                   ? [...item.role_codes, roleCode]
@@ -199,7 +200,7 @@ export default function AdminUsersPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3">{item.permission_codes.join(", ") || "-"}</td>
-                  <td className="px-4 py-3 text-xs text-zinc-500">{savingUserId === item.id ? "保存中..." : "自动保存"}</td>
+                  <td className="px-4 py-3 text-xs text-muted">{savingUserId === item.id ? "保存中..." : "自动保存"}</td>
                 </tr>
               ))}
             </tbody>

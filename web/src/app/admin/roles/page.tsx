@@ -179,14 +179,14 @@ export default function AdminRolesPage() {
   };
 
   if (initializing || loading) {
-    return <p className="text-sm text-zinc-500">Loading roles...</p>;
+    return <p className="text-sm text-muted">Loading roles...</p>;
   }
 
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">请先登录后再访问角色管理页面。</p>
-        <Link href="/" className="text-sm underline">返回首页</Link>
+        <p className="text-sm text-muted">请先登录后再访问角色管理页面。</p>
+        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
       </main>
     );
   }
@@ -194,8 +194,8 @@ export default function AdminRolesPage() {
   if (!canRead) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">你没有访问该页面的权限（需要 `role.read`）。</p>
-        <Link href="/" className="text-sm underline">返回首页</Link>
+        <p className="text-sm text-muted">你没有访问该页面的权限（需要 `role.read`）。</p>
+        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
       </main>
     );
   }
@@ -203,23 +203,23 @@ export default function AdminRolesPage() {
   return (
     <div className="space-y-6">
       {error && (
-        <pre className="overflow-auto rounded-xl border border-red-500/30 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-300">{error}</pre>
+        <pre className="notice notice-error">{error}</pre>
       )}
       {success && (
-        <pre className="overflow-auto rounded-xl border border-emerald-500/30 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-emerald-300">{success}</pre>
+        <pre className="notice notice-success">{success}</pre>
       )}
 
-      <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+      <section className="surface-card">
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">角色列表</h2>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">当前已配置 {roles.length} 个角色。</p>
+            <p className="mt-1 text-sm text-muted">当前已配置 {roles.length} 个角色。</p>
           </div>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-black/10 text-left text-sm dark:divide-white/10">
-            <thead className="bg-black/[0.03] dark:bg-white/[0.04]">
+          <table className="table-modern min-w-full text-left text-sm">
+            <thead className="table-head">
               <tr>
                 <th className="px-4 py-3 font-medium">Code</th>
                 <th className="px-4 py-3 font-medium">Name</th>
@@ -228,7 +228,7 @@ export default function AdminRolesPage() {
                 {canManage && <th className="px-4 py-3 font-medium">操作</th>}
               </tr>
             </thead>
-            <tbody className="divide-y divide-black/10 dark:divide-white/10">
+            <tbody className="table-body divide-y">
               {roles.map((role) => (
                 <tr key={role.id}>
                   <td className="px-4 py-3 font-mono text-xs">{role.code}</td>
@@ -239,7 +239,7 @@ export default function AdminRolesPage() {
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         <button
-                          className="rounded-md border border-black/15 px-3 py-1 text-xs hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                          className="btn-secondary btn-small"
                           onClick={() => startEdit(role)}
                           type="button"
                         >
@@ -247,7 +247,7 @@ export default function AdminRolesPage() {
                         </button>
                         {!['admin', 'user'].includes(role.code) && (
                           <button
-                            className="rounded-md border border-red-500/30 px-3 py-1 text-xs text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/30"
+                            className="btn-danger btn-small"
                             onClick={() => void removeRole(role)}
                             type="button"
                           >
@@ -265,14 +265,14 @@ export default function AdminRolesPage() {
       </section>
 
       {canManage && (
-        <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+        <section className="surface-card">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold">{editingRoleId ? "编辑角色" : "新建角色"}</h2>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">角色绑定权限点和可见菜单。</p>
+              <p className="mt-1 text-sm text-muted">角色绑定权限点和可见菜单。</p>
             </div>
             {editingRoleId && (
-              <button className="text-sm underline" type="button" onClick={resetForm}>取消编辑</button>
+              <button className="btn-secondary w-fit" type="button" onClick={resetForm}>取消编辑</button>
             )}
           </div>
 
@@ -283,7 +283,7 @@ export default function AdminRolesPage() {
                 value={form.code}
                 disabled={editingRoleId !== null}
                 onChange={(event) => setForm((prev) => ({ ...prev, code: event.target.value }))}
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 disabled:opacity-60 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
@@ -291,7 +291,7 @@ export default function AdminRolesPage() {
               <input
                 value={form.name}
                 onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <label className="space-y-2 text-sm md:col-span-2">
@@ -300,12 +300,12 @@ export default function AdminRolesPage() {
                 value={form.permission_codes}
                 onChange={(event) => setForm((prev) => ({ ...prev, permission_codes: event.target.value }))}
                 placeholder={permissions.map((item) => item.code).join(", ")}
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <div className="space-y-2 text-sm md:col-span-2">
               <span>可见菜单</span>
-              <div className="grid gap-2 rounded-xl border border-black/10 p-3 dark:border-white/10 md:grid-cols-2">
+              <div className="grid gap-2 surface-card-muted p-3 md:grid-cols-2">
                 {menuOptions.map((item) => {
                   const checked = form.menu_ids.includes(item.value);
                   return (
@@ -332,7 +332,7 @@ export default function AdminRolesPage() {
 
           <div className="mt-4">
             <button
-              className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+              className="btn-primary"
               disabled={saving}
               onClick={() => void submit()}
               type="button"

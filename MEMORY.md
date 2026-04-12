@@ -41,3 +41,16 @@
 - 部署 compose 中 DB 镜像应通过 `POSTGRES_IMAGE` 可配置，默认使用镜像站的 pgvector 镜像（`docker.m.daocloud.io/pgvector/pgvector:pg16`）。
 - 宿主机 DB 暴露端口统一走 `POSTGRES_PORT`（默认 `5433`），用于规避与宿主机已有 PostgreSQL（常见 `5432`）冲突；容器内连接仍保持 `db:5432`。
 - GitHub Actions 使用 `appleboy/ssh-action` 部署时，慢网环境需显式设置 `command_timeout`（建议 `45m`）并为 `docker compose pull` 增加重试，避免出现 `Run Command Timeout` 直接中断发布。
+
+## 前端视觉口径（2026-04-12）
+
+- 后台视觉基线采用 `Slate + Cyan`（浅色）风格，优先使用 `web/src/app/globals.css` 中统一样式类：
+  - `surface-card` / `surface-card-muted`
+  - `notice` + `notice-error` / `notice-success`
+  - `btn-primary` / `btn-secondary` / `btn-danger`
+  - `control`
+  - `table-modern` / `table-head` / `table-body`
+- 字体基线：
+  - 标题：`Space Grotesk`
+  - 正文：`Manrope`
+  - 等宽：`JetBrains Mono`

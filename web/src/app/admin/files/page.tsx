@@ -379,14 +379,14 @@ export default function AdminFilesPage() {
     uploadMutation.isPending;
 
   if (initializing || filesQuery.isLoading) {
-    return <p className="text-sm text-zinc-500">Loading files...</p>;
+    return <p className="text-sm text-muted">Loading files...</p>;
   }
 
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">请先登录后再访问文件管理页面。</p>
-        <Link href="/" className="text-sm underline">返回首页</Link>
+        <p className="text-sm text-muted">请先登录后再访问文件管理页面。</p>
+        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
       </main>
     );
   }
@@ -394,8 +394,8 @@ export default function AdminFilesPage() {
   if (!canRead) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">你没有访问该页面的权限（需要 `file.read`）。</p>
-        <Link href="/" className="text-sm underline">返回首页</Link>
+        <p className="text-sm text-muted">你没有访问该页面的权限（需要 `file.read`）。</p>
+        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
       </main>
     );
   }
@@ -403,20 +403,20 @@ export default function AdminFilesPage() {
   return (
     <div className="space-y-6">
       {(listError || errorMessage) && (
-        <pre className="overflow-auto rounded-xl border border-red-500/30 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-300">
+        <pre className="notice notice-error">
           {listError || errorMessage}
         </pre>
       )}
       {feedbackMessage && (
-        <pre className="overflow-auto rounded-xl border border-emerald-500/30 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-emerald-300">
+        <pre className="notice notice-success">
           {feedbackMessage}
         </pre>
       )}
 
       <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
-        <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+        <section className="surface-card">
           <h2 className="text-lg font-semibold">挂载点</h2>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">一期按挂载点浏览目录树，支持 VFS/S3。</p>
+          <p className="mt-1 text-sm text-muted">一期按挂载点浏览目录树，支持 VFS/S3。</p>
           <div className="mt-4 space-y-2">
             {mounts.map((mount) => {
               const selected = mount.code === (listData?.current_mount.code ?? mountCode);
@@ -427,35 +427,35 @@ export default function AdminFilesPage() {
                   onClick={() => handleSelectMount(mount)}
                   className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition ${
                     selected
-                      ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
-                      : "border-black/15 hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                      ? "border-cyan-400 bg-gradient-to-r from-cyan-500 to-cyan-600 text-white shadow-[0_10px_22px_rgba(8,145,178,0.28)]"
+                      : "border-[var(--border)] bg-white/70 text-slate-700 hover:border-cyan-200 hover:bg-cyan-50/70"
                   }`}
                 >
                   <p className="font-medium">{mount.name}</p>
-                  <p className={`text-xs ${selected ? "text-white/80 dark:text-black/70" : "text-zinc-500 dark:text-zinc-400"}`}>
+                  <p className={`text-xs ${selected ? "text-cyan-100" : "text-muted"}`}>
                     {mount.backend.driver_type} · {mount.code}
                   </p>
                 </button>
               );
             })}
             {mounts.length === 0 && (
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">暂无可用挂载点。</p>
+              <p className="text-sm text-muted">暂无可用挂载点。</p>
             )}
           </div>
         </section>
 
-        <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+        <section className="surface-card">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">文件列表</h2>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+              <p className="mt-1 text-sm text-muted">
                 存储后端：{listData?.current_mount.backend.name ?? "-"}（{listData?.current_mount.backend.driver_type ?? "-"}）
               </p>
             </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                className="rounded-md border border-black/15 px-3 py-2 text-xs hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                className="btn-secondary btn-small"
                 onClick={() => void refreshCurrentPath()}
                 disabled={filesQuery.isFetching}
               >
@@ -471,7 +471,7 @@ export default function AdminFilesPage() {
                   />
                   <button
                     type="button"
-                    className="rounded-md bg-black px-3 py-2 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+                    className="btn-primary btn-small"
                     onClick={handleUploadClick}
                     disabled={uploadMutation.isPending}
                   >
@@ -482,7 +482,7 @@ export default function AdminFilesPage() {
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-black/10 bg-black/[0.02] px-3 py-2 text-sm dark:border-white/10 dark:bg-white/[0.03]">
+          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border)] bg-sky-50/70 px-3 py-2 text-sm">
             {(listData?.breadcrumbs ?? [{ name: "根目录", path: "/" }]).map((crumb, index, all) => (
               <div key={crumb.path} className="flex items-center gap-2">
                 <button
@@ -491,11 +491,11 @@ export default function AdminFilesPage() {
                     setCurrentPath(crumb.path);
                     resetActionPanels();
                   }}
-                  className="rounded px-1 py-0.5 hover:bg-black/10 dark:hover:bg-white/10"
+                  className="rounded px-1 py-0.5 hover:bg-cyan-100"
                 >
                   {crumb.name}
                 </button>
-                {index < all.length - 1 && <span className="text-zinc-400">/</span>}
+                {index < all.length - 1 && <span className="text-slate-400">/</span>}
               </div>
             ))}
           </div>
@@ -506,11 +506,11 @@ export default function AdminFilesPage() {
                 value={newDirectoryName}
                 onChange={(event) => setNewDirectoryName(event.target.value)}
                 placeholder="新建目录名"
-                className="w-full max-w-xs rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="w-full max-w-xs control"
               />
               <button
                 type="button"
-                className="rounded-md bg-black px-3 py-2 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+                className="btn-primary btn-small"
                 onClick={() => {
                   if (!newDirectoryName.trim()) {
                     setErrorMessage("目录名称不能为空");
@@ -526,8 +526,8 @@ export default function AdminFilesPage() {
           )}
 
           <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full divide-y divide-black/10 text-left text-sm dark:divide-white/10">
-              <thead className="bg-black/[0.03] dark:bg-white/[0.04]">
+            <table className="table-modern min-w-full text-left text-sm">
+              <thead className="table-head">
                 <tr>
                   <th className="px-4 py-3 font-medium">名称</th>
                   <th className="px-4 py-3 font-medium">类型</th>
@@ -537,7 +537,7 @@ export default function AdminFilesPage() {
                   <th className="px-4 py-3 font-medium">操作</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-black/10 dark:divide-white/10">
+              <tbody className="table-body divide-y">
                 {items.map((item) => {
                   const isActive = activeItemPath === item.path;
                   return (
@@ -551,17 +551,17 @@ export default function AdminFilesPage() {
                           {item.is_dir ? `[DIR] ${item.name}` : item.name}
                         </button>
                         {isActive && canManage && (
-                          <div className="mt-2 space-y-2 rounded-md border border-black/10 bg-black/[0.03] p-2 text-xs dark:border-white/10 dark:bg-white/[0.03]">
+                          <div className="mt-2 space-y-2 rounded-md border border-[var(--border)] bg-cyan-50/70 p-2 text-xs">
                             <div className="flex flex-wrap items-center gap-2">
                               <input
                                 value={renameName}
                                 onChange={(event) => setRenameName(event.target.value)}
                                 placeholder="新名称"
-                                className="w-48 rounded-md border border-black/15 bg-transparent px-2 py-1 text-xs outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                                className="control w-48 px-2 py-1 text-xs"
                               />
                               <button
                                 type="button"
-                                className="rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                                className="btn-secondary btn-small px-2 py-1"
                                 onClick={() => submitRename(item)}
                                 disabled={renameMutation.isPending}
                               >
@@ -573,17 +573,17 @@ export default function AdminFilesPage() {
                                 value={moveTargetParentPath}
                                 onChange={(event) => setMoveTargetParentPath(event.target.value)}
                                 placeholder="目标目录（如 /a/b）"
-                                className="w-48 rounded-md border border-black/15 bg-transparent px-2 py-1 text-xs outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                                className="control w-48 px-2 py-1 text-xs"
                               />
                               <input
                                 value={moveNewName}
                                 onChange={(event) => setMoveNewName(event.target.value)}
                                 placeholder="新名称（可选）"
-                                className="w-40 rounded-md border border-black/15 bg-transparent px-2 py-1 text-xs outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                                className="control w-40 px-2 py-1 text-xs"
                               />
                               <button
                                 type="button"
-                                className="rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                                className="btn-secondary btn-small px-2 py-1"
                                 onClick={() => submitMove(item)}
                                 disabled={moveMutation.isPending}
                               >
@@ -591,7 +591,7 @@ export default function AdminFilesPage() {
                               </button>
                               <button
                                 type="button"
-                                className="rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                                className="btn-secondary btn-small px-2 py-1"
                                 onClick={resetActionPanels}
                               >
                                 取消
@@ -602,14 +602,14 @@ export default function AdminFilesPage() {
                       </td>
                       <td className="whitespace-nowrap px-4 py-3">{item.is_dir ? "目录" : item.mime_type ?? "文件"}</td>
                       <td className="whitespace-nowrap px-4 py-3">{item.is_dir ? "-" : formatFileSize(item.size)}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-xs text-zinc-500">{formatDate(item.modified_at)}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-xs text-zinc-500">{formatDate(item.synced_at)}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-xs text-muted">{formatDate(item.modified_at)}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-xs text-muted">{formatDate(item.synced_at)}</td>
                       <td className="whitespace-nowrap px-4 py-3">
                         <div className="flex flex-wrap gap-2">
                           {item.is_dir && (
                             <button
                               type="button"
-                              className="rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                              className="btn-secondary btn-small px-2 py-1"
                               onClick={() => handleOpenDirectory(item)}
                             >
                               进入
@@ -618,7 +618,7 @@ export default function AdminFilesPage() {
                           {!item.is_dir && (
                             <button
                               type="button"
-                              className="rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                              className="btn-secondary btn-small px-2 py-1"
                               onClick={() => void handleDownload(item)}
                             >
                               下载
@@ -628,7 +628,7 @@ export default function AdminFilesPage() {
                             <>
                               <button
                                 type="button"
-                                className="rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                                className="btn-secondary btn-small px-2 py-1"
                                 onClick={() => startRename(item)}
                                 disabled={operationBusy}
                               >
@@ -636,7 +636,7 @@ export default function AdminFilesPage() {
                               </button>
                               <button
                                 type="button"
-                                className="rounded-md border border-black/15 px-2 py-1 text-xs hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                                className="btn-secondary btn-small px-2 py-1"
                                 onClick={() => startMove(item)}
                                 disabled={operationBusy}
                               >
@@ -644,7 +644,7 @@ export default function AdminFilesPage() {
                               </button>
                               <button
                                 type="button"
-                                className="rounded-md border border-red-500/30 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/30"
+                                className="btn-danger btn-small px-2 py-1"
                                 onClick={() => handleDelete(item)}
                                 disabled={deleteMutation.isPending}
                               >
@@ -659,7 +659,7 @@ export default function AdminFilesPage() {
                 })}
                 {items.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                    <td colSpan={6} className="px-4 py-8 text-center text-sm text-muted">
                       当前目录为空
                     </td>
                   </tr>

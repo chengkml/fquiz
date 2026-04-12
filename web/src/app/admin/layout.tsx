@@ -70,7 +70,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   if (initializing || loadingMenus) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center px-6 py-20">
-        <p className="text-sm text-zinc-500">Loading admin workspace...</p>
+        <p className="text-sm text-muted">Loading admin workspace...</p>
       </main>
     );
   }
@@ -78,19 +78,24 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">请先登录后再访问后台。</p>
-        <Link href="/" className="text-sm underline">返回首页</Link>
+        <p className="text-sm text-muted">请先登录后再访问后台。</p>
+        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
       </main>
     );
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
-      <div className="mx-auto grid min-h-screen w-full max-w-7xl grid-cols-1 gap-0 md:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="border-r border-black/10 bg-white/90 p-6 dark:border-white/10 dark:bg-zinc-900/80">
+    <div className="relative min-h-screen text-slate-900">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -left-24 top-[-5rem] h-72 w-72 rounded-full bg-cyan-300/30 blur-3xl" />
+        <div className="absolute right-[-6rem] top-20 h-96 w-96 rounded-full bg-sky-300/30 blur-3xl" />
+      </div>
+
+      <div className="relative mx-auto grid min-h-screen w-full max-w-[1360px] grid-cols-1 gap-0 md:grid-cols-[280px_minmax(0,1fr)]">
+        <aside className="border-r border-[var(--border)] bg-white/70 p-6 backdrop-blur-xl md:sticky md:top-0 md:h-screen md:overflow-y-auto">
           <div className="mb-8">
-            <Link href="/" className="text-xl font-semibold tracking-tight">fquiz admin</Link>
-            <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{user.username} · {user.email}</p>
+            <Link href="/" className="text-xl font-bold tracking-tight text-slate-900">fquiz admin</Link>
+            <p className="mt-2 text-sm text-muted">{user.username} · {user.email}</p>
           </div>
 
           <nav className="space-y-2">
@@ -99,20 +104,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 {item.path ? (
                   <Link
                     href={item.path}
-                    className={`block rounded-lg px-3 py-2 text-sm transition ${pathname === item.path ? "bg-black text-white dark:bg-white dark:text-black" : "hover:bg-black/5 dark:hover:bg-white/10"}`}
+                    className={`block rounded-lg px-3 py-2 text-sm font-medium transition ${pathname === item.path ? "bg-cyan-500 text-white shadow-[0_10px_24px_rgba(8,145,178,0.28)]" : "text-slate-700 hover:bg-cyan-50"}`}
                   >
                     {item.name}
                   </Link>
                 ) : (
-                  <div className="px-3 py-2 text-sm font-medium text-zinc-500 dark:text-zinc-300">{item.name}</div>
+                  <div className="px-3 py-2 text-sm font-medium text-muted">{item.name}</div>
                 )}
                 {item.children.length > 0 && (
-                  <div className="ml-3 space-y-1 border-l border-black/10 pl-3 dark:border-white/10">
+                  <div className="ml-3 space-y-1 border-l border-[var(--border)] pl-3">
                     {item.children.map((child) => (
                       <Link
                         key={child.id}
                         href={child.path ?? "/admin"}
-                        className={`block rounded-lg px-3 py-2 text-sm transition ${pathname === child.path ? "bg-black text-white dark:bg-white dark:text-black" : "hover:bg-black/5 dark:hover:bg-white/10"}`}
+                        className={`block rounded-lg px-3 py-2 text-sm transition ${pathname === child.path ? "bg-cyan-500 text-white shadow-[0_8px_20px_rgba(8,145,178,0.28)]" : "text-slate-700 hover:bg-cyan-50"}`}
                       >
                         {child.name}
                       </Link>
@@ -123,10 +128,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             ))}
           </nav>
 
-          <div className="mt-8 space-y-3 border-t border-black/10 pt-6 dark:border-white/10">
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">当前角色：{user.role_codes.join(", ") || "-"}</p>
+          <div className="mt-8 space-y-3 border-t border-[var(--border)] pt-6">
+            <p className="text-xs text-muted">当前角色：{user.role_codes.join(", ") || "-"}</p>
             <button
-              className="w-full rounded-md border border-black/15 px-4 py-2 text-sm font-medium transition hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+              className="btn-secondary w-full"
               onClick={() => void logout()}
               type="button"
             >
@@ -136,16 +141,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </aside>
 
         <main className="p-6 md:p-8">
-          <div className="mb-6 flex items-center justify-between gap-4 rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+          <div className="surface-card mb-6 flex items-center justify-between gap-4 bg-gradient-to-br from-white/95 via-cyan-50/65 to-sky-50/80">
             <div>
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">后台管理</p>
-              <h1 className="text-2xl font-semibold tracking-tight">{currentTitle}</h1>
+              <p className="text-sm text-muted">后台管理</p>
+              <h1 className="text-2xl font-bold tracking-tight">{currentTitle}</h1>
             </div>
-            <Link href="/" className="text-sm underline">返回首页</Link>
+            <Link href="/" className="btn-secondary">返回首页</Link>
           </div>
 
           {menuError && (
-            <pre className="mb-6 overflow-auto rounded-xl border border-red-500/30 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-300">
+            <pre className="notice notice-error mb-6">
               {menuError}
             </pre>
           )}

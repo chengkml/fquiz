@@ -160,14 +160,14 @@ export default function AdminMenusPage() {
   };
 
   if (initializing || loading) {
-    return <p className="text-sm text-zinc-500">Loading menus...</p>;
+    return <p className="text-sm text-muted">Loading menus...</p>;
   }
 
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">请先登录后再访问菜单管理页面。</p>
-        <Link href="/" className="text-sm underline">返回首页</Link>
+        <p className="text-sm text-muted">请先登录后再访问菜单管理页面。</p>
+        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
       </main>
     );
   }
@@ -175,8 +175,8 @@ export default function AdminMenusPage() {
   if (!canRead) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">你没有访问该页面的权限（需要 `menu.read`）。</p>
-        <Link href="/" className="text-sm underline">返回首页</Link>
+        <p className="text-sm text-muted">你没有访问该页面的权限（需要 `menu.read`）。</p>
+        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
       </main>
     );
   }
@@ -184,18 +184,18 @@ export default function AdminMenusPage() {
   return (
     <div className="space-y-6">
       {error && (
-        <pre className="overflow-auto rounded-xl border border-red-500/30 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-300">{error}</pre>
+        <pre className="notice notice-error">{error}</pre>
       )}
       {success && (
-        <pre className="overflow-auto rounded-xl border border-emerald-500/30 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-emerald-300">{success}</pre>
+        <pre className="notice notice-success">{success}</pre>
       )}
 
-      <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+      <section className="surface-card">
         <h2 className="text-lg font-semibold">菜单列表</h2>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">维护后台导航菜单与访问权限。</p>
+        <p className="mt-1 text-sm text-muted">维护后台导航菜单与访问权限。</p>
         <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full divide-y divide-black/10 text-left text-sm dark:divide-white/10">
-            <thead className="bg-black/[0.03] dark:bg-white/[0.04]">
+          <table className="table-modern min-w-full text-left text-sm">
+            <thead className="table-head">
               <tr>
                 <th className="px-4 py-3 font-medium">ID</th>
                 <th className="px-4 py-3 font-medium">Code</th>
@@ -207,7 +207,7 @@ export default function AdminMenusPage() {
                 {canManage && <th className="px-4 py-3 font-medium">操作</th>}
               </tr>
             </thead>
-            <tbody className="divide-y divide-black/10 dark:divide-white/10">
+            <tbody className="table-body divide-y">
               {menus.map((menu) => (
                 <tr key={menu.id}>
                   <td className="px-4 py-3">{menu.id}</td>
@@ -221,7 +221,7 @@ export default function AdminMenusPage() {
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         <button
-                          className="rounded-md border border-black/15 px-3 py-1 text-xs hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                          className="btn-secondary btn-small"
                           onClick={() => startEdit(menu)}
                           type="button"
                         >
@@ -229,7 +229,7 @@ export default function AdminMenusPage() {
                         </button>
                         {!protectedMenuCodes.has(menu.code) && (
                           <button
-                            className="rounded-md border border-red-500/30 px-3 py-1 text-xs text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/30"
+                            className="btn-danger btn-small"
                             onClick={() => void removeMenu(menu)}
                             type="button"
                           >
@@ -247,14 +247,14 @@ export default function AdminMenusPage() {
       </section>
 
       {canManage && (
-        <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+        <section className="surface-card">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold">{editingMenuId ? "编辑菜单" : "新建菜单"}</h2>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">支持层级菜单、权限码和排序。</p>
+              <p className="mt-1 text-sm text-muted">支持层级菜单、权限码和排序。</p>
             </div>
             {editingMenuId && (
-              <button className="text-sm underline" type="button" onClick={resetForm}>取消编辑</button>
+              <button className="btn-secondary w-fit" type="button" onClick={resetForm}>取消编辑</button>
             )}
           </div>
 
@@ -265,7 +265,7 @@ export default function AdminMenusPage() {
                 value={form.code}
                 disabled={editingMenuId !== null}
                 onChange={(event) => setForm((prev) => ({ ...prev, code: event.target.value }))}
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 disabled:opacity-60 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
@@ -273,7 +273,7 @@ export default function AdminMenusPage() {
               <input
                 value={form.name}
                 onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
@@ -282,7 +282,7 @@ export default function AdminMenusPage() {
                 value={form.path}
                 onChange={(event) => setForm((prev) => ({ ...prev, path: event.target.value }))}
                 placeholder="/admin/example"
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
@@ -291,7 +291,7 @@ export default function AdminMenusPage() {
                 value={form.icon}
                 onChange={(event) => setForm((prev) => ({ ...prev, icon: event.target.value }))}
                 placeholder="LayoutDashboard"
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
@@ -299,7 +299,7 @@ export default function AdminMenusPage() {
               <select
                 value={form.parent_id}
                 onChange={(event) => setForm((prev) => ({ ...prev, parent_id: event.target.value }))}
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               >
                 <option value="">无</option>
                 {parentOptions
@@ -314,7 +314,7 @@ export default function AdminMenusPage() {
               <select
                 value={form.type}
                 onChange={(event) => setForm((prev) => ({ ...prev, type: event.target.value }))}
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               >
                 <option value="directory">directory</option>
                 <option value="menu">menu</option>
@@ -327,7 +327,7 @@ export default function AdminMenusPage() {
                 value={form.sort_order}
                 onChange={(event) => setForm((prev) => ({ ...prev, sort_order: event.target.value }))}
                 type="number"
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
@@ -335,7 +335,7 @@ export default function AdminMenusPage() {
               <select
                 value={form.status}
                 onChange={(event) => setForm((prev) => ({ ...prev, status: event.target.value }))}
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               >
                 <option value="enabled">enabled</option>
                 <option value="disabled">disabled</option>
@@ -347,7 +347,7 @@ export default function AdminMenusPage() {
                 value={form.component}
                 onChange={(event) => setForm((prev) => ({ ...prev, component: event.target.value }))}
                 placeholder="app/admin/users/page"
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
@@ -356,7 +356,7 @@ export default function AdminMenusPage() {
                 value={form.permission_code}
                 onChange={(event) => setForm((prev) => ({ ...prev, permission_code: event.target.value }))}
                 placeholder="menu.read"
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <label className="flex items-center gap-2 text-sm">
@@ -371,7 +371,7 @@ export default function AdminMenusPage() {
 
           <div className="mt-4">
             <button
-              className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+              className="btn-primary"
               disabled={saving}
               onClick={() => void submit()}
               type="button"

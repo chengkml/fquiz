@@ -61,7 +61,7 @@ export default function Home() {
   if (initializing) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-3xl items-center justify-center px-6 py-20">
-        <p className="text-sm text-zinc-500">Initializing session...</p>
+        <p className="text-sm text-muted">Initializing session...</p>
       </main>
     );
   }
@@ -69,29 +69,29 @@ export default function Home() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center gap-6 px-6 py-20 sm:px-10">
       <h1 className="text-3xl font-semibold tracking-tight">fquiz</h1>
-      <p className="text-base text-zinc-600 dark:text-zinc-300">
+      <p className="text-base text-muted">
         用户管理、角色管理、菜单管理、需求管理已接入统一后台（JWT + Refresh Session + RBAC + Menu + WS）。
       </p>
 
-      <section className="rounded-xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/15 dark:bg-black">
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">API Base URL</p>
+      <section className="surface-card">
+        <p className="text-sm text-muted">API Base URL</p>
         <p className="mt-1 font-mono text-sm">{API_BASE_URL}</p>
       </section>
 
       {user ? (
-        <section className="rounded-xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/15 dark:bg-black">
+        <section className="surface-card">
           <p className="text-lg font-medium">欢迎，{user.username}</p>
-          <p className="mt-1 text-sm text-zinc-500">{user.email}</p>
-          <p className="mt-2 text-xs text-zinc-500">
+          <p className="mt-1 text-sm text-muted">{user.email}</p>
+          <p className="mt-2 text-xs text-muted">
             Roles: {user.role_codes.join(", ") || "-"}
           </p>
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className="mt-1 text-xs text-muted">
             Permissions: {user.permission_codes.join(", ") || "-"}
           </p>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button
-              className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+              className="btn-primary"
               onClick={handlePing}
               type="button"
             >
@@ -99,14 +99,14 @@ export default function Home() {
             </button>
             <Link
               href="/admin"
-              className="rounded-md border border-black/15 px-4 py-2 text-sm font-medium transition hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+              className="btn-secondary"
             >
               进入后台
             </Link>
             {hasPermission("user.manage") && (
               <Link
                 href="/admin/users"
-                className="rounded-md border border-black/15 px-4 py-2 text-sm font-medium transition hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                className="btn-secondary"
               >
                 管理用户
               </Link>
@@ -114,13 +114,13 @@ export default function Home() {
             {hasPermission("requirement.read") && (
               <Link
                 href="/admin/requirements"
-                className="rounded-md border border-black/15 px-4 py-2 text-sm font-medium transition hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                className="btn-secondary"
               >
                 查看需求
               </Link>
             )}
             <button
-              className="rounded-md border border-black/15 px-4 py-2 text-sm font-medium transition hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+              className="btn-secondary"
               onClick={() => void logout()}
               type="button"
             >
@@ -129,13 +129,13 @@ export default function Home() {
           </div>
         </section>
       ) : (
-        <section className="rounded-xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/15 dark:bg-black">
+        <section className="surface-card">
           <div className="mb-4 flex gap-2">
             <button
-              className={`rounded-md px-3 py-1 text-sm ${
+              className={`btn-small ${
                 mode === "login"
-                  ? "bg-black text-white dark:bg-white dark:text-black"
-                  : "border border-black/15 dark:border-white/20"
+                  ? "btn-primary"
+                  : "btn-secondary"
               }`}
               onClick={() => setMode("login")}
               type="button"
@@ -143,10 +143,10 @@ export default function Home() {
               登录
             </button>
             <button
-              className={`rounded-md px-3 py-1 text-sm ${
+              className={`btn-small ${
                 mode === "register"
-                  ? "bg-black text-white dark:bg-white dark:text-black"
-                  : "border border-black/15 dark:border-white/20"
+                  ? "btn-primary"
+                  : "btn-secondary"
               }`}
               onClick={() => setMode("register")}
               type="button"
@@ -158,7 +158,7 @@ export default function Home() {
           <form className="space-y-3" onSubmit={handleSubmit}>
             <h2 className="text-base font-medium">{title}</h2>
             <input
-              className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+              className="control w-full"
               placeholder="Email"
               type="email"
               value={email}
@@ -167,7 +167,7 @@ export default function Home() {
             />
             {mode === "register" && (
               <input
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
                 placeholder="Username"
                 type="text"
                 value={username}
@@ -178,7 +178,7 @@ export default function Home() {
               />
             )}
             <input
-              className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+              className="control w-full"
               placeholder="Password (>= 8 chars)"
               type="password"
               value={password}
@@ -188,7 +188,7 @@ export default function Home() {
               required
             />
             <button
-              className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+              className="btn-primary"
               disabled={busy}
               type="submit"
             >
@@ -199,13 +199,13 @@ export default function Home() {
       )}
 
       {pingResult && (
-        <pre className="overflow-auto rounded-xl border border-emerald-500/30 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-emerald-300">
+        <pre className="notice notice-success">
           {JSON.stringify(pingResult, null, 2)}
         </pre>
       )}
 
       {error && (
-        <pre className="overflow-auto rounded-xl border border-red-500/30 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-300">
+        <pre className="notice notice-error">
           {error}
         </pre>
       )}

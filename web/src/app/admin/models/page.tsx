@@ -439,14 +439,14 @@ export default function AdminModelsPage() {
   }, [modelsQuery.error, routesQuery.error, summaryQuery.error]);
 
   if (initializing || modelsQuery.isLoading || summaryQuery.isLoading || routesQuery.isLoading) {
-    return <p className="text-sm text-zinc-500">Loading model management...</p>;
+    return <p className="text-sm text-muted">Loading model management...</p>;
   }
 
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">请先登录后再访问模型管理页面。</p>
-        <Link href="/" className="text-sm underline">返回首页</Link>
+        <p className="text-sm text-muted">请先登录后再访问模型管理页面。</p>
+        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
       </main>
     );
   }
@@ -454,8 +454,8 @@ export default function AdminModelsPage() {
   if (!canRead) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">你没有访问该页面的权限（需要 `model.read`）。</p>
-        <Link href="/" className="text-sm underline">返回首页</Link>
+        <p className="text-sm text-muted">你没有访问该页面的权限（需要 `model.read`）。</p>
+        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
       </main>
     );
   }
@@ -463,52 +463,52 @@ export default function AdminModelsPage() {
   return (
     <div className="space-y-6">
       {(error || queryError) && (
-        <pre className="overflow-auto rounded-xl border border-red-500/30 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-300">{error || queryError}</pre>
+        <pre className="notice notice-error">{error || queryError}</pre>
       )}
       {success && (
-        <pre className="overflow-auto rounded-xl border border-emerald-500/30 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-emerald-300">{success}</pre>
+        <pre className="notice notice-success">{success}</pre>
       )}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">模型总数</p>
+        <div className="surface-card">
+          <p className="text-sm text-muted">模型总数</p>
           <p className="mt-2 text-3xl font-semibold">{summary?.total_models ?? 0}</p>
-          <p className="mt-2 text-xs text-zinc-500">ENABLED: {summary?.status_counts.ENABLED ?? 0}</p>
+          <p className="mt-2 text-xs text-muted">ENABLED: {summary?.status_counts.ENABLED ?? 0}</p>
         </div>
-        <div className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">路由规则</p>
+        <div className="surface-card">
+          <p className="text-sm text-muted">路由规则</p>
           <p className="mt-2 text-3xl font-semibold">{summary?.total_route_rules ?? 0}</p>
-          <p className="mt-2 text-xs text-zinc-500">GLOBAL: {summary?.route_type_counts.GLOBAL ?? 0}</p>
+          <p className="mt-2 text-xs text-muted">GLOBAL: {summary?.route_type_counts.GLOBAL ?? 0}</p>
         </div>
-        <div className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">近 7 天用量</p>
+        <div className="surface-card">
+          <p className="text-sm text-muted">近 7 天用量</p>
           <p className="mt-2 text-3xl font-semibold">{summary?.usage_7d.request_count ?? 0}</p>
-          <p className="mt-2 text-xs text-zinc-500">成功率: {formatPercent(summary?.usage_7d.success_rate ?? null)}</p>
+          <p className="mt-2 text-xs text-muted">成功率: {formatPercent(summary?.usage_7d.success_rate ?? null)}</p>
         </div>
-        <div className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">健康风险</p>
+        <div className="surface-card">
+          <p className="text-sm text-muted">健康风险</p>
           <p className="mt-2 text-3xl font-semibold">{summary?.enabled_without_healthy_check ?? 0}</p>
-          <p className="mt-2 text-xs text-zinc-500">ENABLED 且未健康</p>
+          <p className="mt-2 text-xs text-muted">ENABLED 且未健康</p>
         </div>
       </section>
 
-      <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+      <section className="surface-card">
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="text-lg font-semibold">模型列表</h2>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">稳定 `code` 作为引用键，`name` 仅用于展示。</p>
+            <p className="mt-1 text-sm text-muted">稳定 `code` 作为引用键，`name` 仅用于展示。</p>
           </div>
           <div className="grid gap-2 md:grid-cols-2">
             <input
               value={keyword}
               onChange={(event) => setKeyword(event.target.value)}
               placeholder="搜索 code/name/provider"
-              className="rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+              className="control"
             />
             <select
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value)}
-              className="rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+              className="control"
             >
               <option value="">全部状态</option>
               {MODEL_STATUS_OPTIONS.map((item) => (
@@ -519,8 +519,8 @@ export default function AdminModelsPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-black/10 text-left text-sm dark:divide-white/10">
-            <thead className="bg-black/[0.03] dark:bg-white/[0.04]">
+          <table className="table-modern min-w-full text-left text-sm">
+            <thead className="table-head">
               <tr>
                 <th className="px-4 py-3 font-medium">Code</th>
                 <th className="px-4 py-3 font-medium">Provider/Model</th>
@@ -533,36 +533,36 @@ export default function AdminModelsPage() {
                 {canManage && <th className="px-4 py-3 font-medium">操作</th>}
               </tr>
             </thead>
-            <tbody className="divide-y divide-black/10 dark:divide-white/10">
+            <tbody className="table-body divide-y">
               {models.map((model) => (
                 <tr key={model.id}>
                   <td className="px-4 py-3">
                     <p className="font-mono text-xs">{model.code}</p>
-                    <p className="mt-1 text-xs text-zinc-500">{model.name}</p>
+                    <p className="mt-1 text-xs text-muted">{model.name}</p>
                   </td>
                   <td className="px-4 py-3">
                     <p>{model.provider}</p>
-                    <p className="mt-1 font-mono text-xs text-zinc-500">{model.provider_model}</p>
+                    <p className="mt-1 font-mono text-xs text-muted">{model.provider_model}</p>
                   </td>
                   <td className="px-4 py-3">
                     <p>{model.status}</p>
-                    <p className="mt-1 text-xs text-zinc-500">{model.capabilities.join(", ") || "-"}</p>
+                    <p className="mt-1 text-xs text-muted">{model.capabilities.join(", ") || "-"}</p>
                   </td>
                   <td className="px-4 py-3 text-xs">
                     <p>{model.active_key_masked ?? "-"}</p>
-                    <p className="mt-1 text-zinc-500">v{model.active_key_version ?? "-"}</p>
+                    <p className="mt-1 text-muted">v{model.active_key_version ?? "-"}</p>
                   </td>
                   <td className="px-4 py-3 text-xs">
                     <p>{model.latest_health_status ?? "-"}</p>
-                    <p className="mt-1 text-zinc-500">{model.latest_health_at ? new Date(model.latest_health_at).toLocaleString() : "-"}</p>
+                    <p className="mt-1 text-muted">{model.latest_health_at ? new Date(model.latest_health_at).toLocaleString() : "-"}</p>
                   </td>
                   <td className="px-4 py-3 text-xs">
                     <p>请求: {model.usage_7d.request_count}</p>
-                    <p className="mt-1 text-zinc-500">成功率: {formatPercent(model.usage_7d.success_rate)}</p>
+                    <p className="mt-1 text-muted">成功率: {formatPercent(model.usage_7d.success_rate)}</p>
                   </td>
                   <td className="px-4 py-3 text-xs">
                     <p>Runs: {model.tests_7d.total_runs}</p>
-                    <p className="mt-1 text-zinc-500">通过率: {formatPercent(model.tests_7d.pass_rate)}</p>
+                    <p className="mt-1 text-muted">通过率: {formatPercent(model.tests_7d.pass_rate)}</p>
                   </td>
                   <td className="px-4 py-3">{model.route_bindings_count}</td>
                   {canManage && (
@@ -570,14 +570,14 @@ export default function AdminModelsPage() {
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          className="rounded-md border border-black/15 px-3 py-1 text-xs hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                          className="btn-secondary btn-small"
                           onClick={() => startEditModel(model)}
                         >
                           编辑
                         </button>
                         <button
                           type="button"
-                          className="rounded-md border border-black/15 px-3 py-1 text-xs hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                          className="btn-secondary btn-small"
                           onClick={() => {
                             const key = window.prompt(`为 ${model.code} 输入新 API Key`);
                             if (key && key.trim()) {
@@ -590,7 +590,7 @@ export default function AdminModelsPage() {
                         </button>
                         <button
                           type="button"
-                          className="rounded-md border border-black/15 px-3 py-1 text-xs hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                          className="btn-secondary btn-small"
                           onClick={() => healthCheckMutation.mutate(model.id)}
                           disabled={healthCheckMutation.isPending}
                         >
@@ -598,7 +598,7 @@ export default function AdminModelsPage() {
                         </button>
                         <button
                           type="button"
-                          className="rounded-md border border-black/15 px-3 py-1 text-xs hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                          className="btn-secondary btn-small"
                           onClick={() => testMutation.mutate(model.id)}
                           disabled={testMutation.isPending}
                         >
@@ -608,7 +608,7 @@ export default function AdminModelsPage() {
                           <button
                             key={`${model.id}:${nextStatus}`}
                             type="button"
-                            className="rounded-md border border-black/15 px-3 py-1 text-xs hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                            className="btn-secondary btn-small"
                             onClick={() => transitionMutation.mutate({ modelId: model.id, status: nextStatus })}
                             disabled={transitionMutation.isPending}
                           >
@@ -619,7 +619,7 @@ export default function AdminModelsPage() {
                         {model.status !== "ENABLED" && (
                           <button
                             type="button"
-                            className="rounded-md border border-red-500/30 px-3 py-1 text-xs text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/30"
+                            className="btn-danger btn-small"
                             onClick={() => {
                               if (window.confirm(`确认删除模型 ${model.code} 吗？`)) {
                                 deleteModelMutation.mutate(model);
@@ -641,16 +641,16 @@ export default function AdminModelsPage() {
       </section>
 
       {canManage && (
-        <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+        <section className="surface-card">
           <div className="mb-4 flex items-center justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold">{editingModelId ? "编辑模型" : "新建模型"}</h2>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">创建时可设置初始密钥；编辑阶段仅维护模型元数据。</p>
+              <p className="mt-1 text-sm text-muted">创建时可设置初始密钥；编辑阶段仅维护模型元数据。</p>
             </div>
             {editingModelId && (
               <button
                 type="button"
-                className="text-sm underline"
+                className="btn-secondary w-fit"
                 onClick={() => {
                   setEditingModelId(null);
                   setModelForm(EMPTY_MODEL_FORM);
@@ -669,7 +669,7 @@ export default function AdminModelsPage() {
                 disabled={editingModelId !== null}
                 onChange={(event) => setModelForm((prev) => ({ ...prev, code: event.target.value }))}
                 placeholder="openai.gpt-5"
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 disabled:opacity-60 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
@@ -678,7 +678,7 @@ export default function AdminModelsPage() {
                 value={modelForm.name}
                 onChange={(event) => setModelForm((prev) => ({ ...prev, name: event.target.value }))}
                 placeholder="GPT-5 主模型"
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
@@ -686,7 +686,7 @@ export default function AdminModelsPage() {
               <input
                 value={modelForm.provider}
                 onChange={(event) => setModelForm((prev) => ({ ...prev, provider: event.target.value }))}
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
@@ -695,7 +695,7 @@ export default function AdminModelsPage() {
                 value={modelForm.provider_model}
                 onChange={(event) => setModelForm((prev) => ({ ...prev, provider_model: event.target.value }))}
                 placeholder="gpt-5"
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
@@ -704,7 +704,7 @@ export default function AdminModelsPage() {
                 value={modelForm.status}
                 disabled={editingModelId !== null}
                 onChange={(event) => setModelForm((prev) => ({ ...prev, status: event.target.value as ModelStatus }))}
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 disabled:opacity-60 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               >
                 {MODEL_STATUS_OPTIONS.map((item) => (
                   <option key={item} value={item}>{item}</option>
@@ -717,7 +717,7 @@ export default function AdminModelsPage() {
                 value={modelForm.capabilities}
                 onChange={(event) => setModelForm((prev) => ({ ...prev, capabilities: event.target.value }))}
                 placeholder="chat,reasoning"
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <label className="space-y-2 text-sm md:col-span-2">
@@ -726,7 +726,7 @@ export default function AdminModelsPage() {
                 value={modelForm.base_url}
                 onChange={(event) => setModelForm((prev) => ({ ...prev, base_url: event.target.value }))}
                 placeholder="https://api.example.com"
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             {!editingModelId && (
@@ -736,7 +736,7 @@ export default function AdminModelsPage() {
                   value={modelForm.api_key}
                   onChange={(event) => setModelForm((prev) => ({ ...prev, api_key: event.target.value }))}
                   placeholder="sk-..."
-                  className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                  className="control w-full"
                 />
               </label>
             )}
@@ -747,7 +747,7 @@ export default function AdminModelsPage() {
                 value={modelForm.description}
                 onChange={(event) => setModelForm((prev) => ({ ...prev, description: event.target.value }))}
                 placeholder="模型用途、限制、成本策略..."
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
           </div>
@@ -755,7 +755,7 @@ export default function AdminModelsPage() {
           <div className="mt-4">
             <button
               type="button"
-              className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+              className="btn-primary"
               disabled={saveModelMutation.isPending || !modelForm.code.trim() || !modelForm.name.trim() || !modelForm.provider_model.trim()}
               onClick={() => saveModelMutation.mutate()}
             >
@@ -765,15 +765,15 @@ export default function AdminModelsPage() {
         </section>
       )}
 
-      <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+      <section className="surface-card">
         <div className="mb-4">
           <h2 className="text-lg font-semibold">路由规则</h2>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">支持 GLOBAL / CAPABILITY / BUSINESS / AGENT 四类规则。</p>
+          <p className="mt-1 text-sm text-muted">支持 GLOBAL / CAPABILITY / BUSINESS / AGENT 四类规则。</p>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-black/10 text-left text-sm dark:divide-white/10">
-            <thead className="bg-black/[0.03] dark:bg-white/[0.04]">
+          <table className="table-modern min-w-full text-left text-sm">
+            <thead className="table-head">
               <tr>
                 <th className="px-4 py-3 font-medium">类型</th>
                 <th className="px-4 py-3 font-medium">Key</th>
@@ -783,7 +783,7 @@ export default function AdminModelsPage() {
                 {canManage && <th className="px-4 py-3 font-medium">操作</th>}
               </tr>
             </thead>
-            <tbody className="divide-y divide-black/10 dark:divide-white/10">
+            <tbody className="table-body divide-y">
               {routes.map((route) => (
                 <tr key={route.id}>
                   <td className="px-4 py-3">{route.route_type}</td>
@@ -796,14 +796,14 @@ export default function AdminModelsPage() {
                       <div className="flex gap-2">
                         <button
                           type="button"
-                          className="rounded-md border border-black/15 px-3 py-1 text-xs hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                          className="btn-secondary btn-small"
                           onClick={() => startEditRoute(route)}
                         >
                           编辑
                         </button>
                         <button
                           type="button"
-                          className="rounded-md border border-red-500/30 px-3 py-1 text-xs text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/30"
+                          className="btn-danger btn-small"
                           onClick={() => {
                             if (window.confirm(`确认删除路由规则 ${route.route_type}:${route.route_key} 吗？`)) {
                               deleteRouteMutation.mutate(route.id);
@@ -824,16 +824,16 @@ export default function AdminModelsPage() {
       </section>
 
       {canManage && (
-        <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+        <section className="surface-card">
           <div className="mb-4 flex items-center justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold">{editingRouteId ? "编辑路由规则" : "新建路由规则"}</h2>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">GLOBAL 规则的 key 固定为 {GLOBAL_ROUTE_KEY}。</p>
+              <p className="mt-1 text-sm text-muted">GLOBAL 规则的 key 固定为 {GLOBAL_ROUTE_KEY}。</p>
             </div>
             {editingRouteId && (
               <button
                 type="button"
-                className="text-sm underline"
+                className="btn-secondary w-fit"
                 onClick={() => {
                   setEditingRouteId(null);
                   setRouteForm(EMPTY_ROUTE_FORM);
@@ -850,7 +850,7 @@ export default function AdminModelsPage() {
               <select
                 value={routeForm.route_type}
                 onChange={(event) => setRouteForm((prev) => ({ ...prev, route_type: event.target.value as ModelRouteType }))}
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               >
                 {ROUTE_TYPE_OPTIONS.map((item) => (
                   <option key={item} value={item}>{item}</option>
@@ -864,7 +864,7 @@ export default function AdminModelsPage() {
                 disabled={routeForm.route_type === "GLOBAL"}
                 onChange={(event) => setRouteForm((prev) => ({ ...prev, route_key: event.target.value }))}
                 placeholder="chat.default"
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 disabled:opacity-60 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
@@ -873,7 +873,7 @@ export default function AdminModelsPage() {
                 value={routeForm.target_model_code}
                 onChange={(event) => setRouteForm((prev) => ({ ...prev, target_model_code: event.target.value }))}
                 list="model-code-options"
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
               <datalist id="model-code-options">
                 {activeModelCodes.map((item) => (
@@ -887,7 +887,7 @@ export default function AdminModelsPage() {
                 type="number"
                 value={routeForm.priority}
                 onChange={(event) => setRouteForm((prev) => ({ ...prev, priority: event.target.value }))}
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <label className="space-y-2 text-sm md:col-span-2">
@@ -896,7 +896,7 @@ export default function AdminModelsPage() {
                 value={routeForm.note}
                 onChange={(event) => setRouteForm((prev) => ({ ...prev, note: event.target.value }))}
                 placeholder="例如：客服场景优先使用"
-                className="w-full rounded-md border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/40"
+                className="control w-full"
               />
             </label>
             <label className="flex items-center gap-2 text-sm md:col-span-2">
@@ -912,7 +912,7 @@ export default function AdminModelsPage() {
           <div className="mt-4">
             <button
               type="button"
-              className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+              className="btn-primary"
               disabled={saveRouteMutation.isPending || !routeForm.target_model_code.trim()}
               onClick={() => saveRouteMutation.mutate()}
             >
