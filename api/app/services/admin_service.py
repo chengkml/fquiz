@@ -23,19 +23,17 @@ from .push_service import publish_topic
 from .user_service import queue_users_auth_refresh
 
 
-ROLE_LOAD_OPTIONS = (
-    selectinload(Role.permissions),
-    selectinload(Role.menus),
-)
-MENU_LOAD_OPTIONS = (selectinload(Menu.children),)
-
-
 def _role_stmt():
-    return select(Role).options(*ROLE_LOAD_OPTIONS)
+    # Build loader options lazily to avoid triggering mapper configuration
+    # during module import before all models are registered.
+    return select(Role).options(
+        selectinload(Role.permissions),
+        selectinload(Role.menus),
+    )
 
 
 def _menu_stmt():
-    return select(Menu).options(*MENU_LOAD_OPTIONS)
+    return select(Menu).options(selectinload(Menu.children))
 
 
 def serialize_role(role: Role) -> RolePublic:
@@ -305,7 +303,7 @@ def update_menu(db: Session, menu_id: int, payload: MenuUpdateRequest) -> MenuPu
 
 def delete_menu(db: Session, menu_id: int) -> bool:
     menu = get_menu_by_id(db, menu_id)
-    if not menu or menu.code in {"dashboard", "admin.users", "admin.roles", "admin.menus", "admin.requirements", "admin.models"}:
+    if not menu or menu.code in {"dashboard", "admin.users", "admin.roles", "admin.menus", "admin.files", "admin.requirements", "admin.models"}:
         return False
     child_exists = db.scalar(select(Menu.id).where(Menu.parent_id == menu_id))
     if child_exists is not None:

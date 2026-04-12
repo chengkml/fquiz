@@ -65,6 +65,65 @@ export type MenuListResponse = {
   total: number;
 };
 
+export type FileStorageDriverType = "VFS" | "S3";
+
+export type FileStorageBackendSummary = {
+  id: number;
+  code: string;
+  name: string;
+  driver_type: FileStorageDriverType;
+  status: string;
+  is_default: boolean;
+  config_summary: Record<string, unknown>;
+};
+
+export type FileStorageMount = {
+  id: number;
+  code: string;
+  name: string;
+  mount_path: string;
+  root_path: string;
+  is_enabled: boolean;
+  backend: FileStorageBackendSummary;
+};
+
+export type FileBreadcrumbItem = {
+  name: string;
+  path: string;
+};
+
+export type FileEntryItem = {
+  id: number;
+  path: string;
+  parent_path: string;
+  name: string;
+  is_dir: boolean;
+  size: number;
+  mime_type: string | null;
+  etag: string | null;
+  storage_key: string | null;
+  modified_at: string | null;
+  synced_at: string;
+};
+
+export type FileListResponse = {
+  mounts: FileStorageMount[];
+  current_mount: FileStorageMount;
+  current_path: string;
+  breadcrumbs: FileBreadcrumbItem[];
+  items: FileEntryItem[];
+  total: number;
+  synced_at: string;
+};
+
+export type FileOperationResponse = {
+  success: boolean;
+  mount_code: string;
+  path: string;
+  action: string | null;
+  target_path: string | null;
+};
+
 export type ModelStatus = "DRAFT" | "ENABLED" | "DISABLED" | "DEPRECATED";
 export type ModelRouteType = "GLOBAL" | "CAPABILITY" | "BUSINESS" | "AGENT";
 export type ModelHealthStatus = "HEALTHY" | "DEGRADED" | "UNHEALTHY";

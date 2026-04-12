@@ -24,6 +24,12 @@ const CARDS = [
     visible: (hasPermission: (code: string) => boolean) => hasPermission("menu.read") || hasPermission("menu.manage"),
   },
   {
+    href: "/admin/files",
+    title: "文件管理",
+    description: "管理挂载点文件列表、目录浏览、目录创建和删除。",
+    visible: (hasPermission: (code: string) => boolean) => hasPermission("file.read") || hasPermission("file.manage"),
+  },
+  {
     href: "/admin/requirements",
     title: "需求管理",
     description: "查看需求列表、流转处理、评论协作和操作留痕。",

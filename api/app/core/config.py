@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     api_cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     database_url: str = "sqlite:///./fquiz.db"
+    file_vfs_root: str = "./data/vfs"
 
     jwt_secret_key: str = "change-this-in-production"
     jwt_algorithm: str = "HS256"

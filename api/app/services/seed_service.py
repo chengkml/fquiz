@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..core.config import get_settings
+from ..models.file_storage import FileStorageBackend, FileStorageMount
 from ..core.security import hash_password
 from ..models.menu import Menu
 from ..models.rbac import Permission, Role
@@ -19,6 +20,8 @@ DEFAULT_PERMISSIONS: dict[str, str] = {
     "menu.manage": "Manage menus",
     "model.read": "Read model registry and routing summary",
     "model.manage": "Manage model registry, routes, keys, and health checks",
+    "file.read": "Read file mounts and indexed entries",
+    "file.manage": "Manage file operations and storage sync",
     "requirement.read": "Read requirements",
     "requirement.create": "Create requirements",
     "requirement.process": "Process requirements",
@@ -38,6 +41,8 @@ DEFAULT_ROLES: dict[str, dict[str, object]] = {
             "menu.manage",
             "model.read",
             "model.manage",
+            "file.read",
+            "file.manage",
             "requirement.read",
             "requirement.create",
             "requirement.process",
@@ -104,6 +109,19 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "permission_code": "menu.read",
     },
     {
+        "code": "admin.files",
+        "name": "文件管理",
+        "path": "/admin/files",
+        "icon": "FolderOpen",
+        "parent_code": None,
+        "type": "menu",
+        "sort_order": 55,
+        "status": "enabled",
+        "visible": True,
+        "cacheable": False,
+        "permission_code": "file.read",
+    },
+    {
         "code": "admin.requirements",
         "name": "需求管理",
         "path": "/admin/requirements",
@@ -132,9 +150,45 @@ DEFAULT_MENUS: list[dict[str, object]] = [
 ]
 
 ROLE_MENU_BINDINGS: dict[str, list[str]] = {
-    "admin": ["dashboard", "admin.users", "admin.roles", "admin.menus", "admin.requirements", "admin.models"],
+    "admin": ["dashboard", "admin.users", "admin.roles", "admin.menus", "admin.files", "admin.requirements", "admin.models"],
     "user": ["dashboard"],
 }
+
+DEFAULT_FILE_STORAGE_BACKENDS: list[dict[str, object]] = [
+    {
+        "code": "files.vfs.default",
+        "name": "本地 VFS 存储",
+        "driver_type": "VFS",
+        "status": "enabled",
+        "is_default": True,
+        "config_json": lambda: {"root_dir": settings.file_vfs_root},
+    },
+    {
+        "code": "files.s3.default",
+        "name": "S3 对象存储",
+        "driver_type": "S3",
+        "status": "disabled",
+        "is_default": False,
+        "config_json": {
+            "bucket": "",
+            "region_name": "",
+            "endpoint_url": "",
+            "access_key_id": "",
+            "secret_access_key": "",
+        },
+    },
+]
+
+DEFAULT_FILE_STORAGE_MOUNTS: list[dict[str, object]] = [
+    {
+        "code": "main",
+        "name": "主文件区",
+        "backend_code": "files.vfs.default",
+        "mount_path": "/",
+        "root_path": "/",
+        "is_enabled": True,
+    },
+]
 
 
 def seed_defaults(db: Session) -> None:
@@ -142,6 +196,7 @@ def seed_defaults(db: Session) -> None:
     roles = _seed_roles(db, permissions)
     menus = _seed_menus(db)
     _seed_role_menus(db, roles, menus)
+    _seed_file_storage(db)
     _seed_initial_admin(db)
     db.commit()
 
@@ -247,3 +302,60 @@ def _seed_initial_admin(db: Session) -> None:
     role_codes = {role.code for role in user.roles}
     if "admin" not in role_codes:
         user.roles.append(admin_role)
+
+
+def _seed_file_storage(db: Session) -> None:
+    backend_map: dict[str, FileStorageBackend] = {}
+
+    for backend_info in DEFAULT_FILE_STORAGE_BACKENDS:
+        code = str(backend_info["code"])
+        backend = db.scalar(select(FileStorageBackend).where(FileStorageBackend.code == code))
+        config_factory = backend_info.get("config_json")
+        config_json = config_factory() if callable(config_factory) else config_factory
+        normalized_config = config_json if isinstance(config_json, dict) else {}
+
+        if not backend:
+            backend = FileStorageBackend(
+                code=code,
+                name=str(backend_info["name"]),
+                driver_type=str(backend_info["driver_type"]),
+                status=str(backend_info["status"]),
+                is_default=bool(backend_info["is_default"]),
+                config_json=normalized_config,
+            )
+            db.add(backend)
+            db.flush()
+        else:
+            backend.name = str(backend_info["name"])
+            backend.driver_type = str(backend_info["driver_type"])
+            if not backend.config_json:
+                backend.config_json = normalized_config
+        backend_map[code] = backend
+
+    for mount_info in DEFAULT_FILE_STORAGE_MOUNTS:
+        code = str(mount_info["code"])
+        backend_code = str(mount_info["backend_code"])
+        backend = backend_map.get(backend_code)
+        if not backend:
+            continue
+
+        mount = db.scalar(select(FileStorageMount).where(FileStorageMount.code == code))
+        if not mount:
+            mount = FileStorageMount(
+                code=code,
+                name=str(mount_info["name"]),
+                backend_id=backend.id,
+                mount_path=str(mount_info["mount_path"]),
+                root_path=str(mount_info["root_path"]),
+                is_enabled=bool(mount_info["is_enabled"]),
+            )
+            db.add(mount)
+            db.flush()
+            continue
+
+        mount.name = str(mount_info["name"])
+        mount.backend_id = backend.id
+        mount.mount_path = str(mount_info["mount_path"])
+        mount.root_path = str(mount_info["root_path"])
+        if mount_info.get("is_enabled") is not None:
+            mount.is_enabled = bool(mount_info["is_enabled"])
