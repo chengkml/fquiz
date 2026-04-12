@@ -110,11 +110,15 @@ jobs:
           host: ${{ secrets.SERVER_HOST || vars.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER || vars.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT || vars.SERVER_PORT || 22 }}
+          timeout: 120s
+          command_timeout: 45m
           key: ${{ secrets.SERVER_SSH_KEY }}
           password: ${{ secrets.SERVER_PASSWORD }}
           envs: DEPLOY_PATH,API_IMAGE,WEB_IMAGE,IMAGE_TAG,NEXT_PUBLIC_API_BASE_URL,GHCR_USERNAME,GHCR_TOKEN
           script: |
             set -euo pipefail
+            export DOCKER_CLIENT_TIMEOUT="${DOCKER_CLIENT_TIMEOUT:-600}"
+            export COMPOSE_HTTP_TIMEOUT="${COMPOSE_HTTP_TIMEOUT:-600}"
 
             DEPLOY_DIR="${DEPLOY_PATH:-/opt/fquiz}"
             mkdir -p "${DEPLOY_DIR}"
@@ -223,6 +227,24 @@ jobs:
               COMPOSE_CMD="docker-compose"
             fi
 
-            ${COMPOSE_CMD} --env-file .env --env-file .images.env -f docker-compose.prod.yml pull
+            pull_with_retry() {
+              local max_retries=3
+              local attempt=1
+              while true; do
+                if ${COMPOSE_CMD} --env-file .env --env-file .images.env -f docker-compose.prod.yml pull; then
+                  break
+                fi
+                if [ "${attempt}" -ge "${max_retries}" ]; then
+                  echo "[error] docker compose pull failed after ${max_retries} attempts."
+                  return 1
+                fi
+                local sleep_seconds=$((attempt * 20))
+                echo "[warn] docker compose pull failed (attempt ${attempt}/${max_retries}), retrying in ${sleep_seconds}s..."
+                sleep "${sleep_seconds}"
+                attempt=$((attempt + 1))
+              done
+            }
+
+            pull_with_retry
             ${COMPOSE_CMD} --env-file .env --env-file .images.env -f docker-compose.prod.yml up -d --remove-orphans
             ${COMPOSE_CMD} --env-file .env --env-file .images.env -f docker-compose.prod.yml ps
