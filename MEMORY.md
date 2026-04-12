@@ -55,3 +55,8 @@
   - 标题：`Space Grotesk`
   - 正文：`Manrope`
   - 等宽：`JetBrains Mono`
+
+## 前端联调口径（2026-04-12）
+
+- `NEXT_PUBLIC_API_BASE_URL` 若误配为 loopback（`127.0.0.1/localhost`），前端运行时会在浏览器端自动改写为“当前页面主机 + 同端口（默认 8000）”，避免公网页面触发 PNA（Private Network Access）阻断。
+- 认证请求与 WebSocket 连接均统一复用该运行时 API 基址解析逻辑。

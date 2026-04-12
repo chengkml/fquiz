@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 
-import { API_BASE_URL, readApiError } from "@/lib/api";
+import { getApiBaseUrl, readApiError } from "@/lib/api";
 import type { AuthTokenResponse, UserPublic } from "@/types/auth";
 
 type AuthContextValue = {
@@ -36,7 +36,7 @@ function withApiPath(path: string): string {
   if (path.startsWith("http://") || path.startsWith("https://")) {
     return path;
   }
-  return `${API_BASE_URL}${path}`;
+  return `${getApiBaseUrl()}${path}`;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {

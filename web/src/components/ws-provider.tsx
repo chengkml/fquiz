@@ -12,6 +12,7 @@ import {
 } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { getApiBaseUrl } from "@/lib/api";
 import type { WsEventEnvelope, WsServerMessage, WsTicketResponse } from "@/types/ws";
 
 type TopicHandler = (event: WsEventEnvelope) => void;
@@ -25,7 +26,7 @@ type WSContextValue = {
 const WSContext = createContext<WSContextValue | undefined>(undefined);
 
 function toWebSocketUrl(path: string): string {
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+  const base = getApiBaseUrl();
   const url = new URL(path, base);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return url.toString();

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { API_BASE_URL, readApiError } from "@/lib/api";
+import { API_BASE_URL, getApiBaseUrl, readApiError } from "@/lib/api";
 
 type Mode = "login" | "register";
 type PingResponse = { message: string };
@@ -27,6 +27,7 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [pingResult, setPingResult] = useState<PingResponse | null>(null);
+  const [resolvedApiBaseUrl, setResolvedApiBaseUrl] = useState(API_BASE_URL);
 
   useEffect(() => {
     try {
@@ -45,6 +46,10 @@ export default function Home() {
     } catch {
       window.localStorage.removeItem(REMEMBER_CREDENTIALS_KEY);
     }
+  }, []);
+
+  useEffect(() => {
+    setResolvedApiBaseUrl(getApiBaseUrl());
   }, []);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -78,7 +83,7 @@ export default function Home() {
 
   const handlePing = async () => {
     setError("");
-    const response = await fetch(`${API_BASE_URL}/api/v1/ping`, {
+    const response = await fetch(`${getApiBaseUrl()}/api/v1/ping`, {
       method: "GET",
       credentials: "include",
     });
@@ -106,7 +111,7 @@ export default function Home() {
 
       <section className="surface-card">
         <p className="text-sm text-muted">API Base URL</p>
-        <p className="mt-1 font-mono text-sm">{API_BASE_URL}</p>
+        <p className="mt-1 font-mono text-sm">{resolvedApiBaseUrl}</p>
       </section>
 
       {user ? (
