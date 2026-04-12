@@ -113,7 +113,7 @@ npm run lint:web
 
 - 前端：`http://localhost:3000`
 - 后端：`http://localhost:8000/health`
-- PostgreSQL：`localhost:5432`
+- PostgreSQL：`localhost:5433`（可通过 `POSTGRES_PORT` 覆盖）
 
 5. 停止并清理：
 
@@ -124,4 +124,4 @@ npm run lint:web
 说明：
 - `NEXT_PUBLIC_API_BASE_URL` 在 Next.js 中是构建期注入；如果修改该值，需要重新执行 `docker compose up --build`。
 - 若使用 Docker Compose，默认 `DATABASE_URL` 指向容器内 `db` 服务（PostgreSQL）。
-- 默认镜像源已配置为 `docker.m.daocloud.io`，如你网络环境可直连 Docker Hub，可在 `.env` 中覆盖 `POSTGRES_IMAGE / PYTHON_BASE_IMAGE / NODE_BASE_IMAGE`。
+- 默认镜像源已配置为 `docker.m.daocloud.io`，并默认使用 `pgvector` 镜像；如你网络环境可直连 Docker Hub，可在 `.env` 中覆盖 `POSTGRES_IMAGE / PYTHON_BASE_IMAGE / NODE_BASE_IMAGE`。

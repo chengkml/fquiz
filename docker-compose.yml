@@ -1,13 +1,13 @@
 services:
   db:
-    image: ${POSTGRES_IMAGE:-docker.m.daocloud.io/library/postgres:16-alpine}
+    image: ${POSTGRES_IMAGE:-docker.m.daocloud.io/pgvector/pgvector:pg16}
     container_name: fquiz-db
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-fquiz}
       POSTGRES_USER: ${POSTGRES_USER:-fquiz}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fquiz}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - fquiz_db_data:/var/lib/postgresql/data
     healthcheck:
