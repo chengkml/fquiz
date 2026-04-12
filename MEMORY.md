@@ -21,3 +21,21 @@
 - 路由规则类型固定为：`GLOBAL/CAPABILITY/BUSINESS/AGENT`；其中 `GLOBAL` 保留 key 为 `__global__`。
 - 模型删除前必须做引用检查（至少检查路由规则引用）；`ENABLED` 状态禁止直接删除。
 - 密钥默认只保留 hash + masked + fingerprint，不通过 API 返回明文。
+
+## 文件管理口径（2026-04-12）
+
+- 文件管理一期采用三层模型：
+  - `file_storage_backends`（后端定义：VFS/S3）
+  - `file_storage_mounts`（挂载点）
+  - `file_index_entries`（目录索引快照）
+- 后台 API 入口统一在 `/api/v1/admin/files` 前缀，权限码为：
+  - `file.read`：浏览挂载点和目录列表
+  - `file.manage`：创建目录、删除路径
+- 存储驱动抽象位于 `api/app/services/storage_driver.py`，VFS/S3 必须通过同一工厂分发，避免业务层直接耦合具体存储 SDK。
+- VFS 默认根目录由 `FILE_VFS_ROOT` 控制（默认 `./data/vfs`）。
+
+## 启动与部署稳定性口径（2026-04-12）
+
+- SQLAlchemy 关联加载选项（`selectinload/joinedload`）避免在模块导入期以全局常量初始化，优先在函数内惰性构建，防止导入顺序导致 mapper 提前配置失败。
+- `app.models` 包初始化需预加载全部模型模块，确保字符串关系（如 `"AuditLog"`）在启动阶段可解析。
+- 部署 compose 中 DB 镜像应通过 `POSTGRES_IMAGE` 可配置，默认使用镜像站（`docker.m.daocloud.io/library/postgres:16-alpine`）以降低 Docker Hub 网络抖动风险。

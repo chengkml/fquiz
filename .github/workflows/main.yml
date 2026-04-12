@@ -123,7 +123,7 @@ jobs:
             cat > docker-compose.prod.yml <<'YAML'
             services:
               db:
-                image: postgres:16-alpine
+                image: ${POSTGRES_IMAGE:-docker.m.daocloud.io/library/postgres:16-alpine}
                 container_name: fquiz-db
                 environment:
                   POSTGRES_DB: ${POSTGRES_DB:-fquiz}
@@ -205,6 +205,7 @@ jobs:
             POSTGRES_DB=fquiz
             POSTGRES_USER=fquiz
             POSTGRES_PASSWORD=fquiz
+            POSTGRES_IMAGE=docker.m.daocloud.io/library/postgres:16-alpine
             ENV
               echo "[warn] .env 不存在，已写入默认模板，请尽快改成生产配置。"
             fi
