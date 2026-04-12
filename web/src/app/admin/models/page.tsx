@@ -8,6 +8,7 @@ import { useAuth } from "@/components/auth-provider";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type {
+  ModelHealthStatus,
   ModelListResponse,
   ModelRegistryItem,
   ModelRouteRuleListResponse,
@@ -17,14 +18,35 @@ import type {
 } from "@/types/auth";
 
 const MODEL_STATUS_OPTIONS: ModelStatus[] = ["DRAFT", "ENABLED", "DISABLED", "DEPRECATED"];
+const MODEL_STATUS_LABELS: Record<ModelStatus, string> = {
+  DRAFT: "草稿",
+  ENABLED: "已启用",
+  DISABLED: "已停用",
+  DEPRECATED: "已废弃",
+};
 const MODEL_STATUS_TRANSITIONS: Record<ModelStatus, ModelStatus[]> = {
   DRAFT: ["ENABLED", "DISABLED", "DEPRECATED"],
   ENABLED: ["DISABLED", "DEPRECATED"],
   DISABLED: ["ENABLED", "DEPRECATED"],
   DEPRECATED: ["DISABLED"],
 };
+const HEALTH_STATUS_LABELS: Record<ModelHealthStatus, string> = {
+  HEALTHY: "健康",
+  DEGRADED: "退化",
+  UNHEALTHY: "不健康",
+};
 const ROUTE_TYPE_OPTIONS: ModelRouteType[] = ["GLOBAL", "CAPABILITY", "BUSINESS", "AGENT"];
 const GLOBAL_ROUTE_KEY = "__global__";
+const PROVIDER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "openai", label: "OpenAI" },
+  { value: "anthropic", label: "Anthropic" },
+  { value: "google", label: "Google" },
+  { value: "deepseek", label: "DeepSeek" },
+  { value: "qwen", label: "Qwen" },
+  { value: "grok", label: "Grok" },
+  { value: "azure-openai", label: "Azure OpenAI" },
+  { value: "other", label: "其他" },
+];
 
 const EMPTY_MODEL_FORM = {
   code: "",
@@ -59,6 +81,15 @@ function parseCapabilities(value: string): string[] {
 function formatPercent(value: number | null): string {
   if (value === null || Number.isNaN(value)) return "-";
   return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatModelStatus(status: ModelStatus): string {
+  return `${MODEL_STATUS_LABELS[status]}（${status}）`;
+}
+
+function formatHealthStatus(status: ModelHealthStatus | null): string {
+  if (!status) return "-";
+  return `${HEALTH_STATUS_LABELS[status]}（${status}）`;
 }
 
 async function invalidateModelQueries(
@@ -425,6 +456,17 @@ export default function AdminModelsPage() {
     return (modelsQuery.data?.items ?? []).map((item) => item.code);
   }, [modelsQuery.data?.items]);
 
+  const providerOptions = useMemo(() => {
+    const currentProvider = modelForm.provider.trim().toLowerCase();
+    if (!currentProvider) {
+      return PROVIDER_OPTIONS;
+    }
+    if (PROVIDER_OPTIONS.some((item) => item.value === currentProvider)) {
+      return PROVIDER_OPTIONS;
+    }
+    return [{ value: currentProvider, label: `${currentProvider}（当前）` }, ...PROVIDER_OPTIONS];
+  }, [modelForm.provider]);
+
   const summary = summaryQuery.data;
   const models = modelsQuery.data?.items ?? [];
   const routes = routesQuery.data?.items ?? [];
@@ -473,7 +515,7 @@ export default function AdminModelsPage() {
         <div className="surface-card">
           <p className="text-sm text-muted">模型总数</p>
           <p className="mt-2 text-3xl font-semibold">{summary?.total_models ?? 0}</p>
-          <p className="mt-2 text-xs text-muted">ENABLED: {summary?.status_counts.ENABLED ?? 0}</p>
+          <p className="mt-2 text-xs text-muted">已启用: {summary?.status_counts.ENABLED ?? 0}</p>
         </div>
         <div className="surface-card">
           <p className="text-sm text-muted">路由规则</p>
@@ -512,7 +554,7 @@ export default function AdminModelsPage() {
             >
               <option value="">全部状态</option>
               {MODEL_STATUS_OPTIONS.map((item) => (
-                <option key={item} value={item}>{item}</option>
+                <option key={item} value={item}>{formatModelStatus(item)}</option>
               ))}
             </select>
           </div>
@@ -545,7 +587,7 @@ export default function AdminModelsPage() {
                     <p className="mt-1 font-mono text-xs text-muted">{model.provider_model}</p>
                   </td>
                   <td className="px-4 py-3">
-                    <p>{model.status}</p>
+                    <p>{formatModelStatus(model.status)}</p>
                     <p className="mt-1 text-xs text-muted">{model.capabilities.join(", ") || "-"}</p>
                   </td>
                   <td className="px-4 py-3 text-xs">
@@ -553,7 +595,7 @@ export default function AdminModelsPage() {
                     <p className="mt-1 text-muted">v{model.active_key_version ?? "-"}</p>
                   </td>
                   <td className="px-4 py-3 text-xs">
-                    <p>{model.latest_health_status ?? "-"}</p>
+                    <p>{formatHealthStatus(model.latest_health_status)}</p>
                     <p className="mt-1 text-muted">{model.latest_health_at ? new Date(model.latest_health_at).toLocaleString() : "-"}</p>
                   </td>
                   <td className="px-4 py-3 text-xs">
@@ -613,7 +655,7 @@ export default function AdminModelsPage() {
                             disabled={transitionMutation.isPending}
                           >
                             {"-> "}
-                            {nextStatus}
+                            {formatModelStatus(nextStatus)}
                           </button>
                         ))}
                         {model.status !== "ENABLED" && (
@@ -683,11 +725,15 @@ export default function AdminModelsPage() {
             </label>
             <label className="space-y-2 text-sm">
               <span>Provider</span>
-              <input
+              <select
                 value={modelForm.provider}
                 onChange={(event) => setModelForm((prev) => ({ ...prev, provider: event.target.value }))}
                 className="control w-full"
-              />
+              >
+                {providerOptions.map((item) => (
+                  <option key={item.value} value={item.value}>{item.label}</option>
+                ))}
+              </select>
             </label>
             <label className="space-y-2 text-sm">
               <span>Provider Model</span>
@@ -707,7 +753,7 @@ export default function AdminModelsPage() {
                 className="control w-full"
               >
                 {MODEL_STATUS_OPTIONS.map((item) => (
-                  <option key={item} value={item}>{item}</option>
+                  <option key={item} value={item}>{formatModelStatus(item)}</option>
                 ))}
               </select>
             </label>
@@ -790,7 +836,7 @@ export default function AdminModelsPage() {
                   <td className="px-4 py-3 font-mono text-xs">{route.route_key}</td>
                   <td className="px-4 py-3 font-mono text-xs">{route.target_model_code}</td>
                   <td className="px-4 py-3">{route.priority}</td>
-                  <td className="px-4 py-3">{route.enabled ? "enabled" : "disabled"}</td>
+                  <td className="px-4 py-3">{route.enabled ? "启用" : "停用"}</td>
                   {canManage && (
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
