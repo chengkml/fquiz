@@ -124,4 +124,8 @@ npm run lint:web
 说明：
 - `NEXT_PUBLIC_API_BASE_URL` 在 Next.js 中是构建期注入；如果修改该值，需要重新执行 `docker compose up --build`。
 - 若使用 Docker Compose，默认 `DATABASE_URL` 指向容器内 `db` 服务（PostgreSQL）。
+- 若出现跨域（CORS）错误，请在 `.env` 配置：
+  - `API_CORS_ORIGINS`：精确来源列表（逗号分隔），如 `https://admin.example.com,http://localhost:3000`
+  - `API_CORS_ORIGIN_REGEX`：来源正则（可选），如 `https://.*\\.example\\.com`
+  - 支持在 `API_CORS_ORIGINS` 中使用通配符（如 `https://*.example.com`）或 `*`（仅建议开发调试）
 - 默认镜像源已配置为 `docker.m.daocloud.io`，并默认使用 `pgvector` 镜像；如你网络环境可直连 Docker Hub，可在 `.env` 中覆盖 `POSTGRES_IMAGE / PYTHON_BASE_IMAGE / NODE_BASE_IMAGE`。

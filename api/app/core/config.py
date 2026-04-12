@@ -1,4 +1,5 @@
 from functools import lru_cache
+import re
 from typing import Literal
 
 from pydantic import field_validator
@@ -11,6 +12,7 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     api_cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    api_cors_origin_regex: str | None = None
 
     database_url: str = "sqlite:///./fquiz.db"
     file_vfs_root: str = "./data/vfs"
@@ -45,11 +47,38 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> list[str]:
-        return [
-            origin.strip()
-            for origin in self.api_cors_origins.split(",")
-            if origin.strip()
-        ]
+        origins: list[str] = []
+        for origin in self.api_cors_origins.split(","):
+            normalized = origin.strip()
+            if not normalized:
+                continue
+            if normalized == "*" or "*" in normalized:
+                continue
+            origins.append(normalized)
+        return origins
+
+    @property
+    def cors_origin_regex(self) -> str | None:
+        regex_parts: list[str] = []
+        for origin in self.api_cors_origins.split(","):
+            normalized = origin.strip()
+            if not normalized:
+                continue
+            if normalized == "*":
+                regex_parts.append(".*")
+                continue
+            if "*" in normalized:
+                wildcard_regex = re.escape(normalized).replace(r"\*", ".*")
+                regex_parts.append(f"^{wildcard_regex}$")
+
+        if self.api_cors_origin_regex:
+            normalized = self.api_cors_origin_regex.strip()
+            if normalized:
+                regex_parts.append(normalized)
+
+        if not regex_parts:
+            return None
+        return "|".join(f"(?:{part})" for part in regex_parts)
 
 
 @lru_cache
