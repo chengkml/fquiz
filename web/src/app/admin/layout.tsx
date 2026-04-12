@@ -91,7 +91,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="absolute right-[-6rem] top-20 h-96 w-96 rounded-full bg-sky-300/30 blur-3xl" />
       </div>
 
-      <div className="relative mx-auto grid min-h-screen w-full max-w-[1360px] grid-cols-1 gap-0 md:grid-cols-[280px_minmax(0,1fr)]">
+      <div className="relative mx-auto grid min-h-screen w-full max-w-[1760px] grid-cols-1 gap-0 px-3 sm:px-4 xl:px-6 md:grid-cols-[280px_minmax(0,1fr)]">
         <aside className="border-r border-[var(--border)] bg-white/70 p-6 backdrop-blur-xl md:sticky md:top-0 md:h-screen md:overflow-y-auto">
           <div className="mb-8">
             <Link href="/" className="text-xl font-bold tracking-tight text-slate-900">fquiz admin</Link>
@@ -140,7 +140,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </aside>
 
-        <main className="p-6 md:p-8">
+        <main className="p-4 md:p-6">
           <div className="surface-card mb-6 flex items-center justify-between gap-4 bg-gradient-to-br from-white/95 via-cyan-50/65 to-sky-50/80">
             <div>
               <p className="text-sm text-muted">后台管理</p>

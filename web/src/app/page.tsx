@@ -1,13 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { API_BASE_URL, readApiError } from "@/lib/api";
 
 type Mode = "login" | "register";
 type PingResponse = { message: string };
+
+type RememberedCredentials = {
+  email: string;
+  password: string;
+};
+
+const REMEMBER_CREDENTIALS_KEY = "fquiz.remembered_credentials";
 
 export default function Home() {
   const { user, initializing, login, register, logout, hasPermission } = useAuth();
@@ -16,14 +23,29 @@ export default function Home() {
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberPassword, setRememberPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [pingResult, setPingResult] = useState<PingResponse | null>(null);
 
-  const title = useMemo(
-    () => (mode === "login" ? "登录账号" : "注册新账号"),
-    [mode],
-  );
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(REMEMBER_CREDENTIALS_KEY);
+      if (!raw) {
+        return;
+      }
+      const saved = JSON.parse(raw) as Partial<RememberedCredentials>;
+      if (typeof saved.email === "string") {
+        setEmail(saved.email);
+      }
+      if (typeof saved.password === "string") {
+        setPassword(saved.password);
+        setRememberPassword(true);
+      }
+    } catch {
+      window.localStorage.removeItem(REMEMBER_CREDENTIALS_KEY);
+    }
+  }, []);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -32,6 +54,15 @@ export default function Home() {
     try {
       if (mode === "login") {
         await login(email, password);
+        if (rememberPassword) {
+          const credentials: RememberedCredentials = { email, password };
+          window.localStorage.setItem(
+            REMEMBER_CREDENTIALS_KEY,
+            JSON.stringify(credentials),
+          );
+        } else {
+          window.localStorage.removeItem(REMEMBER_CREDENTIALS_KEY);
+        }
       } else {
         await register(email, username, password);
       }
@@ -156,11 +187,14 @@ export default function Home() {
           </div>
 
           <form className="space-y-3" onSubmit={handleSubmit}>
-            <h2 className="text-base font-medium">{title}</h2>
+            <h2 className="text-base font-medium">
+              {mode === "login" ? "登录" : "注册"}
+            </h2>
             <input
               className="control w-full"
               placeholder="Email"
               type="email"
+              autoComplete="username"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               required
@@ -181,12 +215,23 @@ export default function Home() {
               className="control w-full"
               placeholder="Password (>= 8 chars)"
               type="password"
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               minLength={8}
               maxLength={128}
               required
             />
+            {mode === "login" && (
+              <label className="flex items-center gap-2 text-sm text-muted">
+                <input
+                  type="checkbox"
+                  checked={rememberPassword}
+                  onChange={(event) => setRememberPassword(event.target.checked)}
+                />
+                记住密码
+              </label>
+            )}
             <button
               className="btn-primary"
               disabled={busy}
