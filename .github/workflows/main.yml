@@ -53,6 +53,9 @@ jobs:
           context: ./api
           file: ./api/Dockerfile
           push: true
+          build-args: |
+            PIP_INDEX_URL=${{ secrets.PIP_INDEX_URL || vars.PIP_INDEX_URL || 'https://pypi.org/simple' }}
+            PIP_DEFAULT_TIMEOUT=${{ vars.PIP_DEFAULT_TIMEOUT || '120' }}
           tags: |
             ${{ steps.vars.outputs.api_image }}:${{ steps.vars.outputs.image_tag }}
             ${{ steps.vars.outputs.api_image }}:latest
@@ -109,7 +112,6 @@ jobs:
           port: ${{ secrets.SERVER_PORT || vars.SERVER_PORT || 22 }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           password: ${{ secrets.SERVER_PASSWORD }}
-          script_stop: true
           envs: DEPLOY_PATH,API_IMAGE,WEB_IMAGE,IMAGE_TAG,NEXT_PUBLIC_API_BASE_URL,GHCR_USERNAME,GHCR_TOKEN
           script: |
             set -euo pipefail

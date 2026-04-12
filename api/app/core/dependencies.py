@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from collections.abc import Callable
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -69,5 +70,21 @@ def require_permission(permission_code: str):
                 detail=f"Missing permission: {permission_code}",
             )
         return current_user
+
+    return dependency
+
+
+def require_any_permission(*permission_codes: str) -> Callable[[CurrentUser], CurrentUser]:
+    required = tuple(dict.fromkeys(permission_codes))
+
+    def dependency(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+        if "admin" in current_user.role_codes:
+            return current_user
+        if any(code in current_user.permission_codes for code in required):
+            return current_user
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Missing any permission: {', '.join(required)}",
+        )
 
     return dependency

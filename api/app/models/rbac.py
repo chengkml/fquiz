@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..core.database import Base
 
 if TYPE_CHECKING:
+    from .menu import Menu
     from .user import User
 
 
@@ -27,6 +28,12 @@ class Role(Base):
     permissions: Mapped[list[Permission]] = relationship(
         "Permission",
         secondary="role_permissions",
+        back_populates="roles",
+        lazy="selectin",
+    )
+    menus: Mapped[list[Menu]] = relationship(
+        "Menu",
+        secondary="role_menus",
         back_populates="roles",
         lazy="selectin",
     )
