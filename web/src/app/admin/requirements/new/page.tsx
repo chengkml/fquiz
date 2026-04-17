@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { Button, Select, TextArea, TextField } from "@radix-ui/themes";
 import { readApiError } from "@/lib/api";
 import type { RequirementPriority, RequirementStatus, UserListResponse } from "@/types/auth";
 
@@ -18,6 +19,7 @@ const STATUS_OPTIONS: RequirementStatus[] = [
   "CANCELLED",
 ];
 const PRIORITY_OPTIONS: RequirementPriority[] = ["low", "medium", "high", "urgent"];
+const UNASSIGNED_OPTION = "__unassigned__";
 
 export default function RequirementCreatePage() {
   const router = useRouter();
@@ -119,75 +121,95 @@ export default function RequirementCreatePage() {
         <div className="grid gap-4 md:grid-cols-2">
           <label className="space-y-2 text-sm md:col-span-2">
             <span>标题</span>
-            <input
+            <TextField.Root
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              className="control w-full"
+              className="w-full"
             />
           </label>
 
           <label className="space-y-2 text-sm md:col-span-2">
             <span>描述</span>
-            <textarea
+            <TextArea
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               rows={8}
-              className="control w-full"
+              className="w-full"
             />
           </label>
 
           <label className="space-y-2 text-sm">
             <span>状态</span>
-            <select value={status} onChange={(event) => setStatus(event.target.value as RequirementStatus)} className="control w-full">
-              {STATUS_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
+            <Select.Root value={status} onValueChange={(value: string) => setStatus(value as RequirementStatus)}>
+              <Select.Trigger className="w-full" />
+              <Select.Content>
+                {STATUS_OPTIONS.map((item) => (
+                  <Select.Item key={item} value={item}>
+                    {item}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
           </label>
 
           <label className="space-y-2 text-sm">
             <span>优先级</span>
-            <select value={priority} onChange={(event) => setPriority(event.target.value as RequirementPriority)} className="control w-full">
-              {PRIORITY_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
+            <Select.Root value={priority} onValueChange={(value: string) => setPriority(value as RequirementPriority)}>
+              <Select.Trigger className="w-full" />
+              <Select.Content>
+                {PRIORITY_OPTIONS.map((item) => (
+                  <Select.Item key={item} value={item}>
+                    {item}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
           </label>
 
           <label className="space-y-2 text-sm">
             <span>项目</span>
-            <input value={projectName} onChange={(event) => setProjectName(event.target.value)} className="control w-full" />
+            <TextField.Root value={projectName} onChange={(event) => setProjectName(event.target.value)} className="w-full" />
           </label>
 
           <label className="space-y-2 text-sm">
             <span>模块</span>
-            <input value={moduleName} onChange={(event) => setModuleName(event.target.value)} className="control w-full" />
+            <TextField.Root value={moduleName} onChange={(event) => setModuleName(event.target.value)} className="w-full" />
           </label>
 
           <label className="space-y-2 text-sm">
             <span>来源</span>
-            <input value={source} onChange={(event) => setSource(event.target.value)} className="control w-full" />
+            <TextField.Root value={source} onChange={(event) => setSource(event.target.value)} className="w-full" />
           </label>
 
           <label className="space-y-2 text-sm">
             <span>指派人</span>
-            <select value={assigneeUserId} onChange={(event) => setAssigneeUserId(event.target.value)} disabled={!canManageUsers} className="control w-full">
-              <option value="">暂不指派</option>
-              {users.map((item) => <option key={item.id} value={item.id}>{item.username}</option>)}
-            </select>
+            <Select.Root
+              value={assigneeUserId || UNASSIGNED_OPTION}
+              onValueChange={(value: string) => setAssigneeUserId(value === UNASSIGNED_OPTION ? "" : value)}
+              disabled={!canManageUsers}
+            >
+              <Select.Trigger className="w-full" />
+              <Select.Content>
+                <Select.Item value={UNASSIGNED_OPTION}>暂不指派</Select.Item>
+                {users.map((item) => (
+                  <Select.Item key={item.id} value={item.id}>
+                    {item.username}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
           </label>
 
           <label className="space-y-2 text-sm">
             <span>截止时间</span>
-            <input type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} className="control w-full" />
+            <TextField.Root type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} className="w-full" />
           </label>
         </div>
 
         <div className="mt-4">
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => createMutation.mutate()}
-            disabled={createMutation.isPending || !title.trim()}
-          >
+          <Button type="button" onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !title.trim()}>
             {createMutation.isPending ? "创建中..." : "创建需求"}
-          </button>
+          </Button>
         </div>
       </section>
     </div>

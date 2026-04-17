@@ -1,4 +1,5 @@
 from functools import lru_cache
+import json
 import re
 from typing import Literal
 
@@ -26,6 +27,11 @@ class Settings(BaseSettings):
     refresh_cookie_secure: bool = False
     refresh_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
 
+    llm_provider_api_keys: str = ""
+    llm_request_timeout_seconds: int = 60
+    chat_context_message_limit: int = 12
+    chat_default_system_prompt: str = "You are a helpful assistant."
+
     initial_admin_email: str | None = None
     initial_admin_username: str = "admin"
     initial_admin_password: str | None = None
@@ -37,7 +43,12 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    @field_validator("access_token_expire_minutes", "refresh_token_expire_days")
+    @field_validator(
+        "access_token_expire_minutes",
+        "refresh_token_expire_days",
+        "llm_request_timeout_seconds",
+        "chat_context_message_limit",
+    )
     @classmethod
     def validate_positive_numbers(cls, value: int) -> int:
         if value <= 0:
@@ -79,6 +90,41 @@ class Settings(BaseSettings):
         if not regex_parts:
             return None
         return "|".join(f"(?:{part})" for part in regex_parts)
+
+    @property
+    def llm_provider_key_map(self) -> dict[str, str]:
+        raw = self.llm_provider_api_keys.strip()
+        if not raw:
+            return {}
+
+        if raw.startswith("{"):
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                return {}
+            if not isinstance(data, dict):
+                return {}
+            normalized: dict[str, str] = {}
+            for provider, value in data.items():
+                if not isinstance(provider, str) or not isinstance(value, str):
+                    continue
+                provider_key = provider.strip().lower()
+                secret = value.strip()
+                if provider_key and secret:
+                    normalized[provider_key] = secret
+            return normalized
+
+        mapping: dict[str, str] = {}
+        for token in re.split(r"[,\n;]+", raw):
+            pair = token.strip()
+            if not pair or "=" not in pair:
+                continue
+            provider, value = pair.split("=", 1)
+            provider_key = provider.strip().lower()
+            secret = value.strip()
+            if provider_key and secret:
+                mapping[provider_key] = secret
+        return mapping
 
 
 @lru_cache

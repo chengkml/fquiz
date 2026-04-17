@@ -12,3 +12,4 @@ argon2-cffi==23.1.0
 email-validator==2.3.0
 python-multipart==0.0.20
 boto3==1.40.59
+httpx==0.28.1

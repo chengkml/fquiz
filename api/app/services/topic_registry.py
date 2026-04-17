@@ -23,6 +23,7 @@ TOPIC_RULES: dict[str, TopicRule] = {
     "admin.menus": TopicRule(any_permission_codes={"menu.read", "menu.manage"}),
     "admin.files": TopicRule(any_permission_codes={"file.read", "file.manage"}),
     "requirements": TopicRule(any_permission_codes={"requirement.read", "requirement.process", "requirement.manage"}),
+    "todos": TopicRule(any_permission_codes={"todo.read", "todo.process", "todo.manage"}),
 }
 
 

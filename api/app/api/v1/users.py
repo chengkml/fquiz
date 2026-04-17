@@ -3,16 +3,42 @@ from sqlalchemy.orm import Session
 
 from ...core.database import get_db
 from ...core.dependencies import CurrentUser, get_current_user, require_permission
-from ...schemas.user import UserListResponse, UserPublic, UserRoleUpdateRequest, UserUpdateRequest
+from ...schemas.auth import MessageResponse
+from ...schemas.user import (
+    UserCreateRequest,
+    UserListResponse,
+    UserPasswordResetRequest,
+    UserPublic,
+    UserRoleUpdateRequest,
+    UserUpdateRequest,
+)
 from ...services.user_service import (
+    create_user,
+    delete_user,
     get_user_by_id,
     list_users,
+    reset_user_password,
     serialize_user,
     set_user_roles,
     update_user,
 )
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+@router.post("", response_model=UserPublic)
+def create_user_account(
+    payload: UserCreateRequest,
+    _: CurrentUser = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+) -> UserPublic:
+    created = create_user(db, payload)
+    if not created:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User id/email/username already exists or default role missing",
+        )
+    return created
 
 
 @router.get("", response_model=UserListResponse)
@@ -58,6 +84,31 @@ def update_user_profile(
             detail="User not found or username exists",
         )
     return updated
+
+
+@router.post("/{user_id}/password", response_model=UserPublic)
+def reset_password(
+    user_id: str,
+    payload: UserPasswordResetRequest,
+    _: CurrentUser = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+) -> UserPublic:
+    updated = reset_user_password(db, user_id, payload)
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return updated
+
+
+@router.delete("/{user_id}", response_model=MessageResponse)
+def remove_user(
+    user_id: str,
+    _: CurrentUser = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    deleted = delete_user(db, user_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return MessageResponse(message="User deleted")
 
 
 @router.post("/{user_id}/roles", response_model=UserPublic)

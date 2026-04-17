@@ -22,10 +22,15 @@ DEFAULT_PERMISSIONS: dict[str, str] = {
     "model.manage": "Manage model registry, routes, keys, and health checks",
     "file.read": "Read file mounts and indexed entries",
     "file.manage": "Manage file operations and storage sync",
+    "chat.use": "Use AI chat feature",
     "requirement.read": "Read requirements",
     "requirement.create": "Create requirements",
     "requirement.process": "Process requirements",
     "requirement.manage": "Manage all requirements",
+    "todo.read": "Read todos",
+    "todo.create": "Create todos",
+    "todo.process": "Process todos",
+    "todo.manage": "Manage all todos",
 }
 
 DEFAULT_ROLES: dict[str, dict[str, object]] = {
@@ -43,10 +48,15 @@ DEFAULT_ROLES: dict[str, dict[str, object]] = {
             "model.manage",
             "file.read",
             "file.manage",
+            "chat.use",
             "requirement.read",
             "requirement.create",
             "requirement.process",
             "requirement.manage",
+            "todo.read",
+            "todo.create",
+            "todo.process",
+            "todo.manage",
         ],
     },
     "user": {
@@ -135,6 +145,32 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "permission_code": "requirement.read",
     },
     {
+        "code": "admin.todos",
+        "name": "待办管理",
+        "path": "/admin/todos",
+        "icon": "ListTodo",
+        "parent_code": None,
+        "type": "menu",
+        "sort_order": 52,
+        "status": "enabled",
+        "visible": True,
+        "cacheable": False,
+        "permission_code": "todo.read",
+    },
+    {
+        "code": "admin.chat",
+        "name": "AI 聊天",
+        "path": "/admin/chat",
+        "icon": "MessagesSquare",
+        "parent_code": None,
+        "type": "menu",
+        "sort_order": 57,
+        "status": "enabled",
+        "visible": True,
+        "cacheable": False,
+        "permission_code": "chat.use",
+    },
+    {
         "code": "admin.models",
         "name": "模型管理",
         "path": "/admin/models",
@@ -150,7 +186,7 @@ DEFAULT_MENUS: list[dict[str, object]] = [
 ]
 
 ROLE_MENU_BINDINGS: dict[str, list[str]] = {
-    "admin": ["dashboard", "admin.users", "admin.roles", "admin.menus", "admin.files", "admin.requirements", "admin.models"],
+    "admin": ["dashboard", "admin.users", "admin.roles", "admin.menus", "admin.files", "admin.requirements", "admin.todos", "admin.chat", "admin.models"],
     "user": ["dashboard"],
 }
 

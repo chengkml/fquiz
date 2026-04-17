@@ -303,7 +303,7 @@ def update_menu(db: Session, menu_id: int, payload: MenuUpdateRequest) -> MenuPu
 
 def delete_menu(db: Session, menu_id: int) -> bool:
     menu = get_menu_by_id(db, menu_id)
-    if not menu or menu.code in {"dashboard", "admin.users", "admin.roles", "admin.menus", "admin.files", "admin.requirements", "admin.models"}:
+    if not menu or menu.code in {"dashboard", "admin.users", "admin.roles", "admin.menus", "admin.files", "admin.requirements", "admin.chat", "admin.models"}:
         return False
     child_exists = db.scalar(select(Menu.id).where(Menu.parent_id == menu_id))
     if child_exists is not None:

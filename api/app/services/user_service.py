@@ -9,8 +9,15 @@ from ..models.auth_session import AuthSession
 from ..models.base import utcnow
 from ..models.rbac import Role
 from ..models.user import User
-from ..schemas.user import UserListResponse, UserPublic, UserRoleUpdateRequest, UserUpdateRequest
-from .push_service import publish_to_user, publish_topic
+from ..schemas.user import (
+    UserCreateRequest,
+    UserListResponse,
+    UserPasswordResetRequest,
+    UserPublic,
+    UserRoleUpdateRequest,
+    UserUpdateRequest,
+)
+from ..core.security import hash_password
 from .ws_manager import ws_connection_manager
 
 
@@ -38,6 +45,114 @@ def get_user_by_id(db: Session, user_id: str) -> User | None:
 def get_user_by_email(db: Session, email: str) -> User | None:
     stmt = _user_with_rbac_stmt().where(User.email == email)
     return db.execute(stmt).unique().scalar_one_or_none()
+
+
+def get_user_by_username(db: Session, username: str) -> User | None:
+    stmt = _user_with_rbac_stmt().where(User.username == username)
+    return db.execute(stmt).unique().scalar_one_or_none()
+
+
+def create_user(
+    db: Session,
+    payload: UserCreateRequest,
+) -> UserPublic | None:
+    user_id = payload.user_id.strip()
+
+    duplicate = db.scalar(
+        select(User.id).where(
+            (User.id == user_id) | (User.email == payload.email.lower()) | (User.username == payload.username)
+        )
+    )
+    if duplicate:
+        return None
+
+    role = db.scalar(select(Role).where(Role.code == "user"))
+    if not role:
+        return None
+
+    user = User(
+        id=user_id,
+        email=payload.email.lower(),
+        username=payload.username,
+        password_hash=hash_password(payload.password),
+        status="active",
+    )
+    user.roles.append(role)
+
+    db.add(user)
+    db.commit()
+
+    created = get_user_by_id(db, user_id)
+    if created:
+        queue_user_auth_refresh(created)
+        _fire_and_forget(
+            publish_topic(
+                "admin.users",
+                name="users.changed",
+                payload={"action": "created", "user_id": created.id},
+                requires_refetch=["/api/v1/users"],
+                dedupe_key=f"users:created:{created.id}",
+            )
+        )
+    return serialize_user(created) if created else None
+
+
+def delete_user(db: Session, user_id: str) -> bool:
+    user = get_user_by_id(db, user_id)
+    if not user:
+        return False
+
+    revoke_active_sessions_for_user(db, user_id)
+    db.delete(user)
+    db.commit()
+
+    _fire_and_forget(
+        publish_topic(
+            "admin.users",
+            name="users.changed",
+            payload={"action": "deleted", "user_id": user_id},
+            requires_refetch=["/api/v1/users"],
+            dedupe_key=f"users:deleted:{user_id}",
+        )
+    )
+    return True
+
+
+def reset_user_password(
+    db: Session,
+    user_id: str,
+    payload: UserPasswordResetRequest,
+) -> UserPublic | None:
+    user = get_user_by_id(db, user_id)
+    if not user:
+        return None
+
+    user.password_hash = hash_password(payload.new_password)
+    revoke_active_sessions_for_user(db, user_id)
+    db.commit()
+
+    updated = get_user_by_id(db, user_id)
+    if updated:
+        _fire_and_forget(
+            publish_to_user(
+                updated.id,
+                topic="auth",
+                name="auth.password_reset",
+                payload={"user_id": updated.id},
+                requires_refetch=["/api/v1/auth/me"],
+                dedupe_key=f"auth:password_reset:{updated.id}",
+            )
+        )
+        _fire_and_forget(
+            publish_topic(
+                "admin.users",
+                name="users.changed",
+                payload={"action": "password_reset", "user_id": updated.id},
+                requires_refetch=["/api/v1/users"],
+                dedupe_key=f"users:password_reset:{updated.id}",
+            )
+        )
+    return serialize_user(updated) if updated else None
 
 
 def update_user(

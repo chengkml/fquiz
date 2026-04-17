@@ -30,10 +30,22 @@ const CARDS = [
     visible: (hasPermission: (code: string) => boolean) => hasPermission("file.read") || hasPermission("file.manage"),
   },
   {
+    href: "/admin/chat",
+    title: "AI 聊天",
+    description: "基于模型路由规则发起多轮对话并保留会话记录。",
+    visible: (hasPermission: (code: string) => boolean) => hasPermission("chat.use"),
+  },
+  {
     href: "/admin/requirements",
     title: "需求管理",
     description: "查看需求列表、流转处理、评论协作和操作留痕。",
     visible: (hasPermission: (code: string) => boolean) => hasPermission("requirement.read"),
+  },
+  {
+    href: "/admin/todos",
+    title: "待办管理",
+    description: "基于 HeroUI 快速维护待办事项、状态流转与执行节奏。",
+    visible: (hasPermission: (code: string) => boolean) => hasPermission("todo.read"),
   },
   {
     href: "/admin/models",
@@ -61,12 +73,12 @@ export default function AdminHomePage() {
         <Link
           key={item.href}
           href={item.href}
-          className="surface-card group relative overflow-hidden transition hover:-translate-y-0.5 hover:border-cyan-200"
+          className="surface-card group relative overflow-hidden transition hover:-translate-y-0.5 hover:border-indigo-200"
         >
-          <div className="pointer-events-none absolute -right-10 -top-10 h-24 w-24 rounded-full bg-cyan-200/40 blur-xl transition group-hover:bg-cyan-300/45" />
+          <div className="pointer-events-none absolute -right-10 -top-10 h-24 w-24 rounded-full bg-indigo-200/40 blur-xl transition group-hover:bg-indigo-300/45" />
           <h2 className="text-lg font-semibold text-slate-900">{item.title}</h2>
           <p className="mt-2 text-sm text-muted">{item.description}</p>
-          <p className="mt-5 inline-flex items-center text-xs font-medium text-cyan-700">
+          <p className="mt-5 inline-flex items-center text-xs font-medium text-indigo-700">
             查看模块
           </p>
         </Link>

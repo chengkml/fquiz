@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/auth-provider";
+import { Select, TextField } from "@radix-ui/themes";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { MenuItem, MenuListResponse } from "@/types/auth";
@@ -23,6 +24,20 @@ const EMPTY_FORM = {
   permission_code: "",
 };
 
+type SortKey = "sort_order" | "id" | "name";
+
+type SortOption = {
+  key: SortKey;
+  label: string;
+};
+
+const SORT_OPTIONS: SortOption[] = [
+  { key: "sort_order", label: "按排序值" },
+  { key: "id", label: "按 ID" },
+  { key: "name", label: "按名称" },
+];
+const NO_PARENT_OPTION = "__no_parent__";
+
 export default function AdminMenusPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const [menus, setMenus] = useState<MenuItem[]>([]);
@@ -32,11 +47,58 @@ export default function AdminMenusPage() {
   const [success, setSuccess] = useState("");
   const [editingMenuId, setEditingMenuId] = useState<number | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [keyword, setKeyword] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "enabled" | "disabled">("all");
+  const [sortKey, setSortKey] = useState<SortKey>("sort_order");
 
   const canRead = hasPermission("menu.read") || hasPermission("menu.manage");
   const canManage = hasPermission("menu.manage");
   const protectedMenuCodes = new Set(["dashboard", "admin.users", "admin.roles", "admin.menus", "admin.files", "admin.requirements", "admin.models"]);
   const parentOptions = useMemo(() => menus.map((menu) => ({ id: menu.id, label: `${menu.name} (${menu.code})` })), [menus]);
+
+  const menuNameById = useMemo(() => {
+    const map = new Map<number, string>();
+    menus.forEach((menu) => {
+      map.set(menu.id, `${menu.name} (${menu.code})`);
+    });
+    return map;
+  }, [menus]);
+
+  const filteredMenus = useMemo(() => {
+    const query = keyword.trim().toLowerCase();
+    return menus
+      .filter((menu) => {
+        if (statusFilter !== "all" && menu.status !== statusFilter) {
+          return false;
+        }
+        if (!query) {
+          return true;
+        }
+        const haystack = [menu.code, menu.name, menu.path ?? "", menu.permission_code ?? ""]
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(query);
+      })
+      .sort((a, b) => {
+        if (sortKey === "name") {
+          return a.name.localeCompare(b.name, "zh-CN");
+        }
+        if (sortKey === "id") {
+          return a.id - b.id;
+        }
+        if (a.sort_order !== b.sort_order) {
+          return a.sort_order - b.sort_order;
+        }
+        return a.id - b.id;
+      });
+  }, [keyword, menus, sortKey, statusFilter]);
+
+  const stats = useMemo(() => {
+    const enabled = menus.filter((item) => item.status === "enabled").length;
+    const disabled = menus.filter((item) => item.status === "disabled").length;
+    const topLevel = menus.filter((item) => item.parent_id === null).length;
+    return { total: menus.length, enabled, disabled, topLevel };
+  }, [menus]);
 
   const loadMenus = useCallback(async () => {
     if (!canRead) {
@@ -193,6 +255,65 @@ export default function AdminMenusPage() {
       <section className="surface-card">
         <h2 className="text-lg font-semibold">菜单列表</h2>
         <p className="mt-1 text-sm text-muted">维护后台导航菜单与访问权限。</p>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <div className="rounded-lg border border-border px-3 py-2">
+            <p className="text-xs text-muted">总菜单数</p>
+            <p className="text-xl font-semibold">{stats.total}</p>
+          </div>
+          <div className="rounded-lg border border-border px-3 py-2">
+            <p className="text-xs text-muted">启用</p>
+            <p className="text-xl font-semibold text-emerald-600">{stats.enabled}</p>
+          </div>
+          <div className="rounded-lg border border-border px-3 py-2">
+            <p className="text-xs text-muted">禁用</p>
+            <p className="text-xl font-semibold text-amber-600">{stats.disabled}</p>
+          </div>
+          <div className="rounded-lg border border-border px-3 py-2">
+            <p className="text-xs text-muted">顶级菜单</p>
+            <p className="text-xl font-semibold">{stats.topLevel}</p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <label className="space-y-1 text-sm">
+            <span className="text-muted">关键词</span>
+            <TextField.Root
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+              placeholder="按编码/名称/路径/权限筛选"
+              className="w-full"
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="text-muted">状态</span>
+            <Select.Root
+              value={statusFilter}
+              onValueChange={(value: string) => setStatusFilter(value as "all" | "enabled" | "disabled")}
+            >
+              <Select.Trigger className="w-full" />
+              <Select.Content>
+                <Select.Item value="all">全部</Select.Item>
+                <Select.Item value="enabled">enabled</Select.Item>
+                <Select.Item value="disabled">disabled</Select.Item>
+              </Select.Content>
+            </Select.Root>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="text-muted">排序方式</span>
+            <Select.Root value={sortKey} onValueChange={(value: string) => setSortKey(value as SortKey)}>
+              <Select.Trigger className="w-full" />
+              <Select.Content>
+                {SORT_OPTIONS.map((option) => (
+                  <Select.Item key={option.key} value={option.key}>
+                    {option.label}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
+          </label>
+        </div>
+
         <div className="mt-4 overflow-x-auto">
           <table className="table-modern min-w-full text-left text-sm">
             <thead className="table-head">
@@ -208,14 +329,14 @@ export default function AdminMenusPage() {
               </tr>
             </thead>
             <tbody className="table-body divide-y">
-              {menus.map((menu) => (
+              {filteredMenus.map((menu) => (
                 <tr key={menu.id}>
                   <td className="px-4 py-3">{menu.id}</td>
                   <td className="px-4 py-3 font-mono text-xs">{menu.code}</td>
                   <td className="px-4 py-3">{menu.name}</td>
                   <td className="px-4 py-3">{menu.path ?? "-"}</td>
                   <td className="px-4 py-3">{menu.permission_code ?? "-"}</td>
-                  <td className="px-4 py-3">{menu.parent_id ?? "-"}</td>
+                  <td className="px-4 py-3">{menu.parent_id ? (menuNameById.get(menu.parent_id) ?? menu.parent_id) : "-"}</td>
                   <td className="px-4 py-3">{menu.sort_order}</td>
                   {canManage && (
                     <td className="px-4 py-3">
@@ -241,6 +362,13 @@ export default function AdminMenusPage() {
                   )}
                 </tr>
               ))}
+              {filteredMenus.length === 0 && (
+                <tr>
+                  <td className="px-4 py-10 text-center text-sm text-muted" colSpan={canManage ? 8 : 7}>
+                    未找到符合筛选条件的菜单项。
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -261,102 +389,106 @@ export default function AdminMenusPage() {
           <div className="grid gap-4 md:grid-cols-2">
             <label className="space-y-2 text-sm">
               <span>菜单编码</span>
-              <input
+              <TextField.Root
                 value={form.code}
                 disabled={editingMenuId !== null}
                 onChange={(event) => setForm((prev) => ({ ...prev, code: event.target.value }))}
-                className="control w-full"
+                className="w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
               <span>菜单名称</span>
-              <input
+              <TextField.Root
                 value={form.name}
                 onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-                className="control w-full"
+                className="w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
               <span>路由路径</span>
-              <input
+              <TextField.Root
                 value={form.path}
                 onChange={(event) => setForm((prev) => ({ ...prev, path: event.target.value }))}
                 placeholder="/admin/example"
-                className="control w-full"
+                className="w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
               <span>图标名</span>
-              <input
+              <TextField.Root
                 value={form.icon}
                 onChange={(event) => setForm((prev) => ({ ...prev, icon: event.target.value }))}
                 placeholder="LayoutDashboard"
-                className="control w-full"
+                className="w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
               <span>父菜单</span>
-              <select
-                value={form.parent_id}
-                onChange={(event) => setForm((prev) => ({ ...prev, parent_id: event.target.value }))}
-                className="control w-full"
+              <Select.Root
+                value={form.parent_id || NO_PARENT_OPTION}
+                onValueChange={(value: string) =>
+                  setForm((prev) => ({ ...prev, parent_id: value === NO_PARENT_OPTION ? "" : value }))
+                }
               >
-                <option value="">无</option>
-                {parentOptions
-                  .filter((item) => item.id !== editingMenuId)
-                  .map((item) => (
-                    <option key={item.id} value={item.id}>{item.label}</option>
-                  ))}
-              </select>
+                <Select.Trigger className="w-full" />
+                <Select.Content>
+                  <Select.Item value={NO_PARENT_OPTION}>无</Select.Item>
+                  {parentOptions
+                    .filter((item) => item.id !== editingMenuId)
+                    .map((item) => (
+                      <Select.Item key={item.id} value={String(item.id)}>
+                        {item.label}
+                      </Select.Item>
+                    ))}
+                </Select.Content>
+              </Select.Root>
             </label>
             <label className="space-y-2 text-sm">
               <span>类型</span>
-              <select
-                value={form.type}
-                onChange={(event) => setForm((prev) => ({ ...prev, type: event.target.value }))}
-                className="control w-full"
-              >
-                <option value="directory">directory</option>
-                <option value="menu">menu</option>
-                <option value="button">button</option>
-              </select>
+              <Select.Root value={form.type} onValueChange={(value: string) => setForm((prev) => ({ ...prev, type: value }))}>
+                <Select.Trigger className="w-full" />
+                <Select.Content>
+                  <Select.Item value="directory">directory</Select.Item>
+                  <Select.Item value="menu">menu</Select.Item>
+                  <Select.Item value="button">button</Select.Item>
+                </Select.Content>
+              </Select.Root>
             </label>
             <label className="space-y-2 text-sm">
               <span>排序</span>
-              <input
+              <TextField.Root
                 value={form.sort_order}
                 onChange={(event) => setForm((prev) => ({ ...prev, sort_order: event.target.value }))}
                 type="number"
-                className="control w-full"
+                className="w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
               <span>状态</span>
-              <select
-                value={form.status}
-                onChange={(event) => setForm((prev) => ({ ...prev, status: event.target.value }))}
-                className="control w-full"
-              >
-                <option value="enabled">enabled</option>
-                <option value="disabled">disabled</option>
-              </select>
+              <Select.Root value={form.status} onValueChange={(value: string) => setForm((prev) => ({ ...prev, status: value }))}>
+                <Select.Trigger className="w-full" />
+                <Select.Content>
+                  <Select.Item value="enabled">enabled</Select.Item>
+                  <Select.Item value="disabled">disabled</Select.Item>
+                </Select.Content>
+              </Select.Root>
             </label>
             <label className="space-y-2 text-sm">
               <span>组件标识</span>
-              <input
+              <TextField.Root
                 value={form.component}
                 onChange={(event) => setForm((prev) => ({ ...prev, component: event.target.value }))}
                 placeholder="app/admin/users/page"
-                className="control w-full"
+                className="w-full"
               />
             </label>
             <label className="space-y-2 text-sm">
               <span>权限码</span>
-              <input
+              <TextField.Root
                 value={form.permission_code}
                 onChange={(event) => setForm((prev) => ({ ...prev, permission_code: event.target.value }))}
                 placeholder="menu.read"
-                className="control w-full"
+                className="w-full"
               />
             </label>
             <label className="flex items-center gap-2 text-sm">

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { Button, Select, TextArea, TextField } from "@radix-ui/themes";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type {
@@ -20,6 +21,7 @@ import type {
 
 const COMMENT_KIND_OPTIONS: RequirementCommentKind[] = ["comment", "analysis", "revision", "system"];
 const PRIORITY_OPTIONS: RequirementPriority[] = ["low", "medium", "high", "urgent"];
+const UNASSIGNED_ASSIGNEE = "__unassigned_assignee__";
 const ALLOWED_TRANSITIONS: Record<RequirementStatus, RequirementStatus[]> = {
   PENDING_ANALYSIS: ["OPEN", "PENDING_REVISION", "CANCELLED"],
   PENDING_REVISION: ["OPEN", "CANCELLED"],
@@ -115,81 +117,79 @@ function RequirementEditSection({
       <div className="grid gap-4 md:grid-cols-2">
         <label className="space-y-2 text-sm md:col-span-2">
           <span>标题</span>
-          <input
+          <TextField.Root
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            className="control w-full"
+            className="w-full"
           />
         </label>
 
         <label className="space-y-2 text-sm md:col-span-2">
           <span>描述</span>
-          <textarea
+          <TextArea
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             rows={8}
-            className="control w-full"
+            className="w-full"
           />
         </label>
 
         <label className="space-y-2 text-sm">
           <span>优先级</span>
-          <select
-            value={priority}
-            onChange={(event) => setPriority(event.target.value as RequirementPriority)}
-            className="control w-full"
-          >
-            {PRIORITY_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
+          <Select.Root value={priority} onValueChange={(value: string) => setPriority(value as RequirementPriority)}>
+            <Select.Trigger className="w-full" />
+            <Select.Content>
+              {PRIORITY_OPTIONS.map((item) => (
+                <Select.Item key={item} value={item}>
+                  {item}
+                </Select.Item>
+              ))}
+            </Select.Content>
+          </Select.Root>
         </label>
 
         <label className="space-y-2 text-sm">
           <span>截止时间</span>
-          <input
+          <TextField.Root
             type="datetime-local"
             value={dueAt}
             onChange={(event) => setDueAt(event.target.value)}
-            className="control w-full"
+            className="w-full"
           />
         </label>
 
         <label className="space-y-2 text-sm">
           <span>项目</span>
-          <input
+          <TextField.Root
             value={projectName}
             onChange={(event) => setProjectName(event.target.value)}
-            className="control w-full"
+            className="w-full"
           />
         </label>
 
         <label className="space-y-2 text-sm">
           <span>模块</span>
-          <input
+          <TextField.Root
             value={moduleName}
             onChange={(event) => setModuleName(event.target.value)}
-            className="control w-full"
+            className="w-full"
           />
         </label>
 
         <label className="space-y-2 text-sm md:col-span-2">
           <span>来源</span>
-          <input
+          <TextField.Root
             value={source}
             onChange={(event) => setSource(event.target.value)}
-            className="control w-full"
+            className="w-full"
           />
         </label>
       </div>
 
       <div className="mt-4">
-        <button
-          type="button"
-          className="btn-primary"
-          onClick={() => updateMutation.mutate()}
-          disabled={updateMutation.isPending || !title.trim()}
-        >
+        <Button type="button" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending || !title.trim()}>
           {updateMutation.isPending ? "保存中..." : "保存基础信息"}
-        </button>
+        </Button>
       </div>
     </section>
   );
@@ -286,64 +286,61 @@ function RequirementActionsSection({
             <div className="space-y-2">
               <p className="text-sm font-medium">指派</p>
               <div className="flex gap-2">
-                <select
-                  value={assignUserId}
-                  onChange={(event) => setAssignUserId(event.target.value)}
-                  className="control flex-1"
+                <Select.Root
+                  value={assignUserId || UNASSIGNED_ASSIGNEE}
+                  onValueChange={(value: string) => setAssignUserId(value === UNASSIGNED_ASSIGNEE ? "" : value)}
                 >
-                  <option value="">取消指派</option>
-                  {users.map((item) => <option key={item.id} value={item.id}>{item.username}</option>)}
-                </select>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => assignMutation.mutate()}
-                  disabled={assignMutation.isPending}
-                >
+                  <Select.Trigger className="w-full flex-1" />
+                  <Select.Content>
+                    <Select.Item value={UNASSIGNED_ASSIGNEE}>取消指派</Select.Item>
+                    {users.map((item) => (
+                      <Select.Item key={item.id} value={item.id}>
+                        {item.username}
+                      </Select.Item>
+                    ))}
+                  </Select.Content>
+                </Select.Root>
+                <Button variant="soft" type="button" onClick={() => assignMutation.mutate()} disabled={assignMutation.isPending}>
                   保存
-                </button>
+                </Button>
               </div>
             </div>
           )}
 
           <div className="space-y-2">
             <p className="text-sm font-medium">领取</p>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => claimMutation.mutate()}
-              disabled={claimMutation.isPending}
-            >
+            <Button variant="soft" type="button" onClick={() => claimMutation.mutate()} disabled={claimMutation.isPending}>
               我来领取
-            </button>
+            </Button>
           </div>
 
           <div className="space-y-2">
             <p className="text-sm font-medium">状态流转</p>
             {availableTransitions.length > 0 ? (
               <>
-                <select
+                <Select.Root
                   value={currentTransitionStatus}
-                  onChange={(event) => setTransitionStatus(event.target.value as RequirementStatus)}
-                  className="control w-full"
+                  onValueChange={(value: string) => setTransitionStatus(value as RequirementStatus)}
                 >
-                  {availableTransitions.map((item) => <option key={item} value={item}>{item}</option>)}
-                </select>
-                <textarea
+                  <Select.Trigger className="w-full" />
+                  <Select.Content>
+                    {availableTransitions.map((item) => (
+                      <Select.Item key={item} value={item}>
+                        {item}
+                      </Select.Item>
+                    ))}
+                  </Select.Content>
+                </Select.Root>
+                <TextArea
                   value={transitionNote}
                   onChange={(event) => setTransitionNote(event.target.value)}
                   rows={3}
                   placeholder="流转备注（可选）"
-                  className="control w-full"
+                  className="w-full"
                 />
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={() => transitionMutation.mutate()}
-                  disabled={transitionMutation.isPending}
-                >
+                <Button type="button" onClick={() => transitionMutation.mutate()} disabled={transitionMutation.isPending}>
                   提交流转
-                </button>
+                </Button>
               </>
             ) : (
               <p className="text-sm text-muted">当前状态没有可继续流转的目标状态。</p>
@@ -408,28 +405,26 @@ function RequirementCommentSection({
         <pre className="mt-4 notice notice-error">{error}</pre>
       )}
       <div className="mt-4 space-y-3">
-        <select
-          value={commentKind}
-          onChange={(event) => setCommentKind(event.target.value as RequirementCommentKind)}
-          className="control w-full"
-        >
-          {COMMENT_KIND_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
-        </select>
-        <textarea
+        <Select.Root value={commentKind} onValueChange={(value: string) => setCommentKind(value as RequirementCommentKind)}>
+          <Select.Trigger className="w-full" />
+          <Select.Content>
+            {COMMENT_KIND_OPTIONS.map((item) => (
+              <Select.Item key={item} value={item}>
+                {item}
+              </Select.Item>
+            ))}
+          </Select.Content>
+        </Select.Root>
+        <TextArea
           value={commentContent}
           onChange={(event) => setCommentContent(event.target.value)}
           rows={6}
           placeholder="写点处理说明、分析结论或修订意见"
-          className="control w-full"
+          className="w-full"
         />
-        <button
-          type="button"
-          className="btn-primary"
-          onClick={() => commentMutation.mutate()}
-          disabled={commentMutation.isPending || !commentContent.trim()}
-        >
+        <Button type="button" onClick={() => commentMutation.mutate()} disabled={commentMutation.isPending || !commentContent.trim()}>
           发表评论
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -674,7 +669,7 @@ export default function RequirementDetailPage() {
                 </div>
                 <p className="mt-2 text-sm">{item.from_status ?? "-"} → {item.to_status ?? "-"}</p>
                 {item.payload_json && (
-                  <pre className="mt-2 overflow-auto rounded-lg rounded-lg border border-[var(--border)] bg-cyan-50/70 p-3 text-xs">{JSON.stringify(item.payload_json, null, 2)}</pre>
+                  <pre className="mt-2 overflow-auto rounded-lg rounded-lg border border-[var(--border)] bg-indigo-50/70 p-3 text-xs">{JSON.stringify(item.payload_json, null, 2)}</pre>
                 )}
               </div>
             ))}

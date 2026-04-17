@@ -39,7 +39,18 @@ def get_db() -> Generator[Session, None, None]:
 
 def init_db() -> None:
     # Import models so metadata includes every table before create_all.
-    from ..models import audit_log, auth_session, file_storage, menu, model_registry, rbac, requirement, user  # noqa: F401
+    from ..models import (
+        audit_log,
+        auth_session,
+        chat,
+        file_storage,
+        menu,
+        model_registry,
+        rbac,
+        requirement,
+        todo,
+        user,
+    )  # noqa: F401
     from ..services.seed_service import seed_defaults
 
     Base.metadata.create_all(bind=engine)

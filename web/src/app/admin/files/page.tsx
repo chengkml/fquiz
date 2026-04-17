@@ -427,12 +427,12 @@ export default function AdminFilesPage() {
                   onClick={() => handleSelectMount(mount)}
                   className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition ${
                     selected
-                      ? "border-cyan-400 bg-gradient-to-r from-cyan-500 to-cyan-600 text-white shadow-[0_10px_22px_rgba(8,145,178,0.28)]"
-                      : "border-[var(--border)] bg-white/70 text-slate-700 hover:border-cyan-200 hover:bg-cyan-50/70"
+                      ? "border-indigo-400 bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-[0_10px_22px_rgba(79,70,229,0.28)]"
+                      : "border-[var(--border)] bg-white/70 text-slate-700 hover:border-indigo-200 hover:bg-indigo-50/70"
                   }`}
                 >
                   <p className="font-medium">{mount.name}</p>
-                  <p className={`text-xs ${selected ? "text-cyan-100" : "text-muted"}`}>
+                  <p className={`text-xs ${selected ? "text-indigo-100" : "text-muted"}`}>
                     {mount.backend.driver_type} · {mount.code}
                   </p>
                 </button>
@@ -491,7 +491,7 @@ export default function AdminFilesPage() {
                     setCurrentPath(crumb.path);
                     resetActionPanels();
                   }}
-                  className="rounded px-1 py-0.5 hover:bg-cyan-100"
+                  className="rounded px-1 py-0.5 hover:bg-indigo-100"
                 >
                   {crumb.name}
                 </button>
@@ -551,7 +551,7 @@ export default function AdminFilesPage() {
                           {item.is_dir ? `[DIR] ${item.name}` : item.name}
                         </button>
                         {isActive && canManage && (
-                          <div className="mt-2 space-y-2 rounded-md border border-[var(--border)] bg-cyan-50/70 p-2 text-xs">
+                          <div className="mt-2 space-y-2 rounded-md border border-[var(--border)] bg-indigo-50/70 p-2 text-xs">
                             <div className="flex flex-wrap items-center gap-2">
                               <input
                                 value={renameName}

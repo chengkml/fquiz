@@ -1,26 +1,12 @@
 import type { Metadata } from "next";
-import { JetBrains_Mono, Manrope, Space_Grotesk } from "next/font/google";
+import { Theme } from "@radix-ui/themes";
 
 import { AppQueryProvider } from "@/components/app-query-provider";
 import { AuthProvider } from "@/components/auth-provider";
 import { WSProvider } from "@/components/ws-provider";
 
+import "@radix-ui/themes/styles.css";
 import "./globals.css";
-
-const headingFont = Space_Grotesk({
-  variable: "--font-heading",
-  subsets: ["latin"],
-});
-
-const bodyFont = Manrope({
-  variable: "--font-body",
-  subsets: ["latin"],
-});
-
-const monoFont = JetBrains_Mono({
-  variable: "--font-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "fquiz",
@@ -33,16 +19,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${headingFont.variable} ${bodyFont.variable} ${monoFont.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">
-        <AppQueryProvider>
-          <AuthProvider>
-            <WSProvider>{children}</WSProvider>
-          </AuthProvider>
-        </AppQueryProvider>
+    <html lang="en" className="h-full antialiased">
+      <body className="min-h-full">
+        <Theme accentColor="indigo" grayColor="slate" radius="medium" scaling="100%">
+          <div className="app-theme-root flex min-h-full flex-col">
+            <AppQueryProvider>
+              <AuthProvider>
+                <WSProvider>{children}</WSProvider>
+              </AuthProvider>
+            </AppQueryProvider>
+          </div>
+        </Theme>
       </body>
     </html>
   );

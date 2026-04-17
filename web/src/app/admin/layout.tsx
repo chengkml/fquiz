@@ -87,7 +87,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="relative min-h-screen text-slate-900">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-24 top-[-5rem] h-72 w-72 rounded-full bg-cyan-300/30 blur-3xl" />
+        <div className="absolute -left-24 top-[-5rem] h-72 w-72 rounded-full bg-indigo-300/30 blur-3xl" />
         <div className="absolute right-[-6rem] top-20 h-96 w-96 rounded-full bg-sky-300/30 blur-3xl" />
       </div>
 
@@ -104,7 +104,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 {item.path ? (
                   <Link
                     href={item.path}
-                    className={`block rounded-lg px-3 py-2 text-sm font-medium transition ${pathname === item.path ? "bg-cyan-500 text-white shadow-[0_10px_24px_rgba(8,145,178,0.28)]" : "text-slate-700 hover:bg-cyan-50"}`}
+                    className={`block rounded-lg px-3 py-2 text-sm font-medium transition ${pathname === item.path ? "bg-indigo-500 text-white shadow-[0_10px_24px_rgba(79,70,229,0.28)]" : "text-slate-700 hover:bg-indigo-50"}`}
                   >
                     {item.name}
                   </Link>
@@ -117,7 +117,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       <Link
                         key={child.id}
                         href={child.path ?? "/admin"}
-                        className={`block rounded-lg px-3 py-2 text-sm transition ${pathname === child.path ? "bg-cyan-500 text-white shadow-[0_8px_20px_rgba(8,145,178,0.28)]" : "text-slate-700 hover:bg-cyan-50"}`}
+                        className={`block rounded-lg px-3 py-2 text-sm transition ${pathname === child.path ? "bg-indigo-500 text-white shadow-[0_8px_20px_rgba(79,70,229,0.28)]" : "text-slate-700 hover:bg-indigo-50"}`}
                       >
                         {child.name}
                       </Link>
@@ -141,7 +141,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </aside>
 
         <main className="p-4 md:p-6">
-          <div className="surface-card mb-6 flex items-center justify-between gap-4 bg-gradient-to-br from-white/95 via-cyan-50/65 to-sky-50/80">
+          <div className="surface-card mb-6 flex items-center justify-between gap-4 bg-gradient-to-br from-white/95 via-indigo-50/65 to-sky-50/80">
             <div>
               <p className="text-sm text-muted">后台管理</p>
               <h1 className="text-2xl font-bold tracking-tight">{currentTitle}</h1>

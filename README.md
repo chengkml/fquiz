@@ -79,10 +79,17 @@ npm run lint:web
 - `POST /api/v1/auth/refresh`
 - `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/me`
+- `POST /api/v1/users`（需要 `user.manage`，支持管理员自定义用户ID并校验重复）
 - `GET /api/v1/users`（需要 `user.manage`）
 - `GET /api/v1/users/{id}`（本人或 `user.manage`）
 - `PATCH /api/v1/users/{id}`（需要 `user.manage`）
+- `POST /api/v1/users/{id}/password`（需要 `user.manage`，重置用户密码）
+- `DELETE /api/v1/users/{id}`（需要 `user.manage`，删除用户）
 - `POST /api/v1/users/{id}/roles`（需要 `user.manage`）
+- `GET /api/v1/chat/sessions`（需要 `chat.use`）
+- `POST /api/v1/chat/sessions`（需要 `chat.use`）
+- `GET /api/v1/chat/sessions/{id}/messages`（需要 `chat.use`）
+- `POST /api/v1/chat/sessions/{id}/messages`（需要 `chat.use`）
 
 初始化管理员（可选）：
 - 在 `.env` 设置 `INITIAL_ADMIN_EMAIL`、`INITIAL_ADMIN_USERNAME`、`INITIAL_ADMIN_PASSWORD`
@@ -128,4 +135,7 @@ npm run lint:web
   - `API_CORS_ORIGINS`：精确来源列表（逗号分隔），如 `https://admin.example.com,http://localhost:3000`
   - `API_CORS_ORIGIN_REGEX`：来源正则（可选），如 `https://.*\\.example\\.com`
   - 支持在 `API_CORS_ORIGINS` 中使用通配符（如 `https://*.example.com`）或 `*`（仅建议开发调试）
+- AI 聊天依赖模型路由与 Provider Key：
+  - 路由优先级：`CAPABILITY: chat.default` -> `GLOBAL: __global__`
+  - 在 `.env` 配置 `LLM_PROVIDER_API_KEYS`（示例：`openai=sk-xxx`）
 - 默认镜像源已配置为 `docker.m.daocloud.io`，并默认使用 `pgvector` 镜像；如你网络环境可直连 Docker Hub，可在 `.env` 中覆盖 `POSTGRES_IMAGE / PYTHON_BASE_IMAGE / NODE_BASE_IMAGE`。

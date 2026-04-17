@@ -2,9 +2,10 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { FormEvent, useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { Button, TextField } from "@radix-ui/themes";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { RoleItem, RoleListResponse, UserListResponse, UserPublic } from "@/types/auth";
@@ -17,36 +18,41 @@ export default function AdminUsersPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+  const [resettingUserId, setResettingUserId] = useState<string | null>(null);
+  const [newUserId, setNewUserId] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   const canManage = hasPermission("user.manage");
   const canReadRoles = hasPermission("role.read") || hasPermission("role.manage");
 
+  const usersPath = "/api/v1/users?limit=200&offset=0";
+  const rolesPath = "/api/v1/admin/roles";
+
   const loadUsers = useCallback(async () => {
-    const response = await fetchWithAuth("/api/v1/users?limit=200&offset=0");
-    if (!response.ok) {
-      throw new Error(await readApiError(response));
-    }
+    const response = await fetchWithAuth(usersPath);
+    if (!response.ok) throw new Error(await readApiError(response));
     return (await response.json()) as UserListResponse;
   }, [fetchWithAuth]);
 
   const loadRoles = useCallback(async () => {
-    const response = await fetchWithAuth("/api/v1/admin/roles");
-    if (!response.ok) {
-      throw new Error(await readApiError(response));
-    }
+    const response = await fetchWithAuth(rolesPath);
+    if (!response.ok) throw new Error(await readApiError(response));
     return (await response.json()) as RoleListResponse;
   }, [fetchWithAuth]);
 
   const usersQuery = useQuery({
-    queryKey: ["/api/v1/users?limit=200&offset=0"],
+    queryKey: [usersPath],
     queryFn: loadUsers,
     enabled: !!user && canManage,
   });
 
   const rolesQuery = useQuery({
-    queryKey: ["/api/v1/admin/roles"],
+    queryKey: [rolesPath],
     queryFn: loadRoles,
     enabled: !!user && canManage && canReadRoles,
   });
@@ -54,21 +60,17 @@ export default function AdminUsersPage() {
   useTopicSubscription(
     "admin.users",
     useCallback(() => {
-      if (!user || !canManage) {
-        return;
-      }
-      void queryClient.invalidateQueries({ queryKey: ["/api/v1/users?limit=200&offset=0"] });
+      if (!user || !canManage) return;
+      void queryClient.invalidateQueries({ queryKey: [usersPath] });
       if (canReadRoles) {
-        void queryClient.invalidateQueries({ queryKey: ["/api/v1/admin/roles"] });
+        void queryClient.invalidateQueries({ queryKey: [rolesPath] });
       }
     }, [canManage, canReadRoles, queryClient, user]),
   );
 
   const users = useMemo(() => usersQuery.data?.items ?? [], [usersQuery.data?.items]);
   const roles = useMemo<RoleItem[]>(() => {
-    if (canReadRoles) {
-      return rolesQuery.data?.items ?? [];
-    }
+    if (canReadRoles) return rolesQuery.data?.items ?? [];
     return Array.from(new Set(users.flatMap((item) => item.role_codes))).map((code, index) => ({
       id: -(index + 1),
       code,
@@ -80,6 +82,43 @@ export default function AdminUsersPage() {
 
   const roleOptions = useMemo(() => roles.map((item) => item.code), [roles]);
 
+  const refreshData = async () => {
+    await queryClient.invalidateQueries({ queryKey: [usersPath] });
+    if (canReadRoles) {
+      await queryClient.invalidateQueries({ queryKey: [rolesPath] });
+    }
+  };
+
+  const createUserMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetchWithAuth("/api/v1/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: newUserId.trim(),
+          email: newEmail.trim(),
+          username: newUsername.trim(),
+          password: newPassword,
+        }),
+      });
+      if (!response.ok) throw new Error(await readApiError(response));
+      return response.json() as Promise<UserPublic>;
+    },
+    onSuccess: async () => {
+      setSuccess("用户已创建");
+      setError("");
+      setNewUserId("");
+      setNewEmail("");
+      setNewUsername("");
+      setNewPassword("");
+      await refreshData();
+    },
+    onError: (candidate) => {
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "创建用户失败");
+    },
+  });
+
   const updateRolesMutation = useMutation({
     mutationFn: async ({ userId, roleCodes }: { userId: string; roleCodes: string[] }) => {
       const response = await fetchWithAuth(`/api/v1/users/${userId}/roles`, {
@@ -87,9 +126,7 @@ export default function AdminUsersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role_codes: roleCodes } satisfies UserRolePayload),
       });
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
+      if (!response.ok) throw new Error(await readApiError(response));
       return response.json() as Promise<UserPublic>;
     },
     onMutate: ({ userId }) => {
@@ -99,20 +136,68 @@ export default function AdminUsersPage() {
     },
     onSuccess: async () => {
       setSuccess("用户角色已更新");
-      await queryClient.invalidateQueries({ queryKey: ["/api/v1/users?limit=200&offset=0"] });
-      if (canReadRoles) {
-        await queryClient.invalidateQueries({ queryKey: ["/api/v1/admin/roles"] });
-      }
+      await refreshData();
     },
     onError: (mutationError) => {
       setError(mutationError instanceof Error ? mutationError.message : "更新失败");
     },
-    onSettled: () => {
-      setSavingUserId(null);
-    },
+    onSettled: () => setSavingUserId(null),
   });
 
-  const anyError = error
+  const resetPasswordMutation = useMutation({
+    mutationFn: async ({ userId, password }: { userId: string; password: string }) => {
+      const response = await fetchWithAuth(`/api/v1/users/${userId}/password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: password }),
+      });
+      if (!response.ok) throw new Error(await readApiError(response));
+      return response.json() as Promise<UserPublic>;
+    },
+    onMutate: ({ userId }) => {
+      setResettingUserId(userId);
+      setError("");
+      setSuccess("");
+    },
+    onSuccess: () => setSuccess("密码已重置"),
+    onError: (candidate) => {
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "重置密码失败");
+    },
+    onSettled: () => setResettingUserId(null),
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const response = await fetchWithAuth(`/api/v1/users/${userId}`, { method: "DELETE" });
+      if (!response.ok) throw new Error(await readApiError(response));
+      return response.json() as Promise<{ message: string }>;
+    },
+    onMutate: (userId) => {
+      setDeletingUserId(userId);
+      setError("");
+      setSuccess("");
+    },
+    onSuccess: async () => {
+      setSuccess("用户已删除");
+      await refreshData();
+    },
+    onError: (candidate) => {
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "删除用户失败");
+    },
+    onSettled: () => setDeletingUserId(null),
+  });
+
+  const handleCreateUser = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    setSuccess("");
+    createUserMutation.mutate();
+  };
+
+  const anyError =
+    error
     || (usersQuery.error instanceof Error ? usersQuery.error.message : "")
     || (rolesQuery.error instanceof Error ? rolesQuery.error.message : "");
 
@@ -140,18 +225,30 @@ export default function AdminUsersPage() {
 
   return (
     <div className="space-y-6">
-      {anyError && (
-        <pre className="notice notice-error">{anyError}</pre>
-      )}
-      {success && (
-        <pre className="notice notice-success">{success}</pre>
-      )}
+      {anyError && <pre className="notice notice-error">{anyError}</pre>}
+      {success && <pre className="notice notice-success">{success}</pre>}
+
+      <section className="surface-card">
+        <h2 className="text-lg font-semibold">新增用户</h2>
+        <p className="mt-1 text-sm text-muted">用户 ID 由管理员手动填写，系统会校验重复。</p>
+        <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={handleCreateUser}>
+          <TextField.Root placeholder="用户 ID（例如 ck001）" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} minLength={3} maxLength={64} required />
+          <TextField.Root placeholder="邮箱" type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} required />
+          <TextField.Root placeholder="用户名" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} minLength={3} maxLength={64} required />
+          <TextField.Root placeholder="初始密码（至少8位）" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8} maxLength={128} required />
+          <div className="md:col-span-2">
+            <Button type="submit" disabled={createUserMutation.isPending}>
+              {createUserMutation.isPending ? "创建中..." : "创建用户"}
+            </Button>
+          </div>
+        </form>
+      </section>
 
       <section className="surface-card">
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">用户列表</h2>
-            <p className="mt-1 text-sm text-muted">查看所有用户，并直接调整角色。</p>
+            <p className="mt-1 text-sm text-muted">表头已中文化，支持改角色、重置密码、删除。</p>
           </div>
         </div>
 
@@ -159,12 +256,12 @@ export default function AdminUsersPage() {
           <table className="table-modern min-w-full text-left text-sm">
             <thead className="table-head">
               <tr>
-                <th className="px-4 py-3 font-medium">ID</th>
-                <th className="px-4 py-3 font-medium">Email</th>
-                <th className="px-4 py-3 font-medium">Username</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Roles</th>
-                <th className="px-4 py-3 font-medium">Permissions</th>
+                <th className="px-4 py-3 font-medium">用户ID</th>
+                <th className="px-4 py-3 font-medium">邮箱</th>
+                <th className="px-4 py-3 font-medium">用户名</th>
+                <th className="px-4 py-3 font-medium">状态</th>
+                <th className="px-4 py-3 font-medium">角色</th>
+                <th className="px-4 py-3 font-medium">权限</th>
                 <th className="px-4 py-3 font-medium">操作</th>
               </tr>
             </thead>
@@ -185,7 +282,7 @@ export default function AdminUsersPage() {
                               type="checkbox"
                               checked={checked}
                               disabled={savingUserId === item.id}
-                              className="accent-cyan-600"
+                              className="accent-indigo-600"
                               onChange={(event) => {
                                 const nextRoles = event.target.checked
                                   ? [...item.role_codes, roleCode]
@@ -200,7 +297,38 @@ export default function AdminUsersPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3">{item.permission_codes.join(", ") || "-"}</td>
-                  <td className="px-4 py-3 text-xs text-muted">{savingUserId === item.id ? "保存中..." : "自动保存"}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <button
+                        type="button"
+                        className="btn-secondary btn-small"
+                        disabled={resettingUserId === item.id}
+                        onClick={() => {
+                          const pwd = window.prompt(`请输入用户 ${item.username} 的新密码（至少8位）`);
+                          if (!pwd) return;
+                          if (pwd.length < 8) {
+                            setError("新密码长度至少 8 位");
+                            return;
+                          }
+                          resetPasswordMutation.mutate({ userId: item.id, password: pwd });
+                        }}
+                      >
+                        {resettingUserId === item.id ? "重置中..." : "改密码"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary btn-small"
+                        disabled={deletingUserId === item.id}
+                        onClick={() => {
+                          const confirmed = window.confirm(`确认删除用户 ${item.username}（${item.id}）？`);
+                          if (!confirmed) return;
+                          deleteUserMutation.mutate(item.id);
+                        }}
+                      >
+                        {deletingUserId === item.id ? "删除中..." : "删除"}
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

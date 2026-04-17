@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { Dialog, Select, TextArea, TextField } from "@radix-ui/themes";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type {
@@ -37,6 +38,7 @@ const HEALTH_STATUS_LABELS: Record<ModelHealthStatus, string> = {
 };
 const ROUTE_TYPE_OPTIONS: ModelRouteType[] = ["GLOBAL", "CAPABILITY", "BUSINESS", "AGENT"];
 const GLOBAL_ROUTE_KEY = "__global__";
+const MODEL_STATUS_ALL_FILTER = "__all_model_status__";
 const PROVIDER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic" },
@@ -116,9 +118,11 @@ export default function AdminModelsPage() {
   const [success, setSuccess] = useState("");
 
   const [editingModelId, setEditingModelId] = useState<number | null>(null);
+  const [showModelModal, setShowModelModal] = useState(false);
   const [modelForm, setModelForm] = useState(EMPTY_MODEL_FORM);
 
   const [editingRouteId, setEditingRouteId] = useState<number | null>(null);
+  const [showRouteModal, setShowRouteModal] = useState(false);
   const [routeForm, setRouteForm] = useState(EMPTY_ROUTE_FORM);
 
   const modelsPath = useMemo(() => {
@@ -230,6 +234,7 @@ export default function AdminModelsPage() {
       setSuccess(editingModelId ? "模型已更新" : "模型已创建");
       setError("");
       setEditingModelId(null);
+      setShowModelModal(false);
       setModelForm(EMPTY_MODEL_FORM);
       await invalidateModelQueries(queryClient, modelsPath, summaryPath, routesPath);
     },
@@ -277,6 +282,7 @@ export default function AdminModelsPage() {
       setSuccess("模型已删除");
       if (editingModelId) {
         setEditingModelId(null);
+        setShowModelModal(false);
         setModelForm(EMPTY_MODEL_FORM);
       }
       await invalidateModelQueries(queryClient, modelsPath, summaryPath, routesPath);
@@ -391,6 +397,7 @@ export default function AdminModelsPage() {
       setError("");
       setSuccess(editingRouteId ? "路由规则已更新" : "路由规则已创建");
       setEditingRouteId(null);
+      setShowRouteModal(false);
       setRouteForm(EMPTY_ROUTE_FORM);
       await invalidateModelQueries(queryClient, modelsPath, summaryPath, routesPath);
     },
@@ -415,6 +422,7 @@ export default function AdminModelsPage() {
       setSuccess("路由规则已删除");
       if (editingRouteId) {
         setEditingRouteId(null);
+        setShowRouteModal(false);
         setRouteForm(EMPTY_ROUTE_FORM);
       }
       await invalidateModelQueries(queryClient, modelsPath, summaryPath, routesPath);
@@ -427,6 +435,7 @@ export default function AdminModelsPage() {
 
   const startEditModel = (model: ModelRegistryItem) => {
     setEditingModelId(model.id);
+    setShowModelModal(true);
     setModelForm({
       code: model.code,
       name: model.name,
@@ -442,6 +451,7 @@ export default function AdminModelsPage() {
 
   const startEditRoute = (route: NonNullable<ModelRouteRuleListResponse["items"][number]>) => {
     setEditingRouteId(route.id);
+    setShowRouteModal(true);
     setRouteForm({
       route_type: route.route_type,
       route_key: route.route_type === "GLOBAL" ? "" : route.route_key,
@@ -541,22 +551,26 @@ export default function AdminModelsPage() {
             <p className="mt-1 text-sm text-muted">稳定 `code` 作为引用键，`name` 仅用于展示。</p>
           </div>
           <div className="grid gap-2 md:grid-cols-2">
-            <input
+            <TextField.Root
               value={keyword}
               onChange={(event) => setKeyword(event.target.value)}
               placeholder="搜索 code/name/provider"
-              className="control"
+              className="w-full"
             />
-            <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-              className="control"
+            <Select.Root
+              value={statusFilter || MODEL_STATUS_ALL_FILTER}
+              onValueChange={(value: string) => setStatusFilter(value === MODEL_STATUS_ALL_FILTER ? "" : value)}
             >
-              <option value="">全部状态</option>
-              {MODEL_STATUS_OPTIONS.map((item) => (
-                <option key={item} value={item}>{formatModelStatus(item)}</option>
-              ))}
-            </select>
+              <Select.Trigger className="w-full" />
+              <Select.Content>
+                <Select.Item value={MODEL_STATUS_ALL_FILTER}>全部状态</Select.Item>
+                {MODEL_STATUS_OPTIONS.map((item) => (
+                  <Select.Item key={item} value={item}>
+                    {formatModelStatus(item)}
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Root>
           </div>
         </div>
 
@@ -684,128 +698,21 @@ export default function AdminModelsPage() {
 
       {canManage && (
         <section className="surface-card">
-          <div className="mb-4 flex items-center justify-between gap-4">
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold">{editingModelId ? "编辑模型" : "新建模型"}</h2>
-              <p className="mt-1 text-sm text-muted">创建时可设置初始密钥；编辑阶段仅维护模型元数据。</p>
+              <h2 className="text-lg font-semibold">模型维护</h2>
+              <p className="mt-1 text-sm text-muted">新建/编辑模型已迁移为弹窗操作。</p>
             </div>
-            {editingModelId && (
-              <button
-                type="button"
-                className="btn-secondary w-fit"
-                onClick={() => {
-                  setEditingModelId(null);
-                  setModelForm(EMPTY_MODEL_FORM);
-                }}
-              >
-                取消编辑
-              </button>
-            )}
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="space-y-2 text-sm">
-              <span>模型编码（稳定引用键）</span>
-              <input
-                value={modelForm.code}
-                disabled={editingModelId !== null}
-                onChange={(event) => setModelForm((prev) => ({ ...prev, code: event.target.value }))}
-                placeholder="openai.gpt-5"
-                className="control w-full"
-              />
-            </label>
-            <label className="space-y-2 text-sm">
-              <span>模型名称（展示用）</span>
-              <input
-                value={modelForm.name}
-                onChange={(event) => setModelForm((prev) => ({ ...prev, name: event.target.value }))}
-                placeholder="GPT-5 主模型"
-                className="control w-full"
-              />
-            </label>
-            <label className="space-y-2 text-sm">
-              <span>Provider</span>
-              <select
-                value={modelForm.provider}
-                onChange={(event) => setModelForm((prev) => ({ ...prev, provider: event.target.value }))}
-                className="control w-full"
-              >
-                {providerOptions.map((item) => (
-                  <option key={item.value} value={item.value}>{item.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-2 text-sm">
-              <span>Provider Model</span>
-              <input
-                value={modelForm.provider_model}
-                onChange={(event) => setModelForm((prev) => ({ ...prev, provider_model: event.target.value }))}
-                placeholder="gpt-5"
-                className="control w-full"
-              />
-            </label>
-            <label className="space-y-2 text-sm">
-              <span>初始状态</span>
-              <select
-                value={modelForm.status}
-                disabled={editingModelId !== null}
-                onChange={(event) => setModelForm((prev) => ({ ...prev, status: event.target.value as ModelStatus }))}
-                className="control w-full"
-              >
-                {MODEL_STATUS_OPTIONS.map((item) => (
-                  <option key={item} value={item}>{formatModelStatus(item)}</option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-2 text-sm">
-              <span>能力标签（逗号分隔）</span>
-              <input
-                value={modelForm.capabilities}
-                onChange={(event) => setModelForm((prev) => ({ ...prev, capabilities: event.target.value }))}
-                placeholder="chat,reasoning"
-                className="control w-full"
-              />
-            </label>
-            <label className="space-y-2 text-sm md:col-span-2">
-              <span>Base URL</span>
-              <input
-                value={modelForm.base_url}
-                onChange={(event) => setModelForm((prev) => ({ ...prev, base_url: event.target.value }))}
-                placeholder="https://api.example.com"
-                className="control w-full"
-              />
-            </label>
-            {!editingModelId && (
-              <label className="space-y-2 text-sm md:col-span-2">
-                <span>初始 API Key（仅创建时）</span>
-                <input
-                  value={modelForm.api_key}
-                  onChange={(event) => setModelForm((prev) => ({ ...prev, api_key: event.target.value }))}
-                  placeholder="sk-..."
-                  className="control w-full"
-                />
-              </label>
-            )}
-            <label className="space-y-2 text-sm md:col-span-2">
-              <span>描述</span>
-              <textarea
-                rows={4}
-                value={modelForm.description}
-                onChange={(event) => setModelForm((prev) => ({ ...prev, description: event.target.value }))}
-                placeholder="模型用途、限制、成本策略..."
-                className="control w-full"
-              />
-            </label>
-          </div>
-
-          <div className="mt-4">
             <button
               type="button"
               className="btn-primary"
-              disabled={saveModelMutation.isPending || !modelForm.code.trim() || !modelForm.name.trim() || !modelForm.provider_model.trim()}
-              onClick={() => saveModelMutation.mutate()}
+              onClick={() => {
+                setEditingModelId(null);
+                setModelForm(EMPTY_MODEL_FORM);
+                setShowModelModal(true);
+              }}
             >
-              {saveModelMutation.isPending ? "提交中..." : editingModelId ? "保存模型" : "创建模型"}
+              新建模型
             </button>
           </div>
         </section>
@@ -815,6 +722,22 @@ export default function AdminModelsPage() {
         <div className="mb-4">
           <h2 className="text-lg font-semibold">路由规则</h2>
           <p className="mt-1 text-sm text-muted">支持 GLOBAL / CAPABILITY / BUSINESS / AGENT 四类规则。</p>
+        </div>
+
+        <div className="mb-4 flex justify-end">
+          {canManage && (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                setEditingRouteId(null);
+                setRouteForm(EMPTY_ROUTE_FORM);
+                setShowRouteModal(true);
+              }}
+            >
+              新建路由规则
+            </button>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -870,103 +793,271 @@ export default function AdminModelsPage() {
       </section>
 
       {canManage && (
-        <section className="surface-card">
-          <div className="mb-4 flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-semibold">{editingRouteId ? "编辑路由规则" : "新建路由规则"}</h2>
-              <p className="mt-1 text-sm text-muted">GLOBAL 规则的 key 固定为 {GLOBAL_ROUTE_KEY}。</p>
+        <Dialog
+          open={showModelModal}
+          onOpenChange={(open: boolean) => {
+            if (!open) {
+              setEditingModelId(null);
+              setShowModelModal(false);
+              setModelForm(EMPTY_MODEL_FORM);
+            }
+          }}
+        >
+          <DialogContent className="max-h-[90vh] w-full max-w-3xl overflow-auto">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold">{editingModelId ? "编辑模型" : "新建模型"}</h2>
+                <p className="mt-1 text-sm text-muted">创建时可设置初始密钥；编辑阶段仅维护模型元数据。</p>
+              </div>
+              <button
+                type="button"
+                className="btn-secondary w-fit"
+                onClick={() => {
+                  setEditingModelId(null);
+                  setShowModelModal(false);
+                  setModelForm(EMPTY_MODEL_FORM);
+                }}
+              >
+                关闭
+              </button>
             </div>
-            {editingRouteId && (
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="space-y-2 text-sm">
+                <span>模型编码（稳定引用键）</span>
+                <Input
+                  value={modelForm.code}
+                  disabled={editingModelId !== null}
+                  onChange={(event) => setModelForm((prev) => ({ ...prev, code: event.target.value }))}
+                  placeholder="openai.gpt-5"
+                  className="w-full"
+                />
+              </label>
+              <label className="space-y-2 text-sm">
+                <span>模型名称（展示用）</span>
+                <Input
+                  value={modelForm.name}
+                  onChange={(event) => setModelForm((prev) => ({ ...prev, name: event.target.value }))}
+                  placeholder="GPT-5 主模型"
+                  className="w-full"
+                />
+              </label>
+              <label className="space-y-2 text-sm">
+                <span>Provider</span>
+                <Select
+                  value={modelForm.provider}
+                  onValueChange={(value: string) => setModelForm((prev) => ({ ...prev, provider: value }))}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="请选择 Provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {providerOptions.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+              <label className="space-y-2 text-sm">
+                <span>Provider Model</span>
+                <Input
+                  value={modelForm.provider_model}
+                  onChange={(event) => setModelForm((prev) => ({ ...prev, provider_model: event.target.value }))}
+                  placeholder="gpt-5"
+                  className="w-full"
+                />
+              </label>
+              <label className="space-y-2 text-sm">
+                <span>初始状态</span>
+                <Select
+                  value={modelForm.status}
+                  disabled={editingModelId !== null}
+                  onValueChange={(value: string) => setModelForm((prev) => ({ ...prev, status: value as ModelStatus }))}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="请选择状态" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MODEL_STATUS_OPTIONS.map((item) => (
+                      <SelectItem key={item} value={item}>
+                        {formatModelStatus(item)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+              <label className="space-y-2 text-sm">
+                <span>能力标签（逗号分隔）</span>
+                <Input
+                  value={modelForm.capabilities}
+                  onChange={(event) => setModelForm((prev) => ({ ...prev, capabilities: event.target.value }))}
+                  placeholder="chat,reasoning"
+                  className="w-full"
+                />
+              </label>
+              <label className="space-y-2 text-sm md:col-span-2">
+                <span>Base URL</span>
+                <Input
+                  value={modelForm.base_url}
+                  onChange={(event) => setModelForm((prev) => ({ ...prev, base_url: event.target.value }))}
+                  placeholder="https://api.example.com"
+                  className="w-full"
+                />
+              </label>
+              {!editingModelId && (
+                <label className="space-y-2 text-sm md:col-span-2">
+                  <span>初始 API Key（仅创建时）</span>
+                  <Input
+                    value={modelForm.api_key}
+                    onChange={(event) => setModelForm((prev) => ({ ...prev, api_key: event.target.value }))}
+                    placeholder="sk-..."
+                    className="w-full"
+                  />
+                </label>
+              )}
+              <label className="space-y-2 text-sm md:col-span-2">
+                <span>描述</span>
+                <TextArea
+                  rows={4}
+                  value={modelForm.description}
+                  onChange={(event) => setModelForm((prev) => ({ ...prev, description: event.target.value }))}
+                  placeholder="模型用途、限制、成本策略..."
+                  className="w-full"
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={saveModelMutation.isPending || !modelForm.code.trim() || !modelForm.name.trim() || !modelForm.provider_model.trim()}
+                onClick={() => saveModelMutation.mutate()}
+              >
+                {saveModelMutation.isPending ? "提交中..." : editingModelId ? "保存模型" : "创建模型"}
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {canManage && (
+        <Dialog
+          open={showRouteModal}
+          onOpenChange={(open: boolean) => {
+            if (!open) {
+              setEditingRouteId(null);
+              setShowRouteModal(false);
+              setRouteForm(EMPTY_ROUTE_FORM);
+            }
+          }}
+        >
+          <DialogContent className="max-h-[90vh] w-full max-w-3xl overflow-auto">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold">{editingRouteId ? "编辑路由规则" : "新建路由规则"}</h2>
+                <p className="mt-1 text-sm text-muted">GLOBAL 规则的 key 固定为 {GLOBAL_ROUTE_KEY}。</p>
+              </div>
               <button
                 type="button"
                 className="btn-secondary w-fit"
                 onClick={() => {
                   setEditingRouteId(null);
+                  setShowRouteModal(false);
                   setRouteForm(EMPTY_ROUTE_FORM);
                 }}
               >
-                取消编辑
+                关闭
               </button>
-            )}
-          </div>
+            </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="space-y-2 text-sm">
-              <span>路由类型</span>
-              <select
-                value={routeForm.route_type}
-                onChange={(event) => setRouteForm((prev) => ({ ...prev, route_type: event.target.value as ModelRouteType }))}
-                className="control w-full"
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="space-y-2 text-sm">
+                <span>路由类型</span>
+                <Select
+                  value={routeForm.route_type}
+                  onValueChange={(value: string) => setRouteForm((prev) => ({ ...prev, route_type: value as ModelRouteType }))}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="请选择路由类型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ROUTE_TYPE_OPTIONS.map((item) => (
+                      <SelectItem key={item} value={item}>
+                        {item}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+              <label className="space-y-2 text-sm">
+                <span>Route Key</span>
+                <Input
+                  value={routeForm.route_type === "GLOBAL" ? GLOBAL_ROUTE_KEY : routeForm.route_key}
+                  disabled={routeForm.route_type === "GLOBAL"}
+                  onChange={(event) => setRouteForm((prev) => ({ ...prev, route_key: event.target.value }))}
+                  placeholder="chat.default"
+                  className="w-full"
+                />
+              </label>
+              <label className="space-y-2 text-sm">
+                <span>目标模型 Code</span>
+                <Input
+                  value={routeForm.target_model_code}
+                  onChange={(event) => setRouteForm((prev) => ({ ...prev, target_model_code: event.target.value }))}
+                  list="model-code-options"
+                  className="w-full"
+                />
+                <datalist id="model-code-options">
+                  {activeModelCodes.map((item) => (
+                    <option key={item} value={item} />
+                  ))}
+                </datalist>
+              </label>
+              <label className="space-y-2 text-sm">
+                <span>优先级（越小越高）</span>
+                <Input
+                  type="number"
+                  value={routeForm.priority}
+                  onChange={(event) => setRouteForm((prev) => ({ ...prev, priority: event.target.value }))}
+                  className="w-full"
+                />
+              </label>
+              <label className="space-y-2 text-sm md:col-span-2">
+                <span>备注</span>
+                <Input
+                  value={routeForm.note}
+                  onChange={(event) => setRouteForm((prev) => ({ ...prev, note: event.target.value }))}
+                  placeholder="例如：客服场景优先使用"
+                  className="w-full"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-sm md:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={routeForm.enabled}
+                  onChange={(event) => setRouteForm((prev) => ({ ...prev, enabled: event.target.checked }))}
+                />
+                <span>启用规则</span>
+              </label>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={saveRouteMutation.isPending || !routeForm.target_model_code.trim()}
+                onClick={() => saveRouteMutation.mutate()}
               >
-                {ROUTE_TYPE_OPTIONS.map((item) => (
-                  <option key={item} value={item}>{item}</option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-2 text-sm">
-              <span>Route Key</span>
-              <input
-                value={routeForm.route_type === "GLOBAL" ? GLOBAL_ROUTE_KEY : routeForm.route_key}
-                disabled={routeForm.route_type === "GLOBAL"}
-                onChange={(event) => setRouteForm((prev) => ({ ...prev, route_key: event.target.value }))}
-                placeholder="chat.default"
-                className="control w-full"
-              />
-            </label>
-            <label className="space-y-2 text-sm">
-              <span>目标模型 Code</span>
-              <input
-                value={routeForm.target_model_code}
-                onChange={(event) => setRouteForm((prev) => ({ ...prev, target_model_code: event.target.value }))}
-                list="model-code-options"
-                className="control w-full"
-              />
-              <datalist id="model-code-options">
-                {activeModelCodes.map((item) => (
-                  <option key={item} value={item} />
-                ))}
-              </datalist>
-            </label>
-            <label className="space-y-2 text-sm">
-              <span>优先级（越小越高）</span>
-              <input
-                type="number"
-                value={routeForm.priority}
-                onChange={(event) => setRouteForm((prev) => ({ ...prev, priority: event.target.value }))}
-                className="control w-full"
-              />
-            </label>
-            <label className="space-y-2 text-sm md:col-span-2">
-              <span>备注</span>
-              <input
-                value={routeForm.note}
-                onChange={(event) => setRouteForm((prev) => ({ ...prev, note: event.target.value }))}
-                placeholder="例如：客服场景优先使用"
-                className="control w-full"
-              />
-            </label>
-            <label className="flex items-center gap-2 text-sm md:col-span-2">
-              <input
-                type="checkbox"
-                checked={routeForm.enabled}
-                onChange={(event) => setRouteForm((prev) => ({ ...prev, enabled: event.target.checked }))}
-              />
-              <span>启用规则</span>
-            </label>
-          </div>
-
-          <div className="mt-4">
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={saveRouteMutation.isPending || !routeForm.target_model_code.trim()}
-              onClick={() => saveRouteMutation.mutate()}
-            >
-              {saveRouteMutation.isPending ? "提交中..." : editingRouteId ? "保存规则" : "创建规则"}
-            </button>
-          </div>
-        </section>
+                {saveRouteMutation.isPending ? "提交中..." : editingRouteId ? "保存规则" : "创建规则"}
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
+
     </div>
   );
 }

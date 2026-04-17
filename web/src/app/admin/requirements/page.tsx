@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { Select, TextField } from "@radix-ui/themes";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { RequirementListResponse, RequirementPriority, RequirementStatus, UserListResponse, UserPublic } from "@/types/auth";
@@ -32,6 +33,10 @@ const DEFAULT_FILTERS: Filters = {
   priority: "",
   assignee_user_id: "",
 };
+
+const ALL_STATUS_FILTER = "__all_status__";
+const ALL_PRIORITY_FILTER = "__all_priority__";
+const ALL_ASSIGNEE_FILTER = "__all_assignee__";
 
 export default function RequirementsPage() {
   const queryClient = useQueryClient();
@@ -170,43 +175,61 @@ export default function RequirementsPage() {
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-4">
-          <input
+          <TextField.Root
             value={filters.keyword}
             onChange={(event) => setFilters((prev) => ({ ...prev, keyword: event.target.value }))}
             placeholder="关键词 / 编号"
-            className="control"
+            className="w-full"
           />
-          <select
-            value={filters.status}
-            onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}
-            className="control"
+          <Select.Root
+            value={filters.status || ALL_STATUS_FILTER}
+            onValueChange={(value: string) =>
+              setFilters((prev) => ({ ...prev, status: value === ALL_STATUS_FILTER ? "" : value }))
+            }
           >
-            <option value="">全部状态</option>
-            {STATUS_OPTIONS.map((item) => (
-              <option key={item} value={item}>{item}</option>
-            ))}
-          </select>
-          <select
-            value={filters.priority}
-            onChange={(event) => setFilters((prev) => ({ ...prev, priority: event.target.value }))}
-            className="control"
+            <Select.Trigger aria-label="状态筛选" className="w-full" />
+            <Select.Content>
+              <Select.Item value={ALL_STATUS_FILTER}>全部状态</Select.Item>
+              {STATUS_OPTIONS.map((item) => (
+                <Select.Item key={item} value={item}>
+                  {item}
+                </Select.Item>
+              ))}
+            </Select.Content>
+          </Select.Root>
+          <Select.Root
+            value={filters.priority || ALL_PRIORITY_FILTER}
+            onValueChange={(value: string) =>
+              setFilters((prev) => ({ ...prev, priority: value === ALL_PRIORITY_FILTER ? "" : value }))
+            }
           >
-            <option value="">全部优先级</option>
-            {PRIORITY_OPTIONS.map((item) => (
-              <option key={item} value={item}>{item}</option>
-            ))}
-          </select>
-          <select
-            value={filters.assignee_user_id}
-            onChange={(event) => setFilters((prev) => ({ ...prev, assignee_user_id: event.target.value }))}
-            className="control"
+            <Select.Trigger aria-label="优先级筛选" className="w-full" />
+            <Select.Content>
+              <Select.Item value={ALL_PRIORITY_FILTER}>全部优先级</Select.Item>
+              {PRIORITY_OPTIONS.map((item) => (
+                <Select.Item key={item} value={item}>
+                  {item}
+                </Select.Item>
+              ))}
+            </Select.Content>
+          </Select.Root>
+          <Select.Root
+            value={filters.assignee_user_id || ALL_ASSIGNEE_FILTER}
+            onValueChange={(value: string) =>
+              setFilters((prev) => ({ ...prev, assignee_user_id: value === ALL_ASSIGNEE_FILTER ? "" : value }))
+            }
             disabled={!canManageUsers}
           >
-            <option value="">全部指派人</option>
-            {users.map((item) => (
-              <option key={item.id} value={item.id}>{item.username}</option>
-            ))}
-          </select>
+            <Select.Trigger aria-label="指派人筛选" className="w-full" />
+            <Select.Content>
+              <Select.Item value={ALL_ASSIGNEE_FILTER}>全部指派人</Select.Item>
+              {users.map((item) => (
+                <Select.Item key={item.id} value={item.id}>
+                  {item.username}
+                </Select.Item>
+              ))}
+            </Select.Content>
+          </Select.Root>
         </div>
       </section>
 

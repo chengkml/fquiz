@@ -251,6 +251,53 @@ export type ModelSummaryResponse = {
   tests_7d: ModelTestSummary;
 };
 
+export type ChatRole = "system" | "user" | "assistant";
+
+export type ChatSession = {
+  id: string;
+  owner_user_id: string;
+  title: string;
+  system_prompt: string;
+  model_code: string | null;
+  last_message_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ChatSessionListResponse = {
+  items: ChatSession[];
+  total: number;
+};
+
+export type ChatMessage = {
+  id: number;
+  session_id: string;
+  author_user_id: string | null;
+  role: ChatRole;
+  content: string;
+  is_error: boolean;
+  model_code: string | null;
+  provider: string | null;
+  provider_model: string | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
+  latency_ms: number | null;
+  error_message: string | null;
+  created_at: string;
+};
+
+export type ChatMessageListResponse = {
+  items: ChatMessage[];
+  total: number;
+};
+
+export type ChatSendResponse = {
+  session: ChatSession;
+  user_message: ChatMessage;
+  assistant_message: ChatMessage;
+};
+
 export type RequirementStatus =
   | "PENDING_ANALYSIS"
   | "PENDING_REVISION"
@@ -261,6 +308,30 @@ export type RequirementStatus =
 
 export type RequirementPriority = "low" | "medium" | "high" | "urgent";
 export type RequirementCommentKind = "comment" | "analysis" | "revision" | "system";
+
+export type TodoStatus = "TODO" | "IN_PROGRESS" | "DONE";
+export type TodoPriority = "low" | "medium" | "high" | "urgent";
+
+export type TodoSummary = {
+  id: string;
+  title: string;
+  description: string;
+  status: TodoStatus;
+  priority: TodoPriority;
+  creator_user_id: string | null;
+  assignee_user_id: string | null;
+  due_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  creator: UserPublic | null;
+  assignee: UserPublic | null;
+};
+
+export type TodoListResponse = {
+  items: TodoSummary[];
+  total: number;
+};
 
 export type RequirementSummary = {
   id: string;
