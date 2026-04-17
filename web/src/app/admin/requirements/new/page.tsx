@@ -3,7 +3,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import { ChangeEvent, useCallback, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { Button, Select, TextArea, TextField } from "@radix-ui/themes";
@@ -123,7 +123,7 @@ export default function RequirementCreatePage() {
             <span>标题</span>
             <TextField.Root
               value={title}
-              onChange={(event) => setTitle(event.target.value)}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setTitle(event.currentTarget.value)}
               className="w-full"
             />
           </label>
@@ -132,7 +132,7 @@ export default function RequirementCreatePage() {
             <span>描述</span>
             <TextArea
               value={description}
-              onChange={(event) => setDescription(event.target.value)}
+              onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setDescription(event.currentTarget.value)}
               rows={8}
               className="w-full"
             />
@@ -168,17 +168,29 @@ export default function RequirementCreatePage() {
 
           <label className="space-y-2 text-sm">
             <span>项目</span>
-            <TextField.Root value={projectName} onChange={(event) => setProjectName(event.target.value)} className="w-full" />
+            <TextField.Root
+              value={projectName}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setProjectName(event.currentTarget.value)}
+              className="w-full"
+            />
           </label>
 
           <label className="space-y-2 text-sm">
             <span>模块</span>
-            <TextField.Root value={moduleName} onChange={(event) => setModuleName(event.target.value)} className="w-full" />
+            <TextField.Root
+              value={moduleName}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setModuleName(event.currentTarget.value)}
+              className="w-full"
+            />
           </label>
 
           <label className="space-y-2 text-sm">
             <span>来源</span>
-            <TextField.Root value={source} onChange={(event) => setSource(event.target.value)} className="w-full" />
+            <TextField.Root
+              value={source}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setSource(event.currentTarget.value)}
+              className="w-full"
+            />
           </label>
 
           <label className="space-y-2 text-sm">
@@ -202,7 +214,12 @@ export default function RequirementCreatePage() {
 
           <label className="space-y-2 text-sm">
             <span>截止时间</span>
-            <TextField.Root type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} className="w-full" />
+            <TextField.Root
+              type="datetime-local"
+              value={dueAt}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setDueAt(event.currentTarget.value)}
+              className="w-full"
+            />
           </label>
         </div>
 

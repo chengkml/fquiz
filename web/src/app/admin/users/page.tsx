@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { FormEvent, useCallback, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { Button, TextField } from "@radix-ui/themes";
@@ -232,10 +232,38 @@ export default function AdminUsersPage() {
         <h2 className="text-lg font-semibold">新增用户</h2>
         <p className="mt-1 text-sm text-muted">用户 ID 由管理员手动填写，系统会校验重复。</p>
         <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={handleCreateUser}>
-          <TextField.Root placeholder="用户 ID（例如 ck001）" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} minLength={3} maxLength={64} required />
-          <TextField.Root placeholder="邮箱" type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} required />
-          <TextField.Root placeholder="用户名" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} minLength={3} maxLength={64} required />
-          <TextField.Root placeholder="初始密码（至少8位）" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8} maxLength={128} required />
+          <TextField.Root
+            placeholder="用户 ID（例如 ck001）"
+            value={newUserId}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setNewUserId(event.currentTarget.value)}
+            minLength={3}
+            maxLength={64}
+            required
+          />
+          <TextField.Root
+            placeholder="邮箱"
+            type="email"
+            value={newEmail}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setNewEmail(event.currentTarget.value)}
+            required
+          />
+          <TextField.Root
+            placeholder="用户名"
+            value={newUsername}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setNewUsername(event.currentTarget.value)}
+            minLength={3}
+            maxLength={64}
+            required
+          />
+          <TextField.Root
+            placeholder="初始密码（至少8位）"
+            type="password"
+            value={newPassword}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setNewPassword(event.currentTarget.value)}
+            minLength={8}
+            maxLength={128}
+            required
+          />
           <div className="md:col-span-2">
             <Button type="submit" disabled={createUserMutation.isPending}>
               {createUserMutation.isPending ? "创建中..." : "创建用户"}
@@ -283,8 +311,8 @@ export default function AdminUsersPage() {
                               checked={checked}
                               disabled={savingUserId === item.id}
                               className="accent-indigo-600"
-                              onChange={(event) => {
-                                const nextRoles = event.target.checked
+                              onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                                const nextRoles = event.currentTarget.checked
                                   ? [...item.role_codes, roleCode]
                                   : item.role_codes.filter((code) => code !== roleCode);
                                 updateRolesMutation.mutate({ userId: item.id, roleCodes: nextRoles });

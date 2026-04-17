@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { TextArea } from "@radix-ui/themes";
@@ -253,7 +253,7 @@ export default function AdminChatPage() {
             className="w-full"
             placeholder="请输入你的问题..."
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setDraft(event.currentTarget.value)}
             disabled={!effectiveSessionId || sendMessageMutation.isPending}
           />
           <div className="mt-3 flex items-center justify-end gap-2">

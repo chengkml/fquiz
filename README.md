@@ -56,21 +56,10 @@
    npm run dev
    ```
 
-## 常用命令
+## 前端 UI 约定
 
-```bash
-# 启动前端
-npm run dev:web
-
-# 仅启动后端
-npm run dev:api
-
-# 构建前端
-npm run build:web
-
-# 前端 lint
-npm run lint:web
-```
+- 后台与业务页面统一使用 **Radix** 体系组件（优先 `@radix-ui/themes`，必要时使用 `@radix-ui/react-*` primitives）。
+- 不再使用 `web/src/components/ui/*` 自定义 UI 封装层（button/input/select/dialog/table/checkbox/textarea 等）。
 
 ## 认证接口
 

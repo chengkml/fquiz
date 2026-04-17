@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { Button, Select, TextArea, TextField } from "@radix-ui/themes";
@@ -119,7 +119,7 @@ function RequirementEditSection({
           <span>标题</span>
           <TextField.Root
             value={title}
-            onChange={(event) => setTitle(event.target.value)}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setTitle(event.currentTarget.value)}
             className="w-full"
           />
         </label>
@@ -128,7 +128,7 @@ function RequirementEditSection({
           <span>描述</span>
           <TextArea
             value={description}
-            onChange={(event) => setDescription(event.target.value)}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setDescription(event.currentTarget.value)}
             rows={8}
             className="w-full"
           />
@@ -153,7 +153,7 @@ function RequirementEditSection({
           <TextField.Root
             type="datetime-local"
             value={dueAt}
-            onChange={(event) => setDueAt(event.target.value)}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setDueAt(event.currentTarget.value)}
             className="w-full"
           />
         </label>
@@ -162,7 +162,7 @@ function RequirementEditSection({
           <span>项目</span>
           <TextField.Root
             value={projectName}
-            onChange={(event) => setProjectName(event.target.value)}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setProjectName(event.currentTarget.value)}
             className="w-full"
           />
         </label>
@@ -171,7 +171,7 @@ function RequirementEditSection({
           <span>模块</span>
           <TextField.Root
             value={moduleName}
-            onChange={(event) => setModuleName(event.target.value)}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setModuleName(event.currentTarget.value)}
             className="w-full"
           />
         </label>
@@ -180,7 +180,7 @@ function RequirementEditSection({
           <span>来源</span>
           <TextField.Root
             value={source}
-            onChange={(event) => setSource(event.target.value)}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setSource(event.currentTarget.value)}
             className="w-full"
           />
         </label>
@@ -333,7 +333,7 @@ function RequirementActionsSection({
                 </Select.Root>
                 <TextArea
                   value={transitionNote}
-                  onChange={(event) => setTransitionNote(event.target.value)}
+                  onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setTransitionNote(event.currentTarget.value)}
                   rows={3}
                   placeholder="流转备注（可选）"
                   className="w-full"
@@ -417,7 +417,7 @@ function RequirementCommentSection({
         </Select.Root>
         <TextArea
           value={commentContent}
-          onChange={(event) => setCommentContent(event.target.value)}
+          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setCommentContent(event.currentTarget.value)}
           rows={6}
           placeholder="写点处理说明、分析结论或修订意见"
           className="w-full"

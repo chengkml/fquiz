@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { Button, Dialog, Select, Table, TextArea, TextField } from "@radix-ui/themes";
@@ -264,7 +264,9 @@ export default function TodoPage() {
         <div className="mt-4 grid gap-3 md:grid-cols-4">
           <TextField.Root
             value={filters.keyword}
-            onChange={(event) => setFilters((prev) => ({ ...prev, keyword: event.target.value }))}
+            onChange={(event: ChangeEvent<HTMLInputElement>) =>
+              setFilters((prev) => ({ ...prev, keyword: event.currentTarget.value }))
+            }
             placeholder="关键词"
             className="w-full"
           />
@@ -404,14 +406,18 @@ export default function TodoPage() {
             <TextField.Root
               className="w-full"
               value={createDraft.title}
-              onChange={(event) => setCreateDraft((prev) => ({ ...prev, title: event.target.value }))}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                setCreateDraft((prev) => ({ ...prev, title: event.currentTarget.value }))
+              }
               placeholder="标题"
             />
             <TextArea
               className="w-full"
               rows={4}
               value={createDraft.description}
-              onChange={(event) => setCreateDraft((prev) => ({ ...prev, description: event.target.value }))}
+              onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
+                setCreateDraft((prev) => ({ ...prev, description: event.currentTarget.value }))
+              }
               placeholder="描述"
             />
 
@@ -456,7 +462,9 @@ export default function TodoPage() {
                 type="datetime-local"
                 className="w-full"
                 value={createDraft.due_at}
-                onChange={(event) => setCreateDraft((prev) => ({ ...prev, due_at: event.target.value }))}
+                onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                  setCreateDraft((prev) => ({ ...prev, due_at: event.currentTarget.value }))
+                }
               />
 
               <Select.Root

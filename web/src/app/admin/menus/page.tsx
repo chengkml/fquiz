@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { ChangeEvent, useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/auth-provider";
@@ -280,7 +280,7 @@ export default function AdminMenusPage() {
             <span className="text-muted">关键词</span>
             <TextField.Root
               value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setKeyword(event.currentTarget.value)}
               placeholder="按编码/名称/路径/权限筛选"
               className="w-full"
             />
@@ -392,7 +392,7 @@ export default function AdminMenusPage() {
               <TextField.Root
                 value={form.code}
                 disabled={editingMenuId !== null}
-                onChange={(event) => setForm((prev) => ({ ...prev, code: event.target.value }))}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setForm((prev) => ({ ...prev, code: event.currentTarget.value }))}
                 className="w-full"
               />
             </label>
@@ -400,7 +400,7 @@ export default function AdminMenusPage() {
               <span>菜单名称</span>
               <TextField.Root
                 value={form.name}
-                onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setForm((prev) => ({ ...prev, name: event.currentTarget.value }))}
                 className="w-full"
               />
             </label>
@@ -408,7 +408,7 @@ export default function AdminMenusPage() {
               <span>路由路径</span>
               <TextField.Root
                 value={form.path}
-                onChange={(event) => setForm((prev) => ({ ...prev, path: event.target.value }))}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setForm((prev) => ({ ...prev, path: event.currentTarget.value }))}
                 placeholder="/admin/example"
                 className="w-full"
               />
@@ -417,7 +417,7 @@ export default function AdminMenusPage() {
               <span>图标名</span>
               <TextField.Root
                 value={form.icon}
-                onChange={(event) => setForm((prev) => ({ ...prev, icon: event.target.value }))}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setForm((prev) => ({ ...prev, icon: event.currentTarget.value }))}
                 placeholder="LayoutDashboard"
                 className="w-full"
               />
@@ -458,7 +458,7 @@ export default function AdminMenusPage() {
               <span>排序</span>
               <TextField.Root
                 value={form.sort_order}
-                onChange={(event) => setForm((prev) => ({ ...prev, sort_order: event.target.value }))}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setForm((prev) => ({ ...prev, sort_order: event.currentTarget.value }))}
                 type="number"
                 className="w-full"
               />
@@ -477,7 +477,7 @@ export default function AdminMenusPage() {
               <span>组件标识</span>
               <TextField.Root
                 value={form.component}
-                onChange={(event) => setForm((prev) => ({ ...prev, component: event.target.value }))}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setForm((prev) => ({ ...prev, component: event.currentTarget.value }))}
                 placeholder="app/admin/users/page"
                 className="w-full"
               />
@@ -486,7 +486,7 @@ export default function AdminMenusPage() {
               <span>权限码</span>
               <TextField.Root
                 value={form.permission_code}
-                onChange={(event) => setForm((prev) => ({ ...prev, permission_code: event.target.value }))}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setForm((prev) => ({ ...prev, permission_code: event.currentTarget.value }))}
                 placeholder="menu.read"
                 className="w-full"
               />

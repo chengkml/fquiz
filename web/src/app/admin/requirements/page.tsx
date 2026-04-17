@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { Select, TextField } from "@radix-ui/themes";
@@ -177,7 +177,9 @@ export default function RequirementsPage() {
         <div className="mt-4 grid gap-3 md:grid-cols-4">
           <TextField.Root
             value={filters.keyword}
-            onChange={(event) => setFilters((prev) => ({ ...prev, keyword: event.target.value }))}
+            onChange={(event: ChangeEvent<HTMLInputElement>) =>
+              setFilters((prev) => ({ ...prev, keyword: event.currentTarget.value }))
+            }
             placeholder="关键词 / 编号"
             className="w-full"
           />

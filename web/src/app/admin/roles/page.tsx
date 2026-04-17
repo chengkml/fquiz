@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { ChangeEvent, useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/auth-provider";
@@ -301,7 +301,9 @@ export default function AdminRolesPage() {
                 <TextField.Root
                   value={form.code}
                   disabled={editingRoleId !== null}
-                  onChange={(event) => setForm((prev) => ({ ...prev, code: event.target.value }))}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                    setForm((prev) => ({ ...prev, code: event.currentTarget.value }))
+                  }
                   className="w-full"
                 />
               </label>
@@ -309,7 +311,9 @@ export default function AdminRolesPage() {
                 <span>角色名称</span>
                 <TextField.Root
                   value={form.name}
-                  onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                    setForm((prev) => ({ ...prev, name: event.currentTarget.value }))
+                  }
                   className="w-full"
                 />
               </label>
@@ -317,7 +321,9 @@ export default function AdminRolesPage() {
                 <span>权限编码（逗号分隔）</span>
                 <TextField.Root
                   value={form.permission_codes}
-                  onChange={(event) => setForm((prev) => ({ ...prev, permission_codes: event.target.value }))}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                    setForm((prev) => ({ ...prev, permission_codes: event.currentTarget.value }))
+                  }
                   placeholder={permissions.map((item) => item.code).join(", ")}
                   className="w-full"
                 />
@@ -332,10 +338,10 @@ export default function AdminRolesPage() {
                         <input
                           type="checkbox"
                           checked={checked}
-                          onChange={(event) => {
+                          onChange={(event: ChangeEvent<HTMLInputElement>) => {
                             setForm((prev) => ({
                               ...prev,
-                              menu_ids: event.target.checked
+                              menu_ids: event.currentTarget.checked
                                 ? [...prev.menu_ids, item.value]
                                 : prev.menu_ids.filter((menuId) => menuId !== item.value),
                             }));

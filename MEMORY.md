@@ -93,6 +93,7 @@
 - 阶段 B（表单控件统一）已覆盖：`/admin/requirements`、`/admin/requirements/new`、`/admin/requirements/[id]`、`/admin/menus`、`/admin/models`、`/admin/users`；上述页面不再使用原生 `select/textarea` 与 `control` 样式输入，统一走 `@/components/ui` 的 `Input/Select/TextArea` 组件。
 - 阶段 B 收尾已完成：`/admin/chat` 的消息输入框已统一为 `TextArea`；当前 `web/src/app/admin/**` 已无原生 `select/textarea` 与 `control` 直连输入写法。
 - 阶段 C（弹窗统一）已完成：`/admin/models` 与 `/admin/roles` 的手写遮罩弹窗（`fixed inset-0`）已统一迁移为 `@/components/ui` 的 `Dialog`，并保留原有新建/编辑/关闭与提交行为。
+- 在当前 `@radix-ui/themes` + TS 配置下，`TextField.Root` / `TextArea` 的 `onChange` 处理函数应显式标注 `ChangeEvent<HTMLInputElement | HTMLTextAreaElement>`；否则 `next build` 的 TypeScript 阶段可能出现 `Parameter implicitly has an 'any' type`，且输入/文本域混用时会触发事件类型不兼容。
 
 ## 前端主题口径（2026-04-17）
 

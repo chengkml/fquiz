@@ -504,7 +504,7 @@ export default function AdminFilesPage() {
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <input
                 value={newDirectoryName}
-                onChange={(event) => setNewDirectoryName(event.target.value)}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setNewDirectoryName(event.currentTarget.value)}
                 placeholder="新建目录名"
                 className="w-full max-w-xs control"
               />
@@ -555,7 +555,7 @@ export default function AdminFilesPage() {
                             <div className="flex flex-wrap items-center gap-2">
                               <input
                                 value={renameName}
-                                onChange={(event) => setRenameName(event.target.value)}
+                                onChange={(event: ChangeEvent<HTMLInputElement>) => setRenameName(event.currentTarget.value)}
                                 placeholder="新名称"
                                 className="control w-48 px-2 py-1 text-xs"
                               />
@@ -571,13 +571,13 @@ export default function AdminFilesPage() {
                             <div className="flex flex-wrap items-center gap-2">
                               <input
                                 value={moveTargetParentPath}
-                                onChange={(event) => setMoveTargetParentPath(event.target.value)}
+                                onChange={(event: ChangeEvent<HTMLInputElement>) => setMoveTargetParentPath(event.currentTarget.value)}
                                 placeholder="目标目录（如 /a/b）"
                                 className="control w-48 px-2 py-1 text-xs"
                               />
                               <input
                                 value={moveNewName}
-                                onChange={(event) => setMoveNewName(event.target.value)}
+                                onChange={(event: ChangeEvent<HTMLInputElement>) => setMoveNewName(event.currentTarget.value)}
                                 placeholder="新名称（可选）"
                                 className="control w-40 px-2 py-1 text-xs"
                               />

@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { Dialog, Select, TextArea, TextField } from "@radix-ui/themes";
@@ -553,7 +553,7 @@ export default function AdminModelsPage() {
           <div className="grid gap-2 md:grid-cols-2">
             <TextField.Root
               value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setKeyword(event.currentTarget.value)}
               placeholder="搜索 code/name/provider"
               className="w-full"
             />
@@ -793,7 +793,7 @@ export default function AdminModelsPage() {
       </section>
 
       {canManage && (
-        <Dialog
+        <Dialog.Root
           open={showModelModal}
           onOpenChange={(open: boolean) => {
             if (!open) {
@@ -803,7 +803,7 @@ export default function AdminModelsPage() {
             }
           }}
         >
-          <DialogContent className="max-h-[90vh] w-full max-w-3xl overflow-auto">
+          <Dialog.Content className="max-h-[90vh] w-full max-w-3xl overflow-auto">
             <div className="mb-4 flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold">{editingModelId ? "编辑模型" : "新建模型"}</h2>
@@ -825,83 +825,81 @@ export default function AdminModelsPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <label className="space-y-2 text-sm">
                 <span>模型编码（稳定引用键）</span>
-                <Input
+                <TextField.Root
                   value={modelForm.code}
                   disabled={editingModelId !== null}
-                  onChange={(event) => setModelForm((prev) => ({ ...prev, code: event.target.value }))}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setModelForm((prev) => ({ ...prev, code: event.currentTarget.value }))}
                   placeholder="openai.gpt-5"
                   className="w-full"
                 />
               </label>
               <label className="space-y-2 text-sm">
                 <span>模型名称（展示用）</span>
-                <Input
+                <TextField.Root
                   value={modelForm.name}
-                  onChange={(event) => setModelForm((prev) => ({ ...prev, name: event.target.value }))}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setModelForm((prev) => ({ ...prev, name: event.currentTarget.value }))}
                   placeholder="GPT-5 主模型"
                   className="w-full"
                 />
               </label>
               <label className="space-y-2 text-sm">
                 <span>Provider</span>
-                <Select
+                <Select.Root
                   value={modelForm.provider}
                   onValueChange={(value: string) => setModelForm((prev) => ({ ...prev, provider: value }))}
                 >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="请选择 Provider" />
-                  </SelectTrigger>
-                  <SelectContent>
+                  <Select.Trigger className="w-full">
+                  </Select.Trigger>
+                  <Select.Content>
                     {providerOptions.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
+                      <Select.Item key={item.value} value={item.value}>
                         {item.label}
-                      </SelectItem>
+                      </Select.Item>
                     ))}
-                  </SelectContent>
-                </Select>
+                  </Select.Content>
+                </Select.Root>
               </label>
               <label className="space-y-2 text-sm">
                 <span>Provider Model</span>
-                <Input
+                <TextField.Root
                   value={modelForm.provider_model}
-                  onChange={(event) => setModelForm((prev) => ({ ...prev, provider_model: event.target.value }))}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setModelForm((prev) => ({ ...prev, provider_model: event.currentTarget.value }))}
                   placeholder="gpt-5"
                   className="w-full"
                 />
               </label>
               <label className="space-y-2 text-sm">
                 <span>初始状态</span>
-                <Select
+                <Select.Root
                   value={modelForm.status}
                   disabled={editingModelId !== null}
                   onValueChange={(value: string) => setModelForm((prev) => ({ ...prev, status: value as ModelStatus }))}
                 >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="请选择状态" />
-                  </SelectTrigger>
-                  <SelectContent>
+                  <Select.Trigger className="w-full">
+                  </Select.Trigger>
+                  <Select.Content>
                     {MODEL_STATUS_OPTIONS.map((item) => (
-                      <SelectItem key={item} value={item}>
+                      <Select.Item key={item} value={item}>
                         {formatModelStatus(item)}
-                      </SelectItem>
+                      </Select.Item>
                     ))}
-                  </SelectContent>
-                </Select>
+                  </Select.Content>
+                </Select.Root>
               </label>
               <label className="space-y-2 text-sm">
                 <span>能力标签（逗号分隔）</span>
-                <Input
+                <TextField.Root
                   value={modelForm.capabilities}
-                  onChange={(event) => setModelForm((prev) => ({ ...prev, capabilities: event.target.value }))}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setModelForm((prev) => ({ ...prev, capabilities: event.currentTarget.value }))}
                   placeholder="chat,reasoning"
                   className="w-full"
                 />
               </label>
               <label className="space-y-2 text-sm md:col-span-2">
                 <span>Base URL</span>
-                <Input
+                <TextField.Root
                   value={modelForm.base_url}
-                  onChange={(event) => setModelForm((prev) => ({ ...prev, base_url: event.target.value }))}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setModelForm((prev) => ({ ...prev, base_url: event.currentTarget.value }))}
                   placeholder="https://api.example.com"
                   className="w-full"
                 />
@@ -909,9 +907,9 @@ export default function AdminModelsPage() {
               {!editingModelId && (
                 <label className="space-y-2 text-sm md:col-span-2">
                   <span>初始 API Key（仅创建时）</span>
-                  <Input
+                  <TextField.Root
                     value={modelForm.api_key}
-                    onChange={(event) => setModelForm((prev) => ({ ...prev, api_key: event.target.value }))}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => setModelForm((prev) => ({ ...prev, api_key: event.currentTarget.value }))}
                     placeholder="sk-..."
                     className="w-full"
                   />
@@ -922,7 +920,7 @@ export default function AdminModelsPage() {
                 <TextArea
                   rows={4}
                   value={modelForm.description}
-                  onChange={(event) => setModelForm((prev) => ({ ...prev, description: event.target.value }))}
+                  onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setModelForm((prev) => ({ ...prev, description: event.currentTarget.value }))}
                   placeholder="模型用途、限制、成本策略..."
                   className="w-full"
                 />
@@ -939,12 +937,12 @@ export default function AdminModelsPage() {
                 {saveModelMutation.isPending ? "提交中..." : editingModelId ? "保存模型" : "创建模型"}
               </button>
             </div>
-          </DialogContent>
-        </Dialog>
+          </Dialog.Content>
+        </Dialog.Root>
       )}
 
       {canManage && (
-        <Dialog
+        <Dialog.Root
           open={showRouteModal}
           onOpenChange={(open: boolean) => {
             if (!open) {
@@ -954,7 +952,7 @@ export default function AdminModelsPage() {
             }
           }}
         >
-          <DialogContent className="max-h-[90vh] w-full max-w-3xl overflow-auto">
+          <Dialog.Content className="max-h-[90vh] w-full max-w-3xl overflow-auto">
             <div className="mb-4 flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold">{editingRouteId ? "编辑路由规则" : "新建路由规则"}</h2>
@@ -976,37 +974,36 @@ export default function AdminModelsPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <label className="space-y-2 text-sm">
                 <span>路由类型</span>
-                <Select
+                <Select.Root
                   value={routeForm.route_type}
                   onValueChange={(value: string) => setRouteForm((prev) => ({ ...prev, route_type: value as ModelRouteType }))}
                 >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="请选择路由类型" />
-                  </SelectTrigger>
-                  <SelectContent>
+                  <Select.Trigger className="w-full">
+                  </Select.Trigger>
+                  <Select.Content>
                     {ROUTE_TYPE_OPTIONS.map((item) => (
-                      <SelectItem key={item} value={item}>
+                      <Select.Item key={item} value={item}>
                         {item}
-                      </SelectItem>
+                      </Select.Item>
                     ))}
-                  </SelectContent>
-                </Select>
+                  </Select.Content>
+                </Select.Root>
               </label>
               <label className="space-y-2 text-sm">
                 <span>Route Key</span>
-                <Input
+                <TextField.Root
                   value={routeForm.route_type === "GLOBAL" ? GLOBAL_ROUTE_KEY : routeForm.route_key}
                   disabled={routeForm.route_type === "GLOBAL"}
-                  onChange={(event) => setRouteForm((prev) => ({ ...prev, route_key: event.target.value }))}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setRouteForm((prev) => ({ ...prev, route_key: event.currentTarget.value }))}
                   placeholder="chat.default"
                   className="w-full"
                 />
               </label>
               <label className="space-y-2 text-sm">
                 <span>目标模型 Code</span>
-                <Input
+                <TextField.Root
                   value={routeForm.target_model_code}
-                  onChange={(event) => setRouteForm((prev) => ({ ...prev, target_model_code: event.target.value }))}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setRouteForm((prev) => ({ ...prev, target_model_code: event.currentTarget.value }))}
                   list="model-code-options"
                   className="w-full"
                 />
@@ -1018,19 +1015,20 @@ export default function AdminModelsPage() {
               </label>
               <label className="space-y-2 text-sm">
                 <span>优先级（越小越高）</span>
-                <Input
+                <TextField.Root
                   type="number"
                   value={routeForm.priority}
-                  onChange={(event) => setRouteForm((prev) => ({ ...prev, priority: event.target.value }))}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setRouteForm((prev) => ({ ...prev, priority: event.currentTarget.value }))}
                   className="w-full"
                 />
               </label>
               <label className="space-y-2 text-sm md:col-span-2">
                 <span>备注</span>
-                <Input
+                <TextArea
                   value={routeForm.note}
-                  onChange={(event) => setRouteForm((prev) => ({ ...prev, note: event.target.value }))}
+                  onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setRouteForm((prev) => ({ ...prev, note: event.currentTarget.value }))}
                   placeholder="例如：客服场景优先使用"
+                  rows={2}
                   className="w-full"
                 />
               </label>
@@ -1038,7 +1036,7 @@ export default function AdminModelsPage() {
                 <input
                   type="checkbox"
                   checked={routeForm.enabled}
-                  onChange={(event) => setRouteForm((prev) => ({ ...prev, enabled: event.target.checked }))}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setRouteForm((prev) => ({ ...prev, enabled: event.currentTarget.checked }))}
                 />
                 <span>启用规则</span>
               </label>
@@ -1054,8 +1052,8 @@ export default function AdminModelsPage() {
                 {saveRouteMutation.isPending ? "提交中..." : editingRouteId ? "保存规则" : "创建规则"}
               </button>
             </div>
-          </DialogContent>
-        </Dialog>
+          </Dialog.Content>
+        </Dialog.Root>
       )}
 
     </div>

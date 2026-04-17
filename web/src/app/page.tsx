@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, ChangeEvent, useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { API_BASE_URL, getApiBaseUrl, readApiError } from "@/lib/api";
@@ -201,7 +201,7 @@ export default function Home() {
               type="email"
               autoComplete="username"
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setEmail(event.currentTarget.value)}
               required
             />
             {mode === "register" && (
@@ -210,7 +210,7 @@ export default function Home() {
                 placeholder="Username"
                 type="text"
                 value={username}
-                onChange={(event) => setUsername(event.target.value)}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setUsername(event.currentTarget.value)}
                 minLength={3}
                 maxLength={64}
                 required
@@ -222,7 +222,7 @@ export default function Home() {
               type="password"
               autoComplete={mode === "login" ? "current-password" : "new-password"}
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setPassword(event.currentTarget.value)}
               minLength={8}
               maxLength={128}
               required
@@ -232,7 +232,7 @@ export default function Home() {
                 <input
                   type="checkbox"
                   checked={rememberPassword}
-                  onChange={(event) => setRememberPassword(event.target.checked)}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setRememberPassword(event.currentTarget.checked)}
                 />
                 记住密码
               </label>
