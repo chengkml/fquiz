@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -91,6 +93,22 @@ class MenuUpdateRequest(BaseModel):
 
 class RoleMenuUpdateRequest(BaseModel):
     menu_ids: list[int] = Field(default_factory=list)
+
+
+class AuditLogPublic(BaseModel):
+    id: int
+    user_id: str | None = None
+    username: str | None = None
+    action: str
+    detail: str | None = None
+    created_at: datetime
+
+
+class AuditLogListResponse(BaseModel):
+    items: list[AuditLogPublic]
+    total: int
+    limit: int
+    offset: int
 
 
 MenuTreeItem.model_rebuild()

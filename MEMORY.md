@@ -51,6 +51,7 @@
 - CORS 来源控制采用“双轨配置”：`API_CORS_ORIGINS`（精确列表）+ `API_CORS_ORIGIN_REGEX`（正则，可选）；`API_CORS_ORIGINS` 支持 `*` 和通配符域名并在后端转换为 `allow_origin_regex`。
 - GitHub Actions 使用 `appleboy/ssh-action` 部署时，慢网环境需显式设置 `command_timeout`（建议 `45m`）并为 `docker compose pull` 增加重试，避免出现 `Run Command Timeout` 直接中断发布。
 - `docker compose up -d` 不会重建 `build` 类型服务镜像；本项目 `web` 无源码挂载且运行 Next.js 生产构建产物，前端代码变更后需执行 `docker compose up --build -d web`（必要时先 `docker compose build --no-cache web`）。
+- `api` 构建若在拉取 `docker.m.daocloud.io/library/python:3.11-slim` 时出现 manifest `EOF`，优先重试 `docker compose build api`；若持续失败，可在 `.env` 覆盖 `PYTHON_BASE_IMAGE=python:3.11-slim` 走 Docker Hub 兜底。
 
 ## 前端视觉口径（2026-04-12）
 
@@ -103,6 +104,11 @@
 - `web/src/components/ui/*` 的样式应优先通过语义类（如 `dialog-content`、`select-content`、`checkbox-control`）承接主题，确保后续仅改 token 即可全局换肤。
 - `web` Docker 构建基于 `node:alpine` 时，`web/package-lock.json` 必须保留 musl 可选依赖条目（至少 `lightningcss-linux-x64-musl`、`@tailwindcss/oxide-linux-x64-musl`）；缺失会在 `next build` 阶段触发 `Cannot find module ...musl.node`。
 
+## 登录页与品牌文案口径（2026-04-18）
+
+- 站点品牌标题统一使用 `Quiz`：至少保持 `web/src/app/layout.tsx` 的 `metadata.title` 与首页主标题一致。
+- 登录页默认不展示 `API Base URL`，仅保留 `getApiBaseUrl()` 在请求链路中的能力（不影响鉴权与 API 调用逻辑）。
+
 ## AI 聊天口径（2026-04-13）
 
 - 一期聊天入口固定为后台路由 `/admin/chat`，权限码为 `chat.use`。
@@ -110,3 +116,65 @@
 - 仅允许 `ENABLED` 且具备激活密钥记录的模型参与路由命中；若不满足，接口返回 400。
 - 运行时真实 Provider Key 不从数据库反解，统一从环境变量 `LLM_PROVIDER_API_KEYS` 注入（支持 `openai=sk-...` 或 JSON 字典字符串）。
 - 一期模型调用采用非流式 OpenAI-compatible `POST /chat/completions`，后续如需流式再扩展 SSE/WS。
+
+## 前端 Radix 全量化口径（2026-04-18）
+
+- `web/src/app/**` 已完成“去语义类 + 组件全量 Radix 化”：不再依赖 `surface-card` / `btn-*` / `control` / `table-*` / `notice*` / `text-muted` 等自定义语义类。
+- 页面组件基线统一为 `@radix-ui/themes`：
+  - 交互：`Button` / `Checkbox`
+  - 输入：`TextField.Root` / `TextArea` / `Select.Root`
+  - 表格：`Table.Root + Header/Body/Row/ColumnHeaderCell/Cell`
+- 工程约束更新：`web/src/app` 下默认不再引入原生 `button/input/select/textarea/table` 作为业务 UI（除非有明确无替代场景并单独说明）。
+- `web/src/app/globals.css` 仅保留基础排版与 Radix token 基线，不再承载语义组件样式层。
+
+## 前端上传控件类型口径（2026-04-18）
+
+- 在当前 `@radix-ui/themes` 类型定义下，`TextField.Root` 的 `type` 联合不包含 `file`。
+- 文件上传场景应使用原生 `<input type="file">`（可配合主题 token 做样式），避免在 `next build` 的 TypeScript 阶段触发类型错误。
+
+## 前台组件选型优先级（程凯指定，2026-04-18）
+
+- 前台页面组件默认优先使用 `Radix UI`（含 `@radix-ui/themes` 与 Radix primitives）。
+- 仅当 Radix 体系内没有合适组件时，才使用其他组件方案。
+- 引入非 Radix 组件时，优先最小依赖与最小改动，并保持现有主题与交互风格一致。
+
+## 菜单迁移口径（2026-04-18）
+
+- `日程管理` 菜单迁移采用最小改动策略：新增菜单 `admin.schedule`（`/admin/schedule`，权限 `todo.read`），并直接复用 `todos` 页面能力作为日程管理承载。
+- `admin.schedule` 已加入后端与前端受保护菜单集合，避免在菜单管理中被误删。
+- `家庭作业` 菜单迁移采用最小改动策略：新增菜单 `admin.homework`（`/admin/homework`，权限 `question_bank.read`），并直接复用 `question-bank` 页面能力作为家庭作业承载。
+- `admin.homework` 已加入后端与前端受保护菜单集合，避免在菜单管理中被误删。
+- `作业监控` 菜单迁移采用最小改动策略：新增菜单 `admin.job_mgr`（`/admin/job`，权限 `question_bank.read`），并由 `web/src/app/admin/job/page.tsx` 复用 `question-bank` 页面能力承载作业监控交互。
+- `admin.job_mgr` 已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口，避免在菜单管理中被误删。
+- `题库统计` 菜单迁移采用最小改动策略：新增菜单 `admin.mindmap`（`/admin/mindmap`，权限 `question_bank.read`），并复用现有题库统计承载页面能力。
+- `admin.mindmap` 已加入后端默认菜单绑定与前端后台首页入口，确保菜单可见且可直达。
+- `诗词本` 菜单迁移沿用词条能力：保留菜单编码 `admin.vocabulary` 与权限 `vocabulary.read`，菜单文案统一为“诗词本”，默认路由为 `/admin/poetry`，并由 `web/src/app/admin/poetry/page.tsx` 复用 `vocabulary` 页面实现。
+- `价格监控` 菜单迁移沿用 Token 统计能力：保留菜单编码 `admin.token_usage` 与权限 `model.read`，菜单文案统一为“价格监控”，默认路由为 `/admin/price-monitor`，并由 `web/src/app/admin/price-monitor/page.tsx` 复用 `token-usage` 页面实现。
+- `API测试` 菜单迁移沿用模型测试能力：新增菜单编码 `admin.api_tester`（`/admin/api-tester`，权限 `model.read`），由 `web/src/app/admin/api-tester/page.tsx` 复用 `models` 页面承载“冒烟测试/对话测试/测试记录”能力；并已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
+- `模型管理` 菜单迁移沿用既有模型能力：保留菜单编码 `admin.models`（`/admin/models`，权限 `model.read/model.manage`），继续由 `web/src/app/admin/models/page.tsx` 承载模型台账、状态流转、路由规则、密钥轮换、健康检查与测试能力；并已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
+- `流程图` 菜单迁移沿用 MD 解析能力：新增菜单编码 `admin.mermaid_mgr`（`/admin/mermaid-mgr`，权限 `question_bank.read`），由 `web/src/app/admin/mermaid-mgr/page.tsx` 复用 `mdresolve` 页面承载 Markdown 解析与批量导入能力；并已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
+- `上帝视角` 菜单迁移沿用系统日志能力：新增菜单编码 `admin.diary`（`/admin/diary`，权限 `menu.read`），由 `web/src/app/admin/diary/page.tsx` 复用 `syslog` 页面承载审计日志查询能力；并已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
+- `待办管理` 菜单迁移采用最小改动策略：保留菜单编码 `admin.todos`（`/admin/todos`，权限 `todo.read`），并沿用现有 `todos` 页面能力承载待办管理完整交互（筛选、创建、状态流转、删除）。
+- `队列管理` 菜单迁移采用最小改动策略：新增菜单编码 `admin.queue_mgr`（`/admin/jobqueue`，权限 `todo.read`），并由 `web/src/app/admin/jobqueue/page.tsx` 复用 `todos` 页面能力承接队列任务清单管理；已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
+- `试题管理` 菜单迁移采用最小改动策略：保留菜单编码 `admin.question_bank`（`/admin/question-bank`，权限 `question_bank.read`），菜单文案统一为“试题管理”；前端后台首页入口文案同步为“试题管理”，并继续复用现有题库题目管理页面能力（列表、筛选、编辑、状态流转、标签管理）。
+- `分组管理` 菜单迁移沿用标签能力：保留菜单编码 `admin.tag` 与权限 `question_bank.read`，菜单文案统一为“分组管理”，默认路由迁移为 `/admin/group`，并由 `web/src/app/admin/group/page.tsx` 复用 `tag` 页面承载分组检索、重命名与解除关联能力。
+- `知识点管理` 菜单迁移沿用标签能力：新增菜单编码 `admin.knowledge_point_mgr`（`/admin/knowledge`，权限 `question_bank.read`），并由 `web/src/app/admin/knowledge/page.tsx` 复用 `tag` 页面承载知识点检索、重命名与解除关联能力；已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
+- `MCP管理` 菜单迁移沿用模型编排能力：新增菜单编码 `admin.mcp_server`（`/admin/mcp-server`，权限 `model.read`），并由 `web/src/app/admin/mcp-server/page.tsx` 复用 `models` 页面承载模型/路由规则管理能力；已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
+- `菜单管理` 菜单迁移沿用现有后台菜单能力：保留菜单编码 `admin.menus`（`/admin/menus`）、权限 `menu.read/menu.manage` 与前后端 CRUD/树形查询接口（`/api/v1/admin/menus*`）不变，继续由 `web/src/app/admin/menus/page.tsx` 承载菜单筛选、新建、编辑、删除与受保护菜单拦截能力。
+- `微信小程序` 菜单迁移采用最小改动策略：新增菜单编码 `admin.wxapp`（`/admin/wxapp`，权限 `system_param.read`），并由 `web/src/app/admin/wxapp/page.tsx` 复用 `system-params` 页面能力承载微信小程序配置项维护。
+- `admin.wxapp` 已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口，确保可见、可达且不被误删。
+- `单词统计` 菜单迁移采用最小改动策略：保留菜单编码 `admin.knowledge_mastery`（`/admin/vocabulary-proficiency`，权限 `vocabulary.read`），并由 `web/src/app/admin/vocabulary-proficiency/page.tsx` 承载词条总量、状态分布、缺失字段与最近更新趋势统计能力；已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
+- `队列管理` 菜单迁移采用最小改动策略：新增菜单编码 `admin.queue_mgr`（`/admin/jobqueue`，权限 `todo.read`），并由 `web/src/app/admin/jobqueue/page.tsx` 复用 `todos` 页面承载队列任务清单能力；已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
+- `提示词管理` 菜单迁移沿用系统消息能力：保留菜单编码 `admin.system_message` 与权限 `system_message.read/system_message.manage`，菜单文案统一为“提示词管理”，默认路由迁移为 `/admin/prompt`，并由 `web/src/app/admin/prompt/page.tsx` 复用 `system-message` 页面承载提示词内容、等级、有效期与发布状态维护能力。
+- `历史答卷` 菜单迁移采用最小改动策略：保留菜单编码 `admin.history`（`/admin/history`，权限 `question_bank.read`），并由 `web/src/app/admin/history/page.tsx` 复用 `question-bank` 页面承载历史答卷查询与管理能力；已加入后端与前端受保护菜单集合与后台首页入口。
+- `脚本管理` 菜单迁移采用最小改动策略：保留菜单编码 `admin.cron_task_mgr`（`/admin/cron`，权限 `todo.read`），菜单文案统一为“脚本管理”，并继续由 `web/src/app/admin/cron/page.tsx` 复用 `todos` 页面承载脚本任务清单能力。
+- `百度网盘` 菜单迁移采用最小改动策略：新增菜单编码 `admin.baidu_pan`（`/admin/baidu-pan`，权限 `file.read`），并由 `web/src/app/admin/baidu-pan/page.tsx` 复用 `files` 页面承载目录浏览、上传、重命名、移动、删除与下载能力；已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
+- `文件识别` 菜单迁移采用最小改动策略：新增菜单编码 `admin.filedetector`（`/admin/filedetector`，权限 `file.read`），并由 `web/src/app/admin/filedetector/page.tsx` 复用 `files` 页面承载目录浏览、上传、重命名、移动、删除与下载能力；已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
+- `热搜` 菜单迁移采用最小改动策略：新增菜单编码 `admin.hot_search`（`/admin/hot-search`，权限 `menu.read`），并由 `web/src/app/admin/hot-search/page.tsx` 复用 `data-query` 页面承接热搜入口；后端同步提供 `/api/v1/admin/hot-search` 记录检索与关注主题能力（`api/app/api/v1/hot_search.py` + `api/app/services/hot_search_service.py` + `api/app/models/hot_search.py`）作为后续独立热搜交互能力底座。
+
+## 前端主题纯化口径（2026-04-18）
+
+- `web/src/app/globals.css` 保持最小化：仅保留 Tailwind 导入与基础全局规则，不再承载字体栈覆盖、Radix token 二次映射、装饰性渐变背景。
+- `web/src/app/layout.tsx` 只负责注入 `@radix-ui/themes/styles.css` 与 `Theme` Provider，不再通过根容器类叠加自定义主题视觉。
+- `web/src/app/admin/layout.tsx` 使用 Radix Themes 组件（`Card/Flex/Text/Heading/Button/Callout`）组织后台壳层，避免硬编码品牌色光斑与渐变块。
+- `web/src/app/**` 中 `Button` 视觉优先通过 `variant / color / size` 控制；不再使用长 Tailwind 颜色类拼接按钮主题。

@@ -2,10 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { Button, Table, TextField } from "@radix-ui/themes";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type {
@@ -58,8 +59,6 @@ export default function AdminFilesPage() {
   const [moveTargetParentPath, setMoveTargetParentPath] = useState("/");
   const [moveNewName, setMoveNewName] = useState("");
   const [activeItemPath, setActiveItemPath] = useState<string | null>(null);
-
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const canRead = hasPermission("file.read") || hasPermission("file.manage");
   const canManage = hasPermission("file.manage");
@@ -319,10 +318,6 @@ export default function AdminFilesPage() {
     void moveMutation.mutateAsync(item);
   };
 
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
-  };
-
   const handleUploadChange = (event: ChangeEvent<HTMLInputElement>) => {
     const selected = event.target.files?.[0];
     if (!selected) {
@@ -379,14 +374,14 @@ export default function AdminFilesPage() {
     uploadMutation.isPending;
 
   if (initializing || filesQuery.isLoading) {
-    return <p className="text-sm text-muted">Loading files...</p>;
+    return <p className="text-sm text-[var(--gray-11)]">Loading files...</p>;
   }
 
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-muted">请先登录后再访问文件管理页面。</p>
-        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
+        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问文件管理页面。</p>
+        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回首页</Link>
       </main>
     );
   }
@@ -394,8 +389,8 @@ export default function AdminFilesPage() {
   if (!canRead) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-muted">你没有访问该页面的权限（需要 `file.read`）。</p>
-        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
+        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `file.read`）。</p>
+        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回首页</Link>
       </main>
     );
   }
@@ -403,114 +398,107 @@ export default function AdminFilesPage() {
   return (
     <div className="space-y-6">
       {(listError || errorMessage) && (
-        <pre className="notice notice-error">
+        <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">
           {listError || errorMessage}
         </pre>
       )}
       {feedbackMessage && (
-        <pre className="notice notice-success">
+        <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--green-6)] bg-[var(--green-a2)] p-4 text-sm text-[var(--green-11)]">
           {feedbackMessage}
         </pre>
       )}
 
       <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
-        <section className="surface-card">
+        <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
           <h2 className="text-lg font-semibold">挂载点</h2>
-          <p className="mt-1 text-sm text-muted">一期按挂载点浏览目录树，支持 VFS/S3。</p>
+          <p className="mt-1 text-sm text-[var(--gray-11)]">一期按挂载点浏览目录树，支持 VFS/S3。</p>
           <div className="mt-4 space-y-2">
             {mounts.map((mount) => {
               const selected = mount.code === (listData?.current_mount.code ?? mountCode);
               return (
-                <button
+                <Button
                   key={mount.id}
                   type="button"
                   onClick={() => handleSelectMount(mount)}
                   className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition ${
                     selected
-                      ? "border-indigo-400 bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-[0_10px_22px_rgba(79,70,229,0.28)]"
-                      : "border-[var(--border)] bg-white/70 text-slate-700 hover:border-indigo-200 hover:bg-indigo-50/70"
+                      ? "border-[var(--accent-7)] bg-[var(--accent-9)] text-[var(--accent-contrast,#fff)]"
+                      : "border-[var(--border)] bg-[var(--color-panel-solid,var(--gray-1))] text-[var(--gray-12)] hover:border-[var(--accent-6)] hover:bg-[var(--accent-a2)]"
                   }`}
                 >
                   <p className="font-medium">{mount.name}</p>
-                  <p className={`text-xs ${selected ? "text-indigo-100" : "text-muted"}`}>
+                  <p className={`text-xs ${selected ? "text-[var(--accent-a2)]" : "text-[var(--gray-11)]"}`}>
                     {mount.backend.driver_type} · {mount.code}
                   </p>
-                </button>
+                </Button>
               );
             })}
             {mounts.length === 0 && (
-              <p className="text-sm text-muted">暂无可用挂载点。</p>
+              <p className="text-sm text-[var(--gray-11)]">暂无可用挂载点。</p>
             )}
           </div>
         </section>
 
-        <section className="surface-card">
+        <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">文件列表</h2>
-              <p className="mt-1 text-sm text-muted">
+              <p className="mt-1 text-sm text-[var(--gray-11)]">
                 存储后端：{listData?.current_mount.backend.name ?? "-"}（{listData?.current_mount.backend.driver_type ?? "-"}）
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <button
+              <Button
                 type="button"
-                className="btn-secondary btn-small"
+                color="gray" size="1" variant="soft"
                 onClick={() => void refreshCurrentPath()}
                 disabled={filesQuery.isFetching}
               >
                 {filesQuery.isFetching ? "刷新中..." : "刷新"}
-              </button>
+              </Button>
               {canManage && (
                 <>
                   <input
-                    ref={fileInputRef}
                     type="file"
-                    className="hidden"
+                    aria-label="上传文件"
+                    className="block w-72 cursor-pointer rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-3 py-2 text-sm text-[var(--gray-12)] file:mr-3 file:cursor-pointer file:rounded file:border-0 file:bg-[var(--accent-9)] file:px-2.5 file:py-1 file:text-xs file:font-semibold file:text-[var(--accent-contrast,#fff)] hover:file:bg-[var(--accent-10)] disabled:cursor-not-allowed disabled:opacity-60"
                     onChange={handleUploadChange}
-                  />
-                  <button
-                    type="button"
-                    className="btn-primary btn-small"
-                    onClick={handleUploadClick}
                     disabled={uploadMutation.isPending}
-                  >
-                    {uploadMutation.isPending ? "上传中..." : "上传文件"}
-                  </button>
+                  />
                 </>
               )}
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border)] bg-sky-50/70 px-3 py-2 text-sm">
+          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--accent-a2)] px-3 py-2 text-sm">
             {(listData?.breadcrumbs ?? [{ name: "根目录", path: "/" }]).map((crumb, index, all) => (
               <div key={crumb.path} className="flex items-center gap-2">
-                <button
+                <Button
                   type="button"
                   onClick={() => {
                     setCurrentPath(crumb.path);
                     resetActionPanels();
                   }}
-                  className="rounded px-1 py-0.5 hover:bg-indigo-100"
+                  className="rounded px-1 py-0.5 hover:bg-[var(--accent-a3)]"
                 >
                   {crumb.name}
-                </button>
-                {index < all.length - 1 && <span className="text-slate-400">/</span>}
+                </Button>
+                {index < all.length - 1 && <span className="text-[var(--gray-10)]">/</span>}
               </div>
             ))}
           </div>
 
           {canManage && (
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              <input
+              <TextField.Root
                 value={newDirectoryName}
                 onChange={(event: ChangeEvent<HTMLInputElement>) => setNewDirectoryName(event.currentTarget.value)}
                 placeholder="新建目录名"
-                className="w-full max-w-xs control"
+                className="w-full max-w-xs"
               />
-              <button
+              <Button
                 type="button"
-                className="btn-primary btn-small"
+               
                 onClick={() => {
                   if (!newDirectoryName.trim()) {
                     setErrorMessage("目录名称不能为空");
@@ -521,151 +509,151 @@ export default function AdminFilesPage() {
                 disabled={createDirectoryMutation.isPending}
               >
                 {createDirectoryMutation.isPending ? "创建中..." : "新建目录"}
-              </button>
+              </Button>
             </div>
           )}
 
           <div className="mt-4 overflow-x-auto">
-            <table className="table-modern min-w-full text-left text-sm">
-              <thead className="table-head">
-                <tr>
-                  <th className="px-4 py-3 font-medium">名称</th>
-                  <th className="px-4 py-3 font-medium">类型</th>
-                  <th className="px-4 py-3 font-medium">大小</th>
-                  <th className="px-4 py-3 font-medium">修改时间</th>
-                  <th className="px-4 py-3 font-medium">索引同步时间</th>
-                  <th className="px-4 py-3 font-medium">操作</th>
-                </tr>
-              </thead>
-              <tbody className="table-body divide-y">
+            <Table.Root className="w-full min-w-full text-left text-sm">
+              <Table.Header className="bg-[var(--gray-a3)]">
+                <Table.Row>
+                  <Table.ColumnHeaderCell className="px-4 py-3 font-medium">名称</Table.ColumnHeaderCell>
+                  <Table.ColumnHeaderCell className="px-4 py-3 font-medium">类型</Table.ColumnHeaderCell>
+                  <Table.ColumnHeaderCell className="px-4 py-3 font-medium">大小</Table.ColumnHeaderCell>
+                  <Table.ColumnHeaderCell className="px-4 py-3 font-medium">修改时间</Table.ColumnHeaderCell>
+                  <Table.ColumnHeaderCell className="px-4 py-3 font-medium">索引同步时间</Table.ColumnHeaderCell>
+                  <Table.ColumnHeaderCell className="px-4 py-3 font-medium">操作</Table.ColumnHeaderCell>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body className="divide-y divide-y">
                 {items.map((item) => {
                   const isActive = activeItemPath === item.path;
                   return (
-                    <tr key={`${item.path}-${item.id}`}>
-                      <td className="px-4 py-3">
-                        <button
+                    <Table.Row key={`${item.path}-${item.id}`}>
+                      <Table.Cell className="px-4 py-3">
+                        <Button
                           type="button"
                           className={`text-left ${item.is_dir ? "font-medium underline-offset-2 hover:underline" : ""}`}
                           onClick={() => handleOpenDirectory(item)}
                         >
                           {item.is_dir ? `[DIR] ${item.name}` : item.name}
-                        </button>
+                        </Button>
                         {isActive && canManage && (
-                          <div className="mt-2 space-y-2 rounded-md border border-[var(--border)] bg-indigo-50/70 p-2 text-xs">
+                          <div className="mt-2 space-y-2 rounded-md border border-[var(--border)] bg-[var(--accent-a3)] p-2 text-xs">
                             <div className="flex flex-wrap items-center gap-2">
-                              <input
+                              <TextField.Root
                                 value={renameName}
                                 onChange={(event: ChangeEvent<HTMLInputElement>) => setRenameName(event.currentTarget.value)}
                                 placeholder="新名称"
-                                className="control w-48 px-2 py-1 text-xs"
+                                className="w-48"
                               />
-                              <button
+                              <Button
                                 type="button"
-                                className="btn-secondary btn-small px-2 py-1"
+                                color="gray" size="1" variant="soft"
                                 onClick={() => submitRename(item)}
                                 disabled={renameMutation.isPending}
                               >
                                 {renameMutation.isPending ? "重命名中..." : "确认重命名"}
-                              </button>
+                              </Button>
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
-                              <input
+                              <TextField.Root
                                 value={moveTargetParentPath}
                                 onChange={(event: ChangeEvent<HTMLInputElement>) => setMoveTargetParentPath(event.currentTarget.value)}
                                 placeholder="目标目录（如 /a/b）"
-                                className="control w-48 px-2 py-1 text-xs"
+                                className="w-48"
                               />
-                              <input
+                              <TextField.Root
                                 value={moveNewName}
                                 onChange={(event: ChangeEvent<HTMLInputElement>) => setMoveNewName(event.currentTarget.value)}
                                 placeholder="新名称（可选）"
-                                className="control w-40 px-2 py-1 text-xs"
+                                className="w-40"
                               />
-                              <button
+                              <Button
                                 type="button"
-                                className="btn-secondary btn-small px-2 py-1"
+                                color="gray" size="1" variant="soft"
                                 onClick={() => submitMove(item)}
                                 disabled={moveMutation.isPending}
                               >
                                 {moveMutation.isPending ? "移动中..." : "确认移动"}
-                              </button>
-                              <button
+                              </Button>
+                              <Button
                                 type="button"
-                                className="btn-secondary btn-small px-2 py-1"
+                                color="gray" size="1" variant="soft"
                                 onClick={resetActionPanels}
                               >
                                 取消
-                              </button>
+                              </Button>
                             </div>
                           </div>
                         )}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3">{item.is_dir ? "目录" : item.mime_type ?? "文件"}</td>
-                      <td className="whitespace-nowrap px-4 py-3">{item.is_dir ? "-" : formatFileSize(item.size)}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-xs text-muted">{formatDate(item.modified_at)}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-xs text-muted">{formatDate(item.synced_at)}</td>
-                      <td className="whitespace-nowrap px-4 py-3">
+                      </Table.Cell>
+                      <Table.Cell className="whitespace-nowrap px-4 py-3">{item.is_dir ? "目录" : item.mime_type ?? "文件"}</Table.Cell>
+                      <Table.Cell className="whitespace-nowrap px-4 py-3">{item.is_dir ? "-" : formatFileSize(item.size)}</Table.Cell>
+                      <Table.Cell className="whitespace-nowrap px-4 py-3 text-xs text-[var(--gray-11)]">{formatDate(item.modified_at)}</Table.Cell>
+                      <Table.Cell className="whitespace-nowrap px-4 py-3 text-xs text-[var(--gray-11)]">{formatDate(item.synced_at)}</Table.Cell>
+                      <Table.Cell className="whitespace-nowrap px-4 py-3">
                         <div className="flex flex-wrap gap-2">
                           {item.is_dir && (
-                            <button
+                            <Button
                               type="button"
-                              className="btn-secondary btn-small px-2 py-1"
+                              color="gray" size="1" variant="soft"
                               onClick={() => handleOpenDirectory(item)}
                             >
                               进入
-                            </button>
+                            </Button>
                           )}
                           {!item.is_dir && (
-                            <button
+                            <Button
                               type="button"
-                              className="btn-secondary btn-small px-2 py-1"
+                              color="gray" size="1" variant="soft"
                               onClick={() => void handleDownload(item)}
                             >
                               下载
-                            </button>
+                            </Button>
                           )}
                           {canManage && (
                             <>
-                              <button
+                              <Button
                                 type="button"
-                                className="btn-secondary btn-small px-2 py-1"
+                                color="gray" size="1" variant="soft"
                                 onClick={() => startRename(item)}
                                 disabled={operationBusy}
                               >
                                 重命名
-                              </button>
-                              <button
+                              </Button>
+                              <Button
                                 type="button"
-                                className="btn-secondary btn-small px-2 py-1"
+                                color="gray" size="1" variant="soft"
                                 onClick={() => startMove(item)}
                                 disabled={operationBusy}
                               >
                                 移动
-                              </button>
-                              <button
+                              </Button>
+                              <Button
                                 type="button"
-                                className="btn-danger btn-small px-2 py-1"
+                                color="red" size="1" variant="soft"
                                 onClick={() => handleDelete(item)}
                                 disabled={deleteMutation.isPending}
                               >
                                 删除
-                              </button>
+                              </Button>
                             </>
                           )}
                         </div>
-                      </td>
-                    </tr>
+                      </Table.Cell>
+                    </Table.Row>
                   );
                 })}
                 {items.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-sm text-muted">
+                  <Table.Row>
+                    <Table.Cell colSpan={6} className="px-4 py-8 text-center text-sm text-[var(--gray-11)]">
                       当前目录为空
-                    </td>
-                  </tr>
+                    </Table.Cell>
+                  </Table.Row>
                 )}
-              </tbody>
-            </table>
+              </Table.Body>
+            </Table.Root>
           </div>
         </section>
       </div>

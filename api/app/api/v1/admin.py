@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from ...core.database import get_db
 from ...core.dependencies import CurrentUser, get_current_user, require_any_permission, require_permission
 from ...schemas.admin import (
+    AuditLogListResponse,
     MenuCreateRequest,
     MenuListResponse,
     MenuPublic,
@@ -29,6 +30,8 @@ from ...schemas.model_registry import (
     ModelRouteRulePublic,
     ModelRouteRuleUpdateRequest,
     ModelSummaryResponse,
+    ModelTestChatRequest,
+    ModelTestChatResponse,
     ModelTestRunListResponse,
     ModelTestRunPublic,
     ModelTestRunRequest,
@@ -44,6 +47,7 @@ from ...services.admin_service import (
     delete_role,
     get_menu_by_id,
     get_role_by_id,
+    list_audit_logs,
     list_menus,
     list_permissions,
     list_role_menu_ids,
@@ -68,6 +72,7 @@ from ...services.model_service import (
     rotate_model_key,
     run_model_health_check,
     run_model_test,
+    run_model_test_chat,
     transition_model_status,
     update_model,
     update_route_rule,
@@ -154,6 +159,24 @@ def get_permissions(
     return {"items": list_permissions(db)}
 
 
+@router.get("/audit-logs", response_model=AuditLogListResponse)
+def get_audit_logs(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    action: str | None = Query(default=None),
+    user_id: str | None = Query(default=None),
+    _: CurrentUser = Depends(require_any_permission("menu.read", "menu.manage")),
+    db: Session = Depends(get_db),
+) -> AuditLogListResponse:
+    return list_audit_logs(
+        db,
+        limit=limit,
+        offset=offset,
+        action=action,
+        user_id=user_id,
+    )
+
+
 @router.get("/models/summary", response_model=ModelSummaryResponse)
 def get_models_summary(
     _: CurrentUser = Depends(require_any_permission("model.read", "model.manage")),
@@ -170,6 +193,38 @@ def get_models(
     db: Session = Depends(get_db),
 ) -> ModelListResponse:
     return list_models(db, status_filter=status_filter, keyword=keyword)
+
+
+@router.get("/password/models", response_model=ModelListResponse)
+def get_password_models(
+    status_filter: str | None = Query(default=None, alias="status"),
+    keyword: str | None = Query(default=None),
+    _: CurrentUser = Depends(require_any_permission("model.read", "model.manage")),
+    db: Session = Depends(get_db),
+) -> ModelListResponse:
+    """密钥管理菜单专用：模型列表（复用模型服务）。"""
+    return list_models(db, status_filter=status_filter, keyword=keyword)
+
+
+@router.get("/password/models/{model_id}/keys", response_model=ModelApiKeyListResponse)
+def get_password_model_keys(
+    model_id: int,
+    _: CurrentUser = Depends(require_any_permission("model.read", "model.manage")),
+    db: Session = Depends(get_db),
+) -> ModelApiKeyListResponse:
+    """密钥管理菜单专用：模型密钥列表。"""
+    return list_model_keys(db, model_id)
+
+
+@router.post("/password/models/{model_id}/rotate-key", response_model=ModelApiKeyPublic)
+def rotate_password_model_key_endpoint(
+    model_id: int,
+    payload: ModelRotateKeyRequest,
+    current_user: CurrentUser = Depends(require_permission("model.manage")),
+    db: Session = Depends(get_db),
+) -> ModelApiKeyPublic:
+    """密钥管理菜单专用：轮换模型密钥。"""
+    return rotate_model_key(db, model_id, payload, actor=current_user.user)
 
 
 @router.get("/models/{model_id}", response_model=ModelRegistryPublic)
@@ -266,6 +321,16 @@ def run_model_test_endpoint(
     db: Session = Depends(get_db),
 ) -> ModelTestRunPublic:
     return run_model_test(db, model_id, payload, actor=current_user.user)
+
+
+@router.post("/models/{model_id}/test-chat", response_model=ModelTestChatResponse)
+def run_model_test_chat_endpoint(
+    model_id: int,
+    payload: ModelTestChatRequest,
+    current_user: CurrentUser = Depends(require_permission("model.manage")),
+    db: Session = Depends(get_db),
+) -> ModelTestChatResponse:
+    return run_model_test_chat(db, model_id, payload, actor=current_user.user)
 
 
 @router.get("/models/{model_id}/tests", response_model=ModelTestRunListResponse)

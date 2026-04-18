@@ -566,30 +566,18 @@ def parse_requirement_paths(requirement: Dict[str, Any]) -> List[str]:
     return unique
 
 
-def execute_development(
-    *,
-    repo_root: str,
-    requirement: Dict[str, Any],
-    build_timeout: int,
-    skip_build_gate: bool = False,
-    progress_hook: Optional[callable] = None,
-) -> Dict[str, Any]:
-    """真实开发阶段：开发开始后持续推进进度，最终以代码改动 + 构建通过作为完成门禁。"""
-    req_id = normalize_text(requirement.get("id"))
-    requirement_paths = parse_requirement_paths(requirement)
-
-    # 快照前
-    before = snapshot_tree_hashes(repo_root, ["frontend/src", "web/src", "backend/src", "api/app"])
-
-    # 判断是否已有可归因的代码变更（支持“先手改好再跑脚本”）
-    changed_files = list_changed_files(repo_root)
-    relevant_changed = []
+def collect_relevant_changed_files(
+    changed_files: Sequence[str],
+    requirement_paths: Sequence[str],
+    allow_broad_change_detection: bool,
+) -> List[str]:
+    relevant_changed: List[str] = []
     if requirement_paths:
         for f in changed_files:
             if any(f.startswith(p) for p in requirement_paths):
                 relevant_changed.append(f)
-    else:
-        # 无路径线索时，至少要求有 frontend/src、web/src、backend/src 或 api/app 的改动
+    elif allow_broad_change_detection:
+        # 无路径线索时，宽松模式下允许常见源码目录匹配
         for f in changed_files:
             if (
                 f.startswith("frontend/src/")
@@ -598,6 +586,91 @@ def execute_development(
                 or f.startswith("api/app/")
             ):
                 relevant_changed.append(f)
+    return sorted(set(relevant_changed))
+
+
+def preflight_requirement_guardrails(
+    *,
+    repo_root: str,
+    requirement: Dict[str, Any],
+    allow_dirty_worktree: bool,
+    allow_broad_change_detection: bool,
+) -> Dict[str, Any]:
+    req_id = normalize_text(requirement.get("id"))
+    requirement_paths = parse_requirement_paths(requirement)
+
+    if not requirement_paths and not allow_broad_change_detection:
+        fail(
+            "develop_preflight",
+            "需求描述缺少可归因代码路径，默认禁止宽松改动匹配以避免误闭环",
+            {
+                "requirementId": req_id,
+                "hint": "请在 descr 中用反引号标注路径（如 `frontend/src/...`、`backend/src/...`），或显式使用 --allow-broad-change-detection。",
+            },
+        )
+
+    workspace_changes = list_changed_files(repo_root)
+    relevant_workspace_changes = collect_relevant_changed_files(
+        workspace_changes,
+        requirement_paths,
+        allow_broad_change_detection,
+    )
+
+    if workspace_changes and not allow_dirty_worktree:
+        fail(
+            "develop_preflight",
+            "检测到工作区已有未提交改动；默认禁止在脏工作区直接推进需求状态",
+            {
+                "requirementId": req_id,
+                "workspaceChangeCount": len(workspace_changes),
+                "workspaceChangeSample": workspace_changes[:50],
+                "relevantWorkspaceChangeCount": len(relevant_workspace_changes),
+                "relevantWorkspaceChangeSample": relevant_workspace_changes[:50],
+                "hint": "请先清理/隔离工作区后再执行，或显式使用 --allow-dirty-worktree（风险自担）。",
+            },
+        )
+
+    return {
+        "requirementPaths": requirement_paths,
+        "workspaceChanges": workspace_changes,
+        "relevantWorkspaceChanges": relevant_workspace_changes,
+    }
+
+
+def execute_development(
+    *,
+    repo_root: str,
+    requirement: Dict[str, Any],
+    build_timeout: int,
+    skip_build_gate: bool = False,
+    progress_hook: Optional[callable] = None,
+    requirement_paths: Optional[Sequence[str]] = None,
+    allow_broad_change_detection: bool = False,
+) -> Dict[str, Any]:
+    """真实开发阶段：开发开始后持续推进进度，最终以代码改动 + 构建通过作为完成门禁。"""
+    req_id = normalize_text(requirement.get("id"))
+    resolved_requirement_paths = list(requirement_paths or parse_requirement_paths(requirement))
+
+    if not resolved_requirement_paths and not allow_broad_change_detection:
+        fail(
+            "develop",
+            "需求描述缺少可归因代码路径，且未启用宽松匹配，无法通过完成门禁",
+            {
+                "requirementId": req_id,
+                "hint": "请补充路径线索，或显式使用 --allow-broad-change-detection。",
+            },
+        )
+
+    # 快照前
+    before = snapshot_tree_hashes(repo_root, ["frontend/src", "web/src", "backend/src", "api/app"])
+
+    # 判断是否已有可归因的代码变更（支持“先手改好再跑脚本”）
+    changed_files = list_changed_files(repo_root)
+    relevant_changed = collect_relevant_changed_files(
+        changed_files,
+        resolved_requirement_paths,
+        allow_broad_change_detection,
+    )
 
     # 若当前无改动，再做一次源码哈希差异兜底（应对部分 git 状态不可见情况）
     after = snapshot_tree_hashes(repo_root, ["frontend/src", "web/src", "backend/src", "api/app"])
@@ -612,7 +685,7 @@ def execute_development(
             {
                 "requirementId": req_id,
                 "hint": "请先完成代码修改（frontend/src、web/src、backend/src 或 api/app），再执行技能。",
-                "requirementPaths": requirement_paths,
+                "requirementPaths": resolved_requirement_paths,
                 "gitChanged": changed_files,
             },
         )
@@ -622,7 +695,7 @@ def execute_development(
             progress_hook("已跳过构建/编译验证（按当前任务要求）")
         return {
             "requirementId": req_id,
-            "requirementPaths": requirement_paths,
+            "requirementPaths": resolved_requirement_paths,
             "changedFiles": effective_changes,
             "buildResults": [],
             "buildGateSkipped": True,
@@ -729,6 +802,8 @@ def execute_for_requirement(
     skip_build_gate: bool = False,
     process_order: Optional[int] = None,
     force_complete_if_already_completed: bool = False,
+    allow_dirty_worktree: bool = False,
+    allow_broad_change_detection: bool = False,
 ) -> Dict[str, Any]:
     requirement = fetch_requirement_detail(
         opener,
@@ -743,6 +818,13 @@ def execute_for_requirement(
     plan = build_development_plan(requirement)
     transitions = build_transition_plan(milestones, start_progress)
     trajectory: List[Dict[str, Any]] = []
+
+    guardrail_ctx = preflight_requirement_guardrails(
+        repo_root=repo_root,
+        requirement=requirement,
+        allow_dirty_worktree=allow_dirty_worktree,
+        allow_broad_change_detection=allow_broad_change_detection,
+    )
 
     def apply_status(step: Dict[str, Any]) -> None:
         nonlocal current_status
@@ -774,10 +856,12 @@ def execute_for_requirement(
         apply_status(complete_only)
         development_result = {
             "requirementId": requirement_id,
-            "requirementPaths": parse_requirement_paths(requirement),
+            "requirementPaths": guardrail_ctx.get("requirementPaths", []),
             "changedFiles": [],
             "buildResults": [],
             "gateMode": "forced-complete-already-completed",
+            "workspaceChanges": guardrail_ctx.get("workspaceChanges", []),
+            "relevantWorkspaceChanges": guardrail_ctx.get("relevantWorkspaceChanges", []),
         }
         executed_transitions = [complete_only]
     else:
@@ -801,7 +885,11 @@ def execute_for_requirement(
             build_timeout=build_timeout,
             skip_build_gate=skip_build_gate,
             progress_hook=progress_hook,
+            requirement_paths=guardrail_ctx.get("requirementPaths", []),
+            allow_broad_change_detection=allow_broad_change_detection,
         )
+        development_result["workspaceChanges"] = guardrail_ctx.get("workspaceChanges", [])
+        development_result["relevantWorkspaceChanges"] = guardrail_ctx.get("relevantWorkspaceChanges", [])
 
         # 若还有未消耗的里程碑，在完成前补齐
         while progress_index < len(progress_steps):
@@ -928,6 +1016,8 @@ def init_auto_query_state(
             "userId": cfg["user_id"],
             "buildTimeout": cfg["build_timeout"],
             "skipBuildGate": cfg["skip_build_gate"],
+            "allowDirtyWorktree": cfg["allow_dirty_worktree"],
+            "allowBroadChangeDetection": cfg["allow_broad_change_detection"],
         },
         "queryTrace": list(query_trace),
         "plan": {
@@ -1002,6 +1092,8 @@ def validate_resume_compatibility(cfg: Dict[str, Any], state: Dict[str, Any]) ->
         ("userId", cfg.get("user_id"), sc.get("userId")),
         ("buildTimeout", cfg.get("build_timeout"), sc.get("buildTimeout")),
         ("skipBuildGate", cfg.get("skip_build_gate"), sc.get("skipBuildGate")),
+        ("allowDirtyWorktree", cfg.get("allow_dirty_worktree"), sc.get("allowDirtyWorktree")),
+        ("allowBroadChangeDetection", cfg.get("allow_broad_change_detection"), sc.get("allowBroadChangeDetection")),
     ]
 
     mismatches = []
@@ -1083,6 +1175,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="跳过构建/编译门禁（仅在明确允许时使用）",
     )
+    parser.add_argument(
+        "--allow-dirty-worktree",
+        action="store_true",
+        help="允许在脏工作区执行（默认禁止，避免误把历史改动当本需求开发证据）",
+    )
+    parser.add_argument(
+        "--allow-broad-change-detection",
+        action="store_true",
+        help="当需求描述缺少路径线索时，允许回退到源码目录宽松匹配（默认禁止）",
+    )
 
     parser.add_argument(
         "--force-complete-if-already-completed",
@@ -1142,6 +1244,8 @@ def validate_args(args: argparse.Namespace) -> Dict[str, Any]:
             "force_complete_if_already_completed": bool(args.force_complete_if_already_completed),
             "build_timeout": args.build_timeout,
             "skip_build_gate": bool(args.skip_build_gate),
+            "allow_dirty_worktree": bool(args.allow_dirty_worktree),
+            "allow_broad_change_detection": bool(args.allow_broad_change_detection),
             "checkpoint_file": checkpoint_file,
             "resume": bool(args.resume),
             "reset_checkpoint": bool(args.reset_checkpoint),
@@ -1284,6 +1388,8 @@ def main() -> None:
                     skip_build_gate=cfg["skip_build_gate"],
                     process_order=idx + 1,
                     force_complete_if_already_completed=cfg["force_complete_if_already_completed"],
+                    allow_dirty_worktree=cfg["allow_dirty_worktree"],
+                    allow_broad_change_detection=cfg["allow_broad_change_detection"],
                 )
             except SystemExit as ex:
                 state["runStatus"] = "aborted"
@@ -1375,6 +1481,8 @@ def main() -> None:
                 build_timeout=cfg["build_timeout"],
                 skip_build_gate=cfg["skip_build_gate"],
                 force_complete_if_already_completed=cfg["force_complete_if_already_completed"],
+                allow_dirty_worktree=cfg["allow_dirty_worktree"],
+                allow_broad_change_detection=cfg["allow_broad_change_detection"],
             )
         )
 

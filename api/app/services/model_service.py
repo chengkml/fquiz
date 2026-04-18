@@ -35,6 +35,8 @@ from ..schemas.model_registry import (
     ModelRouteRulePublic,
     ModelRouteRuleUpdateRequest,
     ModelSummaryResponse,
+    ModelTestChatRequest,
+    ModelTestChatResponse,
     ModelTestRunListResponse,
     ModelTestRunPublic,
     ModelTestRunRequest,
@@ -44,6 +46,13 @@ from ..schemas.model_registry import (
     ModelUsageIngestRequest,
     ModelUsageSummary,
 )
+from ..schemas.token_usage import (
+    TokenUsageDailyItem,
+    TokenUsageModelItem,
+    TokenUsageOverviewResponse,
+    TokenUsageSummary,
+)
+from .llm_gateway import create_reply_with_model
 from .push_service import publish_topic
 
 MODEL_TOPIC = "admin.models"
@@ -445,6 +454,115 @@ def run_model_test(
     return _serialize_test_run(test_run, model_code=model.code)
 
 
+def run_model_test_chat(
+    db: Session,
+    model_id: int,
+    payload: ModelTestChatRequest,
+    *,
+    actor: User,
+) -> ModelTestChatResponse:
+    model = _get_model_by_id(db, model_id)
+    if not model:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
+
+    normalized_message = payload.message.strip()
+    normalized_system_prompt = (payload.system_prompt or "").strip()
+    if not normalized_message:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="message cannot be empty")
+
+    active_key = _get_active_key(db, model.id)
+
+    reply: str | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    latency_ms: int | None = None
+    error_message: str | None = None
+    test_status = "FAILED"
+
+    if model.status != "ENABLED":
+        error_message = f"Model status is {model.status}; expected ENABLED"
+    elif active_key is None:
+        error_message = "No active API key"
+    else:
+        started = time.perf_counter()
+        try:
+            llm_result = create_reply_with_model(
+                model=model,
+                user_message=normalized_message,
+                context_messages=[],
+                system_prompt=normalized_system_prompt,
+            )
+            reply = llm_result.content
+            prompt_tokens = llm_result.prompt_tokens
+            completion_tokens = llm_result.completion_tokens
+            total_tokens = llm_result.total_tokens
+            latency_ms = llm_result.latency_ms
+            test_status = "PASSED"
+        except HTTPException as exc:
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            error_message = str(exc.detail)
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            error_message = str(exc)
+
+    if prompt_tokens is None:
+        prompt_tokens = _estimate_text_tokens(normalized_message + ("\n" + normalized_system_prompt if normalized_system_prompt else ""))
+    if completion_tokens is None:
+        completion_tokens = _estimate_text_tokens(reply or "")
+    if total_tokens is None:
+        total_tokens = int(prompt_tokens or 0) + int(completion_tokens or 0)
+
+    test_run = ModelTestRun(
+        model_id=model.id,
+        kind="CHAT",
+        status=test_status,
+        input_tokens=int(prompt_tokens or 0),
+        output_tokens=int(completion_tokens or 0),
+        latency_ms=latency_ms,
+        error_message=error_message,
+        created_by_user_id=actor.id,
+    )
+    db.add(test_run)
+
+    usage_log = ModelUsageLog(
+        model_code=model.code,
+        source="TEST_CHAT",
+        request_count=1,
+        success_count=1 if test_status == "PASSED" else 0,
+        total_tokens=int(total_tokens or 0),
+        total_cost_usd=Decimal("0"),
+    )
+    db.add(usage_log)
+
+    db.commit()
+
+    _publish_model_changed(
+        "tested",
+        model=model,
+        extra_payload={
+            "test_status": test_status,
+            "test_id": test_run.id,
+            "test_kind": "CHAT",
+            "actor_user_id": actor.id,
+        },
+    )
+
+    return ModelTestChatResponse(
+        model_id=model.id,
+        model_code=model.code,
+        provider=model.provider,
+        provider_model=model.provider_model,
+        reply=reply,
+        latency_ms=latency_ms,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        test_status=test_status,
+        error_message=error_message,
+    )
+
+
 def list_model_tests(db: Session, model_id: int, *, limit: int = 20) -> ModelTestRunListResponse:
     model = _get_model_by_id(db, model_id)
     if not model:
@@ -701,6 +819,106 @@ def _serialize_model(model: ModelRegistry, metrics: dict[str, dict]) -> ModelReg
         tests_7d=tests_7d,
         created_at=model.created_at,
         updated_at=model.updated_at,
+    )
+
+
+def get_token_usage_overview(
+    db: Session,
+    *,
+    days: int = 7,
+    model_code: str | None = None,
+) -> TokenUsageOverviewResponse:
+    normalized_days = max(1, min(int(days), 90))
+    normalized_model_code = _normalize_nullable_str(model_code)
+
+    since = utcnow() - timedelta(days=normalized_days)
+
+    where_clause = [ModelUsageLog.recorded_at >= since]
+    if normalized_model_code:
+        where_clause.append(ModelUsageLog.model_code == normalized_model_code)
+
+    summary_row = db.execute(
+        select(
+            func.coalesce(func.sum(ModelUsageLog.request_count), 0),
+            func.coalesce(func.sum(ModelUsageLog.success_count), 0),
+            func.coalesce(func.sum(ModelUsageLog.total_tokens), 0),
+            func.coalesce(func.sum(ModelUsageLog.total_cost_usd), Decimal("0")),
+        ).where(*where_clause)
+    ).one()
+
+    summary_request_count = int(summary_row[0] or 0)
+    summary_success_count = int(summary_row[1] or 0)
+    summary_total_tokens = int(summary_row[2] or 0)
+    summary_total_cost = float(summary_row[3] or 0)
+
+    trend_rows = db.execute(
+        select(
+            func.date(ModelUsageLog.recorded_at),
+            func.coalesce(func.sum(ModelUsageLog.request_count), 0),
+            func.coalesce(func.sum(ModelUsageLog.success_count), 0),
+            func.coalesce(func.sum(ModelUsageLog.total_tokens), 0),
+            func.coalesce(func.sum(ModelUsageLog.total_cost_usd), Decimal("0")),
+        )
+        .where(*where_clause)
+        .group_by(func.date(ModelUsageLog.recorded_at))
+        .order_by(func.date(ModelUsageLog.recorded_at).asc())
+    ).all()
+
+    trend = [
+        TokenUsageDailyItem(
+            date=str(row[0]),
+            request_count=int(row[1] or 0),
+            success_count=int(row[2] or 0),
+            total_tokens=int(row[3] or 0),
+            total_cost_usd=float(row[4] or 0),
+            success_rate=round(int(row[2] or 0) / int(row[1] or 0), 4) if int(row[1] or 0) > 0 else None,
+        )
+        for row in trend_rows
+    ]
+
+    top_model_rows = db.execute(
+        select(
+            ModelUsageLog.model_code,
+            func.coalesce(func.sum(ModelUsageLog.request_count), 0),
+            func.coalesce(func.sum(ModelUsageLog.success_count), 0),
+            func.coalesce(func.sum(ModelUsageLog.total_tokens), 0),
+            func.coalesce(func.sum(ModelUsageLog.total_cost_usd), Decimal("0")),
+        )
+        .where(*where_clause)
+        .group_by(ModelUsageLog.model_code)
+        .order_by(func.coalesce(func.sum(ModelUsageLog.total_tokens), 0).desc(), ModelUsageLog.model_code.asc())
+        .limit(10)
+    ).all()
+
+    top_models = [
+        TokenUsageModelItem(
+            model_code=str(row[0]),
+            request_count=int(row[1] or 0),
+            success_count=int(row[2] or 0),
+            total_tokens=int(row[3] or 0),
+            total_cost_usd=float(row[4] or 0),
+            success_rate=round(int(row[2] or 0) / int(row[1] or 0), 4) if int(row[1] or 0) > 0 else None,
+        )
+        for row in top_model_rows
+    ]
+
+    start_date = trend[0].date if trend else str(since.date())
+    end_date = trend[-1].date if trend else str(utcnow().date())
+
+    return TokenUsageOverviewResponse(
+        days=normalized_days,
+        model_code=normalized_model_code,
+        start_date=start_date,
+        end_date=end_date,
+        summary=TokenUsageSummary(
+            request_count=summary_request_count,
+            success_count=summary_success_count,
+            total_tokens=summary_total_tokens,
+            total_cost_usd=summary_total_cost,
+            success_rate=round(summary_success_count / summary_request_count, 4) if summary_request_count > 0 else None,
+        ),
+        trend=trend,
+        top_models=top_models,
     )
 
 
@@ -1079,6 +1297,14 @@ def _evaluate_health(*, model: ModelRegistry, has_active_key: bool, route_count:
             "route_count": route_count,
         },
     )
+
+
+def _estimate_text_tokens(text: str) -> int:
+    value = text.strip()
+    if not value:
+        return 0
+    # 粗估：1 token ≈ 4 chars，至少返回 1
+    return max(1, (len(value) + 3) // 4)
 
 
 def _to_decimal(value: float) -> Decimal:

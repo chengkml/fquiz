@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ChangeEvent, useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { Select, TextField } from "@radix-ui/themes";
+import { Select, TextField, Button, Table } from "@radix-ui/themes";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { RequirementListResponse, RequirementPriority, RequirementStatus, UserListResponse, UserPublic } from "@/types/auth";
@@ -19,6 +19,22 @@ const STATUS_OPTIONS: RequirementStatus[] = [
   "CANCELLED",
 ];
 const PRIORITY_OPTIONS: RequirementPriority[] = ["low", "medium", "high", "urgent"];
+
+const STATUS_LABEL: Record<RequirementStatus, string> = {
+  PENDING_ANALYSIS: "待分析",
+  PENDING_REVISION: "待修订",
+  OPEN: "待处理",
+  IN_PROGRESS: "处理中",
+  COMPLETED: "已完成",
+  CANCELLED: "已取消",
+};
+
+const PRIORITY_LABEL: Record<RequirementPriority, string> = {
+  low: "低",
+  medium: "中",
+  high: "高",
+  urgent: "紧急",
+};
 
 type Filters = {
   keyword: string;
@@ -42,6 +58,8 @@ export default function RequirementsPage() {
   const queryClient = useQueryClient();
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [actionError, setActionError] = useState("");
+  const [deletingRequirementId, setDeletingRequirementId] = useState<string | null>(null);
 
   const canRead = hasPermission("requirement.read");
   const canCreate = hasPermission("requirement.create") || hasPermission("requirement.manage");
@@ -105,7 +123,11 @@ export default function RequirementsPage() {
       return response.json();
     },
     onSuccess: async () => {
+      setActionError("");
       await queryClient.invalidateQueries({ queryKey: [requirementsPath] });
+    },
+    onError: (error) => {
+      setActionError(error instanceof Error ? error.message : "领取需求失败");
     },
   });
 
@@ -122,19 +144,44 @@ export default function RequirementsPage() {
       return response.json();
     },
     onSuccess: async () => {
+      setActionError("");
       await queryClient.invalidateQueries({ queryKey: [requirementsPath] });
+    },
+    onError: (error) => {
+      setActionError(error instanceof Error ? error.message : "更新需求状态失败");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (requirementId: string) => {
+      const response = await fetchWithAuth(`/api/v1/requirements/${requirementId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return response.json();
+    },
+    onSuccess: async () => {
+      setActionError("");
+      setDeletingRequirementId(null);
+      await queryClient.invalidateQueries({ queryKey: [requirementsPath] });
+    },
+    onError: (error) => {
+      setActionError(error instanceof Error ? error.message : "删除需求失败");
+      setDeletingRequirementId(null);
     },
   });
 
   if (initializing || requirementsQuery.isLoading) {
-    return <p className="text-sm text-muted">Loading requirements...</p>;
+    return <p className="text-sm text-[var(--gray-11)]">Loading requirements...</p>;
   }
 
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-muted">请先登录后再访问需求管理页面。</p>
-        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
+        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问需求管理页面。</p>
+        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回首页</Link>
       </main>
     );
   }
@@ -142,35 +189,33 @@ export default function RequirementsPage() {
   if (!canRead) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-muted">你没有访问该页面的权限（需要 `requirement.read`）。</p>
-        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
+        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `requirement.read`）。</p>
+        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回首页</Link>
       </main>
     );
   }
 
   const users: UserPublic[] = usersQuery.data?.items ?? [];
   const items = requirementsQuery.data?.items ?? [];
-  const error = requirementsQuery.error instanceof Error ? requirementsQuery.error.message : "";
+  const queryError = requirementsQuery.error instanceof Error ? requirementsQuery.error.message : "";
+  const error = queryError || actionError;
 
   return (
     <div className="space-y-6">
       {error && (
-        <pre className="notice notice-error">{error}</pre>
+        <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">{error}</pre>
       )}
 
-      <section className="surface-card">
+      <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
         <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="text-lg font-semibold">需求列表</h2>
-            <p className="mt-1 text-sm text-muted">按关键词、状态、优先级、指派人筛选当前需求。</p>
+            <p className="mt-1 text-sm text-[var(--gray-11)]">按关键词、状态、优先级、指派人筛选当前需求。</p>
           </div>
           {canCreate && (
-            <Link
-              href="/admin/requirements/new"
-              className="btn-primary"
-            >
-              新建需求
-            </Link>
+            <Button asChild>
+              <Link href="/admin/requirements/new">新建需求</Link>
+            </Button>
           )}
         </div>
 
@@ -194,7 +239,7 @@ export default function RequirementsPage() {
               <Select.Item value={ALL_STATUS_FILTER}>全部状态</Select.Item>
               {STATUS_OPTIONS.map((item) => (
                 <Select.Item key={item} value={item}>
-                  {item}
+                  {STATUS_LABEL[item]}
                 </Select.Item>
               ))}
             </Select.Content>
@@ -210,7 +255,7 @@ export default function RequirementsPage() {
               <Select.Item value={ALL_PRIORITY_FILTER}>全部优先级</Select.Item>
               {PRIORITY_OPTIONS.map((item) => (
                 <Select.Item key={item} value={item}>
-                  {item}
+                  {PRIORITY_LABEL[item]}
                 </Select.Item>
               ))}
             </Select.Content>
@@ -235,79 +280,96 @@ export default function RequirementsPage() {
         </div>
       </section>
 
-      <section className="surface-card">
+      <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
-          <p className="text-sm text-muted">共 {requirementsQuery.data?.total ?? 0} 条</p>
-          {requirementsQuery.isFetching && <p className="text-xs text-muted">刷新中...</p>}
+          <p className="text-sm text-[var(--gray-11)]">共 {requirementsQuery.data?.total ?? 0} 条</p>
+          {requirementsQuery.isFetching && <p className="text-xs text-[var(--gray-11)]">刷新中...</p>}
         </div>
 
         <div className="overflow-x-auto">
-          <table className="table-modern min-w-full text-left text-sm">
-            <thead className="table-head">
-              <tr>
-                <th className="px-4 py-3 font-medium">编号</th>
-                <th className="px-4 py-3 font-medium">标题</th>
-                <th className="px-4 py-3 font-medium">状态</th>
-                <th className="px-4 py-3 font-medium">优先级</th>
-                <th className="px-4 py-3 font-medium">项目</th>
-                <th className="px-4 py-3 font-medium">指派人</th>
-                <th className="px-4 py-3 font-medium">更新时间</th>
-                <th className="px-4 py-3 font-medium">操作</th>
-              </tr>
-            </thead>
-            <tbody className="table-body divide-y">
+          <Table.Root className="w-full min-w-full text-left text-sm">
+            <Table.Header className="bg-[var(--gray-a3)]">
+              <Table.Row>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">编号</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">标题</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">状态</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">优先级</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">项目</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">指派人</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">更新时间</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">操作</Table.ColumnHeaderCell>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body className="divide-y divide-y">
               {items.map((item) => (
-                <tr key={item.id}>
-                  <td className="whitespace-nowrap px-4 py-3 font-mono text-xs">{item.code}</td>
-                  <td className="px-4 py-3">
+                <Table.Row key={item.id}>
+                  <Table.Cell className="whitespace-nowrap px-4 py-3 font-mono text-xs">{item.code}</Table.Cell>
+                  <Table.Cell className="px-4 py-3">
                     <Link href={`/admin/requirements/${item.id}`} className="font-medium underline-offset-2 hover:underline">
                       {item.title}
                     </Link>
-                    <p className="mt-1 line-clamp-2 text-xs text-muted">{item.description || "-"}</p>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3">{item.status}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{item.priority}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{item.project_name ?? "-"}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{item.assignee?.username ?? "-"}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-xs text-muted">{new Date(item.updated_at).toLocaleString()}</td>
-                  <td className="px-4 py-3">
+                    <p className="mt-1 line-clamp-2 text-xs text-[var(--gray-11)]">{item.description || "-"}</p>
+                  </Table.Cell>
+                  <Table.Cell className="whitespace-nowrap px-4 py-3">{STATUS_LABEL[item.status]}</Table.Cell>
+                  <Table.Cell className="whitespace-nowrap px-4 py-3">{PRIORITY_LABEL[item.priority]}</Table.Cell>
+                  <Table.Cell className="whitespace-nowrap px-4 py-3">{item.project_name ?? "-"}</Table.Cell>
+                  <Table.Cell className="whitespace-nowrap px-4 py-3">{item.assignee?.username ?? "-"}</Table.Cell>
+                  <Table.Cell className="whitespace-nowrap px-4 py-3 text-xs text-[var(--gray-11)]">{new Date(item.updated_at).toLocaleString()}</Table.Cell>
+                  <Table.Cell className="px-4 py-3">
                     <div className="flex flex-wrap gap-2">
                       {canProcess && (
-                        <button
+                        <Button
                           type="button"
-                          className="btn-secondary btn-small"
+                          color="gray" size="1" variant="soft"
                           onClick={() => claimMutation.mutate(item.id)}
-                          disabled={claimMutation.isPending}
+                          disabled={claimMutation.isPending || deletingRequirementId === item.id}
                         >
                           领取
-                        </button>
+                        </Button>
                       )}
                       {canProcess && item.status === "OPEN" && (
-                        <button
+                        <Button
                           type="button"
-                          className="btn-secondary btn-small"
+                          color="gray" size="1" variant="soft"
                           onClick={() => transitionMutation.mutate({ requirementId: item.id, status: "IN_PROGRESS" })}
-                          disabled={transitionMutation.isPending}
+                          disabled={transitionMutation.isPending || deletingRequirementId === item.id}
                         >
                           开始处理
-                        </button>
+                        </Button>
                       )}
                       {canProcess && item.status === "IN_PROGRESS" && (
-                        <button
+                        <Button
                           type="button"
-                          className="rounded-md border border-emerald-500/30 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
+                          color="green" size="1" variant="soft"
                           onClick={() => transitionMutation.mutate({ requirementId: item.id, status: "COMPLETED" })}
-                          disabled={transitionMutation.isPending}
+                          disabled={transitionMutation.isPending || deletingRequirementId === item.id}
                         >
                           标记完成
-                        </button>
+                        </Button>
+                      )}
+                      {canProcess && (
+                        <Button
+                          type="button"
+                          color="red" size="1" variant="soft"
+                          onClick={() => {
+                            const confirmed = window.confirm(`确认删除需求 ${item.code}（${item.title}）？`);
+                            if (!confirmed) {
+                              return;
+                            }
+                            setDeletingRequirementId(item.id);
+                            deleteMutation.mutate(item.id);
+                          }}
+                          disabled={deleteMutation.isPending || transitionMutation.isPending || claimMutation.isPending}
+                        >
+                          {deletingRequirementId === item.id ? "删除中..." : "删除"}
+                        </Button>
                       )}
                     </div>
-                  </td>
-                </tr>
+                  </Table.Cell>
+                </Table.Row>
               ))}
-            </tbody>
-          </table>
+            </Table.Body>
+          </Table.Root>
         </div>
       </section>
     </div>

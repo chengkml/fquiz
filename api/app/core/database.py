@@ -44,12 +44,18 @@ def init_db() -> None:
         auth_session,
         chat,
         file_storage,
+        hot_search,
+        life_countdown,
         menu,
         model_registry,
+        question_bank,
         rbac,
         requirement,
+        system_message,
+        system_param,
         todo,
         user,
+        vocabulary_word,
     )  # noqa: F401
     from ..services.seed_service import seed_defaults
 

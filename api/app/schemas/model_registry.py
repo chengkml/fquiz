@@ -159,6 +159,11 @@ class ModelTestRunRequest(BaseModel):
     output_tokens: int = Field(default=0, ge=0)
 
 
+class ModelTestChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=8000)
+    system_prompt: str | None = Field(default=None, max_length=4000)
+
+
 class ModelTestRunPublic(BaseModel):
     id: int
     model_id: int
@@ -171,6 +176,20 @@ class ModelTestRunPublic(BaseModel):
     error_message: str | None = None
     created_by_user_id: str | None = None
     created_at: datetime
+
+
+class ModelTestChatResponse(BaseModel):
+    model_id: int
+    model_code: str
+    provider: str
+    provider_model: str
+    reply: str | None = None
+    latency_ms: int | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    test_status: ModelTestStatus
+    error_message: str | None = None
 
 
 class ModelTestRunListResponse(BaseModel):

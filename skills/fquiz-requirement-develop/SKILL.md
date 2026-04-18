@@ -17,6 +17,8 @@ description: 通过 JWT 链路执行 fquiz 需求开发完整闭环（仅 action
 1. **仅串行执行**：`--auto-query` 模式下固定一条一条处理，禁止并行。
 2. **逐条检查点回报**：每完成 1 条需求，立即输出一条 checkpoint 事件（JSON 行）。
 3. **可恢复续跑**：中断后可通过检查点文件从最近完成位置恢复，不需要重新全量扫描。
+4. **默认禁止脏工作区闭环**：若仓库存在未提交改动，默认直接失败；只有显式传 `--allow-dirty-worktree` 才允许继续。
+5. **默认要求需求描述具备路径线索**：`descr` 中需有反引号路径（如 `frontend/src/...`、`backend/src/...`）；否则默认失败，只有显式传 `--allow-broad-change-detection` 才允许宽松匹配源码目录。
 
 ## 执行流程（必须）
 
@@ -31,13 +33,14 @@ description: 通过 JWT 链路执行 fquiz 需求开发完整闭环（仅 action
 5. 开发开始即更新状态：`POST /api/project/requirement/{id}/status`
    - `status=IN_PROGRESS`
    - `progressPercent=<start-progress>`（默认 `0`）
-6. 执行真实开发并在关键阶段持续更新进度：`POST /api/project/requirement/{id}/status`
+6. **执行真实开发并在关键阶段持续更新进度**：`POST /api/project/requirement/{id}/status`
    - `status=IN_PROGRESS`
    - `progressPercent` 按里程碑更新（默认 `30,60,90`）
 7. **完成前执行开发门禁（硬门禁）**
-   - 必须检测到与需求相关的代码改动（至少在 `frontend/src` 或 `backend/src`）
-   - 必须通过构建/编译验证（仅构建，不做回归）
-   - 任一条件不满足：直接失败，且不得更新为 `COMPLETED`
+   - 默认先通过预检查：工作区必须干净、且需求描述需有可归因路径线索。
+   - 必须检测到与需求相关的代码改动（优先按 `descr` 路径线索匹配）。
+   - 必须通过构建/编译验证（仅构建，不做回归）。
+   - 任一条件不满足：直接失败，且不得更新为 `COMPLETED`。
 8. 仅当开发门禁通过时，完成时更新状态：`POST /api/project/requirement/{id}/status`
    - `status=COMPLETED`
    - `progressPercent=100`
@@ -79,6 +82,9 @@ description: 通过 JWT 链路执行 fquiz 需求开发完整闭环（仅 action
 - `--start-progress`：start 阶段进度值，默认 `0`
 - `--base-url --user-id --user-pwd --timeout`：连接与认证参数
 - `--build-timeout`：构建/编译命令超时秒数，默认 `600`
+- `--skip-build-gate`：跳过构建/编译门禁（默认关闭；仅在明确允许时使用）
+- `--allow-dirty-worktree`：允许在脏工作区执行（默认关闭，防止把历史改动误当成本需求开发证据）
+- `--allow-broad-change-detection`：当需求描述缺少路径线索时，允许回退到源码目录宽松匹配（默认关闭）
 
 ### 检查点与续跑参数（新增）
 
@@ -194,9 +200,12 @@ python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py \
 
 - 参数校验失败（如 `start-progress>99`、里程碑超范围、非法 status；`--status` 非 `OPEN/IN_PROGRESS`）
   - 立即失败并返回 `step=validate`，不发起任何状态写入
+- **预检查失败（新增）**
+  - `step=develop_preflight`：工作区非净（未显式允许）或需求描述缺少路径线索（未显式允许宽松匹配）
+  - 该场景下不允许进入 `COMPLETED` 闭环
 - 登录/JWT/查询失败
   - 返回失败步骤与 HTTP 明细，不输出 token/cookie/password
-- **开发门禁失败（新增）**
+- **开发门禁失败**
   - `step=develop`：未检测到需求相关代码改动，或构建/编译失败
   - 该场景下需求可能已先被置为 `IN_PROGRESS` 并写入部分进度；但必须禁止写成 `COMPLETED`
 - 状态更新失败（单条）

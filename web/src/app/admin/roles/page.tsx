@@ -4,7 +4,7 @@ import { ChangeEvent, useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/auth-provider";
-import { Dialog, TextField } from "@radix-ui/themes";
+import { Checkbox, Dialog, TextField, Button, Table } from "@radix-ui/themes";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { MenuItem, PermissionItem, RoleItem, RoleListResponse } from "@/types/auth";
@@ -39,6 +39,10 @@ export default function AdminRolesPage() {
     () => menus.map((menu) => ({ value: menu.id, label: `${menu.name} (${menu.code})` })),
     [menus],
   );
+
+  const menuNameById = useMemo(() => {
+    return new Map(menus.map((menu) => [menu.id, `${menu.name} (${menu.code})`]));
+  }, [menus]);
 
   const loadData = useCallback(async () => {
     if (!canRead) {
@@ -189,14 +193,14 @@ export default function AdminRolesPage() {
   };
 
   if (initializing || loading) {
-    return <p className="text-sm text-muted">Loading roles...</p>;
+    return <p className="text-sm text-[var(--gray-11)]">Loading roles...</p>;
   }
 
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-muted">请先登录后再访问角色管理页面。</p>
-        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
+        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问角色管理页面。</p>
+        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回首页</Link>
       </main>
     );
   }
@@ -204,8 +208,8 @@ export default function AdminRolesPage() {
   if (!canRead) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-muted">你没有访问该页面的权限（需要 `role.read`）。</p>
-        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
+        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `role.read`）。</p>
+        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回首页</Link>
       </main>
     );
   }
@@ -213,67 +217,71 @@ export default function AdminRolesPage() {
   return (
     <div className="space-y-6">
       {error && (
-        <pre className="notice notice-error">{error}</pre>
+        <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">{error}</pre>
       )}
       {success && (
-        <pre className="notice notice-success">{success}</pre>
+        <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--green-6)] bg-[var(--green-a2)] p-4 text-sm text-[var(--green-11)]">{success}</pre>
       )}
 
-      <section className="surface-card">
+      <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">角色列表</h2>
-            <p className="mt-1 text-sm text-muted">当前已配置 {roles.length} 个角色。</p>
+            <p className="mt-1 text-sm text-[var(--gray-11)]">当前已配置 {roles.length} 个角色。</p>
           </div>
           {canManage && (
-            <button className="btn-primary" type="button" onClick={startCreate}>新建角色</button>
+            <Button type="button" onClick={startCreate}>新建角色</Button>
           )}
         </div>
 
         <div className="overflow-x-auto">
-          <table className="table-modern min-w-full text-left text-sm">
-            <thead className="table-head">
-              <tr>
-                <th className="px-4 py-3 font-medium">角色编码</th>
-                <th className="px-4 py-3 font-medium">角色名称</th>
-                <th className="px-4 py-3 font-medium">权限</th>
-                <th className="px-4 py-3 font-medium">菜单</th>
-                {canManage && <th className="px-4 py-3 font-medium">操作</th>}
-              </tr>
-            </thead>
-            <tbody className="table-body divide-y">
+          <Table.Root className="w-full min-w-full text-left text-sm">
+            <Table.Header className="bg-[var(--gray-a3)]">
+              <Table.Row>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">角色编码</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">角色名称</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">权限</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">菜单</Table.ColumnHeaderCell>
+                {canManage && <Table.ColumnHeaderCell className="px-4 py-3 font-medium">操作</Table.ColumnHeaderCell>}
+              </Table.Row>
+            </Table.Header>
+            <Table.Body className="divide-y divide-y">
               {roles.map((role) => (
-                <tr key={role.id}>
-                  <td className="px-4 py-3 font-mono text-xs">{role.code}</td>
-                  <td className="px-4 py-3">{role.name}</td>
-                  <td className="px-4 py-3">{role.permission_codes.join(", ") || "-"}</td>
-                  <td className="px-4 py-3">{role.menu_ids.join(", ") || "-"}</td>
+                <Table.Row key={role.id}>
+                  <Table.Cell className="px-4 py-3 font-mono text-xs">{role.code}</Table.Cell>
+                  <Table.Cell className="px-4 py-3">{role.name}</Table.Cell>
+                  <Table.Cell className="px-4 py-3">{role.permission_codes.join(", ") || "-"}</Table.Cell>
+                  <Table.Cell className="px-4 py-3">
+                    {role.menu_ids.length
+                      ? role.menu_ids.map((menuId) => menuNameById.get(menuId) ?? String(menuId)).join(", ")
+                      : "-"}
+                  </Table.Cell>
                   {canManage && (
-                    <td className="px-4 py-3">
+                    <Table.Cell className="px-4 py-3">
                       <div className="flex gap-2">
-                        <button
-                          className="btn-secondary btn-small"
+                        <Button
+                          color="gray" size="1" variant="soft"
                           onClick={() => startEdit(role)}
                           type="button"
                         >
                           编辑
-                        </button>
+                        </Button>
                         {!['admin', 'user'].includes(role.code) && (
-                          <button
-                            className="btn-danger btn-small"
+                          <Button
+                            color="red" size="1" variant="soft"
                             onClick={() => void removeRole(role)}
                             type="button"
                           >
                             删除
-                          </button>
+                          </Button>
                         )}
                       </div>
-                    </td>
+                    </Table.Cell>
                   )}
-                </tr>
+                </Table.Row>
               ))}
-            </tbody>
-          </table>
+            </Table.Body>
+          </Table.Root>
         </div>
       </section>
 
@@ -290,9 +298,9 @@ export default function AdminRolesPage() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold">{editingRoleId ? "编辑角色" : "新建角色"}</h2>
-                <p className="mt-1 text-sm text-muted">角色绑定权限点和可见菜单。</p>
+                <p className="mt-1 text-sm text-[var(--gray-11)]">角色绑定权限点和可见菜单。</p>
               </div>
-              <button className="btn-secondary w-fit" type="button" onClick={resetForm}>取消</button>
+              <Button className="w-fit" color="gray" type="button" variant="soft" onClick={resetForm}>取消</Button>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
@@ -330,18 +338,17 @@ export default function AdminRolesPage() {
               </label>
               <div className="space-y-2 text-sm md:col-span-2">
                 <span>可见菜单</span>
-                <div className="grid gap-2 surface-card-muted p-3 md:grid-cols-2">
+                <div className="grid gap-2 rounded-xl border border-[var(--gray-6)] bg-[var(--gray-a2)] p-3 md:grid-cols-2">
                   {menuOptions.map((item) => {
                     const checked = form.menu_ids.includes(item.value);
                     return (
                       <label key={item.value} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={checked}
-                          onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                          onCheckedChange={(state: boolean | "indeterminate") => {
                             setForm((prev) => ({
                               ...prev,
-                              menu_ids: event.currentTarget.checked
+                              menu_ids: state === true
                                 ? [...prev.menu_ids, item.value]
                                 : prev.menu_ids.filter((menuId) => menuId !== item.value),
                             }));
@@ -356,14 +363,14 @@ export default function AdminRolesPage() {
             </div>
 
             <div className="mt-4">
-              <button
-                className="btn-primary"
+              <Button
+               
                 disabled={saving}
                 onClick={() => void submit()}
                 type="button"
               >
                 {saving ? "提交中..." : editingRoleId ? "保存修改" : "创建角色"}
-              </button>
+              </Button>
             </div>
           </Dialog.Content>
         </Dialog.Root>

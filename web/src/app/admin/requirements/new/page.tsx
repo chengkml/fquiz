@@ -19,6 +19,22 @@ const STATUS_OPTIONS: RequirementStatus[] = [
   "CANCELLED",
 ];
 const PRIORITY_OPTIONS: RequirementPriority[] = ["low", "medium", "high", "urgent"];
+
+const STATUS_LABEL: Record<RequirementStatus, string> = {
+  PENDING_ANALYSIS: "待分析",
+  PENDING_REVISION: "待修订",
+  OPEN: "待处理",
+  IN_PROGRESS: "处理中",
+  COMPLETED: "已完成",
+  CANCELLED: "已取消",
+};
+
+const PRIORITY_LABEL: Record<RequirementPriority, string> = {
+  low: "低",
+  medium: "中",
+  high: "高",
+  urgent: "紧急",
+};
 const UNASSIGNED_OPTION = "__unassigned__";
 
 export default function RequirementCreatePage() {
@@ -79,14 +95,14 @@ export default function RequirementCreatePage() {
   });
 
   if (initializing) {
-    return <p className="text-sm text-muted">Loading...</p>;
+    return <p className="text-sm text-[var(--gray-11)]">Loading...</p>;
   }
 
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-muted">请先登录后再创建需求。</p>
-        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
+        <p className="text-sm text-[var(--gray-11)]">请先登录后再创建需求。</p>
+        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回首页</Link>
       </main>
     );
   }
@@ -94,8 +110,8 @@ export default function RequirementCreatePage() {
   if (!canCreate) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-muted">你没有创建需求的权限（需要 `requirement.create`）。</p>
-        <Link href="/admin/requirements" className="btn-secondary w-fit">返回需求列表</Link>
+        <p className="text-sm text-[var(--gray-11)]">你没有创建需求的权限（需要 `requirement.create`）。</p>
+        <Link href="/admin/requirements" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回需求列表</Link>
       </main>
     );
   }
@@ -106,16 +122,16 @@ export default function RequirementCreatePage() {
   return (
     <div className="space-y-6">
       {error && (
-        <pre className="notice notice-error">{error}</pre>
+        <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">{error}</pre>
       )}
 
-      <section className="surface-card">
+      <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">新建需求</h2>
-            <p className="mt-1 text-sm text-muted">填写需求基本信息并指定初始处理人。</p>
+            <p className="mt-1 text-sm text-[var(--gray-11)]">填写需求基本信息并指定初始处理人。</p>
           </div>
-          <Link href="/admin/requirements" className="btn-secondary w-fit">返回列表</Link>
+          <Link href="/admin/requirements" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回列表</Link>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -145,7 +161,7 @@ export default function RequirementCreatePage() {
               <Select.Content>
                 {STATUS_OPTIONS.map((item) => (
                   <Select.Item key={item} value={item}>
-                    {item}
+                    {STATUS_LABEL[item]}
                   </Select.Item>
                 ))}
               </Select.Content>
@@ -159,7 +175,7 @@ export default function RequirementCreatePage() {
               <Select.Content>
                 {PRIORITY_OPTIONS.map((item) => (
                   <Select.Item key={item} value={item}>
-                    {item}
+                    {PRIORITY_LABEL[item]}
                   </Select.Item>
                 ))}
               </Select.Content>

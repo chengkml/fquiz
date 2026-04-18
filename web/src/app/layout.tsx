@@ -9,8 +9,8 @@ import "@radix-ui/themes/styles.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "fquiz",
-  description: "fquiz admin workspace",
+  title: "Quiz",
+  description: "Quiz admin workspace",
 };
 
 export default function RootLayout({
@@ -22,7 +22,7 @@ export default function RootLayout({
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full">
         <Theme accentColor="indigo" grayColor="slate" radius="medium" scaling="100%">
-          <div className="app-theme-root flex min-h-full flex-col">
+          <div className="flex min-h-full flex-col">
             <AppQueryProvider>
               <AuthProvider>
                 <WSProvider>{children}</WSProvider>

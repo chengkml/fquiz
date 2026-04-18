@@ -216,14 +216,14 @@ export default function TodoPage() {
   const todoError = todosQuery.error instanceof Error ? todosQuery.error.message : "";
 
   if (initializing || todosQuery.isLoading) {
-    return <p className="text-sm text-muted">Loading todos...</p>;
+    return <p className="text-sm text-[var(--gray-11)]">Loading todos...</p>;
   }
 
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-muted">请先登录后再访问待办管理页面。</p>
-        <Link href="/" className="btn-secondary w-fit">
+        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问待办管理页面。</p>
+        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">
           返回首页
         </Link>
       </main>
@@ -233,8 +233,8 @@ export default function TodoPage() {
   if (!canRead) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-muted">你没有访问该页面的权限（需要 `todo.read`）。</p>
-        <Link href="/" className="btn-secondary w-fit">
+        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `todo.read`）。</p>
+        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">
           返回首页
         </Link>
       </main>
@@ -246,13 +246,13 @@ export default function TodoPage() {
 
   return (
     <div className="space-y-6">
-      {(todoError || panelError) && <pre className="notice notice-error">{todoError || panelError}</pre>}
+      {(todoError || panelError) && <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">{todoError || panelError}</pre>}
 
-      <section className="surface-card">
+      <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
         <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="text-lg font-semibold">待办列表</h2>
-            <p className="mt-1 text-sm text-muted">支持筛选、状态流转、删除与快捷创建。</p>
+            <p className="mt-1 text-sm text-[var(--gray-11)]">支持筛选、状态流转、删除与快捷创建。</p>
           </div>
           {canCreate && (
             <Button onClick={() => setCreateOpen(true)} type="button">
@@ -333,10 +333,10 @@ export default function TodoPage() {
         </div>
       </section>
 
-      <section className="surface-card">
+      <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
-          <p className="text-sm text-muted">共 {todosQuery.data?.total ?? 0} 条</p>
-          {todosQuery.isFetching && <p className="text-xs text-muted">刷新中...</p>}
+          <p className="text-sm text-[var(--gray-11)]">共 {todosQuery.data?.total ?? 0} 条</p>
+          {todosQuery.isFetching && <p className="text-xs text-[var(--gray-11)]">刷新中...</p>}
         </div>
 
         <Table.Root className="w-full">
@@ -356,7 +356,7 @@ export default function TodoPage() {
               <Table.Row key={item.id}>
                 <Table.Cell>
                   <p className="font-medium">{item.title}</p>
-                  <p className="mt-1 line-clamp-2 text-xs text-muted">{item.description || "-"}</p>
+                  <p className="mt-1 line-clamp-2 text-xs text-[var(--gray-11)]">{item.description || "-"}</p>
                 </Table.Cell>
                 <Table.Cell>{STATUS_LABEL[item.status]}</Table.Cell>
                 <Table.Cell>{PRIORITY_LABEL[item.priority]}</Table.Cell>

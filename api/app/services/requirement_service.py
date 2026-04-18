@@ -265,6 +265,36 @@ def transition_requirement(
     return serialize_requirement(saved)
 
 
+def delete_requirement(db: Session, requirement_id: str, *, actor: User) -> bool:
+    requirement = get_requirement_by_id(db, requirement_id)
+    if not requirement:
+        return False
+
+    deleted_id = requirement.id
+    deleted_code = requirement.code
+    db.delete(requirement)
+    db.commit()
+
+    _fire_and_forget(
+        publish_topic(
+            TOPIC_NAME,
+            name="requirements.deleted",
+            payload={
+                "action": "deleted",
+                "requirement_id": deleted_id,
+                "code": deleted_code,
+                "actor_user_id": actor.id,
+            },
+            requires_refetch=[
+                "/api/v1/requirements",
+                f"/api/v1/requirements/{deleted_id}",
+            ],
+            dedupe_key=f"requirements:deleted:{deleted_id}",
+        )
+    )
+    return True
+
+
 def list_requirement_comments(db: Session, requirement_id: str) -> list[RequirementCommentPublic]:
     _require_requirement_exists(db, requirement_id)
     comments = db.execute(

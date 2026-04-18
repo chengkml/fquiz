@@ -65,6 +65,239 @@ export type MenuListResponse = {
   total: number;
 };
 
+export type AuditLogItem = {
+  id: number;
+  user_id: string | null;
+  username: string | null;
+  action: string;
+  detail: string | null;
+  created_at: string;
+};
+
+export type AuditLogListResponse = {
+  items: AuditLogItem[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type SystemParamStatus = "enabled" | "disabled";
+
+export type SystemParamSummary = {
+  id: number;
+  param_key: string;
+  param_name: string;
+  param_value: string;
+  description: string | null;
+  status: SystemParamStatus;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by: UserPublic | null;
+  updated_by: UserPublic | null;
+};
+
+export type SystemParamListResponse = {
+  items: SystemParamSummary[];
+  total: number;
+};
+
+export type SystemMessageLevel = "info" | "success" | "warning" | "error";
+export type SystemMessageStatus = "draft" | "published" | "archived";
+
+export type SystemMessageSummary = {
+  id: number;
+  title: string;
+  content: string;
+  level: SystemMessageLevel;
+  status: SystemMessageStatus;
+  start_at: string | null;
+  end_at: string | null;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by: UserPublic | null;
+  updated_by: UserPublic | null;
+};
+
+export type SystemMessageListResponse = {
+  items: SystemMessageSummary[];
+  total: number;
+};
+
+export type QuestionType =
+  | "single_choice"
+  | "multiple_choice"
+  | "true_false"
+  | "short_answer";
+
+export type QuestionStatus = "draft" | "published" | "archived";
+export type QuestionDifficulty = "easy" | "medium" | "hard";
+
+export type QuestionBankType = QuestionType;
+export type QuestionBankStatus = QuestionStatus;
+export type QuestionBankDifficulty = QuestionDifficulty;
+
+export type QuestionBankSummary = {
+  id: number;
+  question_type: QuestionType;
+  stem: string;
+  options_json: Array<Record<string, unknown>> | null;
+  answer: string;
+  analysis: string | null;
+  difficulty: QuestionDifficulty;
+  status: QuestionStatus;
+  tags_json: string[] | null;
+  creator_user_id: string | null;
+  updater_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  creator: UserPublic | null;
+  updater: UserPublic | null;
+};
+
+export type QuestionBankListResponse = {
+  items: QuestionBankSummary[];
+  total: number;
+};
+
+export type QuestionTagSummary = {
+  name: string;
+  count: number;
+};
+
+export type QuestionTagListResponse = {
+  items: QuestionTagSummary[];
+  total: number;
+};
+
+export type QuestionTagMutationResponse = {
+  affected_questions: number;
+};
+
+export type VocabularyWordStatus = "enabled" | "disabled";
+
+export type VocabularyWordSummary = {
+  id: number;
+  word: string;
+  phonetic: string | null;
+  meaning: string;
+  example: string | null;
+  status: VocabularyWordStatus;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by: UserPublic | null;
+  updated_by: UserPublic | null;
+};
+
+export type VocabularyWordListResponse = {
+  items: VocabularyWordSummary[];
+  total: number;
+};
+
+export type VocabularyStatsSummary = {
+  total_words: number;
+  enabled_words: number;
+  disabled_words: number;
+  enabled_rate: number | null;
+  missing_phonetic_words: number;
+  missing_example_words: number;
+};
+
+export type VocabularyStatusBucketItem = {
+  status: string;
+  count: number;
+};
+
+export type VocabularyInitialBucketItem = {
+  initial: string;
+  count: number;
+};
+
+export type VocabularyWordTrendItem = {
+  id: number;
+  word: string;
+  status: VocabularyWordStatus;
+  updated_at: string;
+};
+
+export type VocabularyWordStatsResponse = {
+  summary: VocabularyStatsSummary;
+  status_buckets: VocabularyStatusBucketItem[];
+  initial_buckets: VocabularyInitialBucketItem[];
+  recently_updated: VocabularyWordTrendItem[];
+};
+
+export type HotSearchRecordSummary = {
+  id: number;
+  source: string;
+  external_id: string | null;
+  title: string;
+  url: string | null;
+  hot_value: string | null;
+  rank_index: number | null;
+  crawl_time: string;
+  batch_no: string | null;
+  detail_markdown: string | null;
+  extra_json: Record<string, unknown> | null;
+  matched_topics: string[];
+  creator_user_id: string | null;
+  updater_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  creator: UserPublic | null;
+  updater: UserPublic | null;
+};
+
+export type HotSearchListResponse = {
+  items: HotSearchRecordSummary[];
+  total: number;
+};
+
+export type HotSearchFollowTopicSummary = {
+  id: number;
+  topic_name: string;
+  keywords: string | null;
+  enabled: boolean;
+  seq: number;
+  created_at: string;
+  updated_at: string;
+  creator: UserPublic | null;
+  updater: UserPublic | null;
+};
+
+export type HotSearchFollowTopicListResponse = {
+  items: HotSearchFollowTopicSummary[];
+  total: number;
+};
+
+export type MdResolveQuestionDraft = {
+  question_type: QuestionType;
+  stem: string;
+  options_json: Array<{ key: string; content: string }> | null;
+  answer: string;
+  analysis: string | null;
+  difficulty: QuestionDifficulty;
+  status: QuestionStatus;
+  tags_json: string[];
+};
+
+export type MdResolveParseResponse = {
+  items: MdResolveQuestionDraft[];
+  total: number;
+  warnings: string[];
+};
+
+export type MdResolveImportResponse = {
+  created_count: number;
+  items: QuestionBankSummary[];
+  warnings: string[];
+};
+
 export type FileStorageDriverType = "VFS" | "S3";
 
 export type FileStorageBackendSummary = {
@@ -173,6 +406,8 @@ export type ModelListResponse = {
   total: number;
 };
 
+export type PasswordModelListResponse = ModelListResponse;
+
 export type ModelRouteRuleItem = {
   id: number;
   route_type: ModelRouteType;
@@ -241,6 +476,20 @@ export type ModelTestRunListResponse = {
   total: number;
 };
 
+export type ModelTestChatResponse = {
+  model_id: number;
+  model_code: string;
+  provider: string;
+  provider_model: string;
+  reply: string | null;
+  latency_ms: number | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
+  test_status: ModelTestStatus;
+  error_message: string | null;
+};
+
 export type ModelSummaryResponse = {
   total_models: number;
   status_counts: Record<string, number>;
@@ -249,6 +498,32 @@ export type ModelSummaryResponse = {
   enabled_without_healthy_check: number;
   usage_7d: ModelUsageSummary;
   tests_7d: ModelTestSummary;
+};
+
+export type TokenUsageSummary = {
+  request_count: number;
+  success_count: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  success_rate: number | null;
+};
+
+export type TokenUsageDailyItem = TokenUsageSummary & {
+  date: string;
+};
+
+export type TokenUsageModelItem = TokenUsageSummary & {
+  model_code: string;
+};
+
+export type TokenUsageOverviewResponse = {
+  days: number;
+  model_code: string | null;
+  start_date: string;
+  end_date: string;
+  summary: TokenUsageSummary;
+  trend: TokenUsageDailyItem[];
+  top_models: TokenUsageModelItem[];
 };
 
 export type ChatRole = "system" | "user" | "assistant";
@@ -296,6 +571,25 @@ export type ChatSendResponse = {
   session: ChatSession;
   user_message: ChatMessage;
   assistant_message: ChatMessage;
+};
+
+export type LifeCountdownProfile = {
+  id?: string;
+  deathDate?: string;
+  todayWarningDate?: string;
+  todayWarningText?: string;
+  todayWarningGeneratedAt?: string;
+  todayWarningModel?: string;
+  createDate?: string;
+  updateDate?: string;
+};
+
+export type LifeCountdownWarning = {
+  warningText?: string;
+  warningDate?: string;
+  generatedAt?: string;
+  modelName?: string;
+  cached?: boolean;
 };
 
 export type RequirementStatus =

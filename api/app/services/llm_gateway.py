@@ -38,6 +38,21 @@ def create_assistant_reply(
     system_prompt: str,
 ) -> LlmCompletionResult:
     model = _resolve_chat_model(db)
+    return create_reply_with_model(
+        model=model,
+        user_message=user_message,
+        context_messages=context_messages,
+        system_prompt=system_prompt,
+    )
+
+
+def create_reply_with_model(
+    *,
+    model: ModelRegistry,
+    user_message: str,
+    context_messages: list[tuple[str, str]],
+    system_prompt: str,
+) -> LlmCompletionResult:
     provider_key = _resolve_provider_key(model.provider)
     endpoint = _build_endpoint(model.base_url)
     payload = {

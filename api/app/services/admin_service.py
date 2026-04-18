@@ -5,10 +5,13 @@ import asyncio
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from ..models.audit_log import AuditLog
 from ..models.menu import Menu
 from ..models.rbac import Permission, Role
 from ..models.user import User
 from ..schemas.admin import (
+    AuditLogListResponse,
+    AuditLogPublic,
     MenuCreateRequest,
     MenuListResponse,
     MenuPublic,
@@ -21,6 +24,59 @@ from ..schemas.admin import (
 )
 from .push_service import publish_topic
 from .user_service import queue_users_auth_refresh
+
+
+AUDIT_LOG_LOAD_OPTIONS = (
+    selectinload(AuditLog.user).selectinload(User.roles),
+)
+
+
+def _audit_log_stmt():
+    return select(AuditLog).options(*AUDIT_LOG_LOAD_OPTIONS)
+
+
+def serialize_audit_log(log: AuditLog) -> AuditLogPublic:
+    return AuditLogPublic(
+        id=log.id,
+        user_id=log.user_id,
+        username=log.user.username if log.user else None,
+        action=log.action,
+        detail=log.detail,
+        created_at=log.created_at,
+    )
+
+
+def list_audit_logs(
+    db: Session,
+    *,
+    limit: int,
+    offset: int,
+    action: str | None,
+    user_id: str | None,
+) -> AuditLogListResponse:
+    stmt = _audit_log_stmt()
+    if action:
+        stmt = stmt.where(AuditLog.action == action)
+    if user_id:
+        stmt = stmt.where(AuditLog.user_id == user_id)
+
+    total_stmt = select(func.count()).select_from(AuditLog)
+    if action:
+        total_stmt = total_stmt.where(AuditLog.action == action)
+    if user_id:
+        total_stmt = total_stmt.where(AuditLog.user_id == user_id)
+
+    total = db.scalar(total_stmt) or 0
+    logs = db.execute(
+        stmt.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).offset(offset).limit(limit)
+    ).scalars().all()
+
+    return AuditLogListResponse(
+        items=[serialize_audit_log(log) for log in logs],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 def _role_stmt():
@@ -303,7 +359,7 @@ def update_menu(db: Session, menu_id: int, payload: MenuUpdateRequest) -> MenuPu
 
 def delete_menu(db: Session, menu_id: int) -> bool:
     menu = get_menu_by_id(db, menu_id)
-    if not menu or menu.code in {"dashboard", "admin.users", "admin.roles", "admin.menus", "admin.files", "admin.requirements", "admin.chat", "admin.models"}:
+    if not menu or menu.code in {"dashboard", "admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.wxapp", "admin.system_message", "admin.code_review", "admin.git_desktop", "admin.agent", "admin.mcp_server", "admin.files", "admin.filedetector", "admin.baidu_pan", "admin.requirements", "admin.data_query", "admin.hot_search", "admin.schedule", "admin.cron_task_mgr", "admin.queue_mgr", "admin.todos", "admin.mindmap", "admin.knowledge_mastery", "admin.mdresolve", "admin.mermaid_mgr", "admin.tag", "admin.knowledge_point_mgr", "admin.question_bank", "admin.homework", "admin.job_mgr", "admin.history", "admin.vocabulary", "admin.diary", "admin.syslog", "admin.chat", "admin.jwt_generator", "admin.life_countdown", "admin.password", "admin.token_usage", "admin.api_tester", "admin.models", "admin.orchestration"}:
         return False
     child_exists = db.scalar(select(Menu.id).where(Menu.parent_id == menu_id))
     if child_exists is not None:

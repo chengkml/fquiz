@@ -8,6 +8,7 @@ import { useAuth } from "@/components/auth-provider";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { MenuTreeItem } from "@/types/auth";
+import { Button, Callout, Card, Flex, Heading, Text } from "@radix-ui/themes";
 
 function flattenMenuTree(tree: MenuTreeItem[]): MenuTreeItem[] {
   const result: MenuTreeItem[] = [];
@@ -37,18 +38,15 @@ function renderMenuNodes(items: MenuTreeItem[], pathname: string): React.ReactNo
     return (
       <div key={item.id} className="space-y-1">
         {item.path ? (
-          <Link
-            href={item.path}
-            className={`block rounded-lg px-3 py-2 text-sm font-medium transition ${active ? "bg-indigo-500 text-white shadow-[0_10px_24px_rgba(79,70,229,0.28)]" : "text-slate-700 hover:bg-indigo-50"}`}
-          >
-            {item.name}
-          </Link>
+          <Button asChild className="w-full justify-start" color={active ? "indigo" : "gray"} size="2" variant={active ? "soft" : "ghost"}>
+            <Link href={item.path}>{item.name}</Link>
+          </Button>
         ) : (
-          <div className="px-3 py-2 text-sm font-medium text-muted">{item.name}</div>
+          <Text className="px-2 py-1" color="gray" size="2" weight="medium">{item.name}</Text>
         )}
 
         {item.children.length > 0 && (
-          <div className="ml-3 space-y-1 border-l border-[var(--border)] pl-3">
+          <div className="ml-3 space-y-1 border-l border-[var(--gray-6)] pl-3">
             {renderMenuNodes(item.children, pathname)}
           </div>
         )}
@@ -109,7 +107,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   if (initializing || loadingMenus) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center px-6 py-20">
-        <p className="text-sm text-muted">Loading admin workspace...</p>
+        <p className="text-sm text-[var(--gray-11)]">Loading admin workspace...</p>
       </main>
     );
   }
@@ -117,68 +115,67 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-muted">请先登录后再访问后台。</p>
-        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
+        <Text color="gray" size="2">请先登录后再访问后台。</Text>
+        <Button asChild className="w-fit" color="gray" variant="soft">
+          <Link href="/">返回首页</Link>
+        </Button>
       </main>
     );
   }
 
   return (
-    <div className="relative min-h-screen text-slate-900">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-24 top-[-5rem] h-72 w-72 rounded-full bg-indigo-300/30 blur-3xl" />
-        <div className="absolute right-[-6rem] top-20 h-96 w-96 rounded-full bg-sky-300/30 blur-3xl" />
-      </div>
-
-      <div className="relative mx-auto grid min-h-screen w-full max-w-[1760px] grid-cols-1 gap-0 px-3 sm:px-4 xl:px-6 md:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="border-r border-[var(--border)] bg-white/70 p-6 backdrop-blur-xl md:sticky md:top-0 md:h-screen md:overflow-y-auto">
-          <div className="mb-8">
-            <Link href="/" className="text-xl font-bold tracking-tight text-slate-900">fquiz admin</Link>
-            <p className="mt-2 text-sm text-muted">系统菜单</p>
-          </div>
-
-          <nav className="space-y-2">
-            {renderMenuNodes(menuTree, pathname)}
-          </nav>
-
-          <div className="mt-8 space-y-2 border-t border-[var(--border)] pt-6">
-            <p className="text-xs text-muted">当前角色：{user.role_codes.join(", ") || "-"}</p>
-            <p className="text-xs text-muted">账号状态：{user.status || "-"}</p>
-          </div>
-        </aside>
-
-        <main className="p-4 md:p-6">
-          <header className="surface-card mb-6 flex flex-wrap items-start justify-between gap-4 bg-gradient-to-br from-white/95 via-indigo-50/65 to-sky-50/80">
+    <div className="mx-auto grid min-h-screen w-full max-w-[1760px] grid-cols-1 px-3 sm:px-4 xl:px-6 md:grid-cols-[280px_minmax(0,1fr)]">
+      <aside className="border-r border-[var(--gray-6)] p-4 md:sticky md:top-0 md:h-screen md:overflow-y-auto md:p-6">
+        <Card size="2">
+          <Flex direction="column" gap="4">
             <div>
-              <p className="text-sm text-muted">后台管理</p>
-              <h1 className="text-2xl font-bold tracking-tight">{currentTitle}</h1>
+              <Heading as="h1" size="5">fquiz admin</Heading>
+              <Text className="mt-1" color="gray" size="2">系统菜单</Text>
             </div>
 
-            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+            <nav className="space-y-2">
+              {renderMenuNodes(menuTree, pathname)}
+            </nav>
+
+            <div className="space-y-2 border-t border-[var(--gray-6)] pt-4">
+              <Text color="gray" size="1">当前角色：{user.role_codes.join(", ") || "-"}</Text>
+              <Text color="gray" size="1">账号状态：{user.status || "-"}</Text>
+            </div>
+          </Flex>
+        </Card>
+      </aside>
+
+      <main className="p-4 md:p-6">
+        <Card className="mb-6" size="3">
+          <Flex align="start" gap="4" justify="between" wrap="wrap">
+            <div>
+              <Text color="gray" size="2">后台管理</Text>
+              <Heading as="h2" size="6">{currentTitle}</Heading>
+            </div>
+
+            <Flex align="center" gap="2" justify="end" wrap="wrap">
               <div className="min-w-[160px] text-right">
-                <p className="text-sm font-semibold text-slate-900">{user.username}</p>
-                <p className="text-xs text-muted">{user.email}</p>
+                <Text size="2" weight="medium">{user.username}</Text>
+                <Text color="gray" size="1">{user.email}</Text>
               </div>
-              <button
-                className="btn-secondary btn-small"
-                onClick={() => void logout()}
-                type="button"
-              >
+              <Button color="gray" onClick={() => void logout()} size="1" type="button" variant="soft">
                 退出登录
-              </button>
-              <Link href="/" className="btn-secondary btn-small">返回首页</Link>
-            </div>
-          </header>
+              </Button>
+              <Button asChild color="gray" size="1" variant="soft">
+                <Link href="/">返回首页</Link>
+              </Button>
+            </Flex>
+          </Flex>
+        </Card>
 
-          {menuError && (
-            <pre className="notice notice-error mb-6">
-              {menuError}
-            </pre>
-          )}
+        {menuError && (
+          <Callout.Root className="mb-6" color="red">
+            <Callout.Text>{menuError}</Callout.Text>
+          </Callout.Root>
+        )}
 
-          {children}
-        </main>
-      </div>
+        {children}
+      </main>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-04-17T10:40:11.262Z",
+  "updatedAt": "2026-04-18T20:24:34.523Z",
   "entries": {
     "memory:memory/2026-04-13.md:5:5": {
       "key": "memory:memory/2026-04-13.md:5:5",
@@ -10336,6 +10336,2416 @@
         "通过",
         "build:web",
         "admin"
+      ]
+    },
+    "memory:memory/2026-04-12.md:68:86": {
+      "key": "memory:memory/2026-04-12.md:68:86",
+      "path": "memory/2026-04-12.md",
+      "startLine": 68,
+      "endLine": 86,
+      "source": "memory",
+      "snippet": "- 支持 VFS / S3 driver 抽象，先打通后台 `/admin/files` 骨架与核心目录操作。 - 后端改动： - 新增模型：`file_storage_backends`、`file_storage_mounts`、`file_index_entries`（`api/app/models/file_storage.py`）。 - `init_db` 增加 `file_storage` 模型加载，保证 `create_all` 生效。 - 新增存储驱动层：`VfsStorageDriver`、`S3StorageDriver` 与统一工厂（`api/app/services/storage_driver.py`）。 - 新增文件服务：目录列表（带索引同步）、创建目录、删除路径（`api/app/services/file_service.py`）。 - 新增 API：`/api/v1/admin/files`、`/directories`、`/delete`（`api/app/api/v1/admin_files.py`）。 - 种子数据增加 `file.read`/`file.manage` 权限、`admin.files` 菜单、默认 VFS backend+mount 与 S3 backend 占位配置。 - 前端改动： - 新增后台页面：`web/src/app/admin/files/page.tsx`。 - 提供挂载点切换、面包屑目录浏览、刷新、新建目录、删除。 - 增补类型定义 `FileListRespon",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.27843632102012633,
+      "maxScore": 0.27843632102012633,
+      "firstRecalledAt": "2026-04-18T03:56:58.151Z",
+      "lastRecalledAt": "2026-04-18T03:56:58.151Z",
+      "queryHashes": [
+        "9764b238f987"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "admin/files",
+        "file-storage-backends",
+        "file-storage-mounts",
+        "file-index-entries",
+        "api/app/models/file-storage.py",
+        "init-db",
+        "file-storage",
+        "create-all"
+      ]
+    },
+    "memory:memory/2026-04-12.md:45:71": {
+      "key": "memory:memory/2026-04-12.md:45:71",
+      "path": "memory/2026-04-12.md",
+      "startLine": 45,
+      "endLine": 71,
+      "source": "memory",
+      "snippet": "- 原因：`appleboy/ssh-action` 在 `script_stop: true` 下会插入额外控制逻辑，和脚本中的 heredoc 组合后可能污染生成文件。 - 处理：移除 workflow 中 `appleboy/ssh-action` 的 `script_stop: true`，保留脚本内 `set -euo pipefail` 作为失败中断机制。 ## 追加修正（API 构建超时 + 解析冲突） - 触发问题： - `pip` 拉取 `files.pythonhosted.org` 频繁 `ReadTimeoutError`。 - 在高延迟场景下，解析 `pydantic` 版本链时出现 `ResolutionImpossible`。 - 处理： - `api/requirements.txt` 新增显式锁定： - `pydantic==2.12.5` - `pydantic-core==2.41.5` - 将 `psycopg[binary]==3.3.3` 改为显式双包： - `psycopg==3.3.3` - `psycopg-binary==3.3.3` - 验证： - `docker compose build api --no-cache` 成功。 - 日志显示 `pydantic-core-2.41.5` 与 `psycopg-binary-3.3.3` 均成功下载并安装，最终 `fquiz-api Built`。 ## 追加开发（文件管理一期主链） - 目标： - 在现",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.25532030463218686,
+      "maxScore": 0.25532030463218686,
+      "firstRecalledAt": "2026-04-18T03:56:58.151Z",
+      "lastRecalledAt": "2026-04-18T03:56:58.151Z",
+      "queryHashes": [
+        "9764b238f987"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "appleboy/ssh-action",
+        "script-stop",
+        "files.pythonhosted.org",
+        "api/requirements.txt",
+        "2.12.5",
+        "pydantic-core",
+        "2.41.5",
+        "3.3.3"
+      ]
+    },
+    "memory:memory/2026-04-13.md:30:67": {
+      "key": "memory:memory/2026-04-13.md:30:67",
+      "path": "memory/2026-04-13.md",
+      "startLine": 30,
+      "endLine": 67,
+      "source": "memory",
+      "snippet": "- 仅命中 `ENABLED` 且存在激活密钥记录的模型。 - 运行时 key 从环境变量读取，不反解库内 hash： - `LLM_PROVIDER_API_KEYS`（`openai=sk-...` 或 JSON）。 - 配置与部署模板： - `api/app/core/config.py` 新增： - `llm_provider_api_keys` - `llm_request_timeout_seconds` - `chat_context_message_limit` - `chat_default_system_prompt` - `.env.example`、`docker-compose.yml`、`.github/workflows/main.yml` 同步新增上述变量透传。 - `api/requirements.txt` 新增 `httpx==0.28.1`。 - RBAC 与菜单： - `api/app/services/seed_service.py` 新增权限 `chat.use`。 - 新增后台菜单 `admin.chat`（`/admin/chat`）。 - `admin` 默认菜单绑定新增 `admin.chat`。 - `api/app/services/admin_service.py` 把 `admin.chat` 加入内置受保护菜单集合。 - 前端（Next.js App Router + TanStack Query）： - 新增页面：`web/sr",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.21614258885383605,
+      "maxScore": 0.21614258885383605,
+      "firstRecalledAt": "2026-04-18T03:56:58.151Z",
+      "lastRecalledAt": "2026-04-18T03:56:58.151Z",
+      "queryHashes": [
+        "9764b238f987"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "openai",
+        "router",
+        "llm-provider-api-keys",
+        "api/app/core/config.py",
+        "llm-request-timeout-seconds",
+        "chat-context-message-limit",
+        "chat-default-system-prompt",
+        "env.example"
+      ]
+    },
+    "memory:memory/2026-04-12.md:145:171": {
+      "key": "memory:memory/2026-04-12.md:145:171",
+      "path": "memory/2026-04-12.md",
+      "startLine": 145,
+      "endLine": 171,
+      "source": "memory",
+      "snippet": "- Turbopack 报 `Can't resolve '@tanstack/react-query'` / `Can't resolve 'react'`，但 `npm --workspace web ls react @tanstack/react-query --depth=0` 可见依赖存在。 - 风险： - 本次改动覆盖前端多个后台页面，主要风险是视觉回归与局部间距细节，需要联调页面人工验收。 ## 追加修复（DB 端口冲突 + pgvector 基线） - 触发问题： - 远端启动 `db` 报错：`listen tcp4 0.0.0.0:5432: bind: address already in use`。 - 服务器已有旧 PostgreSQL 占用 `5432`，当前容器无法绑定。 - 处理： - `docker-compose.yml`： - DB 端口映射改为 `${POSTGRES_PORT:-5433}:5432`。 - DB 默认镜像改为 `docker.m.daocloud.io/pgvector/pgvector:pg16`。 - `.github/workflows/main.yml`： - 生产 compose 模板同步改为 `${POSTGRES_PORT:-5433}:5432`。 - `.env` 自动模板新增 `POSTGRES_PORT=5433`。 - `POSTGRES_IMAGE` 默认改为 `docker.m.daocloud.io/pgvector",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.2096885025501251,
+      "maxScore": 0.2096885025501251,
+      "firstRecalledAt": "2026-04-18T03:56:58.151Z",
+      "lastRecalledAt": "2026-04-18T03:56:58.151Z",
+      "queryHashes": [
+        "9764b238f987"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "tanstack/react-query",
+        "0.0.0.0",
+        "docker-compose.yml",
+        "postgres-port",
+        "github/workflows/main.yml",
+        "postgres-image",
+        "docker.m.daocloud.io/pgvector",
+        "turbopack"
+      ]
+    },
+    "memory:memory/2026-04-12.md:130:151": {
+      "key": "memory:memory/2026-04-12.md:130:151",
+      "path": "memory/2026-04-12.md",
+      "startLine": 130,
+      "endLine": 151,
+      "source": "memory",
+      "snippet": "- 将后台从默认黑白风格升级为更现代的 `Slate + Cyan` 视觉基线，保持业务逻辑不变。 - 处理： - `web/src/app/layout.tsx`： - 字体切换为 `Space Grotesk`（标题）+ `Manrope`（正文）+ `JetBrains Mono`（等宽）。 - `web/src/app/globals.css`： - 新增统一设计 token（背景/边框/强调色/文本层级）。 - 新增通用样式类：`surface-card`、`surface-card-muted`、`notice`、`btn-*`、`control`、`table-*`。 - 增加浅色渐变背景与柔和光斑，提升整体层次。 - `web/src/app/admin/layout.tsx`： - 后台侧栏、顶部标题区改为半透明磨砂卡片风格，激活态采用青色高亮。 - `web/src/app/admin/**` 与 `web/src/app/page.tsx`： - 统一替换卡片/按钮/表单/表格样式到新通用类，保持页面结构与交互逻辑不变。 - 验证： - `npm run lint:web` 通过。 - `npm run build:web` 失败（环境问题，非本次样式改动引入）： - Turbopack 报 `Can't resolve '@tanstack/react-query'` / `Can't resolve 'react'`，但 `npm --workspace web ls",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.20903215408325193,
+      "maxScore": 0.20903215408325193,
+      "firstRecalledAt": "2026-04-18T03:56:58.151Z",
+      "lastRecalledAt": "2026-04-18T03:56:58.151Z",
+      "queryHashes": [
+        "9764b238f987"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "web/src/app/layout.tsx",
+        "web/src/app/globals.css",
+        "背景/边框/强调色/文本层级",
+        "surface-card",
+        "surface-card-muted",
+        "web/src/app/admin/layout.tsx",
+        "web/src/app/admin",
+        "web/src/app/page.tsx"
+      ]
+    },
+    "memory:memory/2026-04-13.md:56:83": {
+      "key": "memory:memory/2026-04-13.md:56:83",
+      "path": "memory/2026-04-13.md",
+      "startLine": 56,
+      "endLine": 83,
+      "source": "memory",
+      "snippet": "- 后台首页增加入口卡片：`web/src/app/admin/page.tsx`。 - 首页快捷入口增加 `AI 聊天` 按钮：`web/src/app/page.tsx`。 ## 验证 - 后端语法编译： - `python3 -m compileall api/app` 通过 - 前端 lint： - `npm run lint:web` 通过 - 前端类型检查： - `cd web && npx tsc --noEmit` 通过 ## 风险与备注 - 当前为非流式回复，长回答时前端等待感较明显。 - 当前默认按 OpenAI-compatible `/chat/completions` 调用，若其他 Provider 接口不兼容需二期扩展适配层。 - 聊天表由 `create_all` 自动创建，适用于当前仓库口径；后续若引入正式迁移体系需补充迁移脚本。 ## 补充记录（2026-04-13 / web 构建修复） - 问题：`docker compose build web` 在 `RUN npm run build` 失败，堆栈指向 `web/src/app/layout.tsx` 中 `next/font/google`（`Space Grotesk` / `Manrope` / `JetBrains Mono`）拉取 `fonts.googleapis.com` 失败。 - 处理： - `web/src/app/layout.tsx` 移除 `next/font/google` 依赖与变量注入。 - `web/src/ap",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.20562540888786315,
+      "maxScore": 0.20562540888786315,
+      "firstRecalledAt": "2026-04-18T03:56:58.151Z",
+      "lastRecalledAt": "2026-04-18T03:56:58.151Z",
+      "queryHashes": [
+        "9764b238f987"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "openai",
+        "web/src/app/admin/page.tsx",
+        "web/src/app/page.tsx",
+        "api/app",
+        "openai-compatible",
+        "chat/completions",
+        "create-all",
+        "web/src/app/layout.tsx"
+      ]
+    },
+    "memory:memory/2026-04-18.md:17:41": {
+      "key": "memory:memory/2026-04-18.md:17:41",
+      "path": "memory/2026-04-18.md",
+      "startLine": 17,
+      "endLine": 41,
+      "source": "memory",
+      "snippet": "- `metadata.description`: `fquiz admin workspace` -> `Quiz admin workspace` - 需求状态流转（通过 skill 脚本）： - 执行： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 298477961961538567 --action full --skip-build-gate` - 轨迹：`IN_PROGRESS(0) -> 30 -> 60 -> 90 -> COMPLETED(100)`，接口返回均为 200。 - 最终查询确认：需求状态 `COMPLETED`，`progressPercent=100`。 ## 验证记录（本次按指令未执行构建/回归） - 文本检查： - `web/src/app/page.tsx` 中无 `API Base URL` / `resolvedApiBaseUrl` / `API_BASE_URL` 展示逻辑。 - `web/src/app/page.tsx` 主标题为 `Quiz`。 - `web/src/app/layout.tsx` `metadata.title` 为 `Quiz`。 - 需求状态检查： - `/api/project/requirement/get/298477961961538567` 返回 `status=COMPLETED`、`progressPer",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.38537885546684264,
+      "maxScore": 0.38537885546684264,
+      "firstRecalledAt": "2026-04-18T04:03:51.576Z",
+      "lastRecalledAt": "2026-04-18T04:03:51.576Z",
+      "queryHashes": [
+        "ed872990e984"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "metadata.description",
+        "requirement-id",
+        "skip-build-gate",
+        "in-progress",
+        "本次按指令未执行构建/回归",
+        "web/src/app/page.tsx",
+        "api-base-url",
+        "web/src/app/layout.tsx"
+      ]
+    },
+    "memory:memory/2026-04-18.md:1:21": {
+      "key": "memory:memory/2026-04-18.md:1:21",
+      "path": "memory/2026-04-18.md",
+      "startLine": 1,
+      "endLine": 21,
+      "source": "memory",
+      "snippet": "# 2026-04-18 ## Work Log - 需求开发（ID: 298477961961538567，登录页面优化） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `298477961961538567`（状态 OPEN，优先级 MEDIUM）。 - 代码改动（最小范围，前端登录页与元信息）： - `web/src/app/page.tsx` - 移除登录页 `API Base URL` 展示卡片。 - 移除仅用于展示的 `API_BASE_URL` / `resolvedApiBaseUrl` 状态与副作用。 - 保留 `getApiBaseUrl()` 在请求链路中的使用（`handlePing` 仍走动态 API 基址）。 - 首页主标题由 `fquiz` 改为 `Quiz`。 - 未登录态登录页布局改为双区块（左侧品牌说明 + 右侧表单），增强层次。 - 登录/注册切换改为更明确的分段视觉当前态；登录按钮改为整行主按钮；错误提示保留 `notice notice-error`。 - 登录态（已登录）主标题同步改为 `Quiz`。 - `web/src/app/layout.tsx` - `metadata.title`: `fquiz` -> `Quiz` - `metadata.description`: `fquiz admin workspace` -> `Quiz admin workspace` - 需求状态流转（通过 skill",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.3641336470842361,
+      "maxScore": 0.3641336470842361,
+      "firstRecalledAt": "2026-04-18T04:03:51.576Z",
+      "lastRecalledAt": "2026-04-18T04:03:51.576Z",
+      "queryHashes": [
+        "ed872990e984"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "fquiz-requirement-develop",
+        "web/src/app/page.tsx",
+        "api-base-url",
+        "登录/注册切换改为更明确的分段视觉当前态",
+        "notice-error",
+        "web/src/app/layout.tsx",
+        "metadata.title",
+        "metadata.description"
+      ]
+    },
+    "memory:memory/2026-04-18.md:36:53": {
+      "key": "memory:memory/2026-04-18.md:36:53",
+      "path": "memory/2026-04-18.md",
+      "startLine": 36,
+      "endLine": 53,
+      "source": "memory",
+      "snippet": "- 仓库存在本任务外的既有工作区改动（`web/src/app/admin/models/page.tsx`、`web/src/app/admin/roles/page.tsx`、`web/src/app/admin/users/page.tsx`）；本次未改这些文件。 ## Work Log - 需求开发（ID: 298477961961538464，菜单管理页面优化） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `298477961961538464`（状态 OPEN，优先级 MEDIUM）。 - 需求原文： 1. 菜单管理表格表头用中文； 2. 创建编辑表单放到 modal 中，不要平铺在页面中； 3. 类型下拉改中文。 - 代码改动（最小范围，仅菜单管理页）： - `web/src/app/admin/menus/page.tsx` - 引入 `Dialog`（Radix Themes），新增 `dialogOpen` 状态。 - 新增 `startCreate`，将“新建菜单”动作改为打开弹窗；保留 `startEdit` 逻辑并在编辑时打开弹窗。 - 原页面底部平铺表单整体迁移为 `Dialog.Root + Dialog.Content` 弹窗表单，保留原提交/取消/重置逻辑。 - 列表区新增“新建菜单”按钮（位于标题区右侧）。 - 表格表头英文改中文：`Code/Name/Path/Permission/Parent/Sort` -> `编码/名称/路径/权限码/",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.3361009418964386,
+      "maxScore": 0.3361009418964386,
+      "firstRecalledAt": "2026-04-18T04:03:51.576Z",
+      "lastRecalledAt": "2026-04-18T04:03:51.576Z",
+      "queryHashes": [
+        "ed872990e984"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "web/src/app/admin/roles/page.tsx",
+        "web/src/app/admin/users/page.tsx",
+        "fquiz-requirement-develop",
+        "web/src/app/admin/menus/page.tsx",
+        "dialog.root",
+        "dialog.content",
+        "保留原提交/取消/重置逻辑",
+        "编码/名称/路径/权限码"
+      ]
+    },
+    "memory:memory/2026-04-18.md:50:71": {
+      "key": "memory:memory/2026-04-18.md:50:71",
+      "path": "memory/2026-04-18.md",
+      "startLine": 50,
+      "endLine": 71,
+      "source": "memory",
+      "snippet": "- 列表区新增“新建菜单”按钮（位于标题区右侧）。 - 表格表头英文改中文：`Code/Name/Path/Permission/Parent/Sort` -> `编码/名称/路径/权限码/父菜单/排序`。 - 状态筛选下拉英文改中文：`enabled/disabled` -> `已启用/已禁用`。 - 表单下拉英文改中文： - 类型：`directory/menu/button` -> `目录/菜单/按钮`（value 保持不变）； - 状态：`enabled/disabled` -> `已启用/已禁用`（value 保持不变）。 - 需求状态流转（通过 skill 脚本）： - 执行： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 298477961961538464 --action full --skip-build-gate` - 轨迹：`IN_PROGRESS(0) -> 30 -> 60 -> 90 -> COMPLETED(100)`，接口返回均为 200。 - 最终查询确认：需求状态 `COMPLETED`，`progressPercent=100`。 ## 验证记录（本次按指令未执行构建/回归） - 代码检查（`git diff -- web/src/app/admin/menus/page.tsx`）： - 命中三项需求改动（表头中文、表",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.32718651890754696,
+      "maxScore": 0.32718651890754696,
+      "firstRecalledAt": "2026-04-18T04:03:51.576Z",
+      "lastRecalledAt": "2026-04-18T04:03:51.576Z",
+      "queryHashes": [
+        "ed872990e984"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "编码/名称/路径/权限码/父菜单/排序",
+        "enabled/disabled",
+        "已启用/已禁用",
+        "directory/menu/button",
+        "目录/菜单/按钮",
+        "requirement-id",
+        "skip-build-gate",
+        "in-progress"
+      ]
+    },
+    "memory:memory/2026-04-17.md:175:199": {
+      "key": "memory:memory/2026-04-17.md:175:199",
+      "path": "memory/2026-04-17.md",
+      "startLine": 175,
+      "endLine": 199,
+      "source": "memory",
+      "snippet": "- evidence: memory/2026-04-17.md:405-408 - recalls: 0 - status: staged - Candidate: Work Log (2026-04-17, 主题色切换为 Indigo): 对应阴影色中的 `rgba(8,145,178,...)` 同步替换为 `rgba(79,70,229,...)`，避免仍呈现青色阴影。 - confidence: 0.00 - evidence: memory/2026-04-17.md:409-409 - recalls: 0 - status: staged - Candidate: Work Log (2026-04-17, 主题色切换为 Indigo): `npm run lint:web` 通过。; `npm run build:web` 通过。; `docker compose up --build -d web` 通过，`fquiz-web` 容器正常启动。; `curl http://localhost:3000/admin` 响应中 `data-accent-color=\\\"indigo\\\"` 生效。 - confidence: 0.00 - evidence: memory/2026-04-17.md:411-414 - recalls: 0 - status: staged - Candidate: Work Log (2026-04-17, 主题色切换为 Indigo): 部分页面仍存在 `sky-*` 辅助渐变色（非",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.6421117007732391,
+      "maxScore": 0.32428066134452815,
+      "firstRecalledAt": "2026-04-18T04:03:51.576Z",
+      "lastRecalledAt": "2026-04-18T04:48:39.526Z",
+      "queryHashes": [
+        "ed872990e984",
+        "fe86a6c08aa8"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "memory/2026-04-17.md",
+        "405-408",
+        "0.00",
+        "409-409",
+        "fquiz-web",
+        "3000/admin",
+        "data-accent-color",
+        "411-414"
+      ]
+    },
+    "memory:memory/2026-04-18.md:84:95": {
+      "key": "memory:memory/2026-04-18.md:84:95",
+      "path": "memory/2026-04-18.md",
+      "startLine": 84,
+      "endLine": 95,
+      "source": "memory",
+      "snippet": "- 结果：保持“新建/编辑模型、路由规则均在 modal 内操作”的交互不变，减少重复状态重置逻辑。 - 需求状态流转（通过 skill 脚本）： - 执行： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --action full --requirement-id 298477961961538529 --skip-build-gate` - 轨迹：`OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90) -> COMPLETED(100)`。 - 验证： - `git diff -- web/src/app/admin/models/page.tsx`：确认上述重置函数抽取与引用替换已落地。 - 远端详情复核：`/api/project/requirement/get/298477961961538529` 返回 `status=COMPLETED`、`progressPercent=100`、`resultMsg=开发完成：状态置为 COMPLETED`。 - 风险： - 本次按任务要求未执行构建/编译与额外回归；skill 使用了 `--skip-build-gate`。 - 当前工作区含其它未提交改动（非本需求新增），本次仅新增并确认 `web/src/app/admin/models/page.tsx` 的上述变更。",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.30107443928718564,
+      "maxScore": 0.30107443928718564,
+      "firstRecalledAt": "2026-04-18T04:03:51.576Z",
+      "lastRecalledAt": "2026-04-18T04:03:51.576Z",
+      "queryHashes": [
+        "ed872990e984"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "新建/编辑模型",
+        "requirement-id",
+        "skip-build-gate",
+        "in-progress",
+        "本次按任务要求未执行构建/编译与额外回归",
+        "结果",
+        "保持",
+        "新建"
+      ]
+    },
+    "memory:memory/2026-04-18.md:68:80": {
+      "key": "memory:memory/2026-04-18.md:68:80",
+      "path": "memory/2026-04-18.md",
+      "startLine": 68,
+      "endLine": 80,
+      "source": "memory",
+      "snippet": "- `/api/project/requirement/get/304415118593097985` 返回 `status=COMPLETED`、`progressPercent=100`、`resultMsg=开发完成：状态置为 COMPLETED`。 - 验收清单（交付建议）： - 功能点：列表查询、动作/用户筛选、分页切换、权限拦截、空态提示。 - 边界场景：无日志、筛选无结果、未授权访问、非法分页参数（由后端 Query 约束）。 - 回归点：后台菜单显示与跳转、受保护菜单不可删除、管理员角色默认可见系统日志菜单。 ## Work Log - 需求开发（ID: 304415118593097973，生命倒计时菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593097973`（OPEN，MEDIUM），并遵循本次任务要求：跳过构建门禁（`--skip-build-gate`），不做编译/构建与额外回归测试。 - 需求要点：将 quiz 的 `life-countdown` 菜单能力迁移到 fquiz，覆盖“功能/交互/权限/状态”链路。 - 本次实现（前后端闭环）： - 后端领域模型与接口： - 新增模型：`api/app/models/life_countdown.py`（`life_countdown_profiles`，按 `user_id` 唯一存档，包含 `death_date`、`today_warning_*` 缓存字段）。 - 新增 Schem",
+      "recallCount": 14,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 5.4857657015323635,
+      "maxScore": 0.4776007384061813,
+      "firstRecalledAt": "2026-04-18T04:48:39.526Z",
+      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "queryHashes": [
+        "fe86a6c08aa8",
+        "a2f34c507092",
+        "8080ebcec4a8",
+        "70d39200433c",
+        "510b4b26b4db",
+        "230e93b580c9",
+        "084771eb9b3d",
+        "822340b70cb0",
+        "2666eec39454",
+        "2ede02fbe7ac",
+        "4e18b4133ac2",
+        "74878cd0e31a",
+        "0c6cba4785cb"
+      ],
+      "recallDays": [
+        "2026-04-18",
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "动作/用户筛选",
+        "fquiz-requirement-develop",
+        "skip-build-gate",
+        "不做编译/构建与额外回归测试",
+        "life-countdown",
+        "功能/交互/权限/状态",
+        "api/app/models/life-countdown.py",
+        "life-countdown-profiles"
+      ]
+    },
+    "memory:memory/2026-04-18.md:29:46": {
+      "key": "memory:memory/2026-04-18.md:29:46",
+      "path": "memory/2026-04-18.md",
+      "startLine": 29,
+      "endLine": 46,
+      "source": "memory",
+      "snippet": "- 空态、加载态、错误提示、成功提示完整。 - 实时刷新：订阅 `admin.system-params` 主题后自动刷新。 - 后台首页入口：`web/src/app/admin/page.tsx` 新增“系统参数”卡片。 - 菜单管理保护名单：`web/src/app/admin/menus/page.tsx` 加入 `admin.system_params`。 - 类型补充：`web/src/types/auth.ts` 新增系统参数类型定义。 - 需求状态流转（脚本）： - 命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593097982 --action full --skip-build-gate` - 轨迹：`OPEN -> IN_PROGRESS(0) -> 30 -> 60 -> 90 -> COMPLETED(100)`（HTTP 200）。 - 远端状态确认： - `/api/project/requirement/get/304415118593097982` 返回 `status=COMPLETED`、`progressPercent=100`、`resultMsg=开发完成：状态置为 COMPLETED`。 ## Work Log - 需求开发（ID: 304415118593097985，系统日志菜单功能迁移） -",
+      "recallCount": 4,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1.5220660239458084,
+      "maxScore": 0.40982991158962245,
+      "firstRecalledAt": "2026-04-18T04:48:39.526Z",
+      "lastRecalledAt": "2026-04-18T14:17:03.144Z",
+      "queryHashes": [
+        "fe86a6c08aa8",
+        "a2f34c507092",
+        "8080ebcec4a8",
+        "70d39200433c"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "admin.system-params",
+        "web/src/app/admin/page.tsx",
+        "web/src/app/admin/menus/page.tsx",
+        "web/src/types/auth.ts",
+        "requirement-id",
+        "skip-build-gate",
+        "in-progress",
+        "错误"
+      ]
+    },
+    "memory:memory/2026-04-18.md:43:58": {
+      "key": "memory:memory/2026-04-18.md:43:58",
+      "path": "memory/2026-04-18.md",
+      "startLine": 43,
+      "endLine": 58,
+      "source": "memory",
+      "snippet": "- 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593097985`（OPEN，MEDIUM），并遵循本次任务要求：跳过构建门禁（`--skip-build-gate`），不做编译/构建与额外回归测试。 - 需求要点：将 quiz 的 `syslog` 菜单能力迁移到 fquiz，覆盖“功能/交互/权限/状态”完整链路。 - 本次实现（前后端闭环）： - 后端系统日志查询接口： - `api/app/schemas/admin.py` 新增 `AuditLogPublic`、`AuditLogListResponse`。 - `api/app/services/admin_service.py` 新增 `list_audit_logs`（支持 `action`、`user_id` 过滤，按时间倒序分页）。 - `api/app/api/v1/admin.py` 新增 `GET /api/v1/admin/audit-logs`，权限要求 `menu.read | menu.manage`。 - 权限与主题： - `api/app/services/topic_registry.py` 新增 `admin.audit_logs` 主题权限规则（`menu.read/menu.manage`）。 - 菜单迁移与种子： - `api/app/services/seed_service.py` 新增默认菜单 `admin.syslog`（标题“系统日志”，路径 `/admin/s",
+      "recallCount": 3,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1.177708926796913,
+      "maxScore": 0.4107224553823471,
+      "firstRecalledAt": "2026-04-18T04:48:39.526Z",
+      "lastRecalledAt": "2026-04-18T12:42:18.722Z",
+      "queryHashes": [
+        "fe86a6c08aa8",
+        "a2f34c507092",
+        "8080ebcec4a8"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "fquiz-requirement-develop",
+        "skip-build-gate",
+        "不做编译/构建与额外回归测试",
+        "功能/交互/权限/状态",
+        "api/app/schemas/admin.py",
+        "list-audit-logs",
+        "user-id",
+        "api/app/api/v1/admin.py"
+      ]
+    },
+    "memory:memory/2026-04-18.md:1:19": {
+      "key": "memory:memory/2026-04-18.md:1:19",
+      "path": "memory/2026-04-18.md",
+      "startLine": 1,
+      "endLine": 19,
+      "source": "memory",
+      "snippet": "## Work Log - 需求开发（ID: 304415118593097982，系统参数菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593097982`（OPEN，MEDIUM），并遵循本次任务要求：跳过构建门禁（`--skip-build-gate`），不做编译/构建与额外回归测试。 - 需求要点：将 quiz 的 `systemparam` 菜单能力迁移到 fquiz，覆盖“功能/交互/权限/状态”完整链路。 - 本次实现（最小闭环，前后端联动）： - 后端新增系统参数领域能力： - 新增模型：`api/app/models/system_param.py`（`system_params` 表，含 `param_key/name/value/description/status` 与创建/更新人、时间戳）。 - 新增 Schema：`api/app/schemas/system_param.py`（列表/详情/创建/更新）。 - 新增服务：`api/app/services/system_param_service.py`（列表筛选、创建、编辑、删除，含 `admin.system-params` 主题推送）。 - 新增路由：`api/app/api/v1/system_params.py`： - `GET /api/v1/admin/system-params` - `POST /api/v1/admin/system-param",
+      "recallCount": 5,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1.867800322175026,
+      "maxScore": 0.4168623656034469,
+      "firstRecalledAt": "2026-04-18T04:48:39.526Z",
+      "lastRecalledAt": "2026-04-18T17:46:34.301Z",
+      "queryHashes": [
+        "fe86a6c08aa8",
+        "a2f34c507092",
+        "8080ebcec4a8",
+        "70d39200433c",
+        "1ef4bf6fb6a8"
+      ],
+      "recallDays": [
+        "2026-04-18",
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "fquiz-requirement-develop",
+        "skip-build-gate",
+        "不做编译/构建与额外回归测试",
+        "功能/交互/权限/状态",
+        "api/app/models/system-param.py",
+        "system-params",
+        "与创建/更新人",
+        "api/app/schemas/system-param.py"
+      ]
+    },
+    "memory:memory/2026-04-18.md:104:120": {
+      "key": "memory:memory/2026-04-18.md:104:120",
+      "path": "memory/2026-04-18.md",
+      "startLine": 104,
+      "endLine": 120,
+      "source": "memory",
+      "snippet": "- 权限拦截、加载态、空态、错误/成功反馈。 - `web/src/app/admin/page.tsx` 新增“生命倒计时”入口卡片。 - `web/src/types/auth.ts` 新增 `LifeCountdownProfile` 与 `LifeCountdownWarning` 类型定义。 - 需求状态流转（脚本）： - 命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593097973 --action full --skip-build-gate` - 轨迹：`OPEN -> IN_PROGRESS -> 30 -> 60 -> 90 -> COMPLETED(100)`（HTTP 200）。 - 远端状态确认： - `/api/project/requirement/get/304415118593097973` 返回 `status=COMPLETED`、`progressPercent=100`、`resultMsg=开发完成：状态置为 COMPLETED`。 - 验收清单（交付建议）： - 功能点：死亡日期保存、倒计时实时计算、警示语生成/重刷、当日缓存复用、菜单展示与权限控制。 - 边界场景：未设置死亡日期、死亡日期早于今天、死亡日期已过、无模型路由/无有效 key 回退默认文案。 - 回归点：后台首页卡片跳转、侧栏菜单显示、菜单管理",
+      "recallCount": 4,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1.2744013309478759,
+      "maxScore": 0.3668959558010101,
+      "firstRecalledAt": "2026-04-18T04:48:39.526Z",
+      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "queryHashes": [
+        "fe86a6c08aa8",
+        "8080ebcec4a8",
+        "70d39200433c",
+        "0c6cba4785cb"
+      ],
+      "recallDays": [
+        "2026-04-18",
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "错误/成功反馈",
+        "web/src/app/admin/page.tsx",
+        "web/src/types/auth.ts",
+        "requirement-id",
+        "skip-build-gate",
+        "in-progress",
+        "警示语生成/重刷",
+        "无模型路由/无有效"
+      ]
+    },
+    "memory:memory/2026-04-18.md:54:71": {
+      "key": "memory:memory/2026-04-18.md:54:71",
+      "path": "memory/2026-04-18.md",
+      "startLine": 54,
+      "endLine": 71,
+      "source": "memory",
+      "snippet": "- `api/app/services/admin_service.py` 受保护菜单集合加入 `admin.syslog`（防误删）。 - `web/src/app/admin/menus/page.tsx` 前端受保护菜单集合同步加入 `admin.syslog`。 - 前端页面迁移： - 新增 `web/src/app/admin/syslog/page.tsx`： - 列表分页（`limit/offset`）。 - 过滤（`action`、`user_id`）。 - 权限拦截、空态/加载态、错误提示。 - `web/src/types/auth.ts` 新增系统日志响应类型 `AuditLogItem`、`AuditLogListResponse`。 - `web/src/app/admin/page.tsx` 新增“系统日志”后台入口卡片。 - 需求状态流转（脚本）： - 命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593097985 --action full --skip-build-gate` - 轨迹：`OPEN -> IN_PROGRESS(0) -> 30 -> 60 -> 90 -> COMPLETED(100)`（HTTP 200）。 - 远端状态确认： - `/api/project/re",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.34997333884239196,
+      "maxScore": 0.34997333884239196,
+      "firstRecalledAt": "2026-04-18T04:48:39.526Z",
+      "lastRecalledAt": "2026-04-18T04:48:39.526Z",
+      "queryHashes": [
+        "fe86a6c08aa8"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "admin.syslog",
+        "web/src/app/admin/menus/page.tsx",
+        "limit/offset",
+        "user-id",
+        "空态/加载态",
+        "web/src/types/auth.ts",
+        "web/src/app/admin/page.tsx",
+        "requirement-id"
+      ]
+    },
+    "memory:memory/2026-04-18.md:192:206": {
+      "key": "memory:memory/2026-04-18.md:192:206",
+      "path": "memory/2026-04-18.md",
+      "startLine": 192,
+      "endLine": 206,
+      "source": "memory",
+      "snippet": "- 边界场景：无 `requirement.read` 权限账号不可见/不可访问；菜单管理页无法删除受保护菜单 `admin.code_review`。 - 回归点：`admin` 角色默认菜单包含 `admin.code_review`；与 `admin.requirements` 并存时均可正常访问。 - 风险与说明： - 本次按任务要求未执行编译/构建与额外回归测试。 - 当前仓库存在多需求并行改动，工作区为脏状态；本次交付聚焦 `code-review` 菜单迁移相关改动。 ## Work Log - 需求开发（ID: 304415118593097994，系统消息菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593097994`（标题：`[fquiz迁移] 系统消息 菜单功能迁移`），并遵循本次任务要求：跳过构建门禁（`--skip-build-gate`），不做编译/构建与额外回归测试。 - 需求要点：将 quiz 的 `systemmessage` 菜单能力迁移到 fquiz，覆盖“功能/交互/权限/状态”链路。 - 本次实现（前后端闭环）： - 后端领域能力： - 新增模型：`api/app/models/system_message.py`（`system_messages` 表，含 `title/content/level/status/start_at/end_at` 与创建/更新人、时间戳）。 - 新增 Schema：`api/app/sch",
+      "recallCount": 11,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 4.16579173207283,
+      "maxScore": 0.4450311094522476,
+      "firstRecalledAt": "2026-04-18T12:36:30.810Z",
+      "lastRecalledAt": "2026-04-18T18:37:14.458Z",
+      "queryHashes": [
+        "a2f34c507092",
+        "8080ebcec4a8",
+        "70d39200433c",
+        "510b4b26b4db",
+        "230e93b580c9",
+        "084771eb9b3d",
+        "1ef4bf6fb6a8",
+        "822340b70cb0",
+        "2666eec39454",
+        "c2ca05342f3d"
+      ],
+      "recallDays": [
+        "2026-04-18",
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "requirement.read",
+        "权限账号不可见/不可访问",
+        "admin.code-review",
+        "admin.requirements",
+        "本次按任务要求未执行编译/构建与额外回归测试",
+        "code-review",
+        "fquiz-requirement-develop",
+        "skip-build-gate"
+      ]
+    },
+    "memory:memory/2026-04-18.md:168:185": {
+      "key": "memory:memory/2026-04-18.md:168:185",
+      "path": "memory/2026-04-18.md",
+      "startLine": 168,
+      "endLine": 185,
+      "source": "memory",
+      "snippet": "- 需求要点：将 quiz 的 `code-review` 菜单能力迁移到 fquiz，覆盖菜单可见、路由可达、权限链路与菜单保护。 - 本次实现（最小增量，复用既有需求管理能力）： - 后端菜单种子与角色绑定： - `api/app/services/seed_service.py` - 新增默认菜单 `admin.code_review`（标题“代码评审”，路径 `/admin/code-review`，权限 `requirement.read`，排序 49）。 - `admin` 角色默认菜单绑定加入 `admin.code_review`。 - 菜单删除保护： - `api/app/services/admin_service.py` - 受保护菜单集合加入 `admin.code_review`，防止在菜单管理页被误删。 - `web/src/app/admin/menus/page.tsx` - 前端受保护菜单集合同步加入 `admin.code_review`。 - 前端入口与路由迁移： - `web/src/app/admin/page.tsx` - 新增“代码评审”后台入口卡片（权限：`requirement.read`）。 - 新增 `web/src/app/admin/code-review/page.tsx` - 采用复用方式导出 `requirements` 页面：`export { default } from \"@/app/a",
+      "recallCount": 5,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1.961188620328903,
+      "maxScore": 0.43093860149383545,
+      "firstRecalledAt": "2026-04-18T12:36:30.810Z",
+      "lastRecalledAt": "2026-04-18T19:26:53.496Z",
+      "queryHashes": [
+        "a2f34c507092",
+        "8080ebcec4a8",
+        "70d39200433c",
+        "1ef4bf6fb6a8",
+        "4e18b4133ac2"
+      ],
+      "recallDays": [
+        "2026-04-18",
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "code-review",
+        "api/app/services/seed-service.py",
+        "admin.code-review",
+        "admin/code-review",
+        "requirement.read",
+        "web/src/app/admin/menus/page.tsx",
+        "web/src/app/admin/page.tsx",
+        "app/a"
+      ]
+    },
+    "memory:memory/2026-04-18.md:116:130": {
+      "key": "memory:memory/2026-04-18.md:116:130",
+      "path": "memory/2026-04-18.md",
+      "startLine": 116,
+      "endLine": 130,
+      "source": "memory",
+      "snippet": "- 回归点：后台首页卡片跳转、侧栏菜单显示、菜单管理受保护不可删。 - 风险与说明： - 本次按任务要求未执行编译/构建与额外回归测试。 - 当前仓库存在本需求外历史改动，脚本 `changedFiles` 会包含非本需求文件；本需求交付聚焦生命倒计时链路。 ## Work Log - 需求开发（ID: 304415118593097988，用户管理菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593097988`（OPEN，MEDIUM），并遵循本次任务要求：跳过构建门禁（`--skip-build-gate`），不做编译/构建与额外回归测试。 - 需求要点：将 quiz 的 `user_mgr` 菜单能力迁移到 fquiz，覆盖“功能/交互/权限/状态”完整链路。 - 本次实现（最小增量，前后端联动）： - 前端用户管理页补齐“状态管理”操作（`web/src/app/admin/users/page.tsx`）： - 新增“启用/禁用”按钮，按当前状态自动切换； - 调用既有后端接口 `PATCH /api/v1/users/{user_id}`，提交 `{ status: \"active\" | \"disabled\" }`； - 操作进行中显示“更新中...”，成功后提示“用户已启用/用户已禁用”，并刷新用户列表； - 增加保护：禁止修改当前登录账号状态，避免误禁用自己导致会话中断；",
+      "recallCount": 3,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1.2743387877941132,
+      "maxScore": 0.47284654080867766,
+      "firstRecalledAt": "2026-04-18T12:36:30.810Z",
+      "lastRecalledAt": "2026-04-18T18:37:15.542Z",
+      "queryHashes": [
+        "a2f34c507092",
+        "8080ebcec4a8",
+        "2ede02fbe7ac"
+      ],
+      "recallDays": [
+        "2026-04-18",
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "本次按任务要求未执行编译/构建与额外回归测试",
+        "fquiz-requirement-develop",
+        "skip-build-gate",
+        "不做编译/构建与额外回归测试",
+        "user-mgr",
+        "功能/交互/权限/状态",
+        "web/src/app/admin/users/page.tsx",
+        "启用/禁用"
+      ]
+    },
+    "memory:memory/2026-04-18.md:234:246": {
+      "key": "memory:memory/2026-04-18.md:234:246",
+      "path": "memory/2026-04-18.md",
+      "startLine": 234,
+      "endLine": 246,
+      "source": "memory",
+      "snippet": "- 订阅 `admin.system-messages` 主题后自动刷新。 - `web/src/app/admin/page.tsx` 新增“系统消息”入口卡片。 - `web/src/types/auth.ts` 新增系统消息类型：`SystemMessageSummary`、`SystemMessageListResponse` 等。 - 需求状态流转（脚本）： - 命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593097994 --action full --skip-build-gate` - 轨迹：`OPEN -> IN_PROGRESS(0) -> 30 -> 60 -> 90 -> COMPLETED(100)`（HTTP 200）。 - 远端状态确认： - `/api/project/requirement/get/304415118593097994` 返回 `status=COMPLETED`、`progressPercent=100`、`resultMsg=开发完成：状态置为 COMPLETED`（`updateDate=2026-04-18T13:07:37.957567`）。 - 风险与说明： - 本次按任务要求未执行编译/构建与额外回归测试。 - 仓库当前为脏工作区，脚本 `changedFiles` 会包含本需求外文件；本次交付",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.3610087007284164,
+      "maxScore": 0.3610087007284164,
+      "firstRecalledAt": "2026-04-18T12:42:18.722Z",
+      "lastRecalledAt": "2026-04-18T12:42:18.722Z",
+      "queryHashes": [
+        "8080ebcec4a8"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "admin.system-messages",
+        "web/src/app/admin/page.tsx",
+        "web/src/types/auth.ts",
+        "requirement-id",
+        "skip-build-gate",
+        "in-progress",
+        "2026-04-18t13",
+        "37.957567"
+      ]
+    },
+    "memory:memory/2026-04-18.md:247:262": {
+      "key": "memory:memory/2026-04-18.md:247:262",
+      "path": "memory/2026-04-18.md",
+      "startLine": 247,
+      "endLine": 262,
+      "source": "memory",
+      "snippet": "## Work Log - 需求开发（ID: 304415118593098165，数据源管理菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能处理 1 条 `OPEN` 需求，遵循本次任务约束：仅处理 1 条、跳过构建门禁（`--skip-build-gate`）、不做额外回归测试。 - 执行命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --auto-query --action full --status OPEN --project-name fquiz --max-items 1 --skip-build-gate --checkpoint-file skills/fquiz-requirement-develop/runtime/subagent-open-1.ckpt.json --reset-checkpoint` - 处理结果： - 命中需求：`304415118593098165`（`[fquiz迁移] 数据源管理 菜单功能迁移`），初始状态 `OPEN`。 - 状态轨迹：`OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90) -> COMPLETED(100)`，各阶段 HTTP 状态均为 `200`。 - 说明： - 当前仓库工作区为脏状态，脚本 `changedFiles` 为全局视",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.7152493059635161,
+      "maxScore": 0.39949145317077633,
+      "firstRecalledAt": "2026-04-18T14:17:03.144Z",
+      "lastRecalledAt": "2026-04-18T17:44:30.306Z",
+      "queryHashes": [
+        "70d39200433c",
+        "084771eb9b3d"
+      ],
+      "recallDays": [
+        "2026-04-18",
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "fquiz-requirement-develop",
+        "skip-build-gate",
+        "auto-query",
+        "project-name",
+        "max-items",
+        "checkpoint-file",
+        "reset-checkpoint",
+        "in-progress"
+      ]
+    },
+    "memory:memory/2026-04-18.md:234:250": {
+      "key": "memory:memory/2026-04-18.md:234:250",
+      "path": "memory/2026-04-18.md",
+      "startLine": 234,
+      "endLine": 250,
+      "source": "memory",
+      "snippet": "- 订阅 `admin.system-messages` 主题后自动刷新。 - `web/src/app/admin/page.tsx` 新增“系统消息”入口卡片。 - `web/src/types/auth.ts` 新增系统消息类型：`SystemMessageSummary`、`SystemMessageListResponse` 等。 - 需求状态流转（脚本）： - 命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593097994 --action full --skip-build-gate` - 轨迹：`OPEN -> IN_PROGRESS(0) -> 30 -> 60 -> 90 -> COMPLETED(100)`（HTTP 200）。 - 远端状态确认： - `/api/project/requirement/get/304415118593097994` 返回 `status=COMPLETED`、`progressPercent=100`、`resultMsg=开发完成：状态置为 COMPLETED`（`updateDate=2026-04-18T13:07:37.957567`）。 - 风险与说明： - 本次按任务要求未执行编译/构建与额外回归测试。 - 仓库当前为脏工作区，脚本 `changedFiles` 会包含本需求外文件；本次交付",
+      "recallCount": 5,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1.6776302695274352,
+      "maxScore": 0.40253708362579343,
+      "firstRecalledAt": "2026-04-18T14:17:03.144Z",
+      "lastRecalledAt": "2026-04-18T18:37:14.458Z",
+      "queryHashes": [
+        "70d39200433c",
+        "084771eb9b3d",
+        "822340b70cb0",
+        "c2ca05342f3d"
+      ],
+      "recallDays": [
+        "2026-04-18",
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "admin.system-messages",
+        "web/src/app/admin/page.tsx",
+        "web/src/types/auth.ts",
+        "requirement-id",
+        "skip-build-gate",
+        "in-progress",
+        "2026-04-18t13",
+        "37.957567"
+      ]
+    },
+    "memory:memory/2026-04-18.md:182:194": {
+      "key": "memory:memory/2026-04-18.md:182:194",
+      "path": "memory/2026-04-18.md",
+      "startLine": 182,
+      "endLine": 194,
+      "source": "memory",
+      "snippet": "- 新增 `web/src/app/admin/code-review/page.tsx` - 采用复用方式导出 `requirements` 页面：`export { default } from \"@/app/admin/requirements/page\";`，保证 `/admin/code-review` 可直接承接现有“需求流转+评审协作”能力。 - 技能脚本执行与状态处理： - 执行命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098000 --action full --skip-build-gate --force-complete-if-already-completed` - 说明：该需求在执行时远端已是 `COMPLETED`，脚本走 `forced-complete-already-completed` 模式，执行一次 `COMPLETED(100)` 写回。 - 远端状态确认： - `/api/project/requirement/get/304415118593098000` 返回 `status=COMPLETED`、`progressPercent=100`、`resultMsg=开发完成：状态置为 COMPLETED`（`updateDate=2026-04-18T12:46:22.187463`）。 - 验收清单（交付建议）： -",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.31643185019493103,
+      "maxScore": 0.31643185019493103,
+      "firstRecalledAt": "2026-04-18T14:17:03.144Z",
+      "lastRecalledAt": "2026-04-18T14:17:03.144Z",
+      "queryHashes": [
+        "70d39200433c"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "app/admin/requirements/page",
+        "admin/code-review",
+        "requirement-id",
+        "skip-build-gate",
+        "2026-04-18t12",
+        "22.187463",
+        "新增",
+        "web"
+      ]
+    },
+    "memory:memory/2026-04-18.md:143:158": {
+      "key": "memory:memory/2026-04-18.md:143:158",
+      "path": "memory/2026-04-18.md",
+      "startLine": 143,
+      "endLine": 158,
+      "source": "memory",
+      "snippet": "- `/api/project/requirement/get/304415118593097988` 返回 `status=COMPLETED`、`progressPercent=100`、`resultMsg=开发完成：状态置为 COMPLETED`。 - 验收清单（交付建议）： - 功能点：新增用户、分配角色、重置密码、删除用户、启用/禁用用户、状态文案展示。 - 边界场景：重复 user_id/email/username 拦截、角色为空或非法拒绝、当前登录账号禁止自我禁用、未授权访问拒绝（`user.manage`）。 - 回归点：后台首页入口与侧栏菜单可达、用户状态切换后会话与鉴权行为符合预期（被禁用用户被拒绝访问）。 - 风险与说明： - 本次按任务要求未执行编译/构建与额外回归测试。 - 仓库当前存在其他需求的未提交改动，脚本 `changedFiles` 为工作区整体视图，不仅限本需求文件。 ## Work Log - Docker 构建排障（api 基础镜像拉取 EOF） - 触发问题： - `docker compose build` 阶段，`api` 在拉取 `docker.m.daocloud.io/library/python:3.11-slim` metadata 时失败： - `failed to do request: Head .../manifests/3.11-slim: EOF` - 排查与验证： - 手动拉取基础镜像：`docker pull docker.m.daocloud.io/lib",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.31347788572311397,
+      "maxScore": 0.31347788572311397,
+      "firstRecalledAt": "2026-04-18T14:17:03.144Z",
+      "lastRecalledAt": "2026-04-18T14:17:03.144Z",
+      "queryHashes": [
+        "70d39200433c"
+      ],
+      "recallDays": [
+        "2026-04-18"
+      ],
+      "conceptTags": [
+        "启用/禁用用户",
+        "user-id/email/username",
+        "user.manage",
+        "本次按任务要求未执行编译/构建与额外回归测试",
+        "3.11-slim",
+        "manifests/3.11-slim",
+        "docker.m.daocloud.io/lib",
+        "api"
+      ]
+    },
+    "memory:memory/2026-04-18.md:316:329": {
+      "key": "memory:memory/2026-04-18.md:316:329",
+      "path": "memory/2026-04-18.md",
+      "startLine": 316,
+      "endLine": 329,
+      "source": "memory",
+      "snippet": "## Work Log - 需求开发（ID: 304415118593098012，日程管理菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098012`（标题：`[fquiz迁移] 日程管理 菜单功能迁移`），并遵循本次任务要求：不做编译/构建检查与额外回归测试。 - 需求要点：将 quiz 来源菜单 `schedule`（标题“日程管理”）迁移到 fquiz，并覆盖菜单可见性、权限链路、路由可达与菜单保护。 - 本次实现（最小改动，复用既有待办能力）： - 后端菜单与角色绑定： - `api/app/services/seed_service.py` - 新增默认菜单 `admin.schedule`（标题“日程管理”，路径 `/admin/schedule`，图标 `CalendarDays`，排序 `51`，权限 `todo.read`）。 - `admin` 角色默认菜单绑定加入 `admin.schedule`。 - 菜单保护： - `api/app/services/admin_service.py` 后端受保护菜单集合加入 `admin.schedule`，防止菜单管理误删。 - `web/src/app/admin/menus/page.tsx` 前端受保护菜单集合同步加入 `admin.schedule`。 - 前端入口与路由迁移： - `web/src/app/admin/page.tsx` 新增“日程管理”卡",
+      "recallCount": 8,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 3.4259149223566054,
+      "maxScore": 0.5046033799648285,
+      "firstRecalledAt": "2026-04-18T17:42:47.826Z",
+      "lastRecalledAt": "2026-04-18T19:28:23.333Z",
+      "queryHashes": [
+        "230e93b580c9",
+        "084771eb9b3d",
+        "1ef4bf6fb6a8",
+        "2666eec39454",
+        "c2ca05342f3d",
+        "2ede02fbe7ac",
+        "4e18b4133ac2",
+        "bf8a48e80068"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "fquiz-requirement-develop",
+        "不做编译/构建检查与额外回归测试",
+        "api/app/services/seed-service.py",
+        "admin.schedule",
+        "admin/schedule",
+        "todo.read",
+        "web/src/app/admin/menus/page.tsx",
+        "web/src/app/admin/page.tsx"
+      ]
+    },
+    "memory:memory/2026-04-18.md:309:318": {
+      "key": "memory:memory/2026-04-18.md:309:318",
+      "path": "memory/2026-04-18.md",
+      "startLine": 309,
+      "endLine": 318,
+      "source": "memory",
+      "snippet": "- 典型页面已落地：`requirements`、`chat`、`files`、`menus`、`models`、`roles`、`users`、`todos`、`system-message`、`system-params`、`password`、`mindmap`。 - 验证： - `npm run lint:web`：仍存在仓库既有问题（`admin/life-countdown` 的 `react-hooks/set-state-in-effect` error，`admin/password` 1 条 hooks warning），与本次主题改造无直接关联。 - 目标文件校验：`cd web && npx eslint src/app/layout.tsx src/app/admin/layout.tsx src/app/admin/page.tsx src/app/admin/chat/page.tsx src/app/admin/files/page.tsx src/app/admin/menus/page.tsx src/app/admin/models/page.tsx src/app/admin/requirements/[id]/page.tsx src/app/admin/requirements/new/page.tsx src/app/admin/requirements/page.tsx src/app/admin/roles/page.tsx src/app/admin/todos/page.tsx src/app/admin/u",
+      "recallCount": 8,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 3.0506462365388867,
+      "maxScore": 0.4379477739334106,
+      "firstRecalledAt": "2026-04-18T17:42:47.826Z",
+      "lastRecalledAt": "2026-04-18T20:24:34.523Z",
+      "queryHashes": [
+        "230e93b580c9",
+        "084771eb9b3d",
+        "1ef4bf6fb6a8",
+        "822340b70cb0",
+        "2666eec39454",
+        "c2ca05342f3d",
+        "b3b5ef0008f4"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "system-message",
+        "system-params",
+        "admin/life-countdown",
+        "react-hooks/set-state-in-effect",
+        "admin/password",
+        "src/app/layout.tsx",
+        "src/app/admin/layout.tsx",
+        "src/app/admin/page.tsx"
+      ]
+    },
+    "memory:memory/2026-04-19.md:1:15": {
+      "key": "memory:memory/2026-04-19.md:1:15",
+      "path": "memory/2026-04-19.md",
+      "startLine": 1,
+      "endLine": 15,
+      "source": "memory",
+      "snippet": "## Work Log - 需求开发（ID: 304415118593098024，AI聊天菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098024`（标题：`[fquiz迁移] AI聊天 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试，因此使用 `--skip-build-gate`。当前仓库为脏工作区，且需求描述未包含反引号路径线索，执行时显式启用 `--allow-dirty-worktree --allow-broad-change-detection` 通过技能前置门禁。 - 本次执行命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098024 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection --force-complete-if-already-completed` - 状态流转结果（HTTP 均 200）： - `OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90) -> COMPLETED(100)",
+      "recallCount": 3,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1.0988390266895294,
+      "maxScore": 0.39755092561244965,
+      "firstRecalledAt": "2026-04-18T17:42:47.826Z",
+      "lastRecalledAt": "2026-04-18T17:46:34.301Z",
+      "queryHashes": [
+        "230e93b580c9",
+        "084771eb9b3d",
+        "1ef4bf6fb6a8"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "fquiz-requirement-develop",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "requirement-id",
+        "in-progress",
+        "log"
+      ]
+    },
+    "memory:memory/2026-04-19.md:49:65": {
+      "key": "memory:memory/2026-04-19.md:49:65",
+      "path": "memory/2026-04-19.md",
+      "startLine": 49,
+      "endLine": 65,
+      "source": "memory",
+      "snippet": "- 当前仓库存在多需求并行改动，脚本 `changedFiles` 为工作区整体视图，不仅限家庭作业模块。 ## Work Log - 需求开发（ID: 304415118593098030，需求管理菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098030`（标题：`[fquiz迁移] 需求管理 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试，因此使用 `--skip-build-gate`。当前仓库为脏工作区，且需求描述未包含反引号路径线索，执行时显式启用 `--allow-dirty-worktree --allow-broad-change-detection` 通过技能前置门禁。 - 本次执行命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098030 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection` - 状态流转结果（HTTP 均 200）： - `OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.6746359139680862,
+      "maxScore": 0.35091555416584014,
+      "firstRecalledAt": "2026-04-18T17:44:30.306Z",
+      "lastRecalledAt": "2026-04-18T17:46:34.301Z",
+      "queryHashes": [
+        "084771eb9b3d",
+        "1ef4bf6fb6a8"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "fquiz-requirement-develop",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "requirement-id",
+        "in-progress",
+        "当前"
+      ]
+    },
+    "memory:memory/2026-04-19.md:25:40": {
+      "key": "memory:memory/2026-04-19.md:25:40",
+      "path": "memory/2026-04-19.md",
+      "startLine": 25,
+      "endLine": 40,
+      "source": "memory",
+      "snippet": "- 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试，因此使用 `--skip-build-gate`。当前仓库为脏工作区，且需求描述未包含反引号路径线索，执行时显式启用 `--allow-dirty-worktree --allow-broad-change-detection` 通过技能前置门禁。 - 本次实现（最小改动，复用题库能力承载家庭作业）： - 后端菜单与角色绑定： - `api/app/services/seed_service.py` - 新增默认菜单 `admin.homework`（标题“家庭作业”，路径 `/admin/homework`，图标 `NotebookPen`，排序 `57`，权限 `question_bank.read`）。 - `admin` 角色默认菜单绑定加入 `admin.homework`。 - 菜单保护： - `api/app/services/admin_service.py` 后端受保护菜单集合加入 `admin.homework`，防止菜单管理误删。 - `web/src/app/admin/menus/page.tsx` 前端受保护菜单集合同步加入 `admin.homework`。 - 前端入口与路由迁移： - `web/src/app/admin/page.tsx` 新增“家庭作业”后台入口卡片（权限：`question_bank.read | question_bank.manage`）。 - 新增 `web/src/app/ad",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.6577238738536835,
+      "maxScore": 0.34015902876853943,
+      "firstRecalledAt": "2026-04-18T17:44:30.306Z",
+      "lastRecalledAt": "2026-04-18T17:46:34.301Z",
+      "queryHashes": [
+        "084771eb9b3d",
+        "1ef4bf6fb6a8"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "api/app/services/seed-service.py",
+        "admin.homework",
+        "admin/homework",
+        "question-bank.read"
+      ]
+    },
+    "memory:memory/2026-04-18.md:326:338": {
+      "key": "memory:memory/2026-04-18.md:326:338",
+      "path": "memory/2026-04-18.md",
+      "startLine": 326,
+      "endLine": 338,
+      "source": "memory",
+      "snippet": "- `api/app/services/admin_service.py` 后端受保护菜单集合加入 `admin.schedule`，防止菜单管理误删。 - `web/src/app/admin/menus/page.tsx` 前端受保护菜单集合同步加入 `admin.schedule`。 - 前端入口与路由迁移： - `web/src/app/admin/page.tsx` 新增“日程管理”卡片入口（权限 `todo.read`）。 - 新增 `web/src/app/admin/schedule/page.tsx`，复用 `todos` 页面：`export { default } from \"@/app/admin/todos/page\";`，保证 `/admin/schedule` 直接承接现有“待办/日程管理”完整交互能力（筛选、流转、创建、删除、权限拦截）。 - 需求状态流转（脚本）： - 首次执行（OPEN 闭环）： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098012 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection` - 轨迹：`OPEN -> IN_PROGRESS(0) -> 30 -> 60 -> 90 -> CO",
+      "recallCount": 3,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.8976409554481506,
+      "maxScore": 0.31427037715911865,
+      "firstRecalledAt": "2026-04-18T17:44:30.306Z",
+      "lastRecalledAt": "2026-04-18T18:08:07.260Z",
+      "queryHashes": [
+        "084771eb9b3d",
+        "822340b70cb0"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "admin.schedule",
+        "web/src/app/admin/menus/page.tsx",
+        "web/src/app/admin/page.tsx",
+        "todo.read",
+        "app/admin/todos/page",
+        "admin/schedule",
+        "待办/日程管理",
+        "requirement-id"
+      ]
+    },
+    "memory:memory/2026-04-19.md:13:29": {
+      "key": "memory:memory/2026-04-19.md:13:29",
+      "path": "memory/2026-04-19.md",
+      "startLine": 13,
+      "endLine": 29,
+      "source": "memory",
+      "snippet": "- 后端权限与菜单：`api/app/services/seed_service.py`（`chat.use`、`admin.chat` 菜单 `/admin/chat`、admin 默认菜单绑定） - 菜单保护：`api/app/services/admin_service.py`、`web/src/app/admin/menus/page.tsx`（受保护菜单含 `admin.chat`） - 聊天接口：`api/app/api/v1/chat.py`（会话列表/创建、消息列表/发送） - 前端页面与入口：`web/src/app/admin/chat/page.tsx`、`web/src/app/admin/page.tsx` - 说明： - 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需求并行改动，脚本 `changedFiles` 为工作区整体视图，不仅限 AI 聊天模块。 ## Work Log - 需求开发（ID: 304415118593098042，家庭作业菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098042`（标题：`[fquiz迁移] 家庭作业 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试，因此使用 `--skip-build-gate`。当前仓库为脏工作区，且需求描述未包含反引号路径线索，执行时显式启用 `--allow-dirty-wo",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.35500887632369993,
+      "maxScore": 0.35500887632369993,
+      "firstRecalledAt": "2026-04-18T17:46:34.301Z",
+      "lastRecalledAt": "2026-04-18T17:46:34.301Z",
+      "queryHashes": [
+        "1ef4bf6fb6a8"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "api/app/services/seed-service.py",
+        "chat.use",
+        "admin.chat",
+        "admin/chat",
+        "web/src/app/admin/menus/page.tsx",
+        "api/app/api/v1/chat.py",
+        "会话列表/创建",
+        "消息列表/发送"
+      ]
+    },
+    "memory:memory/2026-04-18.md:357:369": {
+      "key": "memory:memory/2026-04-18.md:357:369",
+      "path": "memory/2026-04-18.md",
+      "startLine": 357,
+      "endLine": 369,
+      "source": "memory",
+      "snippet": "- `api/app/services/seed_service.py`：新增默认菜单 `admin.tag`（`/admin/tag`，标题“标签管理”，权限 `question_bank.read`），并加入 admin 角色默认菜单绑定。 - `api/app/services/admin_service.py`：受保护菜单集合加入 `admin.tag`（防止菜单管理误删）。 - `web/src/app/admin/menus/page.tsx`：前端受保护菜单集合同步加入 `admin.tag`。 - 前端页面与入口： - 新增 `web/src/app/admin/tag/page.tsx`：实现标签列表、关键词筛选、重命名弹窗、删除确认、成功/失败反馈、空态/加载态；并订阅 `admin.question_bank` 主题自动刷新。 - `web/src/app/admin/page.tsx`：新增“标签管理”入口卡片。 - `web/src/types/auth.ts`：补齐 `QuestionTagSummary` / `QuestionTagListResponse` / `QuestionTagMutationResponse` 类型，并修复 `QuestionBankListResponse` 缺失。 - 需求状态流转（脚本）： - 命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.33942649364471433,
+      "maxScore": 0.33942649364471433,
+      "firstRecalledAt": "2026-04-18T17:46:34.301Z",
+      "lastRecalledAt": "2026-04-18T17:46:34.301Z",
+      "queryHashes": [
+        "1ef4bf6fb6a8"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "api/app/services/seed-service.py",
+        "admin.tag",
+        "admin/tag",
+        "question-bank.read",
+        "web/src/app/admin/menus/page.tsx",
+        "web/src/app/admin/tag/page.tsx",
+        "成功/失败反馈",
+        "空态/加载态"
+      ]
+    },
+    "memory:memory/2026-04-19.md:89:105": {
+      "key": "memory:memory/2026-04-19.md:89:105",
+      "path": "memory/2026-04-19.md",
+      "startLine": 89,
+      "endLine": 105,
+      "source": "memory",
+      "snippet": "- 当前仓库存在多需求并行改动，脚本 `changedFiles` 为工作区整体视图，不仅限家庭作业模块。 ## Work Log - 需求开发（ID: 304415118593098051，编排管理菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098051`（标题：`[fquiz迁移] 编排管理 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试，因此使用 `--skip-build-gate`。当前仓库为脏工作区，且需求描述未包含反引号路径线索，执行时显式启用 `--allow-dirty-worktree --allow-broad-change-detection` 通过技能前置门禁。 - 本次实现（最小改动，复用现有智能体管理页面承载“编排管理”） - 后端菜单种子： - `api/app/services/seed_service.py` - `admin.agent` 菜单文案与路由迁移为： - `name`: `编排管理` - `path`: `/admin/orchestration` - 保持 `code=admin.agent`、`permission_code=model.read` 不变，避免扩大权限与接口变更范围。 - 菜单保护： - `api/app/services/admin_service.py` 后",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.6300583124160766,
+      "maxScore": 0.3150291562080383,
+      "firstRecalledAt": "2026-04-18T18:05:00.313Z",
+      "lastRecalledAt": "2026-04-18T18:08:07.260Z",
+      "queryHashes": [
+        "822340b70cb0"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "fquiz-requirement-develop",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "api/app/services/seed-service.py",
+        "admin.agent",
+        "admin/orchestration"
+      ]
+    },
+    "memory:memory/2026-04-19.md:40:55": {
+      "key": "memory:memory/2026-04-19.md:40:55",
+      "path": "memory/2026-04-19.md",
+      "startLine": 40,
+      "endLine": 55,
+      "source": "memory",
+      "snippet": "- 当前仓库为多需求并行改动，技能脚本 `changedFiles` 统计为工作区整体，不仅限 Jwt 生成器模块。 - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098024`（标题：`[fquiz迁移] AI聊天 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试，因此使用 `--skip-build-gate`。当前仓库为脏工作区，且需求描述未包含反引号路径线索，执行时显式启用 `--allow-dirty-worktree --allow-broad-change-detection` 通过技能前置门禁。 - 本次执行命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098024 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection --force-complete-if-already-completed` - 状态流转结果（HTTP 均 200）： - `OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90) -> COMPLE",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.6214571475982665,
+      "maxScore": 0.31072857379913327,
+      "firstRecalledAt": "2026-04-18T18:05:00.313Z",
+      "lastRecalledAt": "2026-04-18T18:08:07.260Z",
+      "queryHashes": [
+        "822340b70cb0"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "fquiz-requirement-develop",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "requirement-id",
+        "in-progress",
+        "当前"
+      ]
+    },
+    "memory:memory/2026-04-19.md:146:162": {
+      "key": "memory:memory/2026-04-19.md:146:162",
+      "path": "memory/2026-04-19.md",
+      "startLine": 146,
+      "endLine": 162,
+      "source": "memory",
+      "snippet": "- 前端页面：`web/src/app/admin/requirements/page.tsx`、`web/src/app/admin/requirements/new/page.tsx`、`web/src/app/admin/requirements/[id]/page.tsx` - 后台入口：`web/src/app/admin/page.tsx`（“需求管理”卡片） - 说明： - 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需求并行改动，脚本 `changedFiles` 为工作区整体视图，不仅限需求管理模块。 ## Work Log - 需求开发（ID: 304415118593098048，题库统计菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098048`（标题：`[fquiz迁移] 题库统计 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试，因此使用 `--skip-build-gate`。当前仓库为脏工作区，且需求描述未包含反引号路径线索，执行时显式启用 `--allow-dirty-worktree --allow-broad-change-detection` 通过技能前置门禁。 - 本次实现（最小改动，完成题库统计菜单迁移落点）： - 后端菜单与角色绑定： - `api/app/services/seed_service.py`",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.6145728945732116,
+      "maxScore": 0.3072864472866058,
+      "firstRecalledAt": "2026-04-18T18:05:00.313Z",
+      "lastRecalledAt": "2026-04-18T18:08:07.260Z",
+      "queryHashes": [
+        "822340b70cb0"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "web/src/app/admin/requirements",
+        "page.tsx",
+        "web/src/app/admin/page.tsx",
+        "本次按任务约束未执行构建/编译与额外回归测试",
+        "fquiz-requirement-develop",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree"
+      ]
+    },
+    "memory:memory/2026-04-19.md:77:93": {
+      "key": "memory:memory/2026-04-19.md:77:93",
+      "path": "memory/2026-04-19.md",
+      "startLine": 77,
+      "endLine": 93,
+      "source": "memory",
+      "snippet": "- 新增 `web/src/app/admin/homework/page.tsx`，复用 `question-bank` 页面能力：`export { default } from \"../question-bank/page\";`，使 `/admin/homework` 可直接承接题目新增、筛选、状态流转与标签管理能力。 - 需求状态流转（脚本）： - 命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098042 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection` - 轨迹：`OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90) -> COMPLETED(100)`（HTTP 200）。 - 远端状态确认： - `/api/project/requirement/get/304415118593098042` 返回 `status=COMPLETED`、`progressPercent=100`、`resultMsg=开发完成：状态置为 COMPLETED`。 - 说明： - 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.5979068756103515,
+      "maxScore": 0.29895343780517575,
+      "firstRecalledAt": "2026-04-18T18:05:00.313Z",
+      "lastRecalledAt": "2026-04-18T18:08:07.260Z",
+      "queryHashes": [
+        "822340b70cb0"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "question-bank",
+        "question-bank/page",
+        "admin/homework",
+        "requirement-id",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "in-progress"
+      ]
+    },
+    "memory:memory/2026-04-18.md:336:349": {
+      "key": "memory:memory/2026-04-18.md:336:349",
+      "path": "memory/2026-04-18.md",
+      "startLine": 336,
+      "endLine": 349,
+      "source": "memory",
+      "snippet": "- `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098012 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection --force-complete-if-already-completed` - 轨迹：`COMPLETED(100)` 强制回写（HTTP 200）。 - 远端状态确认： - `/api/project/requirement/get/304415118593098012` 返回 `status=COMPLETED`、`progressPercent=100`、`resultMsg=开发完成：状态置为 COMPLETED`。 - 风险与说明： - 本次按任务要求未执行编译/构建与额外回归测试。 - 当前仓库为多需求并行脏工作区，技能脚本的 `changedFiles` 为工作区整体视图；本次交付聚焦 `日程管理` 菜单迁移相关改动。 ## Work Log - 需求开发（ID: 304415118593098006，标签管理菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098006`（标题：`[fquiz迁移] 标签管理 菜单功能迁移`），遵循本次规则：默认不做构建/编译检查与额",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.5922001361846924,
+      "maxScore": 0.2961000680923462,
+      "firstRecalledAt": "2026-04-18T18:05:00.313Z",
+      "lastRecalledAt": "2026-04-18T18:08:07.260Z",
+      "queryHashes": [
+        "822340b70cb0"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "requirement-id",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "本次按任务要求未执行编译/构建与额外回归测试",
+        "fquiz-requirement-develop",
+        "默认不做构建/编译检查与额",
+        "python3"
+      ]
+    },
+    "memory:memory/2026-04-19.md:124:140": {
+      "key": "memory:memory/2026-04-19.md:124:140",
+      "path": "memory/2026-04-19.md",
+      "startLine": 124,
+      "endLine": 140,
+      "source": "memory",
+      "snippet": "- 新增 `web/src/app/admin/homework/page.tsx`，复用 `question-bank` 页面能力：`export { default } from \"../question-bank/page\";`，使 `/admin/homework` 可直接承接题目新增、筛选、状态流转与标签管理能力。 - 需求状态流转（脚本）： - 命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098042 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection` - 轨迹：`OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90) -> COMPLETED(100)`（HTTP 200）。 - 远端状态确认： - `/api/project/requirement/get/304415118593098042` 返回 `status=COMPLETED`、`progressPercent=100`、`resultMsg=开发完成：状态置为 COMPLETED`。 - 说明： - 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需",
+      "recallCount": 3,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1.420427495241165,
+      "maxScore": 0.500414052605629,
+      "firstRecalledAt": "2026-04-18T18:36:28.901Z",
+      "lastRecalledAt": "2026-04-18T19:26:53.496Z",
+      "queryHashes": [
+        "2666eec39454",
+        "2ede02fbe7ac",
+        "4e18b4133ac2"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "question-bank",
+        "question-bank/page",
+        "admin/homework",
+        "requirement-id",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "in-progress"
+      ]
+    },
+    "memory:memory/2026-04-19.md:136:152": {
+      "key": "memory:memory/2026-04-19.md:136:152",
+      "path": "memory/2026-04-19.md",
+      "startLine": 136,
+      "endLine": 152,
+      "source": "memory",
+      "snippet": "- 当前仓库存在多需求并行改动，脚本 `changedFiles` 为工作区整体视图，不仅限家庭作业模块。 ## Work Log - 需求开发（ID: 304415118593098051，编排管理菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098051`（标题：`[fquiz迁移] 编排管理 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试，因此使用 `--skip-build-gate`。当前仓库为脏工作区，且需求描述未包含反引号路径线索，执行时显式启用 `--allow-dirty-worktree --allow-broad-change-detection` 通过技能前置门禁。 - 本次实现（最小改动，复用现有智能体管理页面承载“编排管理”） - 后端菜单种子： - `api/app/services/seed_service.py` - `admin.agent` 菜单文案与路由迁移为： - `name`: `编排管理` - `path`: `/admin/orchestration` - 保持 `code=admin.agent`、`permission_code=model.read` 不变，避免扩大权限与接口变更范围。 - 菜单保护： - `api/app/services/admin_service.py` 后",
+      "recallCount": 7,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 3.107711085677147,
+      "maxScore": 0.48039723932743067,
+      "firstRecalledAt": "2026-04-18T18:36:28.901Z",
+      "lastRecalledAt": "2026-04-18T20:24:34.523Z",
+      "queryHashes": [
+        "2666eec39454",
+        "c2ca05342f3d",
+        "2ede02fbe7ac",
+        "bf8a48e80068",
+        "47f540276540",
+        "da047b85a780",
+        "b3b5ef0008f4"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "fquiz-requirement-develop",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "api/app/services/seed-service.py",
+        "admin.agent",
+        "admin/orchestration"
+      ]
+    },
+    "memory:memory/2026-04-19.md:206:229": {
+      "key": "memory:memory/2026-04-19.md:206:229",
+      "path": "memory/2026-04-19.md",
+      "startLine": 206,
+      "endLine": 229,
+      "source": "memory",
+      "snippet": "- 本次实现（最小改动，完成题库统计菜单迁移落点）： - 后端菜单与角色绑定： - `api/app/services/seed_service.py` - 新增默认菜单 `admin.mindmap`（标题“题库统计”，路径 `/admin/mindmap`，图标 `ChartBar`，排序 `51`，权限 `question_bank.read`）。 - `admin` 角色默认菜单绑定顺序中补齐 `admin.mindmap`（位于 `admin.requirements` 与 `admin.schedule` 之间）。 - 前端后台入口： - `web/src/app/admin/page.tsx` - 新增“题库统计”入口卡片，路径 `/admin/mindmap`，权限可见性：`question_bank.read | question_bank.manage`。 - 需求状态流转（脚本）： - 命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098048 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection` - 轨迹：`OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.8553295522928237,
+      "maxScore": 0.4506272822618484,
+      "firstRecalledAt": "2026-04-18T18:36:28.901Z",
+      "lastRecalledAt": "2026-04-18T18:37:14.458Z",
+      "queryHashes": [
+        "2666eec39454",
+        "c2ca05342f3d"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "api/app/services/seed-service.py",
+        "admin.mindmap",
+        "admin/mindmap",
+        "question-bank.read",
+        "admin.requirements",
+        "admin.schedule",
+        "web/src/app/admin/page.tsx",
+        "question-bank.manage"
+      ]
+    },
+    "memory:memory/2026-04-19.md:193:209": {
+      "key": "memory:memory/2026-04-19.md:193:209",
+      "path": "memory/2026-04-19.md",
+      "startLine": 193,
+      "endLine": 209,
+      "source": "memory",
+      "snippet": "- 前端页面：`web/src/app/admin/requirements/page.tsx`、`web/src/app/admin/requirements/new/page.tsx`、`web/src/app/admin/requirements/[id]/page.tsx` - 后台入口：`web/src/app/admin/page.tsx`（“需求管理”卡片） - 说明： - 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需求并行改动，脚本 `changedFiles` 为工作区整体视图，不仅限需求管理模块。 ## Work Log - 需求开发（ID: 304415118593098048，题库统计菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098048`（标题：`[fquiz迁移] 题库统计 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试，因此使用 `--skip-build-gate`。当前仓库为脏工作区，且需求描述未包含反引号路径线索，执行时显式启用 `--allow-dirty-worktree --allow-broad-change-detection` 通过技能前置门禁。 - 本次实现（最小改动，完成题库统计菜单迁移落点）： - 后端菜单与角色绑定： - `api/app/services/seed_service.py`",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.870427131652832,
+      "maxScore": 0.44653971791267394,
+      "firstRecalledAt": "2026-04-18T18:36:28.901Z",
+      "lastRecalledAt": "2026-04-18T19:26:53.496Z",
+      "queryHashes": [
+        "2666eec39454",
+        "4e18b4133ac2"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "web/src/app/admin/requirements",
+        "page.tsx",
+        "web/src/app/admin/page.tsx",
+        "本次按任务约束未执行构建/编译与额外回归测试",
+        "fquiz-requirement-develop",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree"
+      ]
+    },
+    "memory:memory/2026-04-19.md:221:239": {
+      "key": "memory:memory/2026-04-19.md:221:239",
+      "path": "memory/2026-04-19.md",
+      "startLine": 221,
+      "endLine": 239,
+      "source": "memory",
+      "snippet": "- 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需求并行改动，技能脚本 `changedFiles` 为工作区整体视图，不仅限题库统计模块。 ## Work Log - 需求开发（ID: 304415118593098039，Git管理菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098039`（标题：`[fquiz迁移] Git管理 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试，因此使用 `--skip-build-gate`。当前仓库为脏工作区，且需求描述未包含反引号路径线索，执行时显式启用 `--allow-dirty-worktree --allow-broad-change-detection` 通过技能前置门禁。 - 本次实现（最小改动，复用既有需求能力承载 Git 管理）： - 后端菜单与角色绑定： - `api/app/services/seed_service.py` - 新增默认菜单 `admin.git_desktop`（标题“Git管理”，路径 `/admin/git-desktop`，图标 `GitBranch`，排序 `50`，权限 `requirement.read`）。 - `admin` 角色默认菜单绑定加入 `admin.git_desktop`。 - 菜单保护： - `api/app/ser",
+      "recallCount": 3,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1.242306116223335,
+      "maxScore": 0.4361574500799179,
+      "firstRecalledAt": "2026-04-18T18:36:28.901Z",
+      "lastRecalledAt": "2026-04-18T20:05:32.265Z",
+      "queryHashes": [
+        "2666eec39454",
+        "c2ca05342f3d",
+        "da047b85a780"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "本次按任务约束未执行构建/编译与额外回归测试",
+        "fquiz-requirement-develop",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "api/app/services/seed-service.py",
+        "admin.git-desktop"
+      ]
+    },
+    "memory:memory/2026-04-19.md:87:102": {
+      "key": "memory:memory/2026-04-19.md:87:102",
+      "path": "memory/2026-04-19.md",
+      "startLine": 87,
+      "endLine": 102,
+      "source": "memory",
+      "snippet": "- 当前仓库为多需求并行改动，技能脚本 `changedFiles` 统计为工作区整体，不仅限 Jwt 生成器模块。 - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098024`（标题：`[fquiz迁移] AI聊天 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试，因此使用 `--skip-build-gate`。当前仓库为脏工作区，且需求描述未包含反引号路径线索，执行时显式启用 `--allow-dirty-worktree --allow-broad-change-detection` 通过技能前置门禁。 - 本次执行命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098024 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection --force-complete-if-already-completed` - 状态流转结果（HTTP 均 200）： - `OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90) -> COMPLE",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.6822312980890274,
+      "maxScore": 0.4303633004426956,
+      "firstRecalledAt": "2026-04-18T18:36:28.901Z",
+      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "queryHashes": [
+        "2666eec39454",
+        "0c6cba4785cb"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "fquiz-requirement-develop",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "requirement-id",
+        "in-progress",
+        "当前"
+      ]
+    },
+    "memory:memory/2026-04-19.md:272:287": {
+      "key": "memory:memory/2026-04-19.md:272:287",
+      "path": "memory/2026-04-19.md",
+      "startLine": 272,
+      "endLine": 287,
+      "source": "memory",
+      "snippet": "- 轨迹：`COMPLETED -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90) -> COMPLETED(100)`（HTTP 200）。 - 本次处理语义：按“断点重启”回写开发轨迹并闭环完成。 - 说明： - 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需求并行改动，技能脚本 `changedFiles` 为工作区整体视图，不仅限生字本模块。 ## Work Log - 需求开发（ID: 304415118593098063，价格监控菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098063`（标题：`[fquiz迁移] 价格监控 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`，来源路由 `price-monitor`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试；因此脚本执行使用 `--skip-build-gate`。当前仓库为脏工作区且需求描述未提供反引号路径线索，按技能门禁显式启用 `--allow-dirty-worktree --allow-broad-change-detection`。 - 本次实现（最小改动，复用既有 Token 统计能力承接“价格监控”）： - 后端菜单迁移： - `api/app/services/seed_service.py` - 保留菜单编码 `ad",
+      "recallCount": 3,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1.0962644308805465,
+      "maxScore": 0.4207088530063629,
+      "firstRecalledAt": "2026-04-18T18:37:14.458Z",
+      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "queryHashes": [
+        "c2ca05342f3d",
+        "74878cd0e31a",
+        "0c6cba4785cb"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "in-progress",
+        "本次按任务约束未执行构建/编译与额外回归测试",
+        "fquiz-requirement-develop",
+        "price-monitor",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection"
+      ]
+    },
+    "memory:memory/2026-04-18.md:346:358": {
+      "key": "memory:memory/2026-04-18.md:346:358",
+      "path": "memory/2026-04-18.md",
+      "startLine": 346,
+      "endLine": 358,
+      "source": "memory",
+      "snippet": "- 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098006`（标题：`[fquiz迁移] 标签管理 菜单功能迁移`），遵循本次规则：默认不做构建/编译检查与额外回归测试。 - 关键现状：远端该需求在执行时已是 `COMPLETED`；按“断点重启”口径执行强制完成写回，确保流程闭环留痕。 - 本次实现（最小闭环，前后端联动）： - 后端标签管理能力补齐（复用题库域）： - `api/app/services/question_bank_service.py`：新增标签聚合查询、标签重命名、标签删除（批量解除关联）服务逻辑；并在题库变更时统一推送 `admin.question_bank` 主题事件。 - `api/app/api/v1/question_bank.py`：新增标签接口： - `GET /api/v1/admin/question-bank/tags` - `PATCH /api/v1/admin/question-bank/tags/rename` - `DELETE /api/v1/admin/question-bank/tags` - `api/app/schemas/question_bank.py`：补齐 `QuestionTag*` 请求/响应模型。 - 菜单迁移与权限链路： - `api/app/services/seed_service.py`：新增默认菜单 `admin.tag`（`/admin/tag`，标",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.4017696887254715,
+      "maxScore": 0.4017696887254715,
+      "firstRecalledAt": "2026-04-18T18:37:14.458Z",
+      "lastRecalledAt": "2026-04-18T18:37:14.458Z",
+      "queryHashes": [
+        "c2ca05342f3d"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "fquiz-requirement-develop",
+        "默认不做构建/编译检查与额外回归测试",
+        "admin.question-bank",
+        "api/app/api/v1/question-bank.py",
+        "api/v1/admin/question-bank/tags",
+        "api/app/schemas/question-bank.py",
+        "请求/响应模型",
+        "api/app/services/seed-service.py"
+      ]
+    },
+    "memory:memory/2026-04-19.md:591:609": {
+      "key": "memory:memory/2026-04-19.md:591:609",
+      "path": "memory/2026-04-19.md",
+      "startLine": 591,
+      "endLine": 609,
+      "source": "memory",
+      "snippet": "- 未登录提示由“题库管理页面”更新为“试题管理页面”。 - 页面标题由“题库管理”更新为“试题管理”。 - 迁移说明由 `question_mgr` 更新为 `exam_mgr`，与来源菜单一致。 - 能力落点确认（当前仓库）： - `web/src/app/admin/question-bank/page.tsx` 仍复用 `../mindmap/page`，试题列表/筛选/编辑/状态/标签能力保持不变。 - 菜单保护未变：`api/app/services/admin_service.py` 与 `web/src/app/admin/menus/page.tsx` 均包含 `admin.question_bank`。 - 需求状态流转（脚本）： - 命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098078 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection` - 轨迹：`OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90) -> COMPLETED(100)`（HTTP 200）。 - 说明： - 本次按任务约束",
+      "recallCount": 5,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 2.228964775800705,
+      "maxScore": 0.47714954316616054,
+      "firstRecalledAt": "2026-04-18T19:26:53.496Z",
+      "lastRecalledAt": "2026-04-18T19:49:51.964Z",
+      "queryHashes": [
+        "4e18b4133ac2",
+        "bf8a48e80068",
+        "46bd9fbc7402",
+        "74878cd0e31a",
+        "47f540276540"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "question-mgr",
+        "exam-mgr",
+        "mindmap/page",
+        "试题列表/筛选/编辑/状态/标签能力保持不变",
+        "web/src/app/admin/menus/page.tsx",
+        "admin.question-bank",
+        "requirement-id",
+        "skip-build-gate"
+      ]
+    },
+    "memory:memory/2026-04-19.md:559:579": {
+      "key": "memory:memory/2026-04-19.md:559:579",
+      "path": "memory/2026-04-19.md",
+      "startLine": 559,
+      "endLine": 579,
+      "source": "memory",
+      "snippet": "- 页面支持 Markdown 输入、解析预览、批量导入题库； - 读写权限按 `question_bank.read / question_bank.manage` 生效。 - 边界场景： - 未登录访问提示登录； - 无权限访问提示无权限； - 解析无结果或导入失败时展示错误/警告信息。 - 回归点： - 原 `MD解析` 路由 `/admin/mdresolve` 与接口 `/api/v1/admin/mdresolve/*` 保持可用； - 菜单管理中 `admin.mermaid_mgr` 受保护，不可误删。 - 说明： - 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需求并行改动，脚本 `changedFiles` 为工作区整体视图，不仅限流程图模块。 ## Work Log - 需求开发（ID: 304415118593098078，试题管理菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098078`（标题：`[fquiz迁移] 试题管理 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`，来源菜单 `exam_mgr` / 路由 `exam`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试；因此脚本执行使用 `--skip-build-gate`。当前仓库为脏工作区且需求描述未提供反引号路径线索，按技能门禁显式启用 `--allow-dirty-work",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.4416338354349136,
+      "maxScore": 0.4416338354349136,
+      "firstRecalledAt": "2026-04-18T19:26:53.496Z",
+      "lastRecalledAt": "2026-04-18T19:26:53.496Z",
+      "queryHashes": [
+        "4e18b4133ac2"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "question-bank.read",
+        "question-bank.manage",
+        "解析无结果或导入失败时展示错误/警告信息",
+        "admin/mdresolve",
+        "api/v1/admin/mdresolve",
+        "admin.mermaid-mgr",
+        "本次按任务约束未执行构建/编译与额外回归测试",
+        "fquiz-requirement-develop"
+      ]
+    },
+    "memory:memory/2026-04-19.md:742:759": {
+      "key": "memory:memory/2026-04-19.md:742:759",
+      "path": "memory/2026-04-19.md",
+      "startLine": 742,
+      "endLine": 759,
+      "source": "memory",
+      "snippet": "- 回归点： - 原 `题库统计` 路由 `/admin/mindmap` 与题库接口 `/api/v1/admin/question-bank*` 保持可用； - 菜单管理中 `admin.knowledge_mastery` 受保护，不可误删。 ## Work Log - 需求开发（ID: 304415118593098075，单词统计菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098075`（标题：`[fquiz迁移] 单词统计 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`，来源路由 `vocabulary-proficiency`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试；因此脚本执行使用 `--skip-build-gate`。当前仓库为脏工作区且需求描述未提供反引号路径线索，按技能门禁显式启用 `--allow-dirty-worktree --allow-broad-change-detection`（按“断点重启”语义推进）。 - 能力落点核验（仓库内已具备）： - 后端菜单与权限：`api/app/services/seed_service.py` - 菜单 `admin.knowledge_mastery` 已配置为“单词统计”，路由 `/admin/vocabulary-proficiency`，权限 `vocabulary.read`。 - `admin` 角色默认菜单绑定包含 `ad",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.4253880739212036,
+      "maxScore": 0.4253880739212036,
+      "firstRecalledAt": "2026-04-18T19:26:53.496Z",
+      "lastRecalledAt": "2026-04-18T19:26:53.496Z",
+      "queryHashes": [
+        "4e18b4133ac2"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "admin/mindmap",
+        "api/v1/admin/question-bank",
+        "admin.knowledge-mastery",
+        "fquiz-requirement-develop",
+        "vocabulary-proficiency",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree"
+      ]
+    },
+    "memory:memory/2026-04-19.md:463:478": {
+      "key": "memory:memory/2026-04-19.md:463:478",
+      "path": "memory/2026-04-19.md",
+      "startLine": 463,
+      "endLine": 478,
+      "source": "memory",
+      "snippet": "- `web/src/app/admin/todos/page.tsx` 已承载待办完整交互能力（筛选、创建、状态流转、删除与权限拦截）。 - 需求状态流转（脚本）： - 命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098072 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection` - 轨迹：`OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90) -> COMPLETED(100)`（HTTP 200）。 - 说明： - 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需求并行改动，脚本 `changedFiles` 为工作区整体视图，不仅限待办管理模块。 ## Work Log - 需求开发（ID: 304415118593098069，角色管理菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098069`（标题：`[fquiz迁移] 角色管理 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`，来源路由 `role`）。 - 执行约束：遵循",
+      "recallCount": 7,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 2.7978217750787735,
+      "maxScore": 0.4629491180181503,
+      "firstRecalledAt": "2026-04-18T19:26:53.496Z",
+      "lastRecalledAt": "2026-04-18T20:24:34.523Z",
+      "queryHashes": [
+        "4e18b4133ac2",
+        "bf8a48e80068",
+        "74878cd0e31a",
+        "47f540276540",
+        "da047b85a780",
+        "0c6cba4785cb",
+        "b3b5ef0008f4"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "web/src/app/admin/todos/page.tsx",
+        "requirement-id",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "in-progress",
+        "本次按任务约束未执行构建/编译与额外回归测试",
+        "fquiz-requirement-develop"
+      ]
+    },
+    "memory:memory/2026-04-19.md:768:787": {
+      "key": "memory:memory/2026-04-19.md:768:787",
+      "path": "memory/2026-04-19.md",
+      "startLine": 768,
+      "endLine": 787,
+      "source": "memory",
+      "snippet": "- 轨迹：`OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90) -> COMPLETED(100)`（HTTP 200）。 - 远端状态确认： - `/api/project/requirement/get/304415118593098075` 返回： - `status=COMPLETED` - `progressPercent=100` - `resultMsg=开发完成：状态置为 COMPLETED` - 记忆口径修正： - `MEMORY.md` 的“菜单迁移口径”已修正该条为“单词统计”，并与当前代码事实保持一致（`admin.knowledge_mastery -> /admin/vocabulary-proficiency -> vocabulary.read`）。 ## Work Log - 需求开发（ID: 304415118593098093，作业监控菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098093`（标题：`[fquiz迁移] 作业监控 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`，来源菜单名 `job_mgr`，来源路由 `job`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试；因此脚本执行使用 `--skip-build-gate`。当前仓库为脏工作区且需求描述未提供反引号路",
+      "recallCount": 3,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1.0819193929433824,
+      "maxScore": 0.42422501742839813,
+      "firstRecalledAt": "2026-04-18T19:26:53.496Z",
+      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "queryHashes": [
+        "4e18b4133ac2",
+        "74878cd0e31a",
+        "0c6cba4785cb"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "in-progress",
+        "memory.md",
+        "admin.knowledge-mastery",
+        "admin/vocabulary-proficiency",
+        "vocabulary.read",
+        "fquiz-requirement-develop",
+        "job-mgr",
+        "不做编译/构建检查与额外回归测试"
+      ]
+    },
+    "memory:memory/2026-04-19.md:663:682": {
+      "key": "memory:memory/2026-04-19.md:663:682",
+      "path": "memory/2026-04-19.md",
+      "startLine": 663,
+      "endLine": 682,
+      "source": "memory",
+      "snippet": "- 菜单 `admin.menus`（标题“菜单管理”，路径 `/admin/menus`，权限 `menu.read`）已在默认菜单与 admin 默认绑定中。 - `web/src/app/admin/page.tsx` - 后台首页已有“菜单管理”入口卡片，路由 `/admin/menus`。 - `api/app/api/v1/admin.py` - 菜单管理接口完整：`GET/POST /menus`、`PATCH/DELETE /menus/{id}`、`GET /menus/tree`、`GET /me/menus`。 - `api/app/services/admin_service.py` + `web/src/app/admin/menus/page.tsx` - 菜单保护包含 `admin.menus`，可阻止受保护菜单误删。 - `web/src/app/admin/menus/page.tsx` - 页面能力完整：关键词/状态/排序筛选、统计卡片、新建/编辑 Dialog、删除确认、权限与空态处理。 - 记忆口径补充： - `MEMORY.md` 的“菜单迁移口径（2026-04-18）”新增“菜单管理”条目，明确沿用 `admin.menus` 与 `/api/v1/admin/menus*` 既有能力，不做额外扩改。 - 需求状态流转（脚本）： - 命令： - `python3 skills/fquiz-requirement-de",
+      "recallCount": 6,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 2.6310410678386686,
+      "maxScore": 0.47795626223087306,
+      "firstRecalledAt": "2026-04-18T19:28:23.333Z",
+      "lastRecalledAt": "2026-04-18T20:24:34.523Z",
+      "queryHashes": [
+        "bf8a48e80068",
+        "46bd9fbc7402",
+        "74878cd0e31a",
+        "47f540276540",
+        "da047b85a780",
+        "b3b5ef0008f4"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "admin.menus",
+        "admin/menus",
+        "menu.read",
+        "web/src/app/admin/page.tsx",
+        "api/app/api/v1/admin.py",
+        "get/post",
+        "patch/delete",
+        "menus/tree"
+      ]
+    },
+    "memory:memory/2026-04-19.md:605:619": {
+      "key": "memory:memory/2026-04-19.md:605:619",
+      "path": "memory/2026-04-19.md",
+      "startLine": 605,
+      "endLine": 619,
+      "source": "memory",
+      "snippet": "- 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需求并行改动，脚本 `changedFiles` 为工作区整体视图，不仅限试题管理模块。 ## Work Log - 需求开发（ID: 304415118593098087，MCP管理菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098087`（标题：`[fquiz迁移] MCP管理 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`，来源菜单 `mcp_server` / 路由 `mcp-server`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试；因此脚本执行使用 `--skip-build-gate`。当前仓库为脏工作区且需求描述未提供反引号路径线索，按技能门禁显式启用 `--allow-dirty-worktree --allow-broad-change-detection`（按“断点重启”语义推进）。 - 本次实现（最小改动，复用模型管理能力承接 MCP 管理）： - 后端菜单与角色绑定： - `api/app/services/seed_service.py` - 新增默认菜单 `admin.mcp_server`（标题“MCP管理”，路径 `/admin/mcp-server`，图标 `Server`，排序 `63`，权限 `model.read`）。 - `admin` 角色默认菜单绑定加入 `admin.mcp_server`。",
+      "recallCount": 4,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1.7124962627887723,
+      "maxScore": 0.46190036237239834,
+      "firstRecalledAt": "2026-04-18T19:28:23.333Z",
+      "lastRecalledAt": "2026-04-18T20:24:34.523Z",
+      "queryHashes": [
+        "bf8a48e80068",
+        "47f540276540",
+        "da047b85a780",
+        "b3b5ef0008f4"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "本次按任务约束未执行构建/编译与额外回归测试",
+        "fquiz-requirement-develop",
+        "mcp-server",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "api/app/services/seed-service.py"
+      ]
+    },
+    "memory:memory/2026-04-19.md:652:666": {
+      "key": "memory:memory/2026-04-19.md:652:666",
+      "path": "memory/2026-04-19.md",
+      "startLine": 652,
+      "endLine": 666,
+      "source": "memory",
+      "snippet": "- 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需求并行改动，脚本 `changedFiles` 为工作区整体视图，不仅限 MCP 管理模块。 ## Work Log - 需求开发（ID: 304415118593098090，菜单管理菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098090`（标题：`[fquiz迁移] 菜单管理 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`，来源路由 `menu`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试；因此脚本执行使用 `--skip-build-gate`。当前仓库为脏工作区且需求描述未提供反引号路径线索，按技能门禁显式启用 `--allow-dirty-worktree --allow-broad-change-detection`（按“断点重启”语义推进）。 - 本次实现（最小改动，确认并固化菜单管理迁移落点）： - 能力与菜单落点确认（代码已具备）： - `api/app/services/seed_service.py` - 菜单 `admin.menus`（标题“菜单管理”，路径 `/admin/menus`，权限 `menu.read`）已在默认菜单与 admin 默认绑定中。 - `web/src/app/admin/page.tsx` - 后台首页已有“菜单管理”入口卡片，路由 `/admin/menus`。 -",
+      "recallCount": 5,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 2.1458986639976505,
+      "maxScore": 0.464998459815979,
+      "firstRecalledAt": "2026-04-18T19:28:23.333Z",
+      "lastRecalledAt": "2026-04-18T20:24:34.523Z",
+      "queryHashes": [
+        "bf8a48e80068",
+        "74878cd0e31a",
+        "47f540276540",
+        "da047b85a780",
+        "b3b5ef0008f4"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "本次按任务约束未执行构建/编译与额外回归测试",
+        "fquiz-requirement-develop",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "api/app/services/seed-service.py",
+        "admin.menus"
+      ]
+    },
+    "memory:memory/2026-04-19.md:512:531": {
+      "key": "memory:memory/2026-04-19.md:512:531",
+      "path": "memory/2026-04-19.md",
+      "startLine": 512,
+      "endLine": 531,
+      "source": "memory",
+      "snippet": "- 验收清单（交付建议）： - 功能点： - 后台可访问“角色管理”菜单并进入 `/admin/roles`。 - 支持角色列表查询、创建、编辑、删除。 - 支持权限点绑定与菜单绑定，变更后列表可见。 - 边界场景： - 未登录访问时提示登录。 - 无 `role.read` 权限时提示无权限。 - 删除受保护角色（如 admin）时后端拒绝并返回错误信息。 - 回归点： - 用户管理页角色下拉（依赖 `/api/v1/admin/roles`）可继续读取角色列表。 - 菜单管理中 `admin.roles` 仍受保护，不可误删。 ## Work Log - 需求开发（ID: 304415118593098081，流程图菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098081`（标题：`[fquiz迁移] 流程图 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`，来源路由 `mermaid-mgr`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试；因此脚本执行使用 `--skip-build-gate`。当前仓库为脏工作区且需求描述未提供反引号路径线索，按技能门禁显式启用 `--allow-dirty-worktree --allow-broad-change-detection`（按“断点重启”语义推进）。 - 本次实现（最小改动，复用 MD 解析能力承接“流程图”）",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.8989927887916564,
+      "maxScore": 0.4503324449062347,
+      "firstRecalledAt": "2026-04-18T19:28:23.333Z",
+      "lastRecalledAt": "2026-04-18T19:49:51.964Z",
+      "queryHashes": [
+        "bf8a48e80068",
+        "47f540276540"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "admin/roles",
+        "role.read",
+        "api/v1/admin/roles",
+        "admin.roles",
+        "fquiz-requirement-develop",
+        "mermaid-mgr",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate"
+      ]
+    },
+    "memory:memory/2026-04-19.md:695:711": {
+      "key": "memory:memory/2026-04-19.md:695:711",
+      "path": "memory/2026-04-19.md",
+      "startLine": 695,
+      "endLine": 711,
+      "source": "memory",
+      "snippet": "- 回归点： - 角色菜单绑定接口 `/api/v1/admin/roles/{id}/menus` 可继续与菜单管理页联动； - `admin.menus` 在前后端受保护名单中持续生效。 - 说明： - 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需求并行改动，脚本 `changedFiles` 为工作区整体视图，不仅限菜单管理模块。 ## Work Log - 需求开发（ID: 304415118593098084，知识统计菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098084`（标题：`[fquiz迁移] 知识统计 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`，来源路由 `knowledge-mastery`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试；因此脚本执行使用 `--skip-build-gate`。当前仓库为脏工作区且需求描述未提供反引号路径线索，按技能门禁显式启用 `--allow-dirty-worktree --allow-broad-change-detection`（按“断点重启”语义推进）。 - 本次实现（最小改动，复用题库统计能力承接“知识统计”）： - 后端菜单与角色绑定： - `api/app/services/seed_service.py` - 新增默认菜单 `admin.knowledge_mastery`（标题“知识统计”，路径 `",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.5055811017751694,
+      "maxScore": 0.5055811017751694,
+      "firstRecalledAt": "2026-04-18T19:33:56.890Z",
+      "lastRecalledAt": "2026-04-18T19:33:56.890Z",
+      "queryHashes": [
+        "46bd9fbc7402"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "api/v1/admin/roles",
+        "admin.menus",
+        "本次按任务约束未执行构建/编译与额外回归测试",
+        "fquiz-requirement-develop",
+        "knowledge-mastery",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree"
+      ]
+    },
+    "memory:memory/2026-04-19.md:630:656": {
+      "key": "memory:memory/2026-04-19.md:630:656",
+      "path": "memory/2026-04-19.md",
+      "startLine": 630,
+      "endLine": 656,
+      "source": "memory",
+      "snippet": "- 轨迹：`OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90) -> COMPLETED(100)`（HTTP 200）。 - 远端状态确认： - `/api/project/requirement/get/304415118593098087` 返回： - `status=COMPLETED` - `progressPercent=100` - `resultMsg=开发完成：状态置为 COMPLETED` - 验收清单（交付建议）： - 功能点： - 后台菜单与首页可见“MCP管理”，可跳转 `/admin/mcp-server`； - 页面可执行模型列表、路由规则与密钥管理等既有操作（复用 `models` 页面）； - 权限按 `model.read / model.manage` 生效。 - 边界场景： - 未登录访问提示登录； - 无权限访问提示无权限； - 模型/路由为空时页面保持空态可读。 - 回归点： - 原“编排管理（/admin/orchestration）”与“模型管理（/admin/models）”入口仍可用； - 菜单管理中 `admin.mcp_server` 受保护，不可误删。 - 说明： - 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需求并行改动，脚本 `changedFiles` 为工作区整体",
+      "recallCount": 3,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1.1440429359674453,
+      "maxScore": 0.4957252979278564,
+      "firstRecalledAt": "2026-04-18T19:34:47.809Z",
+      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "queryHashes": [
+        "74878cd0e31a",
+        "47f540276540",
+        "0c6cba4785cb"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "in-progress",
+        "admin/mcp-server",
+        "model.read",
+        "model.manage",
+        "模型/路由为空时页面保持空态可读",
+        "admin/orchestration",
+        "admin/models",
+        "admin.mcp-server"
+      ]
+    },
+    "memory:memory/2026-04-19.md:247:261": {
+      "key": "memory:memory/2026-04-19.md:247:261",
+      "path": "memory/2026-04-19.md",
+      "startLine": 247,
+      "endLine": 261,
+      "source": "memory",
+      "snippet": "- `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --action full --requirement-id 304415118593098039 --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection` - 轨迹：`OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90) -> COMPLETED(100)`（HTTP 200）。 - 说明： - 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需求并行改动，技能脚本 `changedFiles` 为工作区整体视图，不仅限 Git 管理模块。 - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098045`（标题：`[fquiz迁移] 生字本 菜单功能迁移`，优先级 `MEDIUM`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试，因此使用 `--skip-build-gate`。当前仓库为脏工作区，且需求描述未包含反引号路径线索，执行时显式启用 `--allow-dirty-worktree --allow-broad-change-detection` 通过技能前置门禁。 - 能力落点确认（仓库内已具备）： -",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.6620742529630661,
+      "maxScore": 0.3964788883924484,
+      "firstRecalledAt": "2026-04-18T20:05:32.265Z",
+      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "queryHashes": [
+        "da047b85a780",
+        "0c6cba4785cb"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "requirement-id",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "in-progress",
+        "本次按任务约束未执行构建/编译与额外回归测试",
+        "fquiz-requirement-develop",
+        "不做编译/构建检查与额外回归测试"
+      ]
+    },
+    "memory:memory/2026-04-19.md:915:932": {
+      "key": "memory:memory/2026-04-19.md:915:932",
+      "path": "memory/2026-04-19.md",
+      "startLine": 915,
+      "endLine": 932,
+      "source": "memory",
+      "snippet": "- `web/src/app/admin/menus/page.tsx` 前端受保护菜单集合包含 `admin.cron_task_mgr`。 - 前端入口与页面承接： - `web/src/app/admin/page.tsx` 已存在“定时任务”入口卡片（`/admin/cron`）。 - `web/src/app/admin/cron/page.tsx` 已通过 `export { default } from \"@/app/admin/todos/page\";` 复用待办管理能力承接定时任务菜单。 - 需求状态流转（脚本）： - 命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098108 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection` - 轨迹：`COMPLETED -> IN_PROGRESS(0/30/60/90) -> COMPLETED(100)`（HTTP 200）。 - 本次处理语义：按“断点重启”口径回写开发轨迹并闭环完成。 - 说明： - 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需求并行改动，技能脚本 `changedFiles` 为工作区整体视图，不仅限定时任务模块。 ##",
+      "recallCount": 3,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1.0358400464057922,
+      "maxScore": 0.4054757982492447,
+      "firstRecalledAt": "2026-04-18T20:05:32.265Z",
+      "lastRecalledAt": "2026-04-18T20:24:34.523Z",
+      "queryHashes": [
+        "da047b85a780",
+        "0c6cba4785cb",
+        "b3b5ef0008f4"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "web/src/app/admin/menus/page.tsx",
+        "admin.cron-task-mgr",
+        "web/src/app/admin/page.tsx",
+        "admin/cron",
+        "web/src/app/admin/cron/page.tsx",
+        "app/admin/todos/page",
+        "requirement-id",
+        "skip-build-gate"
+      ]
+    },
+    "memory:memory/2026-04-19.md:1115:1128": {
+      "key": "memory:memory/2026-04-19.md:1115:1128",
+      "path": "memory/2026-04-19.md",
+      "startLine": 1115,
+      "endLine": 1128,
+      "source": "memory",
+      "snippet": "- 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需求并行改动，技能脚本 `changedFiles` 为工作区整体视图，不仅限模型管理模块。 ## Work Log - 需求开发（ID: 304415118593098096，历史答卷菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098096`（标题：`[fquiz迁移] 历史答卷 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`，来源菜单 `history` / 路由 `history`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试；执行脚本使用 `--skip-build-gate`。当前仓库为脏工作区且需求描述未提供反引号路径线索，按技能门禁显式启用 `--allow-dirty-worktree --allow-broad-change-detection`（按“断点重启”语义推进）。 - 本次实现（最小改动，复用题库能力承接“历史答卷”） - 后端菜单能力（已存在，沿用）： - `api/app/services/seed_service.py` - 菜单 `admin.history` 已配置为“历史答卷”，路径 `/admin/history`，权限 `question_bank.read`，并已加入 `admin` 角色默认菜单绑定。 - 菜单保护补齐： - `api/app/services/admin_service.py` 后",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.3891310691833496,
+      "maxScore": 0.3891310691833496,
+      "firstRecalledAt": "2026-04-18T20:05:32.265Z",
+      "lastRecalledAt": "2026-04-18T20:05:32.265Z",
+      "queryHashes": [
+        "da047b85a780"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "本次按任务约束未执行构建/编译与额外回归测试",
+        "fquiz-requirement-develop",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "api/app/services/seed-service.py",
+        "admin.history"
+      ]
+    },
+    "memory:memory/2026-04-19.md:1:17": {
+      "key": "memory:memory/2026-04-19.md:1:17",
+      "path": "memory/2026-04-19.md",
+      "startLine": 1,
+      "endLine": 17,
+      "source": "memory",
+      "snippet": "## Work Log - 需求开发（ID: 304415118593098036，诗词本菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098036`（标题：`[fquiz迁移] 诗词本 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试，因此使用 `--skip-build-gate`。当前仓库为脏工作区，且需求描述未包含反引号路径线索，执行时显式启用 `--allow-dirty-worktree --allow-broad-change-detection` 通过技能前置门禁（按回退重派语义采用断点重启执行口径）。 - 本次实现（最小改动，复用现有词条能力承接“诗词本”）： - 后端菜单迁移： - `api/app/services/seed_service.py` - 保持菜单编码 `admin.vocabulary` 与权限 `vocabulary.read` 不变，避免扩大权限与接口变更范围。 - 菜单文案改为 `诗词本`，路由改为 `/admin/poetry`。 - 前端入口迁移： - `web/src/app/admin/page.tsx` - 后台首页卡片由“生字本(/admin/vocabulary)”迁移为“诗词本(/admin/poetry)”。 - 前端页面文案同步： - `web/src/app/admin/vocabu",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.7871393859386444,
+      "maxScore": 0.39846481084823604,
+      "firstRecalledAt": "2026-04-18T20:05:32.265Z",
+      "lastRecalledAt": "2026-04-18T20:24:34.523Z",
+      "queryHashes": [
+        "da047b85a780",
+        "b3b5ef0008f4"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "fquiz-requirement-develop",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "api/app/services/seed-service.py",
+        "admin.vocabulary",
+        "vocabulary.read"
+      ]
+    },
+    "memory:memory/2026-04-19.md:1076:1092": {
+      "key": "memory:memory/2026-04-19.md:1076:1092",
+      "path": "memory/2026-04-19.md",
+      "startLine": 1076,
+      "endLine": 1092,
+      "source": "memory",
+      "snippet": "- `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098123 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection` - 轨迹：`OPEN -> IN_PROGRESS(0/30/60/90) -> COMPLETED(100)`（HTTP 200）。 - 远端状态确认： - 脚本返回 `finalStatusPlanned=COMPLETED`，`trajectory` 各阶段写回 `httpStatus=200`。 - 说明： - 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需求并行改动，技能脚本 `changedFiles` 为工作区整体视图，不仅限脚本管理模块。 - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098117`（标题：`[fquiz迁移] 模型管理 菜单功能迁移`，状态 `OPEN`，优先级 `MEDIUM`，来源菜单 `llmmodel` / 路由 `llmmodel`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试；执行脚本使用 `--skip-build-gate`。当前仓库为脏工作区且需求描述未提供反引号路径线索，按技能门禁显式启用 `--al",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.2588750422000885,
+      "maxScore": 0.2588750422000885,
+      "firstRecalledAt": "2026-04-18T20:05:38.168Z",
+      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "queryHashes": [
+        "0c6cba4785cb"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "requirement-id",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "in-progress",
+        "0/30/60/90",
+        "本次按任务约束未执行构建/编译与额外回归测试",
+        "fquiz-requirement-develop"
+      ]
+    },
+    "memory:memory/2026-04-19.md:298:321": {
+      "key": "memory:memory/2026-04-19.md:298:321",
+      "path": "memory/2026-04-19.md",
+      "startLine": 298,
+      "endLine": 321,
+      "source": "memory",
+      "snippet": "- `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098063 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection` - 轨迹：`OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90) -> COMPLETED(100)`（HTTP 200）。 - 远端状态确认： - `/api/project/requirement/get/304415118593098063` 返回： - `status=COMPLETED` - `progressPercent=100` - `resultMsg=开发完成：状态置为 COMPLETED` - 验收清单（交付建议）： - 功能点： - 后台菜单与首页可见“价格监控”，可跳转 `/admin/price-monitor`。 - 页面可按时间范围、模型编码筛选并展示请求量、成功率、Token 与费用汇总/趋势。 - 边界场景： - 未登录访问提示正常；无权限（缺少 `model.read/model.manage`）提示正常。 - 无数据时展示空态，不报错。 - 回归点：",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.2506350755691528,
+      "maxScore": 0.2506350755691528,
+      "firstRecalledAt": "2026-04-18T20:05:38.168Z",
+      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "queryHashes": [
+        "0c6cba4785cb"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "requirement-id",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "in-progress",
+        "admin/price-monitor",
+        "与费用汇总/趋势",
+        "model.read/model.manage"
+      ]
+    },
+    "memory:memory/2026-04-19.md:181:197": {
+      "key": "memory:memory/2026-04-19.md:181:197",
+      "path": "memory/2026-04-19.md",
+      "startLine": 181,
+      "endLine": 197,
+      "source": "memory",
+      "snippet": "- `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098030 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection` - 状态流转结果（HTTP 均 200）： - `OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90) -> COMPLETED(100)` - 远端状态确认： - `/api/project/requirement/get/304415118593098030` 返回 `status=COMPLETED`、`progressPercent=100`、`resultMsg=开发完成：状态置为 COMPLETED`（`updateDate=2026-04-19T01:34:35.470386`）。 - 需求对应能力落点（当前工作区可见）： - 后端需求接口与状态流转：`api/app/api/v1/requirements.py`、`api/app/services/requirement_service.py` - 后端菜单与权限：`api/app/services/seed_service.py`（`admin.requirements`，路径 `/admi",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.2497693598270416,
+      "maxScore": 0.2497693598270416,
+      "firstRecalledAt": "2026-04-18T20:05:38.168Z",
+      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "queryHashes": [
+        "0c6cba4785cb"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "requirement-id",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "in-progress",
+        "2026-04-19t01",
+        "35.470386",
+        "api/app/api/v1/requirements.py"
+      ]
+    },
+    "memory:memory/2026-04-19.md:343:361": {
+      "key": "memory:memory/2026-04-19.md:343:361",
+      "path": "memory/2026-04-19.md",
+      "startLine": 343,
+      "endLine": 361,
+      "source": "memory",
+      "snippet": "- `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098057 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection` - 轨迹：`OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90) -> COMPLETED(100)`（HTTP 200）。 - 远端状态确认： - `/api/project/requirement/get/304415118593098057` 返回： - `status=COMPLETED` - `progressPercent=100` - `resultMsg=开发完成：状态置为 COMPLETED` - 说明： - 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需求并行改动，脚本 `changedFiles` 为工作区整体视图，不仅限 API 测试模块。 ## Work Log - 需求开发（ID: 304415118593098060，上帝视角菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098060`（标题：`[fq",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.24767852425575254,
+      "maxScore": 0.24767852425575254,
+      "firstRecalledAt": "2026-04-18T20:05:38.168Z",
+      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "queryHashes": [
+        "0c6cba4785cb"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "requirement-id",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "in-progress",
+        "本次按任务约束未执行构建/编译与额外回归测试",
+        "fquiz-requirement-develop",
+        "python3"
+      ]
+    },
+    "memory:memory/2026-04-19.md:1098:1119": {
+      "key": "memory:memory/2026-04-19.md:1098:1119",
+      "path": "memory/2026-04-19.md",
+      "startLine": 1098,
+      "endLine": 1119,
+      "source": "memory",
+      "snippet": "- `web/src/app/admin/models/page.tsx` 已承载模型管理完整能力：模型列表/检索、创建编辑、状态流转、路由规则、密钥轮换、健康检查、冒烟测试与对话测试。 - 记忆口径补充： - `MEMORY.md` 的“菜单迁移口径（2026-04-18）”新增“模型管理”条目，明确沿用 `admin.models` 与 `models` 页面既有能力，不做额外扩改。 - 需求状态流转（脚本）： - 命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098117 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection` - 轨迹：`OPEN -> IN_PROGRESS(0/30/60/90) -> COMPLETED(100)`（HTTP 200）。 - 远端状态确认： - `/api/project/requirement/get/304415118593098117` 返回： - `status=COMPLETED` - `progressPercent=100` - `resultMsg=开发完成：状态置为 COMPLETED` - 说明： - 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.2454825460910797,
+      "maxScore": 0.2454825460910797,
+      "firstRecalledAt": "2026-04-18T20:05:38.168Z",
+      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "queryHashes": [
+        "0c6cba4785cb"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "模型列表/检索",
+        "memory.md",
+        "admin.models",
+        "requirement-id",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "in-progress"
+      ]
+    },
+    "memory:memory/2026-04-14.md:460:478": {
+      "key": "memory:memory/2026-04-14.md:460:478",
+      "path": "memory/2026-04-14.md",
+      "startLine": 460,
+      "endLine": 478,
+      "source": "memory",
+      "snippet": "- evidence: memory/2026-04-12.md:216-216 - recalls: 0 - status: staged - Candidate: 追加修复（浏览器 PNA 阻断导致登录失败）: 浏览器报错：从 `http://223.109.142.84:3000` 访问 `http://127.0.0.1:8000` 被拦截，提示 - confidence: 0.00 - evidence: memory/2026-04-12.md:221-221 - recalls: 0 - status: staged - Candidate: 追加修复（浏览器 PNA 阻断导致登录失败）: `The request client is not a secure context and the resource is in more-private address space loopback`。 - confidence: 0.00 - evidence: memory/2026-04-12.md:222-222 - recalls: 0 - status: staged - Candidate: 追加修复（浏览器 PNA 阻断导致登录失败）: 前端构建时注入 `NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000`，线上浏览器会把 `127.0.0.1` 解释为“访问者本机回环地址”，触发 PNA 安全策略阻断。 - confidence: 0.00 - evidence",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.2450818359851837,
+      "maxScore": 0.2450818359851837,
+      "firstRecalledAt": "2026-04-18T20:05:38.168Z",
+      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "queryHashes": [
+        "0c6cba4785cb"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "memory/2026-04-12.md",
+        "216-216",
+        "223.109.142.84",
+        "127.0.0.1",
+        "0.00",
+        "221-221",
+        "more-private",
+        "222-222"
+      ]
+    },
+    "memory:memory/2026-04-19.md:677:700": {
+      "key": "memory:memory/2026-04-19.md:677:700",
+      "path": "memory/2026-04-19.md",
+      "startLine": 677,
+      "endLine": 700,
+      "source": "memory",
+      "snippet": "- `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098090 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection` - 轨迹：`OPEN -> IN_PROGRESS(0) -> IN_PROGRESS(30) -> IN_PROGRESS(60) -> IN_PROGRESS(90) -> COMPLETED(100)`（HTTP 200）。 - 远端状态确认： - `/api/project/requirement/get/304415118593098090` 返回： - `status=COMPLETED` - `progressPercent=100` - `resultMsg=开发完成：状态置为 COMPLETED` - 验收清单（交付建议）： - 功能点： - 后台首页可见“菜单管理”并可跳转 `/admin/menus`； - 页面支持菜单列表筛选、创建、编辑、删除与层级父菜单选择； - 角色菜单树可通过 `/api/v1/admin/menus/tree` 与 `/api/v1/admin/me/menus` 正常拉取。 - 边界场景： - 未登录访问提示登录； - 无权限访问提示需 `menu",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.24262346029281615,
+      "maxScore": 0.24262346029281615,
+      "firstRecalledAt": "2026-04-18T20:05:38.168Z",
+      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "queryHashes": [
+        "0c6cba4785cb"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "requirement-id",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "in-progress",
+        "admin/menus",
+        "api/v1/admin/menus/tree",
+        "api/v1/admin/me/menus"
+      ]
+    },
+    "memory:memory/2026-04-18.md:366:371": {
+      "key": "memory:memory/2026-04-18.md:366:371",
+      "path": "memory/2026-04-18.md",
+      "startLine": 366,
+      "endLine": 371,
+      "source": "memory",
+      "snippet": "- `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098006 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection --force-complete-if-already-completed` - 结果：`COMPLETED(100)` 写回成功（HTTP 200）。 - 风险与说明： - 当前仓库为多需求并行脏工作区，脚本 `workspaceChanges` 为全局视图；本次交付聚焦“标签管理菜单迁移”相关改动。 - 本次按任务要求未执行构建与额外回归测试。",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.23705853819847106,
+      "maxScore": 0.23705853819847106,
+      "firstRecalledAt": "2026-04-18T20:05:38.168Z",
+      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "queryHashes": [
+        "0c6cba4785cb"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "requirement-id",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "python3",
+        "skills",
+        "fquiz",
+        "requirement"
+      ]
+    },
+    "memory:memory/2026-04-16.md:114:136": {
+      "key": "memory:memory/2026-04-16.md:114:136",
+      "path": "memory/2026-04-16.md",
+      "startLine": 114,
+      "endLine": 136,
+      "source": "memory",
+      "snippet": "- confidence: 0.00 - evidence: memory/2026-04-14.md:503-506 - recalls: 0 - status: staged - Candidate: Possible Lasting Truths: No strong candidate truths surfaced. - confidence: 0.00 - evidence: memory/2026-04-14.md:509-509 - recalls: 0 - status: staged <!-- openclaw:dreaming:light:end --> ## REM Sleep <!-- openclaw:dreaming:rem:start --> ### Reflections - Theme: `追加` kept surfacing across 59 memories. - confidence: 0.83 - evidence: memory/2026-04-12.md:35-36, memory/2026-04-12.md:38-40, memory/2026-04-12.md:44-46 - note: reflection ### Possible Lasting Truths - No strong candidate truths surfaced. <!-- openclaw:dreaming:rem:end -->",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.23480235338211058,
+      "maxScore": 0.23480235338211058,
+      "firstRecalledAt": "2026-04-18T20:05:38.168Z",
+      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "queryHashes": [
+        "0c6cba4785cb"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "0.00",
+        "memory/2026-04-14.md",
+        "503-506",
+        "509-509",
+        "0.83",
+        "memory/2026-04-12.md",
+        "35-36",
+        "38-40"
+      ]
+    },
+    "memory:memory/2026-04-19.md:452:467": {
+      "key": "memory:memory/2026-04-19.md:452:467",
+      "path": "memory/2026-04-19.md",
+      "startLine": 452,
+      "endLine": 467,
+      "source": "memory",
+      "snippet": "- 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试，因此脚本执行使用 `--skip-build-gate`；当前仓库为脏工作区且需求描述未提供反引号路径线索，按技能门禁显式启用 `--allow-dirty-worktree --allow-broad-change-detection`。 - 能力落点确认（当前工作区已具备，最小改动口径闭环）： - 后端菜单与权限：`api/app/services/seed_service.py` - 菜单 `admin.todos`（标题“待办管理”，路径 `/admin/todos`，权限 `todo.read`）已存在。 - `admin` 默认菜单绑定已包含 `admin.todos`。 - 菜单保护： - `api/app/services/admin_service.py` 后端受保护菜单集合包含 `admin.todos`。 - `web/src/app/admin/menus/page.tsx` 前端受保护菜单集合包含 `admin.todos`。 - 前端入口与页面： - `web/src/app/admin/page.tsx` 已有“待办管理”卡片入口（`/admin/todos`）。 - `web/src/app/admin/todos/page.tsx` 已承载待办完整交互能力（筛选、创建、状态流转、删除与权限拦截）。 - 需求状态流转（脚本）： - 命令： - `python3 skills/fquiz-requirement-",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.23217683434486389,
+      "maxScore": 0.23217683434486389,
+      "firstRecalledAt": "2026-04-18T20:05:38.168Z",
+      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "queryHashes": [
+        "0c6cba4785cb"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "api/app/services/seed-service.py",
+        "admin.todos",
+        "admin/todos",
+        "todo.read"
+      ]
+    },
+    "memory:memory/2026-04-19.md:1161:1179": {
+      "key": "memory:memory/2026-04-19.md:1161:1179",
+      "path": "memory/2026-04-19.md",
+      "startLine": 1161,
+      "endLine": 1179,
+      "source": "memory",
+      "snippet": "- 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓库存在多需求并行改动，技能脚本 `changedFiles` 为工作区整体视图，不仅限历史答卷模块。 ## Work Log - 需求开发（ID: 304415118593098138，百度网盘菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098138`（标题：`[fquiz迁移] 百度网盘 菜单功能迁移`，状态为回退后的 `OPEN`，优先级 `MEDIUM`，来源菜单 `baidu_pan` / 路由 `baidu-pan`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试；执行脚本使用 `--skip-build-gate`。当前仓库为脏工作区且需求描述未提供反引号路径线索，按技能门禁显式启用 `--allow-dirty-worktree --allow-broad-change-detection`（按“断点重启”语义推进）。 - 本次实现（最小改动，复用文件管理能力承接“百度网盘”） - 后端菜单与角色绑定： - `api/app/services/seed_service.py` - 新增默认菜单 `admin.baidu_pan`： - `name`: `百度网盘` - `path`: `/admin/baidu-pan` - `icon`: `Cloud` - `permission_code`: `fi",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.41658851504325867,
+      "maxScore": 0.41658851504325867,
+      "firstRecalledAt": "2026-04-18T20:24:34.523Z",
+      "lastRecalledAt": "2026-04-18T20:24:34.523Z",
+      "queryHashes": [
+        "b3b5ef0008f4"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "本次按任务约束未执行构建/编译与额外回归测试",
+        "fquiz-requirement-develop",
+        "baidu-pan",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "api/app/services/seed-service.py"
+      ]
+    },
+    "memory:memory/2026-04-19.md:905:919": {
+      "key": "memory:memory/2026-04-19.md:905:919",
+      "path": "memory/2026-04-19.md",
+      "startLine": 905,
+      "endLine": 919,
+      "source": "memory",
+      "snippet": "## Work Log - 需求开发（ID: 304415118593098108，定时任务菜单功能迁移） - 背景：按 `fquiz-requirement-develop` 技能推进需求 `304415118593098108`（标题：`[fquiz迁移] 定时任务 菜单功能迁移`，优先级 `MEDIUM`，来源菜单 `cron_task_mgr` / 路由 `cron`）。 - 执行约束：遵循任务要求，不做编译/构建检查与额外回归测试；执行脚本使用 `--skip-build-gate`。当前仓库为脏工作区且需求描述未提供反引号路径线索，按技能门禁显式启用 `--allow-dirty-worktree --allow-broad-change-detection`（按“断点重启”语义推进）。 - 能力落点确认（仓库内已具备）： - 后端菜单与角色绑定： - `api/app/services/seed_service.py` 已存在菜单 `admin.cron_task_mgr`（标题“定时任务”，路径 `/admin/cron`，权限 `todo.read`），并已加入 `admin` 默认菜单绑定。 - 菜单保护： - `api/app/services/admin_service.py` 后端受保护菜单集合包含 `admin.cron_task_mgr`。 - `web/src/app/admin/menus/page.tsx` 前端受保护菜单集合包含 `admin.cron_task_mgr`。 - 前端入口与页面承接：",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.4061780422925949,
+      "maxScore": 0.4061780422925949,
+      "firstRecalledAt": "2026-04-18T20:24:34.523Z",
+      "lastRecalledAt": "2026-04-18T20:24:34.523Z",
+      "queryHashes": [
+        "b3b5ef0008f4"
+      ],
+      "recallDays": [
+        "2026-04-19"
+      ],
+      "conceptTags": [
+        "fquiz-requirement-develop",
+        "cron-task-mgr",
+        "不做编译/构建检查与额外回归测试",
+        "skip-build-gate",
+        "allow-dirty-worktree",
+        "allow-broad-change-detection",
+        "api/app/services/seed-service.py",
+        "admin.cron-task-mgr"
       ]
     }
   }

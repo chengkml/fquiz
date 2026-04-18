@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from ...core.database import get_db
 from ...core.dependencies import CurrentUser, get_current_user, require_any_permission, require_permission
+from ...schemas.auth import MessageResponse
 from ...schemas.requirement import (
     RequirementAssignRequest,
     RequirementCommentCreateRequest,
@@ -19,6 +20,7 @@ from ...services.requirement_service import (
     assign_requirement,
     claim_requirement,
     create_requirement,
+    delete_requirement,
     get_requirement_by_id,
     list_requirement_comments,
     list_requirement_events,
@@ -109,6 +111,18 @@ def transition_requirement_endpoint(
     db: Session = Depends(get_db),
 ) -> RequirementSummary:
     return transition_requirement(db, requirement_id, payload, actor=current_user.user)
+
+
+@router.delete("/{requirement_id}", response_model=MessageResponse)
+def delete_requirement_endpoint(
+    requirement_id: str,
+    current_user: CurrentUser = Depends(require_any_permission("requirement.process", "requirement.manage")),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    deleted = delete_requirement(db, requirement_id, actor=current_user.user)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Requirement not found")
+    return MessageResponse(message="Requirement deleted")
 
 
 @router.get("/{requirement_id}/comments", response_model=list[RequirementCommentPublic])

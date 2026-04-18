@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { TextArea } from "@radix-ui/themes";
+import { TextArea, Button } from "@radix-ui/themes";
 import { readApiError } from "@/lib/api";
 import type {
   ChatMessage,
@@ -154,88 +154,88 @@ export default function AdminChatPage() {
 
   if (initializing) {
     return (
-      <div className="surface-card text-sm text-muted">Loading chat workspace...</div>
+      <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm text-sm text-[var(--gray-11)]">Loading chat workspace...</div>
     );
   }
 
   if (!user) {
     return (
-      <div className="surface-card text-sm text-muted">请先登录后再使用 AI 聊天。</div>
+      <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm text-sm text-[var(--gray-11)]">请先登录后再使用 AI 聊天。</div>
     );
   }
 
   if (!canUseChat) {
     return (
-      <div className="notice notice-error">当前账号没有 `chat.use` 权限。</div>
+      <div className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">当前账号没有 `chat.use` 权限。</div>
     );
   }
 
   return (
     <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-      <section className="surface-card">
+      <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-2">
           <h2 className="text-base font-semibold">会话列表</h2>
-          <button
+          <Button
             type="button"
-            className="btn-secondary btn-small"
+            color="gray" size="1" variant="soft"
             onClick={() => createSessionMutation.mutate()}
             disabled={createSessionMutation.isPending}
           >
             {createSessionMutation.isPending ? "创建中..." : "新建会话"}
-          </button>
+          </Button>
         </div>
 
         {sessionsQuery.isLoading ? (
-          <p className="text-sm text-muted">加载中...</p>
+          <p className="text-sm text-[var(--gray-11)]">加载中...</p>
         ) : sessions.length === 0 ? (
-          <p className="text-sm text-muted">暂无会话，点击“新建会话”开始。</p>
+          <p className="text-sm text-[var(--gray-11)]">暂无会话，点击“新建会话”开始。</p>
         ) : (
           <div className="space-y-2">
             {sessions.map((session) => (
-              <button
+              <Button
                 key={session.id}
                 type="button"
                 onClick={() => setActiveSessionId(session.id)}
                 className={`w-full rounded-lg border px-3 py-2 text-left transition ${
                   effectiveSessionId === session.id
-                    ? "border-indigo-300 bg-indigo-50"
-                    : "border-[var(--border)] bg-white hover:border-indigo-200"
+                    ? "border-[var(--accent-7)] bg-[var(--accent-a3)]"
+                    : "border-[var(--border)] bg-[var(--color-panel-solid,var(--gray-1))] hover:border-[var(--accent-6)]"
                 }`}
               >
-                <p className="truncate text-sm font-medium text-slate-900">{session.title || "未命名会话"}</p>
-                <p className="mt-1 text-xs text-muted">{formatTime(session.last_message_at || session.updated_at)}</p>
-              </button>
+                <p className="truncate text-sm font-medium">{session.title || "未命名会话"}</p>
+                <p className="mt-1 text-xs text-[var(--gray-11)]">{formatTime(session.last_message_at || session.updated_at)}</p>
+              </Button>
             ))}
           </div>
         )}
       </section>
 
-      <section className="surface-card flex min-h-[70vh] flex-col">
+      <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm flex min-h-[70vh] flex-col">
         <div className="mb-4 border-b border-[var(--border)] pb-3">
           <h2 className="text-base font-semibold">{activeSession?.title || "请选择会话"}</h2>
-          <p className="mt-1 text-xs text-muted">
+          <p className="mt-1 text-xs text-[var(--gray-11)]">
             {activeSession?.model_code ? `最近使用模型：${activeSession.model_code}` : "模型将按 chat.default -> GLOBAL 路由规则自动选择"}
           </p>
         </div>
 
         {(error || sessionsQuery.error || messagesQuery.error) && (
-          <pre className="notice notice-error mb-3 text-xs">
+          <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)] mb-3 text-xs">
             {error
               || (sessionsQuery.error instanceof Error ? sessionsQuery.error.message : "")
               || (messagesQuery.error instanceof Error ? messagesQuery.error.message : "")}
           </pre>
         )}
-        {feedback && <pre className="notice notice-success mb-3 text-xs">{feedback}</pre>}
+        {feedback && <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--green-6)] bg-[var(--green-a2)] p-4 text-sm text-[var(--green-11)] mb-3 text-xs">{feedback}</pre>}
 
         <div className="flex-1 space-y-3 overflow-y-auto pr-1">
           {!effectiveSessionId ? (
-            <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-6 text-sm text-muted">
+            <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-6 text-sm text-[var(--gray-11)]">
               请先创建或选择会话。
             </div>
           ) : messagesQuery.isLoading ? (
-            <p className="text-sm text-muted">加载消息中...</p>
+            <p className="text-sm text-[var(--gray-11)]">加载消息中...</p>
           ) : messages.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-6 text-sm text-muted">
+            <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-6 text-sm text-[var(--gray-11)]">
               暂无消息，发送第一条消息开始对话。
             </div>
           ) : (
@@ -247,7 +247,7 @@ export default function AdminChatPage() {
         </div>
 
         <form className="mt-4 border-t border-[var(--border)] pt-4" onSubmit={handleSubmit}>
-          <label className="mb-2 block text-sm text-muted">输入消息</label>
+          <label className="mb-2 block text-sm text-[var(--gray-11)]">输入消息</label>
           <TextArea
             rows={3}
             className="w-full"
@@ -257,13 +257,13 @@ export default function AdminChatPage() {
             disabled={!effectiveSessionId || sendMessageMutation.isPending}
           />
           <div className="mt-3 flex items-center justify-end gap-2">
-            <button
+            <Button
               type="submit"
-              className="btn-primary"
+             
               disabled={!effectiveSessionId || sendMessageMutation.isPending || !draft.trim()}
             >
               {sendMessageMutation.isPending ? "发送中..." : "发送"}
-            </button>
+            </Button>
           </div>
         </form>
       </section>
@@ -280,14 +280,14 @@ function MessageItem({ message, currentUserId }: { message: ChatMessage; current
       <article
         className={`max-w-[90%] rounded-xl border px-4 py-3 text-sm shadow-sm ${
           fromCurrentUser
-            ? "border-indigo-300 bg-indigo-500 text-white"
+            ? "border-[var(--accent-7)] bg-[var(--accent-9)] text-[var(--accent-contrast,#fff)]"
             : message.is_error
-              ? "border-rose-200 bg-rose-50 text-rose-900"
-              : "border-[var(--border)] bg-white text-slate-800"
+              ? "border-[var(--red-7)] bg-[var(--red-a3)] text-[var(--red-11)]"
+              : "border-[var(--border)] bg-[var(--color-panel-solid,var(--gray-1))] text-[var(--gray-12)]"
         }`}
       >
         <p className="whitespace-pre-wrap break-words leading-6">{message.content}</p>
-        <div className={`mt-2 text-xs ${fromCurrentUser ? "text-indigo-50" : "text-muted"}`}>
+        <div className={`mt-2 text-xs ${fromCurrentUser ? "text-[var(--accent-a2)]" : "text-[var(--gray-11)]"}`}>
           <span>{formatTime(message.created_at)}</span>
           {isAssistant && message.model_code && <span className="ml-2">· {message.model_code}</span>}
           {isAssistant && message.total_tokens !== null && <span className="ml-2">· tokens {message.total_tokens}</span>}

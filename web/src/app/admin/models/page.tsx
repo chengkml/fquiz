@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ChangeEvent, useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { Dialog, Select, TextArea, TextField } from "@radix-ui/themes";
+import { Checkbox, Dialog, Select, TextArea, TextField, Button, Table } from "@radix-ui/themes";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type {
@@ -16,6 +16,10 @@ import type {
   ModelRouteType,
   ModelStatus,
   ModelSummaryResponse,
+  ModelTestChatResponse,
+  ModelTestRunItem,
+  ModelTestRunListResponse,
+  ModelTestStatus,
 } from "@/types/auth";
 
 const MODEL_STATUS_OPTIONS: ModelStatus[] = ["DRAFT", "ENABLED", "DISABLED", "DEPRECATED"];
@@ -35,6 +39,10 @@ const HEALTH_STATUS_LABELS: Record<ModelHealthStatus, string> = {
   HEALTHY: "健康",
   DEGRADED: "退化",
   UNHEALTHY: "不健康",
+};
+const TEST_STATUS_LABELS: Record<ModelTestStatus, string> = {
+  PASSED: "通过",
+  FAILED: "失败",
 };
 const ROUTE_TYPE_OPTIONS: ModelRouteType[] = ["GLOBAL", "CAPABILITY", "BUSINESS", "AGENT"];
 const GLOBAL_ROUTE_KEY = "__global__";
@@ -71,6 +79,17 @@ const EMPTY_ROUTE_FORM = {
   note: "",
 };
 
+const EMPTY_TEST_FORM = {
+  kind: "SMOKE",
+  input_tokens: "16",
+  output_tokens: "32",
+};
+
+const EMPTY_CHAT_TEST_FORM = {
+  message: "",
+  system_prompt: "",
+};
+
 function parseCapabilities(value: string): string[] {
   return value
     .split(",")
@@ -92,6 +111,10 @@ function formatModelStatus(status: ModelStatus): string {
 function formatHealthStatus(status: ModelHealthStatus | null): string {
   if (!status) return "-";
   return `${HEALTH_STATUS_LABELS[status]}（${status}）`;
+}
+
+function formatTestStatus(status: ModelTestStatus): string {
+  return `${TEST_STATUS_LABELS[status]}（${status}）`;
 }
 
 async function invalidateModelQueries(
@@ -125,6 +148,16 @@ export default function AdminModelsPage() {
   const [showRouteModal, setShowRouteModal] = useState(false);
   const [routeForm, setRouteForm] = useState(EMPTY_ROUTE_FORM);
 
+  const [showTestModal, setShowTestModal] = useState(false);
+  const [testingModel, setTestingModel] = useState<ModelRegistryItem | null>(null);
+  const [testForm, setTestForm] = useState(EMPTY_TEST_FORM);
+  const [testRunHistory, setTestRunHistory] = useState<ModelTestRunItem[]>([]);
+
+  const [showChatTestModal, setShowChatTestModal] = useState(false);
+  const [chatTestingModel, setChatTestingModel] = useState<ModelRegistryItem | null>(null);
+  const [chatTestForm, setChatTestForm] = useState(EMPTY_CHAT_TEST_FORM);
+  const [chatTestResult, setChatTestResult] = useState<ModelTestChatResponse | null>(null);
+
   const modelsPath = useMemo(() => {
     const params = new URLSearchParams();
     if (statusFilter) params.set("status", statusFilter);
@@ -134,6 +167,32 @@ export default function AdminModelsPage() {
   }, [keyword, statusFilter]);
   const summaryPath = "/api/v1/admin/models/summary";
   const routesPath = "/api/v1/admin/model-routes";
+
+  const resetModelModal = useCallback(() => {
+    setEditingModelId(null);
+    setShowModelModal(false);
+    setModelForm(EMPTY_MODEL_FORM);
+  }, []);
+
+  const resetRouteModal = useCallback(() => {
+    setEditingRouteId(null);
+    setShowRouteModal(false);
+    setRouteForm(EMPTY_ROUTE_FORM);
+  }, []);
+
+  const resetTestModal = useCallback(() => {
+    setShowTestModal(false);
+    setTestingModel(null);
+    setTestForm(EMPTY_TEST_FORM);
+    setTestRunHistory([]);
+  }, []);
+
+  const resetChatTestModal = useCallback(() => {
+    setShowChatTestModal(false);
+    setChatTestingModel(null);
+    setChatTestForm(EMPTY_CHAT_TEST_FORM);
+    setChatTestResult(null);
+  }, []);
 
   const loadModels = useCallback(async () => {
     const response = await fetchWithAuth(modelsPath);
@@ -233,9 +292,7 @@ export default function AdminModelsPage() {
     onSuccess: async () => {
       setSuccess(editingModelId ? "模型已更新" : "模型已创建");
       setError("");
-      setEditingModelId(null);
-      setShowModelModal(false);
-      setModelForm(EMPTY_MODEL_FORM);
+      resetModelModal();
       await invalidateModelQueries(queryClient, modelsPath, summaryPath, routesPath);
     },
     onError: (candidate) => {
@@ -281,9 +338,7 @@ export default function AdminModelsPage() {
       setError("");
       setSuccess("模型已删除");
       if (editingModelId) {
-        setEditingModelId(null);
-        setShowModelModal(false);
-        setModelForm(EMPTY_MODEL_FORM);
+        resetModelModal();
       }
       await invalidateModelQueries(queryClient, modelsPath, summaryPath, routesPath);
     },
@@ -338,27 +393,110 @@ export default function AdminModelsPage() {
   });
 
   const testMutation = useMutation({
-    mutationFn: async (modelId: number) => {
-      const response = await fetchWithAuth(`/api/v1/admin/models/${modelId}/tests`, {
+    mutationFn: async () => {
+      if (!testingModel) {
+        throw new Error("未选择待测试模型");
+      }
+      const payload = {
+        kind: testForm.kind.trim().toUpperCase() || "SMOKE",
+        input_tokens: Number(testForm.input_tokens || 0),
+        output_tokens: Number(testForm.output_tokens || 0),
+      };
+      const response = await fetchWithAuth(`/api/v1/admin/models/${testingModel.id}/tests`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "SMOKE", input_tokens: 16, output_tokens: 32 }),
+        body: JSON.stringify(payload),
       });
       if (!response.ok) {
         throw new Error(await readApiError(response));
       }
-      return response.json();
+      return (await response.json()) as ModelTestRunItem;
     },
-    onSuccess: async () => {
+    onSuccess: async (created) => {
       setError("");
-      setSuccess("冒烟测试已执行并计入统计");
+      setSuccess(`冒烟测试已执行：${formatTestStatus(created.status)}`);
+      setTestRunHistory((prev) => [created, ...prev].slice(0, 20));
       await invalidateModelQueries(queryClient, modelsPath, summaryPath, routesPath);
     },
     onError: (candidate) => {
       setSuccess("");
-      setError(candidate instanceof Error ? candidate.message : "冒烟测试失败");
+      setError(candidate instanceof Error ? candidate.message : "模型测试失败");
     },
   });
+
+  const chatTestMutation = useMutation({
+    mutationFn: async () => {
+      if (!chatTestingModel) {
+        throw new Error("未选择待测试模型");
+      }
+      const payload = {
+        message: chatTestForm.message.trim(),
+        system_prompt: chatTestForm.system_prompt.trim() || null,
+      };
+      if (!payload.message) {
+        throw new Error("请输入测试内容");
+      }
+      const response = await fetchWithAuth(`/api/v1/admin/models/${chatTestingModel.id}/test-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as ModelTestChatResponse;
+    },
+    onSuccess: async (result) => {
+      setError("");
+      setSuccess(`对话测试已执行：${formatTestStatus(result.test_status)}`);
+      setChatTestResult(result);
+      await invalidateModelQueries(queryClient, modelsPath, summaryPath, routesPath);
+    },
+    onError: (candidate) => {
+      setSuccess("");
+      setChatTestResult(null);
+      setError(candidate instanceof Error ? candidate.message : "对话测试失败");
+    },
+  });
+
+  const loadModelTests = useCallback(
+    async (modelId: number) => {
+      const response = await fetchWithAuth(`/api/v1/admin/models/${modelId}/tests?limit=20`);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      const data = (await response.json()) as ModelTestRunListResponse;
+      return data.items;
+    },
+    [fetchWithAuth],
+  );
+
+  const openTestModal = useCallback(
+    async (model: ModelRegistryItem) => {
+      setError("");
+      setSuccess("");
+      setTestingModel(model);
+      setShowTestModal(true);
+      setTestForm(EMPTY_TEST_FORM);
+      try {
+        const history = await loadModelTests(model.id);
+        setTestRunHistory(history);
+      } catch (candidate) {
+        setTestRunHistory([]);
+        setError(candidate instanceof Error ? candidate.message : "获取模型测试记录失败");
+      }
+    },
+    [loadModelTests],
+  );
+
+  const openChatTestModal = useCallback((model: ModelRegistryItem) => {
+    setError("");
+    setSuccess("");
+    setChatTestingModel(model);
+    setShowChatTestModal(true);
+    setChatTestForm(EMPTY_CHAT_TEST_FORM);
+    setChatTestResult(null);
+  }, []);
 
   const saveRouteMutation = useMutation({
     mutationFn: async () => {
@@ -396,9 +534,7 @@ export default function AdminModelsPage() {
     onSuccess: async () => {
       setError("");
       setSuccess(editingRouteId ? "路由规则已更新" : "路由规则已创建");
-      setEditingRouteId(null);
-      setShowRouteModal(false);
-      setRouteForm(EMPTY_ROUTE_FORM);
+      resetRouteModal();
       await invalidateModelQueries(queryClient, modelsPath, summaryPath, routesPath);
     },
     onError: (candidate) => {
@@ -421,9 +557,7 @@ export default function AdminModelsPage() {
       setError("");
       setSuccess("路由规则已删除");
       if (editingRouteId) {
-        setEditingRouteId(null);
-        setShowRouteModal(false);
-        setRouteForm(EMPTY_ROUTE_FORM);
+        resetRouteModal();
       }
       await invalidateModelQueries(queryClient, modelsPath, summaryPath, routesPath);
     },
@@ -491,14 +625,14 @@ export default function AdminModelsPage() {
   }, [modelsQuery.error, routesQuery.error, summaryQuery.error]);
 
   if (initializing || modelsQuery.isLoading || summaryQuery.isLoading || routesQuery.isLoading) {
-    return <p className="text-sm text-muted">Loading model management...</p>;
+    return <p className="text-sm text-[var(--gray-11)]">Loading model management...</p>;
   }
 
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-muted">请先登录后再访问模型管理页面。</p>
-        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
+        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问模型管理页面。</p>
+        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回首页</Link>
       </main>
     );
   }
@@ -506,8 +640,8 @@ export default function AdminModelsPage() {
   if (!canRead) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-muted">你没有访问该页面的权限（需要 `model.read`）。</p>
-        <Link href="/" className="btn-secondary w-fit">返回首页</Link>
+        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `model.read`）。</p>
+        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回首页</Link>
       </main>
     );
   }
@@ -515,40 +649,40 @@ export default function AdminModelsPage() {
   return (
     <div className="space-y-6">
       {(error || queryError) && (
-        <pre className="notice notice-error">{error || queryError}</pre>
+        <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">{error || queryError}</pre>
       )}
       {success && (
-        <pre className="notice notice-success">{success}</pre>
+        <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--green-6)] bg-[var(--green-a2)] p-4 text-sm text-[var(--green-11)]">{success}</pre>
       )}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="surface-card">
-          <p className="text-sm text-muted">模型总数</p>
+        <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
+          <p className="text-sm text-[var(--gray-11)]">模型总数</p>
           <p className="mt-2 text-3xl font-semibold">{summary?.total_models ?? 0}</p>
-          <p className="mt-2 text-xs text-muted">已启用: {summary?.status_counts.ENABLED ?? 0}</p>
+          <p className="mt-2 text-xs text-[var(--gray-11)]">已启用: {summary?.status_counts.ENABLED ?? 0}</p>
         </div>
-        <div className="surface-card">
-          <p className="text-sm text-muted">路由规则</p>
+        <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
+          <p className="text-sm text-[var(--gray-11)]">路由规则</p>
           <p className="mt-2 text-3xl font-semibold">{summary?.total_route_rules ?? 0}</p>
-          <p className="mt-2 text-xs text-muted">GLOBAL: {summary?.route_type_counts.GLOBAL ?? 0}</p>
+          <p className="mt-2 text-xs text-[var(--gray-11)]">GLOBAL: {summary?.route_type_counts.GLOBAL ?? 0}</p>
         </div>
-        <div className="surface-card">
-          <p className="text-sm text-muted">近 7 天用量</p>
+        <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
+          <p className="text-sm text-[var(--gray-11)]">近 7 天用量</p>
           <p className="mt-2 text-3xl font-semibold">{summary?.usage_7d.request_count ?? 0}</p>
-          <p className="mt-2 text-xs text-muted">成功率: {formatPercent(summary?.usage_7d.success_rate ?? null)}</p>
+          <p className="mt-2 text-xs text-[var(--gray-11)]">成功率: {formatPercent(summary?.usage_7d.success_rate ?? null)}</p>
         </div>
-        <div className="surface-card">
-          <p className="text-sm text-muted">健康风险</p>
+        <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
+          <p className="text-sm text-[var(--gray-11)]">健康风险</p>
           <p className="mt-2 text-3xl font-semibold">{summary?.enabled_without_healthy_check ?? 0}</p>
-          <p className="mt-2 text-xs text-muted">ENABLED 且未健康</p>
+          <p className="mt-2 text-xs text-[var(--gray-11)]">ENABLED 且未健康</p>
         </div>
       </section>
 
-      <section className="surface-card">
+      <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="text-lg font-semibold">模型列表</h2>
-            <p className="mt-1 text-sm text-muted">稳定 `code` 作为引用键，`name` 仅用于展示。</p>
+            <p className="mt-1 text-sm text-[var(--gray-11)]">稳定 `code` 作为引用键，`name` 仅用于展示。</p>
           </div>
           <div className="grid gap-2 md:grid-cols-2">
             <TextField.Root
@@ -575,65 +709,65 @@ export default function AdminModelsPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="table-modern min-w-full text-left text-sm">
-            <thead className="table-head">
-              <tr>
-                <th className="px-4 py-3 font-medium">Code</th>
-                <th className="px-4 py-3 font-medium">Provider/Model</th>
-                <th className="px-4 py-3 font-medium">状态</th>
-                <th className="px-4 py-3 font-medium">密钥</th>
-                <th className="px-4 py-3 font-medium">健康</th>
-                <th className="px-4 py-3 font-medium">7日用量</th>
-                <th className="px-4 py-3 font-medium">7日测试</th>
-                <th className="px-4 py-3 font-medium">路由绑定</th>
-                {canManage && <th className="px-4 py-3 font-medium">操作</th>}
-              </tr>
-            </thead>
-            <tbody className="table-body divide-y">
+          <Table.Root className="w-full min-w-full text-left text-sm">
+            <Table.Header className="bg-[var(--gray-a3)]">
+              <Table.Row>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">Code</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">Provider/Model</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">状态</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">密钥</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">健康</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">7日用量</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">7日测试</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">路由绑定</Table.ColumnHeaderCell>
+                {canManage && <Table.ColumnHeaderCell className="px-4 py-3 font-medium">操作</Table.ColumnHeaderCell>}
+              </Table.Row>
+            </Table.Header>
+            <Table.Body className="divide-y divide-y">
               {models.map((model) => (
-                <tr key={model.id}>
-                  <td className="px-4 py-3">
+                <Table.Row key={model.id}>
+                  <Table.Cell className="px-4 py-3">
                     <p className="font-mono text-xs">{model.code}</p>
-                    <p className="mt-1 text-xs text-muted">{model.name}</p>
-                  </td>
-                  <td className="px-4 py-3">
+                    <p className="mt-1 text-xs text-[var(--gray-11)]">{model.name}</p>
+                  </Table.Cell>
+                  <Table.Cell className="px-4 py-3">
                     <p>{model.provider}</p>
-                    <p className="mt-1 font-mono text-xs text-muted">{model.provider_model}</p>
-                  </td>
-                  <td className="px-4 py-3">
+                    <p className="mt-1 font-mono text-xs text-[var(--gray-11)]">{model.provider_model}</p>
+                  </Table.Cell>
+                  <Table.Cell className="px-4 py-3">
                     <p>{formatModelStatus(model.status)}</p>
-                    <p className="mt-1 text-xs text-muted">{model.capabilities.join(", ") || "-"}</p>
-                  </td>
-                  <td className="px-4 py-3 text-xs">
+                    <p className="mt-1 text-xs text-[var(--gray-11)]">{model.capabilities.join(", ") || "-"}</p>
+                  </Table.Cell>
+                  <Table.Cell className="px-4 py-3 text-xs">
                     <p>{model.active_key_masked ?? "-"}</p>
-                    <p className="mt-1 text-muted">v{model.active_key_version ?? "-"}</p>
-                  </td>
-                  <td className="px-4 py-3 text-xs">
+                    <p className="mt-1 text-[var(--gray-11)]">v{model.active_key_version ?? "-"}</p>
+                  </Table.Cell>
+                  <Table.Cell className="px-4 py-3 text-xs">
                     <p>{formatHealthStatus(model.latest_health_status)}</p>
-                    <p className="mt-1 text-muted">{model.latest_health_at ? new Date(model.latest_health_at).toLocaleString() : "-"}</p>
-                  </td>
-                  <td className="px-4 py-3 text-xs">
+                    <p className="mt-1 text-[var(--gray-11)]">{model.latest_health_at ? new Date(model.latest_health_at).toLocaleString() : "-"}</p>
+                  </Table.Cell>
+                  <Table.Cell className="px-4 py-3 text-xs">
                     <p>请求: {model.usage_7d.request_count}</p>
-                    <p className="mt-1 text-muted">成功率: {formatPercent(model.usage_7d.success_rate)}</p>
-                  </td>
-                  <td className="px-4 py-3 text-xs">
+                    <p className="mt-1 text-[var(--gray-11)]">成功率: {formatPercent(model.usage_7d.success_rate)}</p>
+                  </Table.Cell>
+                  <Table.Cell className="px-4 py-3 text-xs">
                     <p>Runs: {model.tests_7d.total_runs}</p>
-                    <p className="mt-1 text-muted">通过率: {formatPercent(model.tests_7d.pass_rate)}</p>
-                  </td>
-                  <td className="px-4 py-3">{model.route_bindings_count}</td>
+                    <p className="mt-1 text-[var(--gray-11)]">通过率: {formatPercent(model.tests_7d.pass_rate)}</p>
+                  </Table.Cell>
+                  <Table.Cell className="px-4 py-3">{model.route_bindings_count}</Table.Cell>
                   {canManage && (
-                    <td className="px-4 py-3">
+                    <Table.Cell className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
-                        <button
+                        <Button
                           type="button"
-                          className="btn-secondary btn-small"
+                          color="gray" size="1" variant="soft"
                           onClick={() => startEditModel(model)}
                         >
                           编辑
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
-                          className="btn-secondary btn-small"
+                          color="gray" size="1" variant="soft"
                           onClick={() => {
                             const key = window.prompt(`为 ${model.code} 输入新 API Key`);
                             if (key && key.trim()) {
@@ -643,39 +777,47 @@ export default function AdminModelsPage() {
                           disabled={rotateKeyMutation.isPending}
                         >
                           轮换密钥
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
-                          className="btn-secondary btn-small"
+                          color="gray" size="1" variant="soft"
                           onClick={() => healthCheckMutation.mutate(model.id)}
                           disabled={healthCheckMutation.isPending}
                         >
                           健康检查
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
-                          className="btn-secondary btn-small"
-                          onClick={() => testMutation.mutate(model.id)}
+                          color="gray" size="1" variant="soft"
+                          onClick={() => openTestModal(model)}
                           disabled={testMutation.isPending}
                         >
                           冒烟测试
-                        </button>
+                        </Button>
+                        <Button
+                          type="button"
+                          color="gray" size="1" variant="soft"
+                          onClick={() => openChatTestModal(model)}
+                          disabled={chatTestMutation.isPending}
+                        >
+                          对话测试
+                        </Button>
                         {MODEL_STATUS_TRANSITIONS[model.status].map((nextStatus) => (
-                          <button
+                          <Button
                             key={`${model.id}:${nextStatus}`}
                             type="button"
-                            className="btn-secondary btn-small"
+                            color="gray" size="1" variant="soft"
                             onClick={() => transitionMutation.mutate({ modelId: model.id, status: nextStatus })}
                             disabled={transitionMutation.isPending}
                           >
                             {"-> "}
                             {formatModelStatus(nextStatus)}
-                          </button>
+                          </Button>
                         ))}
                         {model.status !== "ENABLED" && (
-                          <button
+                          <Button
                             type="button"
-                            className="btn-danger btn-small"
+                            color="red" size="1" variant="soft"
                             onClick={() => {
                               if (window.confirm(`确认删除模型 ${model.code} 吗？`)) {
                                 deleteModelMutation.mutate(model);
@@ -684,95 +826,95 @@ export default function AdminModelsPage() {
                             disabled={deleteModelMutation.isPending}
                           >
                             删除
-                          </button>
+                          </Button>
                         )}
                       </div>
-                    </td>
+                    </Table.Cell>
                   )}
-                </tr>
+                </Table.Row>
               ))}
-            </tbody>
-          </table>
+            </Table.Body>
+          </Table.Root>
         </div>
       </section>
 
       {canManage && (
-        <section className="surface-card">
+        <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
           <div className="flex items-center justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold">模型维护</h2>
-              <p className="mt-1 text-sm text-muted">新建/编辑模型已迁移为弹窗操作。</p>
+              <p className="mt-1 text-sm text-[var(--gray-11)]">新建/编辑模型已迁移为弹窗操作。</p>
             </div>
-            <button
+            <Button
               type="button"
-              className="btn-primary"
+             
               onClick={() => {
-                setEditingModelId(null);
                 setModelForm(EMPTY_MODEL_FORM);
+                setEditingModelId(null);
                 setShowModelModal(true);
               }}
             >
               新建模型
-            </button>
+            </Button>
           </div>
         </section>
       )}
 
-      <section className="surface-card">
+      <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
         <div className="mb-4">
           <h2 className="text-lg font-semibold">路由规则</h2>
-          <p className="mt-1 text-sm text-muted">支持 GLOBAL / CAPABILITY / BUSINESS / AGENT 四类规则。</p>
+          <p className="mt-1 text-sm text-[var(--gray-11)]">支持 GLOBAL / CAPABILITY / BUSINESS / AGENT 四类规则。</p>
         </div>
 
         <div className="mb-4 flex justify-end">
           {canManage && (
-            <button
+            <Button
               type="button"
-              className="btn-primary"
+             
               onClick={() => {
-                setEditingRouteId(null);
                 setRouteForm(EMPTY_ROUTE_FORM);
+                setEditingRouteId(null);
                 setShowRouteModal(true);
               }}
             >
               新建路由规则
-            </button>
+            </Button>
           )}
         </div>
 
         <div className="overflow-x-auto">
-          <table className="table-modern min-w-full text-left text-sm">
-            <thead className="table-head">
-              <tr>
-                <th className="px-4 py-3 font-medium">类型</th>
-                <th className="px-4 py-3 font-medium">Key</th>
-                <th className="px-4 py-3 font-medium">目标模型 Code</th>
-                <th className="px-4 py-3 font-medium">优先级</th>
-                <th className="px-4 py-3 font-medium">状态</th>
-                {canManage && <th className="px-4 py-3 font-medium">操作</th>}
-              </tr>
-            </thead>
-            <tbody className="table-body divide-y">
+          <Table.Root className="w-full min-w-full text-left text-sm">
+            <Table.Header className="bg-[var(--gray-a3)]">
+              <Table.Row>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">类型</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">Key</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">目标模型 Code</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">优先级</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">状态</Table.ColumnHeaderCell>
+                {canManage && <Table.ColumnHeaderCell className="px-4 py-3 font-medium">操作</Table.ColumnHeaderCell>}
+              </Table.Row>
+            </Table.Header>
+            <Table.Body className="divide-y divide-y">
               {routes.map((route) => (
-                <tr key={route.id}>
-                  <td className="px-4 py-3">{route.route_type}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{route.route_key}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{route.target_model_code}</td>
-                  <td className="px-4 py-3">{route.priority}</td>
-                  <td className="px-4 py-3">{route.enabled ? "启用" : "停用"}</td>
+                <Table.Row key={route.id}>
+                  <Table.Cell className="px-4 py-3">{route.route_type}</Table.Cell>
+                  <Table.Cell className="px-4 py-3 font-mono text-xs">{route.route_key}</Table.Cell>
+                  <Table.Cell className="px-4 py-3 font-mono text-xs">{route.target_model_code}</Table.Cell>
+                  <Table.Cell className="px-4 py-3">{route.priority}</Table.Cell>
+                  <Table.Cell className="px-4 py-3">{route.enabled ? "启用" : "停用"}</Table.Cell>
                   {canManage && (
-                    <td className="px-4 py-3">
+                    <Table.Cell className="px-4 py-3">
                       <div className="flex gap-2">
-                        <button
+                        <Button
                           type="button"
-                          className="btn-secondary btn-small"
+                          color="gray" size="1" variant="soft"
                           onClick={() => startEditRoute(route)}
                         >
                           编辑
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
-                          className="btn-danger btn-small"
+                          color="red" size="1" variant="soft"
                           onClick={() => {
                             if (window.confirm(`确认删除路由规则 ${route.route_type}:${route.route_key} 吗？`)) {
                               deleteRouteMutation.mutate(route.id);
@@ -781,14 +923,14 @@ export default function AdminModelsPage() {
                           disabled={deleteRouteMutation.isPending}
                         >
                           删除
-                        </button>
+                        </Button>
                       </div>
-                    </td>
+                    </Table.Cell>
                   )}
-                </tr>
+                </Table.Row>
               ))}
-            </tbody>
-          </table>
+            </Table.Body>
+          </Table.Root>
         </div>
       </section>
 
@@ -797,9 +939,7 @@ export default function AdminModelsPage() {
           open={showModelModal}
           onOpenChange={(open: boolean) => {
             if (!open) {
-              setEditingModelId(null);
-              setShowModelModal(false);
-              setModelForm(EMPTY_MODEL_FORM);
+              resetModelModal();
             }
           }}
         >
@@ -807,19 +947,15 @@ export default function AdminModelsPage() {
             <div className="mb-4 flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold">{editingModelId ? "编辑模型" : "新建模型"}</h2>
-                <p className="mt-1 text-sm text-muted">创建时可设置初始密钥；编辑阶段仅维护模型元数据。</p>
+                <p className="mt-1 text-sm text-[var(--gray-11)]">创建时可设置初始密钥；编辑阶段仅维护模型元数据。</p>
               </div>
-              <button
+              <Button
                 type="button"
-                className="btn-secondary w-fit"
-                onClick={() => {
-                  setEditingModelId(null);
-                  setShowModelModal(false);
-                  setModelForm(EMPTY_MODEL_FORM);
-                }}
+                className="w-fit" color="gray" variant="soft"
+                onClick={resetModelModal}
               >
                 关闭
-              </button>
+              </Button>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
@@ -928,14 +1064,14 @@ export default function AdminModelsPage() {
             </div>
 
             <div className="mt-4 flex justify-end">
-              <button
+              <Button
                 type="button"
-                className="btn-primary"
+               
                 disabled={saveModelMutation.isPending || !modelForm.code.trim() || !modelForm.name.trim() || !modelForm.provider_model.trim()}
                 onClick={() => saveModelMutation.mutate()}
               >
                 {saveModelMutation.isPending ? "提交中..." : editingModelId ? "保存模型" : "创建模型"}
-              </button>
+              </Button>
             </div>
           </Dialog.Content>
         </Dialog.Root>
@@ -946,9 +1082,7 @@ export default function AdminModelsPage() {
           open={showRouteModal}
           onOpenChange={(open: boolean) => {
             if (!open) {
-              setEditingRouteId(null);
-              setShowRouteModal(false);
-              setRouteForm(EMPTY_ROUTE_FORM);
+              resetRouteModal();
             }
           }}
         >
@@ -956,19 +1090,15 @@ export default function AdminModelsPage() {
             <div className="mb-4 flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold">{editingRouteId ? "编辑路由规则" : "新建路由规则"}</h2>
-                <p className="mt-1 text-sm text-muted">GLOBAL 规则的 key 固定为 {GLOBAL_ROUTE_KEY}。</p>
+                <p className="mt-1 text-sm text-[var(--gray-11)]">GLOBAL 规则的 key 固定为 {GLOBAL_ROUTE_KEY}。</p>
               </div>
-              <button
+              <Button
                 type="button"
-                className="btn-secondary w-fit"
-                onClick={() => {
-                  setEditingRouteId(null);
-                  setShowRouteModal(false);
-                  setRouteForm(EMPTY_ROUTE_FORM);
-                }}
+                className="w-fit" color="gray" variant="soft"
+                onClick={resetRouteModal}
               >
                 关闭
-              </button>
+              </Button>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
@@ -1033,24 +1163,223 @@ export default function AdminModelsPage() {
                 />
               </label>
               <label className="flex items-center gap-2 text-sm md:col-span-2">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={routeForm.enabled}
-                  onChange={(event: ChangeEvent<HTMLInputElement>) => setRouteForm((prev) => ({ ...prev, enabled: event.currentTarget.checked }))}
+                  onCheckedChange={(checked: boolean | "indeterminate") =>
+                    setRouteForm((prev) => ({ ...prev, enabled: checked === true }))
+                  }
                 />
                 <span>启用规则</span>
               </label>
             </div>
 
             <div className="mt-4 flex justify-end">
-              <button
+              <Button
                 type="button"
-                className="btn-primary"
+               
                 disabled={saveRouteMutation.isPending || !routeForm.target_model_code.trim()}
                 onClick={() => saveRouteMutation.mutate()}
               >
                 {saveRouteMutation.isPending ? "提交中..." : editingRouteId ? "保存规则" : "创建规则"}
-              </button>
+              </Button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Root>
+      )}
+      {canManage && (
+        <Dialog.Root
+          open={showTestModal}
+          onOpenChange={(open: boolean) => {
+            if (!open) {
+              resetTestModal();
+            }
+          }}
+        >
+          <Dialog.Content className="max-h-[90vh] w-full max-w-3xl overflow-auto">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  冒烟测试：{testingModel ? `${testingModel.code} / ${testingModel.name}` : "-"}
+                </h2>
+                <p className="mt-1 text-sm text-[var(--gray-11)]">支持自定义测试类型与输入/输出 token，提交后可查看最近 20 条测试记录。</p>
+              </div>
+              <Button className="w-fit" color="gray" type="button" variant="soft" onClick={resetTestModal}>
+                关闭
+              </Button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <label className="space-y-2 text-sm">
+                <span>测试类型</span>
+                <TextField.Root
+                  value={testForm.kind}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                    setTestForm((prev) => ({ ...prev, kind: event.currentTarget.value }))
+                  }
+                  placeholder="SMOKE"
+                  className="w-full"
+                />
+              </label>
+              <label className="space-y-2 text-sm">
+                <span>输入 Token</span>
+                <TextField.Root
+                  type="number"
+                  min={0}
+                  value={testForm.input_tokens}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                    setTestForm((prev) => ({ ...prev, input_tokens: event.currentTarget.value }))
+                  }
+                  className="w-full"
+                />
+              </label>
+              <label className="space-y-2 text-sm">
+                <span>输出 Token</span>
+                <TextField.Root
+                  type="number"
+                  min={0}
+                  value={testForm.output_tokens}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                    setTestForm((prev) => ({ ...prev, output_tokens: event.currentTarget.value }))
+                  }
+                  className="w-full"
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <Button
+                type="button"
+               
+                disabled={
+                  testMutation.isPending ||
+                  !testingModel ||
+                  !testForm.kind.trim() ||
+                  Number(testForm.input_tokens || 0) < 0 ||
+                  Number(testForm.output_tokens || 0) < 0
+                }
+                onClick={() => testMutation.mutate()}
+              >
+                {testMutation.isPending ? "测试中..." : "执行测试"}
+              </Button>
+            </div>
+
+            <div className="mt-6 overflow-x-auto">
+              <Table.Root className="w-full min-w-full text-left text-sm">
+                <Table.Header className="bg-[var(--gray-a3)]">
+                  <Table.Row>
+                    <Table.ColumnHeaderCell className="px-4 py-3 font-medium">时间</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell className="px-4 py-3 font-medium">类型</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell className="px-4 py-3 font-medium">状态</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell className="px-4 py-3 font-medium">Token</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell className="px-4 py-3 font-medium">耗时</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell className="px-4 py-3 font-medium">错误</Table.ColumnHeaderCell>
+                  </Table.Row>
+                </Table.Header>
+                <Table.Body className="divide-y divide-y">
+                  {testRunHistory.length === 0 ? (
+                    <Table.Row>
+                      <Table.Cell className="px-4 py-6 text-sm text-[var(--gray-11)]" colSpan={6}>
+                        暂无测试记录
+                      </Table.Cell>
+                    </Table.Row>
+                  ) : (
+                    testRunHistory.map((item) => (
+                      <Table.Row key={item.id}>
+                        <Table.Cell className="px-4 py-3 text-xs">{new Date(item.created_at).toLocaleString()}</Table.Cell>
+                        <Table.Cell className="px-4 py-3">{item.kind}</Table.Cell>
+                        <Table.Cell className="px-4 py-3">{formatTestStatus(item.status)}</Table.Cell>
+                        <Table.Cell className="px-4 py-3 text-xs">{item.input_tokens} / {item.output_tokens}</Table.Cell>
+                        <Table.Cell className="px-4 py-3 text-xs">{item.latency_ms ?? "-"} ms</Table.Cell>
+                        <Table.Cell className="px-4 py-3 text-xs text-red-600">{item.error_message ?? "-"}</Table.Cell>
+                      </Table.Row>
+                    ))
+                  )}
+                </Table.Body>
+              </Table.Root>
+            </div>
+          </Dialog.Content>
+        </Dialog.Root>
+      )}
+      {canManage && (
+        <Dialog.Root
+          open={showChatTestModal}
+          onOpenChange={(open: boolean) => {
+            if (!open) {
+              resetChatTestModal();
+            }
+          }}
+        >
+          <Dialog.Content className="max-h-[90vh] w-full max-w-3xl overflow-auto">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  对话测试：{chatTestingModel ? `${chatTestingModel.code} / ${chatTestingModel.name}` : "-"}
+                </h2>
+                <p className="mt-1 text-sm text-[var(--gray-11)]">向目标模型发送真实对话请求并展示回复、耗时与 token 统计。</p>
+              </div>
+              <Button className="w-fit" color="gray" type="button" variant="soft" onClick={resetChatTestModal}>
+                关闭
+              </Button>
+            </div>
+
+            <div className="space-y-4">
+              <label className="space-y-2 text-sm">
+                <span>用户输入</span>
+                <TextArea
+                  value={chatTestForm.message}
+                  onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
+                    setChatTestForm((prev) => ({ ...prev, message: event.currentTarget.value }))
+                  }
+                  placeholder="请输入要测试的用户消息"
+                  rows={5}
+                />
+              </label>
+              <label className="space-y-2 text-sm">
+                <span>系统提示词（可选）</span>
+                <TextArea
+                  value={chatTestForm.system_prompt}
+                  onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
+                    setChatTestForm((prev) => ({ ...prev, system_prompt: event.currentTarget.value }))
+                  }
+                  placeholder="可选：覆盖默认 system prompt"
+                  rows={4}
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <Button
+                type="button"
+               
+                disabled={chatTestMutation.isPending || !chatTestingModel || !chatTestForm.message.trim()}
+                onClick={() => chatTestMutation.mutate()}
+              >
+                {chatTestMutation.isPending ? "测试中..." : "执行对话测试"}
+              </Button>
+            </div>
+
+            <div className="mt-6 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+              {chatTestResult ? (
+                <div className="space-y-3 text-sm">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <span>状态：{formatTestStatus(chatTestResult.test_status)}</span>
+                    <span>耗时：{chatTestResult.latency_ms ?? "-"} ms</span>
+                    <span>
+                      Token：{chatTestResult.prompt_tokens ?? "-"} / {chatTestResult.completion_tokens ?? "-"} / {chatTestResult.total_tokens ?? "-"}
+                    </span>
+                  </div>
+                  <div className="text-xs text-[var(--gray-11)]">
+                    模型：{chatTestResult.provider} / {chatTestResult.provider_model}
+                  </div>
+                  {chatTestResult.error_message ? (
+                    <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)] text-xs">{chatTestResult.error_message}</pre>
+                  ) : (
+                    <pre className="whitespace-pre-wrap rounded-md bg-black/30 p-3 text-xs leading-6">{chatTestResult.reply ?? "(空回复)"}</pre>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-[var(--gray-11)]">尚未执行对话测试。</p>
+              )}
             </div>
           </Dialog.Content>
         </Dialog.Root>

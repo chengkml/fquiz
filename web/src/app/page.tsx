@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, ChangeEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { API_BASE_URL, getApiBaseUrl, readApiError } from "@/lib/api";
+import { getApiBaseUrl, readApiError } from "@/lib/api";
+import { Button, Callout, Card, Checkbox, Flex, Heading, Text, TextField } from "@radix-ui/themes";
 
 type Mode = "login" | "register";
 type PingResponse = { message: string };
@@ -27,7 +28,6 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [pingResult, setPingResult] = useState<PingResponse | null>(null);
-  const [resolvedApiBaseUrl, setResolvedApiBaseUrl] = useState(API_BASE_URL);
 
   useEffect(() => {
     try {
@@ -48,10 +48,6 @@ export default function Home() {
     }
   }, []);
 
-  useEffect(() => {
-    setResolvedApiBaseUrl(getApiBaseUrl());
-  }, []);
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
@@ -61,10 +57,7 @@ export default function Home() {
         await login(email, password);
         if (rememberPassword) {
           const credentials: RememberedCredentials = { email, password };
-          window.localStorage.setItem(
-            REMEMBER_CREDENTIALS_KEY,
-            JSON.stringify(credentials),
-          );
+          window.localStorage.setItem(REMEMBER_CREDENTIALS_KEY, JSON.stringify(credentials));
         } else {
           window.localStorage.removeItem(REMEMBER_CREDENTIALS_KEY);
         }
@@ -73,8 +66,7 @@ export default function Home() {
       }
       setPassword("");
     } catch (submitError) {
-      const message =
-        submitError instanceof Error ? submitError.message : "Unknown error";
+      const message = submitError instanceof Error ? submitError.message : "Unknown error";
       setError(message);
     } finally {
       setBusy(false);
@@ -97,106 +89,98 @@ export default function Home() {
   if (initializing) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-3xl items-center justify-center px-6 py-20">
-        <p className="text-sm text-muted">Initializing session...</p>
+        <Text size="2" color="gray">Initializing session...</Text>
+      </main>
+    );
+  }
+
+  if (user) {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center gap-6 px-6 py-20 sm:px-10">
+        <Heading size="8">Quiz</Heading>
+        <Text size="3" color="gray">
+          用户管理、角色管理、菜单管理、需求管理已接入统一后台（JWT + Refresh Session + RBAC + Menu + WS）。
+        </Text>
+
+        <Card size="3">
+          <Flex direction="column" gap="2">
+            <Text size="5" weight="medium">欢迎，{user.username}</Text>
+            <Text size="2" color="gray">{user.email}</Text>
+            <Text size="1" color="gray">Roles: {user.role_codes.join(", ") || "-"}</Text>
+            <Text size="1" color="gray">Permissions: {user.permission_codes.join(", ") || "-"}</Text>
+          </Flex>
+
+          <Flex wrap="wrap" gap="2" mt="4">
+            <Button onClick={handlePing} type="button">Ping Backend</Button>
+            <Button asChild variant="soft"><Link href="/admin">进入后台</Link></Button>
+            {hasPermission("user.manage") && (
+              <Button asChild variant="soft"><Link href="/admin/users">管理用户</Link></Button>
+            )}
+            {hasPermission("requirement.read") && (
+              <Button asChild variant="soft"><Link href="/admin/requirements">查看需求</Link></Button>
+            )}
+            <Button variant="soft" onClick={() => void logout()} type="button">退出登录</Button>
+          </Flex>
+        </Card>
+
+        {pingResult && (
+          <Callout.Root color="green">
+            <Callout.Text>
+              <pre>{JSON.stringify(pingResult, null, 2)}</pre>
+            </Callout.Text>
+          </Callout.Root>
+        )}
+
+        {error && (
+          <Callout.Root color="red">
+            <Callout.Text>{error}</Callout.Text>
+          </Callout.Root>
+        )}
       </main>
     );
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center gap-6 px-6 py-20 sm:px-10">
-      <h1 className="text-3xl font-semibold tracking-tight">fquiz</h1>
-      <p className="text-base text-muted">
-        用户管理、角色管理、菜单管理、需求管理已接入统一后台（JWT + Refresh Session + RBAC + Menu + WS）。
-      </p>
+    <main className="mx-auto flex min-h-screen w-full max-w-5xl items-center px-6 py-14 sm:px-10 lg:py-20">
+      <div className="grid w-full items-stretch gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+        <Card size="3">
+          <Flex direction="column" justify="between" height="100%" gap="5">
+            <div>
+              <Text size="2" weight="bold" color="gray">WELCOME</Text>
+              <Heading size="9" mt="2">Quiz</Heading>
+              <Text size="3" color="gray" mt="4">
+                统一后台入口，支持账号登录、权限访问控制、需求协作与密钥管理。保持现有鉴权链路不变，体验更清晰。
+              </Text>
+            </div>
+            <Card variant="surface">
+              <Text size="1" color="gray">已接入能力</Text>
+              <Text size="2" mt="2">JWT + Refresh Session / RBAC / Menu / Requirement / WebSocket</Text>
+            </Card>
+          </Flex>
+        </Card>
 
-      <section className="surface-card">
-        <p className="text-sm text-muted">API Base URL</p>
-        <p className="mt-1 font-mono text-sm">{resolvedApiBaseUrl}</p>
-      </section>
-
-      {user ? (
-        <section className="surface-card">
-          <p className="text-lg font-medium">欢迎，{user.username}</p>
-          <p className="mt-1 text-sm text-muted">{user.email}</p>
-          <p className="mt-2 text-xs text-muted">
-            Roles: {user.role_codes.join(", ") || "-"}
-          </p>
-          <p className="mt-1 text-xs text-muted">
-            Permissions: {user.permission_codes.join(", ") || "-"}
-          </p>
-
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              className="btn-primary"
-              onClick={handlePing}
+        <Card size="3">
+          <Flex gap="2" mb="4">
+            <Button
               type="button"
-            >
-              Ping Backend
-            </button>
-            <Link
-              href="/admin"
-              className="btn-secondary"
-            >
-              进入后台
-            </Link>
-            {hasPermission("user.manage") && (
-              <Link
-                href="/admin/users"
-                className="btn-secondary"
-              >
-                管理用户
-              </Link>
-            )}
-            {hasPermission("requirement.read") && (
-              <Link
-                href="/admin/requirements"
-                className="btn-secondary"
-              >
-                查看需求
-              </Link>
-            )}
-            <button
-              className="btn-secondary"
-              onClick={() => void logout()}
-              type="button"
-            >
-              退出登录
-            </button>
-          </div>
-        </section>
-      ) : (
-        <section className="surface-card">
-          <div className="mb-4 flex gap-2">
-            <button
-              className={`btn-small ${
-                mode === "login"
-                  ? "btn-primary"
-                  : "btn-secondary"
-              }`}
+              variant={mode === "login" ? "solid" : "soft"}
               onClick={() => setMode("login")}
-              type="button"
             >
               登录
-            </button>
-            <button
-              className={`btn-small ${
-                mode === "register"
-                  ? "btn-primary"
-                  : "btn-secondary"
-              }`}
-              onClick={() => setMode("register")}
+            </Button>
+            <Button
               type="button"
+              variant={mode === "register" ? "solid" : "soft"}
+              onClick={() => setMode("register")}
             >
               注册
-            </button>
-          </div>
+            </Button>
+          </Flex>
 
           <form className="space-y-3" onSubmit={handleSubmit}>
-            <h2 className="text-base font-medium">
-              {mode === "login" ? "登录" : "注册"}
-            </h2>
-            <input
-              className="control w-full"
+            <Heading size="4">{mode === "login" ? "登录到 Quiz" : "创建 Quiz 账号"}</Heading>
+
+            <TextField.Root
               placeholder="Email"
               type="email"
               autoComplete="username"
@@ -204,9 +188,9 @@ export default function Home() {
               onChange={(event: ChangeEvent<HTMLInputElement>) => setEmail(event.currentTarget.value)}
               required
             />
+
             {mode === "register" && (
-              <input
-                className="control w-full"
+              <TextField.Root
                 placeholder="Username"
                 type="text"
                 value={username}
@@ -216,8 +200,8 @@ export default function Home() {
                 required
               />
             )}
-            <input
-              className="control w-full"
+
+            <TextField.Root
               placeholder="Password (>= 8 chars)"
               type="password"
               autoComplete={mode === "login" ? "current-password" : "new-password"}
@@ -227,38 +211,33 @@ export default function Home() {
               maxLength={128}
               required
             />
+
             {mode === "login" && (
-              <label className="flex items-center gap-2 text-sm text-muted">
-                <input
-                  type="checkbox"
+              <label className="mt-1 flex items-center gap-2 text-sm">
+                <Checkbox
                   checked={rememberPassword}
-                  onChange={(event: ChangeEvent<HTMLInputElement>) => setRememberPassword(event.currentTarget.checked)}
+                  onCheckedChange={(checked: boolean | "indeterminate") => setRememberPassword(checked === true)}
                 />
-                记住密码
+                <Text size="2" color="gray">记住密码</Text>
               </label>
             )}
-            <button
-              className="btn-primary"
-              disabled={busy}
-              type="submit"
-            >
+
+            <Button disabled={busy} type="submit" className="w-full">
               {busy ? "Submitting..." : mode === "login" ? "登录" : "注册并登录"}
-            </button>
+            </Button>
+
+            <Text size="1" color="gray" mt="2">
+              {mode === "login" ? "使用已有账号登录系统。" : "注册后将自动登录并进入系统。"}
+            </Text>
           </form>
-        </section>
-      )}
 
-      {pingResult && (
-        <pre className="notice notice-success">
-          {JSON.stringify(pingResult, null, 2)}
-        </pre>
-      )}
-
-      {error && (
-        <pre className="notice notice-error">
-          {error}
-        </pre>
-      )}
+          {error && (
+            <Callout.Root color="red" mt="4">
+              <Callout.Text>{error}</Callout.Text>
+            </Callout.Root>
+          )}
+        </Card>
+      </div>
     </main>
   );
 }
