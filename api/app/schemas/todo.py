@@ -5,26 +5,24 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from .user import UserPublic
-
-TodoStatus = Literal["TODO", "IN_PROGRESS", "DONE"]
-TodoPriority = Literal["low", "medium", "high", "urgent"]
+TodoStatus = Literal["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED", "EXPIRED"]
+TodoPriority = Literal["LOW", "MEDIUM", "HIGH"]
 
 
 class TodoSummary(BaseModel):
     id: str
     title: str
-    description: str
+    descr: str | None = None
     status: TodoStatus
     priority: TodoPriority
-    assignee_user_id: str | None = None
-    creator_user_id: str | None = None
-    due_at: datetime | None = None
-    completed_at: datetime | None = None
-    created_at: datetime
-    updated_at: datetime
-    creator: UserPublic | None = None
-    assignee: UserPublic | None = None
+    start_time: datetime | None = None
+    due_date: datetime | None = None
+    expire_time: datetime | None = None
+    calendar_event_id: str | None = None
+    create_date: datetime
+    create_user: str | None = None
+    update_date: datetime
+    update_user: str | None = None
 
 
 class TodoListResponse(BaseModel):
@@ -33,22 +31,37 @@ class TodoListResponse(BaseModel):
 
 
 class TodoCreateRequest(BaseModel):
-    title: str = Field(min_length=2, max_length=200)
-    description: str = Field(default="", max_length=20000)
-    status: TodoStatus = "TODO"
-    priority: TodoPriority = "medium"
-    assignee_user_id: str | None = Field(default=None, max_length=36)
-    due_at: datetime | None = None
+    title: str = Field(min_length=1, max_length=256)
+    descr: str = Field(default="", max_length=20000)
+    status: TodoStatus = "SCHEDULED"
+    priority: TodoPriority = "MEDIUM"
+    start_time: datetime | None = None
+    due_date: datetime | None = None
+    expire_time: datetime | None = None
+    is_sync: bool = False
+    calendar_event_id: str | None = Field(default=None, max_length=32)
 
 
 class TodoUpdateRequest(BaseModel):
-    title: str | None = Field(default=None, min_length=2, max_length=200)
-    description: str | None = Field(default=None, max_length=20000)
+    title: str | None = Field(default=None, min_length=1, max_length=256)
+    descr: str | None = Field(default=None, max_length=20000)
+    status: TodoStatus | None = None
     priority: TodoPriority | None = None
-    assignee_user_id: str | None = Field(default=None, max_length=36)
-    due_at: datetime | None = None
+    start_time: datetime | None = None
+    due_date: datetime | None = None
+    expire_time: datetime | None = None
+    calendar_event_id: str | None = Field(default=None, max_length=32)
+    is_sync: bool = False
 
 
 class TodoTransitionRequest(BaseModel):
     status: TodoStatus
     note: str | None = Field(default=None, max_length=2000)
+    is_sync: bool = False
+
+
+class TodoMindMapInitResponse(BaseModel):
+    id: str
+    map_name: str
+    descr: str | None = None
+    map_data: str

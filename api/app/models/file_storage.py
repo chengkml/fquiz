@@ -107,7 +107,7 @@ class FileIndexEntry(Base):
     )
     last_synced_by_user_id: Mapped[str | None] = mapped_column(
         String(36),
-        ForeignKey("users.id", ondelete="SET NULL"),
+        ForeignKey("users.user_id", ondelete="SET NULL"),
         index=True,
     )
     last_synced_by_user: Mapped[User | None] = relationship(

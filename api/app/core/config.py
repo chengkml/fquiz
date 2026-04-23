@@ -2,6 +2,7 @@ from functools import lru_cache
 import json
 import re
 from typing import Literal
+from urllib.parse import quote_plus
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,7 +16,13 @@ class Settings(BaseSettings):
     api_cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     api_cors_origin_regex: str | None = None
 
-    database_url: str = "sqlite:///./fquiz.db"
+    database_url: str | None = None
+    db_host: str = "223.109.142.84"
+    db_port: int = 5432
+    db_name: str = "postgres"
+    db_schema: str = "public"
+    db_username: str = "postgres"
+    db_password: str = "1qazZAQ!"
     file_vfs_root: str = "./data/vfs"
 
     jwt_secret_key: str = "change-this-in-production"
@@ -48,6 +55,7 @@ class Settings(BaseSettings):
         "refresh_token_expire_days",
         "llm_request_timeout_seconds",
         "chat_context_message_limit",
+        "db_port",
     )
     @classmethod
     def validate_positive_numbers(cls, value: int) -> int:
@@ -125,6 +133,25 @@ class Settings(BaseSettings):
             if provider_key and secret:
                 mapping[provider_key] = secret
         return mapping
+
+    @property
+    def resolved_database_url(self) -> str:
+        explicit_database_url = (self.database_url or "").strip()
+        if explicit_database_url:
+            return explicit_database_url
+
+        username = quote_plus(self.db_username.strip())
+        password = quote_plus(self.db_password.strip())
+        host = self.db_host.strip()
+        database = self.db_name.strip()
+        return f"postgresql+psycopg://{username}:{password}@{host}:{self.db_port}/{database}"
+
+    @property
+    def resolved_db_schema(self) -> str | None:
+        schema = self.db_schema.strip()
+        if not schema:
+            return None
+        return schema
 
 
 @lru_cache

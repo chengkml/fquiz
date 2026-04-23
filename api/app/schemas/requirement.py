@@ -9,13 +9,15 @@ from .user import UserPublic
 
 RequirementStatus = Literal[
     "PENDING_ANALYSIS",
+    "PENDING_REVIEW",
     "PENDING_REVISION",
     "OPEN",
     "IN_PROGRESS",
     "COMPLETED",
+    "CLOSED",
     "CANCELLED",
 ]
-RequirementPriority = Literal["low", "medium", "high", "urgent"]
+RequirementPriority = Literal["low", "medium", "high", "urgent", "LOW", "MEDIUM", "HIGH"]
 RequirementCommentKind = Literal["comment", "analysis", "revision", "system"]
 
 
@@ -36,6 +38,10 @@ class RequirementSummary(BaseModel):
     closed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    result_msg: str | None = None
+    progress_percent: int = 0
+    git_url: str | None = None
+    branch: str | None = None
     creator: UserPublic | None = None
     assignee: UserPublic | None = None
     reviewer: UserPublic | None = None
@@ -94,7 +100,7 @@ class RequirementCommentPublic(BaseModel):
 
 
 class RequirementEventPublic(BaseModel):
-    id: int
+    id: str
     requirement_id: str
     actor_user_id: str | None = None
     event_type: str

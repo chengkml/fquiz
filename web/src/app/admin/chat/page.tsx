@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { TextArea, Button } from "@radix-ui/themes";
+import { TextArea, Button } from "@/components/ui-antd";
 import { readApiError } from "@/lib/api";
 import type {
   ChatMessage,

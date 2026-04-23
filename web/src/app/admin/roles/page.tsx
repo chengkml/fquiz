@@ -4,7 +4,7 @@ import { ChangeEvent, useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/auth-provider";
-import { Checkbox, Dialog, TextField, Button, Table } from "@radix-ui/themes";
+import { Checkbox, Dialog, TextField, Button, Table } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { MenuItem, PermissionItem, RoleItem, RoleListResponse } from "@/types/auth";

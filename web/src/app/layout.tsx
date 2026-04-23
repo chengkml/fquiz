@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { Theme } from "@radix-ui/themes";
+import { Theme } from "@/components/ui-antd";
 
 import { AppQueryProvider } from "@/components/app-query-provider";
 import { AuthProvider } from "@/components/auth-provider";
 import { WSProvider } from "@/components/ws-provider";
 
-import "@radix-ui/themes/styles.css";
+import "antd/dist/reset.css";
 import "./globals.css";
 
 export const metadata: Metadata = {

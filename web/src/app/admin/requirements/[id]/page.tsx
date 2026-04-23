@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { ChangeEvent, useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { Button, Select, TextArea, TextField } from "@radix-ui/themes";
+import { Button, Select, TextArea, TextField } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type {
@@ -25,10 +25,12 @@ const UNASSIGNED_ASSIGNEE = "__unassigned_assignee__";
 
 const STATUS_LABEL: Record<RequirementStatus, string> = {
   PENDING_ANALYSIS: "待分析",
+  PENDING_REVIEW: "待评审",
   PENDING_REVISION: "待修订",
   OPEN: "待处理",
   IN_PROGRESS: "处理中",
   COMPLETED: "已完成",
+  CLOSED: "已关闭",
   CANCELLED: "已取消",
 };
 
@@ -39,11 +41,13 @@ const PRIORITY_LABEL: Record<RequirementPriority, string> = {
   urgent: "紧急",
 };
 const ALLOWED_TRANSITIONS: Record<RequirementStatus, RequirementStatus[]> = {
-  PENDING_ANALYSIS: ["OPEN", "PENDING_REVISION", "CANCELLED"],
-  PENDING_REVISION: ["OPEN", "CANCELLED"],
-  OPEN: ["IN_PROGRESS", "PENDING_REVISION", "CANCELLED"],
-  IN_PROGRESS: ["COMPLETED", "PENDING_REVISION", "CANCELLED"],
-  COMPLETED: [],
+  PENDING_ANALYSIS: ["PENDING_REVIEW", "PENDING_REVISION", "OPEN", "CLOSED"],
+  PENDING_REVIEW: ["PENDING_REVISION", "OPEN", "CLOSED"],
+  PENDING_REVISION: ["OPEN", "CLOSED"],
+  OPEN: ["IN_PROGRESS", "CLOSED"],
+  IN_PROGRESS: ["COMPLETED", "PENDING_REVISION", "CLOSED"],
+  COMPLETED: ["CLOSED"],
+  CLOSED: [],
   CANCELLED: [],
 };
 

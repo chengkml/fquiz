@@ -6,7 +6,7 @@ import { useCallback, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { Button, Table, TextField } from "@radix-ui/themes";
+import { Button, Table, TextField } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type {

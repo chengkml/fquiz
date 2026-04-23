@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Card, Flex, Heading, Text } from "@radix-ui/themes";
+import { Card, Flex, Heading, Text } from "@/components/ui-antd";
 
 import { useAuth } from "@/components/auth-provider";
 
@@ -104,8 +104,8 @@ const CARDS = [
   },
   {
     href: "/admin/mindmap",
-    title: "题库统计",
-    description: "按题目状态、难度与标签维度统计题库分布，支撑题库运营决策。",
+    title: "思维导图",
+    description: "管理思维导图列表，支持编辑导图 JSON、AI 生成和待办一键初始化。",
     visible: (hasPermission: (code: string) => boolean) => hasPermission("question_bank.read") || hasPermission("question_bank.manage"),
   },
   {
@@ -212,8 +212,8 @@ const CARDS = [
   },
   {
     href: "/admin/diary",
-    title: "上帝视角",
-    description: "复用系统日志能力，按动作与用户维度查看全局审计轨迹。",
+    title: "日记管理",
+    description: "按日期、心情与归档状态管理个人日记，支持新增、编辑与详情查看。",
     visible: (hasPermission: (code: string) => boolean) => hasPermission("menu.read") || hasPermission("menu.manage"),
   },
   {

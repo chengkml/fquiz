@@ -8,7 +8,7 @@ import { useAuth } from "@/components/auth-provider";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { SystemParamListResponse, SystemParamSummary } from "@/types/auth";
-import { Button, Select, Table, TextArea, TextField } from "@radix-ui/themes";
+import { Button, Select, Table, TextArea, TextField } from "@/components/ui-antd";
 
 type StatusFilter = "all" | "enabled" | "disabled";
 

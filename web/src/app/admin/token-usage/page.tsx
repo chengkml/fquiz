@@ -7,7 +7,7 @@ import { ChangeEvent, useCallback, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
-import { Button, Select, TextField, Table } from "@radix-ui/themes";
+import { Button, Select, TextField, Table } from "@/components/ui-antd";
 import type { ModelListResponse, TokenUsageOverviewResponse } from "@/types/auth";
 
 const DAY_OPTIONS = [7, 14, 30, 60, 90] as const;

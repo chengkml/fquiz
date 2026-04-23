@@ -109,6 +109,12 @@
 - 站点品牌标题统一使用 `Quiz`：至少保持 `web/src/app/layout.tsx` 的 `metadata.title` 与首页主标题一致。
 - 登录页默认不展示 `API Base URL`，仅保留 `getApiBaseUrl()` 在请求链路中的能力（不影响鉴权与 API 调用逻辑）。
 
+## 登录页动效口径（2026-04-22）
+
+- 登录页主视觉允许使用装饰性动效（如浮动背景与角色动画），但必须保持登录/注册接口调用链路与鉴权行为不变。
+- 首页怪兽交互基线：眼睛跟随鼠标，密码输入框聚焦时主动挪开视线（避免“盯着密码输入”观感）。
+- 当前实现位于 `web/src/app/page.tsx`；若后续继续扩展动效，优先抽离样式与展示组件，避免登录业务与视觉代码耦合过深。
+
 ## AI 聊天口径（2026-04-13）
 
 - 一期聊天入口固定为后台路由 `/admin/chat`，权限码为 `chat.use`。
@@ -140,7 +146,7 @@
 
 ## 菜单迁移口径（2026-04-18）
 
-- `日程管理` 菜单迁移采用最小改动策略：新增菜单 `admin.schedule`（`/admin/schedule`，权限 `todo.read`），并直接复用 `todos` 页面能力作为日程管理承载。
+- `日程管理` 菜单已升级为独立日程模块：保留菜单 `admin.schedule`（`/admin/schedule`，权限 `todo.read`），前端由 `web/src/app/admin/schedule/page.tsx` 承载年/月/周视图、编辑、完成、AI 生成交互，不再复用 `todos` 页面。
 - `admin.schedule` 已加入后端与前端受保护菜单集合，避免在菜单管理中被误删。
 - `家庭作业` 菜单迁移采用最小改动策略：新增菜单 `admin.homework`（`/admin/homework`，权限 `question_bank.read`），并直接复用 `question-bank` 页面能力作为家庭作业承载。
 - `admin.homework` 已加入后端与前端受保护菜单集合，避免在菜单管理中被误删。
@@ -152,7 +158,7 @@
 - `价格监控` 菜单迁移沿用 Token 统计能力：保留菜单编码 `admin.token_usage` 与权限 `model.read`，菜单文案统一为“价格监控”，默认路由为 `/admin/price-monitor`，并由 `web/src/app/admin/price-monitor/page.tsx` 复用 `token-usage` 页面实现。
 - `API测试` 菜单迁移沿用模型测试能力：新增菜单编码 `admin.api_tester`（`/admin/api-tester`，权限 `model.read`），由 `web/src/app/admin/api-tester/page.tsx` 复用 `models` 页面承载“冒烟测试/对话测试/测试记录”能力；并已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
 - `模型管理` 菜单迁移沿用既有模型能力：保留菜单编码 `admin.models`（`/admin/models`，权限 `model.read/model.manage`），继续由 `web/src/app/admin/models/page.tsx` 承载模型台账、状态流转、路由规则、密钥轮换、健康检查与测试能力；并已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
-- `流程图` 菜单迁移沿用 MD 解析能力：新增菜单编码 `admin.mermaid_mgr`（`/admin/mermaid-mgr`，权限 `question_bank.read`），由 `web/src/app/admin/mermaid-mgr/page.tsx` 复用 `mdresolve` 页面承载 Markdown 解析与批量导入能力；并已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
+- `流程图` 菜单已切回独立 Mermaid 管理能力：菜单编码 `admin.mermaid_mgr`（`/admin/mermaid-mgr`，权限 `question_bank.read`），前端由 `web/src/app/admin/mermaid-mgr/page.tsx` 承载列表/分组/新建编辑删除，编辑页为 `web/src/app/admin/mermaid-mgr/[id]/page.tsx`（AI 流式改图 + 预览 + 保存）；后端接口对齐 quiz 路径：`/api/v1/mermaids/diagrams/*`，并兼容 `/api/mermaids/diagrams/*` legacy 前缀。
 - `上帝视角` 菜单迁移沿用系统日志能力：新增菜单编码 `admin.diary`（`/admin/diary`，权限 `menu.read`），由 `web/src/app/admin/diary/page.tsx` 复用 `syslog` 页面承载审计日志查询能力；并已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
 - `待办管理` 菜单迁移采用最小改动策略：保留菜单编码 `admin.todos`（`/admin/todos`，权限 `todo.read`），并沿用现有 `todos` 页面能力承载待办管理完整交互（筛选、创建、状态流转、删除）。
 - `队列管理` 菜单迁移采用最小改动策略：新增菜单编码 `admin.queue_mgr`（`/admin/jobqueue`，权限 `todo.read`），并由 `web/src/app/admin/jobqueue/page.tsx` 复用 `todos` 页面能力承接队列任务清单管理；已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
@@ -178,3 +184,103 @@
 - `web/src/app/layout.tsx` 只负责注入 `@radix-ui/themes/styles.css` 与 `Theme` Provider，不再通过根容器类叠加自定义主题视觉。
 - `web/src/app/admin/layout.tsx` 使用 Radix Themes 组件（`Card/Flex/Text/Heading/Button/Callout`）组织后台壳层，避免硬编码品牌色光斑与渐变块。
 - `web/src/app/**` 中 `Button` 视觉优先通过 `variant / color / size` 控制；不再使用长 Tailwind 颜色类拼接按钮主题。
+
+## 前端菜单交互口径（2026-04-19）
+
+- 后台壳层（`web/src/app/admin/layout.tsx`）已采用 `@radix-ui/themes` 的 `DropdownMenu` 承接菜单交互：
+  - 移动端（`md` 以下）菜单入口统一为“菜单”下拉，不再直接渲染左侧长列表；
+  - 顶部账号区“返回首页/退出登录”统一收口到“账号”下拉。
+- 后台表格行内“操作”入口推荐统一为下拉菜单形态，优先复用 `web/src/components/row-action-menu.tsx`，避免页面内重复堆叠小按钮并降低操作列宽度波动。
+- Phase B 样板页已落地：`/admin/users`、`/admin/requirements`、`/admin/menus`；后续页面迁移默认保持“业务逻辑不动，仅替换操作入口承载组件”的最小改动策略。
+
+## 数据库连接口径（2026-04-22）
+
+- API 默认数据库连接改为外部 PostgreSQL：优先读取 `DATABASE_URL`；若未设置则由 `DB_HOST/DB_PORT/DB_NAME/DB_USERNAME/DB_PASSWORD` 组装。
+- `DB_SCHEMA` 通过 PostgreSQL `search_path` 注入，语义等价 JDBC 的 `currentSchema`。
+- `docker compose` 中本地 `db` 服务改为 `local-db` profile（默认不启动）；仅在需要本地库时显式 `docker compose --profile local-db up -d`。
+- API 启动初始化口径：`seed_defaults` 仅对本地数据库目标执行（`db/localhost/127.0.0.1/::1` 或 `DATABASE_URL` 指向本地）；非本地目标跳过默认数据写入，避免对外部库做不兼容初始化。
+- 用户表兼容口径：用户主键列对齐旧库 `users.user_id`，与用户关联的外键统一引用 `users.user_id`（不再引用 `users.id`）。
+
+## 前端组件栈口径（2026-04-22）
+
+- 组件库基线从 `Radix UI` 切换为 `Ant Design`，`web` 依赖已移除 `@radix-ui/themes` / `@radix-ui/react-dialog` / `@radix-ui/react-select`，新增 `antd`。
+- 为控制迁移范围，新增兼容层 `web/src/components/ui-antd.tsx`：对外保持 `Button/Card/Flex/Text/Heading/TextField/TextArea/Select/Dialog/DropdownMenu/Callout/Table/Checkbox/Theme` API 形态，内部使用 AntD 实现。
+- `web/src/app/layout.tsx` 统一注入 `antd/dist/reset.css`，并通过兼容层 `Theme` 提供全局主题 token。
+- 工程约束更新：
+  - 页面/组件禁止继续新增 `@radix-ui/themes` 导入；
+  - 优先从 `@/components/ui-antd` 引入 UI 组件；
+  - 新增页面如需 AntD 高级能力，可直接引入 `antd`，但需保持与现有主题和交互风格一致。
+- 兼容说明：`web/src/types/antd.d.ts` 仅保留 `antd/dist/reset.css` 声明，禁止再写 `declare module "antd"`；否则会覆盖官方类型并导致 `Form.useForm<T>` 等泛型调用在 `next build` 的 TypeScript 阶段失败。
+- `web/src/components/ui-antd.tsx` 作为兼容层时，若自定义 `type/variant/size/checked` 等语义，必须先 `Omit` 掉对应 AntD 原生同名字段再重定义，否则会触发联合类型冲突并阻断 Docker 构建。
+
+## 需求管理兼容口径（2026-04-22）
+
+- 需求管理底层表结构已切换为老工程口径：
+  - 主表：`project_requirement`
+  - 生命周期表：`project_requirement_log`
+- `fquiz` 需求模块保持“双接口并行”策略：
+  - 现有前端接口：`/api/v1/requirements*`
+  - 老工程兼容接口：`/api/project/requirement/*`（`search/get/status/analyze/review/lifecycle/history-options/pending`）
+
+## 思维导图兼容口径（2026-04-22）
+
+- 思维导图已从“题库统计复用页”切回独立模块，后端主表固定为老工程口径 `mind_map`。
+- API 入口统一采用老工程风格路径（挂在 `/api/v1` 下）：
+  - `POST /api/v1/mindmap/search`
+  - `GET /api/v1/mindmap/get/{id}`
+  - `POST /api/v1/mindmap/create`
+  - `PUT /api/v1/mindmap/update-basic-info`
+  - `PUT /api/v1/mindmap/update-data`
+  - `DELETE /api/v1/mindmap/delete/{id}`
+  - `GET /api/v1/mindmap/generate/stream`
+- Todo 分析链路已恢复老逻辑：`POST /api/v1/todos/{todo_id}/init-mindmap` 会真实创建/复用 `mind_map(id=todo_id)` 并返回导图信息，前端跳转到 `/admin/mindmap/edit/{id}`。
+- 当前前端编辑器基线为“JSON 编辑 + 树预览 + AI 流式生成 + JSON/Markdown 导出”；如需老工程 `mind-elixir` 的可视化拖拽编辑，需单独引入并适配 AntD/Next 页面栈。
+- 状态机口径对齐老工程：`PENDING_ANALYSIS -> PENDING_REVIEW/PENDING_REVISION/OPEN -> IN_PROGRESS -> COMPLETED/CLOSED`；并兼容映射 `CANCELLED -> CLOSED`。
+- 优先级口径对齐老工程存储：数据库落库使用大写 `LOW/MEDIUM/HIGH`；API 层兼容小写输入并向前端返回小写展示值。
+- 旧表不包含 `assignee/reviewer/due_at` 等字段，`/api/v1/requirements` 中这些字段当前作为兼容占位返回，后续如需恢复需补扩展表或业务映射策略。
+- 老工程兼容接口补充 `POST /api/project/requirement/{id}/design`，用于需求设计阶段回写（`PENDING_ANALYSIS` 内部闭环）。
+
+## 待办管理兼容口径（2026-04-22）
+
+- 待办模块已切换到 quiz 表口径：`api/app/models/todo.py` 使用 `todo` 表（非 `todos`），字段为 `title/descr/status/priority/start_time/due_date/expire_time/calendar_event_id/create_date/create_user/update_date/update_user`。
+- 状态机与优先级固定为：
+  - 状态：`SCHEDULED/IN_PROGRESS/COMPLETED/CANCELLED/EXPIRED`
+  - 优先级：`LOW/MEDIUM/HIGH`
+- `/api/v1/todos` 查询口径对齐 quiz：默认按当前登录用户 `create_user` 过滤，仅返回本人待办；支持 `title/status/priority/page_num/page_size`。
+- 待办扩展接口口径：
+  - `POST /api/v1/todos/{todo_id}/complete`：完成待办（置 `COMPLETED`）
+  - `POST /api/v1/todos/{todo_id}/init-mindmap`：创建或复用 `mind_map(id=todo_id)` 并返回导图详情
+- 前端 `web/src/app/admin/todos/page.tsx` 已按 quiz 交互重构：默认状态筛选 `SCHEDULED`、分页列表、新增/编辑/详情、分析、完成、删除；`jobqueue/cron` 继续复用该页面。
+
+## 日程管理兼容口径（2026-04-22）
+
+- 日程模块已切换到 quiz 表口径：`api/app/models/calendar_event.py` 使用 `calendar_event` 表，字段为 `title/descr/status/priority/start_time/end_time/expire_time/all_day/completed_at/todo_id/create_date/create_user/update_date/update_user`。
+- 日程 API 固定为：
+  - `POST /api/v1/calendar/search`
+  - `GET /api/v1/calendar/get/{id}`
+  - `POST /api/v1/calendar/create`
+  - `PUT /api/v1/calendar/update`
+  - `DELETE /api/v1/calendar/delete/{id}`
+  - `POST /api/v1/calendar/{id}/complete`
+  - `GET /api/v1/calendar/generate/stream`
+- 日程与待办保持双向同步：
+  - 日程创建/更新/删除/完成会同步到 `todo`
+- 待办创建/更新/删除/状态流转会同步到 `calendar_event`
+- 通过 `is_sync/syncing` 标记防止递归回环。
+
+## 日记管理兼容口径（2026-04-23）
+
+- `admin.diary` 已从系统日志复用页切换为独立 Diary 模块，后端主表固定为老工程口径 `diary`。
+- Diary 表字段口径：`id/title/content/diary_date/mood/weather/archived/create_date/create_user/update_date/update_user`，并保留 `create_user` 维度隔离查询。
+- API 入口统一采用老工程风格路径（挂在 `/api/v1` 下）：
+  - `POST /api/v1/diary/search`
+  - `GET /api/v1/diary/get/{id}`
+  - `POST /api/v1/diary/create`
+  - `PUT /api/v1/diary/update`
+  - `DELETE /api/v1/diary/delete/{id}`
+  - `POST /api/v1/diary/{id}/archive?archived=...`
+- 查询逻辑对齐老工程：支持 `title/mood/diary_date_start/diary_date_end/archived` 过滤，排序 `diary_date DESC, create_date DESC`。
+- 当前权限沿用兼容口径：
+  - 读：`menu.read | menu.manage`
+  - 写：`menu.manage`
+  后续若需细粒度可拆分 `diary.read/diary.manage`。

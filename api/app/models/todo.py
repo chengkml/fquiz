@@ -1,57 +1,42 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import DateTime, Index, String, Text
+from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.database import Base
 from .base import utcnow
 
-if TYPE_CHECKING:
-    from .user import User
-
 
 class Todo(Base):
-    __tablename__ = "todos"
+    __tablename__ = "todo"
+    __table_args__ = (
+        Index("idx_todo_status", "status"),
+        Index("idx_todo_priority", "priority"),
+        Index("idx_todo_due_date", "due_date"),
+        Index("idx_todo_expire_time", "expire_time"),
+    )
 
     id: Mapped[str] = mapped_column(
-        String(36),
+        String(32),
         primary_key=True,
-        default=lambda: str(uuid4()),
+        default=lambda: uuid4().hex,
     )
-    title: Mapped[str] = mapped_column(String(200), index=True)
-    description: Mapped[str] = mapped_column(Text(), default="")
-    status: Mapped[str] = mapped_column(String(32), default="TODO", index=True)
-    priority: Mapped[str] = mapped_column(String(16), default="medium", index=True)
-    assignee_user_id: Mapped[str | None] = mapped_column(
-        String(36),
-        ForeignKey("users.id", ondelete="SET NULL"),
-        index=True,
-    )
-    creator_user_id: Mapped[str | None] = mapped_column(
-        String(36),
-        ForeignKey("users.id", ondelete="SET NULL"),
-        index=True,
-    )
-    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
+    title: Mapped[str] = mapped_column(String(256), nullable=False)
+    descr: Mapped[str | None] = mapped_column(Text(), default="")
+    status: Mapped[str] = mapped_column(String(20), default="SCHEDULED", nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), default="MEDIUM", nullable=False)
+    start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expire_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    calendar_event_id: Mapped[str | None] = mapped_column(String(32))
+    create_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    create_user: Mapped[str | None] = mapped_column(String(64), index=True)
+    update_date: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utcnow,
         onupdate=utcnow,
     )
-
-    creator: Mapped[User | None] = relationship(
-        "User",
-        foreign_keys=[creator_user_id],
-        lazy="selectin",
-    )
-    assignee: Mapped[User | None] = relationship(
-        "User",
-        foreign_keys=[assignee_user_id],
-        lazy="selectin",
-    )
+    update_user: Mapped[str | None] = mapped_column(String(64), index=True)

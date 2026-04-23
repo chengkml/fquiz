@@ -7,7 +7,7 @@ import { ChangeEvent, useCallback, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
-import { Button, TextField, Table } from "@radix-ui/themes";
+import { Button, TextField, Table } from "@/components/ui-antd";
 import type { AuditLogListResponse } from "@/types/auth";
 
 const PAGE_SIZE = 50;

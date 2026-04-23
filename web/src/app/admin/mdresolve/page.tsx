@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ChangeEvent, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Button, Table, TextArea } from "@radix-ui/themes";
+import { Button, Table, TextArea } from "@/components/ui-antd";
 
 import { useAuth } from "@/components/auth-provider";
 import { readApiError } from "@/lib/api";

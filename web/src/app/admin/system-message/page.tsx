@@ -8,7 +8,7 @@ import { useAuth } from "@/components/auth-provider";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { SystemMessageListResponse, SystemMessageSummary } from "@/types/auth";
-import { Button, Select, Table, TextArea, TextField } from "@radix-ui/themes";
+import { Button, Select, Table, TextArea, TextField } from "@/components/ui-antd";
 
 type StatusFilter = "all" | "draft" | "published" | "archived";
 type LevelFilter = "all" | "info" | "success" | "warning" | "error";

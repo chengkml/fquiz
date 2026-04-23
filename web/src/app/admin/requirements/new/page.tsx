@@ -6,26 +6,30 @@ import { useRouter } from "next/navigation";
 import { ChangeEvent, useCallback, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { Button, Select, TextArea, TextField } from "@radix-ui/themes";
+import { Button, Select, TextArea, TextField } from "@/components/ui-antd";
 import { readApiError } from "@/lib/api";
 import type { RequirementPriority, RequirementStatus, UserListResponse } from "@/types/auth";
 
 const STATUS_OPTIONS: RequirementStatus[] = [
   "PENDING_ANALYSIS",
+  "PENDING_REVIEW",
   "PENDING_REVISION",
   "OPEN",
   "IN_PROGRESS",
   "COMPLETED",
+  "CLOSED",
   "CANCELLED",
 ];
 const PRIORITY_OPTIONS: RequirementPriority[] = ["low", "medium", "high", "urgent"];
 
 const STATUS_LABEL: Record<RequirementStatus, string> = {
   PENDING_ANALYSIS: "待分析",
+  PENDING_REVIEW: "待评审",
   PENDING_REVISION: "待修订",
   OPEN: "待处理",
   IN_PROGRESS: "处理中",
   COMPLETED: "已完成",
+  CLOSED: "已关闭",
   CANCELLED: "已取消",
 };
 

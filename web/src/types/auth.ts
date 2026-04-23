@@ -594,37 +594,125 @@ export type LifeCountdownWarning = {
 
 export type RequirementStatus =
   | "PENDING_ANALYSIS"
+  | "PENDING_REVIEW"
   | "PENDING_REVISION"
   | "OPEN"
   | "IN_PROGRESS"
   | "COMPLETED"
+  | "CLOSED"
   | "CANCELLED";
 
 export type RequirementPriority = "low" | "medium" | "high" | "urgent";
 export type RequirementCommentKind = "comment" | "analysis" | "revision" | "system";
 
-export type TodoStatus = "TODO" | "IN_PROGRESS" | "DONE";
-export type TodoPriority = "low" | "medium" | "high" | "urgent";
+export type TodoStatus =
+  | "SCHEDULED"
+  | "IN_PROGRESS"
+  | "COMPLETED"
+  | "CANCELLED"
+  | "EXPIRED";
+export type TodoPriority = "LOW" | "MEDIUM" | "HIGH";
 
 export type TodoSummary = {
   id: string;
   title: string;
-  description: string;
+  descr: string | null;
   status: TodoStatus;
   priority: TodoPriority;
-  creator_user_id: string | null;
-  assignee_user_id: string | null;
-  due_at: string | null;
-  completed_at: string | null;
-  created_at: string;
-  updated_at: string;
-  creator: UserPublic | null;
-  assignee: UserPublic | null;
+  start_time: string | null;
+  due_date: string | null;
+  expire_time: string | null;
+  calendar_event_id: string | null;
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
 };
 
 export type TodoListResponse = {
   items: TodoSummary[];
   total: number;
+};
+
+export type DiaryMood = "HAPPY" | "CALM" | "SAD" | "ANGRY" | "TIRED" | "EXCITED";
+
+export type DiarySummary = {
+  id: string;
+  title: string;
+  content: string;
+  diary_date: string;
+  mood: DiaryMood;
+  weather: string | null;
+  archived: boolean;
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
+};
+
+export type DiaryListResponse = {
+  items: DiarySummary[];
+  total: number;
+  page_num: number;
+  page_size: number;
+};
+
+export type MindMapSummary = {
+  id: string;
+  map_name: string;
+  descr: string | null;
+  map_data: string | null;
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
+};
+
+export type MindMapListResponse = {
+  items: MindMapSummary[];
+  total: number;
+  page_num: number;
+  page_size: number;
+};
+
+export type MermaidGroupSummary = {
+  id: string;
+  name: string;
+  label: string;
+  type: string | null;
+  descr: string | null;
+};
+
+export type MermaidGroupListResponse = {
+  items: MermaidGroupSummary[];
+  total: number;
+};
+
+export type MermaidDiagramSummary = {
+  id: string;
+  diagram_name: string;
+  description: string | null;
+  diagram_data: string | null;
+  group_name: string | null;
+  group_label: string | null;
+  tag_names: string[];
+  tag_labels: string[];
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
+};
+
+export type MermaidDiagramPageResponse = {
+  items: MermaidDiagramSummary[];
+  total: number;
+  page_num: number;
+  page_size: number;
+};
+
+export type MermaidChatTurn = {
+  role: "user" | "assistant";
+  content: string;
 };
 
 export type RequirementSummary = {
@@ -644,6 +732,10 @@ export type RequirementSummary = {
   closed_at: string | null;
   created_at: string;
   updated_at: string;
+  result_msg: string | null;
+  progress_percent: number;
+  git_url: string | null;
+  branch: string | null;
   creator: UserPublic | null;
   assignee: UserPublic | null;
   reviewer: UserPublic | null;
@@ -665,7 +757,7 @@ export type RequirementComment = {
 };
 
 export type RequirementEvent = {
-  id: number;
+  id: string;
   requirement_id: string;
   actor_user_id: string | null;
   event_type: string;

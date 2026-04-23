@@ -366,7 +366,7 @@ DEFAULT_MENUS: list[dict[str, object]] = [
     },
     {
         "code": "admin.mindmap",
-        "name": "题库统计",
+        "name": "思维导图",
         "path": "/admin/mindmap",
         "icon": "ChartBar",
         "parent_code": None,
@@ -509,7 +509,7 @@ DEFAULT_MENUS: list[dict[str, object]] = [
     },
     {
         "code": "admin.diary",
-        "name": "上帝视角",
+        "name": "日记管理",
         "path": "/admin/diary",
         "icon": "Eye",
         "parent_code": None,

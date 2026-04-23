@@ -24,7 +24,7 @@ class ChatSession(Base):
     )
     owner_user_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("users.user_id", ondelete="CASCADE"),
         index=True,
     )
     title: Mapped[str] = mapped_column(String(200), default="新会话")
@@ -59,7 +59,7 @@ class ChatMessage(Base):
     )
     author_user_id: Mapped[str | None] = mapped_column(
         String(36),
-        ForeignKey("users.id", ondelete="SET NULL"),
+        ForeignKey("users.user_id", ondelete="SET NULL"),
         index=True,
     )
     role: Mapped[str] = mapped_column(String(16), index=True)

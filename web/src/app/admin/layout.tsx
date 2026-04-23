@@ -8,7 +8,7 @@ import { useAuth } from "@/components/auth-provider";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { MenuTreeItem } from "@/types/auth";
-import { Button, Callout, Card, Flex, Heading, Text } from "@radix-ui/themes";
+import { Button, Callout, Card, DropdownMenu, Flex, Heading, Text } from "@/components/ui-antd";
 
 function flattenMenuTree(tree: MenuTreeItem[]): MenuTreeItem[] {
   const result: MenuTreeItem[] = [];
@@ -21,6 +21,31 @@ function flattenMenuTree(tree: MenuTreeItem[]): MenuTreeItem[] {
     }
   };
   walk(tree);
+  return result;
+}
+
+type MenuPathItem = {
+  id: number;
+  name: string;
+  path: string;
+  depth: number;
+};
+
+function flattenMenuPaths(tree: MenuTreeItem[], depth = 0): MenuPathItem[] {
+  const result: MenuPathItem[] = [];
+  for (const item of tree) {
+    if (item.path) {
+      result.push({
+        id: item.id,
+        name: item.name,
+        path: item.path,
+        depth,
+      });
+    }
+    if (item.children.length > 0) {
+      result.push(...flattenMenuPaths(item.children, depth + 1));
+    }
+  }
   return result;
 }
 
@@ -99,6 +124,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [loadMenus]));
 
   const flatMenus = useMemo(() => flattenMenuTree(menuTree), [menuTree]);
+  const mobileMenuItems = useMemo(() => flattenMenuPaths(menuTree), [menuTree]);
   const currentTitle = useMemo(() => {
     const current = flatMenus.find((item) => isActivePath(pathname, item.path));
     return current?.name ?? "后台管理";
@@ -125,7 +151,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="mx-auto grid min-h-screen w-full max-w-[1760px] grid-cols-1 px-3 sm:px-4 xl:px-6 md:grid-cols-[280px_minmax(0,1fr)]">
-      <aside className="border-r border-[var(--gray-6)] p-4 md:sticky md:top-0 md:h-screen md:overflow-y-auto md:p-6">
+      <aside className="hidden border-r border-[var(--gray-6)] p-4 md:sticky md:top-0 md:block md:h-screen md:overflow-y-auto md:p-6">
         <Card size="2">
           <Flex direction="column" gap="4">
             <div>
@@ -146,6 +172,40 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       <main className="p-4 md:p-6">
+        <Card className="mb-4 md:hidden" size="2">
+          <Flex align="center" justify="between" gap="3">
+            <div>
+              <Text color="gray" size="1">当前页面</Text>
+              <Text size="2" weight="medium">{currentTitle}</Text>
+            </div>
+
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger>
+                <Button color="gray" size="1" type="button" variant="soft">
+                  菜单
+                </Button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content align="end" size="2" variant="soft">
+                {mobileMenuItems.length === 0 ? (
+                  <DropdownMenu.Item disabled>暂无可访问菜单</DropdownMenu.Item>
+                ) : (
+                  mobileMenuItems.map((item) => (
+                    <DropdownMenu.Item
+                      key={item.id}
+                      asChild
+                      color={isActivePath(pathname, item.path) ? "indigo" : "gray"}
+                    >
+                      <Link href={item.path}>
+                        {item.depth > 0 ? `${"> ".repeat(item.depth)}${item.name}` : item.name}
+                      </Link>
+                    </DropdownMenu.Item>
+                  ))
+                )}
+              </DropdownMenu.Content>
+            </DropdownMenu.Root>
+          </Flex>
+        </Card>
+
         <Card className="mb-6" size="3">
           <Flex align="start" gap="4" justify="between" wrap="wrap">
             <div>
@@ -158,12 +218,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <Text size="2" weight="medium">{user.username}</Text>
                 <Text color="gray" size="1">{user.email}</Text>
               </div>
-              <Button color="gray" onClick={() => void logout()} size="1" type="button" variant="soft">
-                退出登录
-              </Button>
-              <Button asChild color="gray" size="1" variant="soft">
-                <Link href="/">返回首页</Link>
-              </Button>
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger>
+                  <Button color="gray" size="1" type="button" variant="soft">
+                    账号
+                  </Button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Content align="end" size="2" variant="soft">
+                  <DropdownMenu.Label>{user.username}</DropdownMenu.Label>
+                  <DropdownMenu.Separator />
+                  <DropdownMenu.Item asChild>
+                    <Link href="/">返回首页</Link>
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item color="red" onSelect={() => void logout()}>
+                    退出登录
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Root>
             </Flex>
           </Flex>
         </Card>

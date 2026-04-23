@@ -5,7 +5,7 @@ import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { readApiError } from "@/lib/api";
 import type { LifeCountdownProfile, LifeCountdownWarning } from "@/types/auth";
-import { Button, TextField } from "@radix-ui/themes";
+import { Button, TextField } from "@/components/ui-antd";
 
 type CountdownParts = {
   expired: boolean;

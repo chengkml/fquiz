@@ -1,221 +1,448 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { ChangeEvent, useCallback, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import dayjs, { Dayjs } from "dayjs";
+import { useCallback, useEffect, useState } from "react";
+import {
+  Button,
+  DatePicker,
+  Descriptions,
+  Form,
+  Input,
+  Modal,
+  Popconfirm,
+  Select,
+  Table,
+  Tag,
+  Tooltip,
+  message,
+} from "antd";
+import type { ColumnsType } from "antd/es/table";
 
 import { useAuth } from "@/components/auth-provider";
-import { Button, Dialog, Select, Table, TextArea, TextField } from "@radix-ui/themes";
-import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type {
   TodoListResponse,
   TodoPriority,
   TodoStatus,
-  UserListResponse,
-  UserPublic,
+  TodoSummary,
 } from "@/types/auth";
 
-const STATUS_OPTIONS: TodoStatus[] = ["TODO", "IN_PROGRESS", "DONE"];
-const PRIORITY_OPTIONS: TodoPriority[] = ["low", "medium", "high", "urgent"];
+type SearchParams = {
+  title: string;
+  status: TodoStatus | "";
+  priority: TodoPriority | "";
+};
+
+type PaginationState = {
+  current: number;
+  pageSize: number;
+  total: number;
+};
+
+type TodoFormValues = {
+  title: string;
+  descr?: string;
+  status?: TodoStatus;
+  priority?: TodoPriority;
+  start_time?: Dayjs | null;
+  due_date?: Dayjs | null;
+  expire_time?: Dayjs | null;
+};
+
+const STATUS_OPTIONS: Array<{ label: string; value: TodoStatus }> = [
+  { label: "已计划", value: "SCHEDULED" },
+  { label: "处理中", value: "IN_PROGRESS" },
+  { label: "已完成", value: "COMPLETED" },
+  { label: "已取消", value: "CANCELLED" },
+  { label: "已过期", value: "EXPIRED" },
+];
+
+const PRIORITY_OPTIONS: Array<{ label: string; value: TodoPriority }> = [
+  { label: "低", value: "LOW" },
+  { label: "中", value: "MEDIUM" },
+  { label: "高", value: "HIGH" },
+];
 
 const STATUS_LABEL: Record<TodoStatus, string> = {
-  TODO: "待开始",
-  IN_PROGRESS: "进行中",
-  DONE: "已完成",
+  SCHEDULED: "已计划",
+  IN_PROGRESS: "处理中",
+  COMPLETED: "已完成",
+  CANCELLED: "已取消",
+  EXPIRED: "已过期",
+};
+
+const STATUS_COLOR: Record<TodoStatus, string> = {
+  SCHEDULED: "default",
+  IN_PROGRESS: "processing",
+  COMPLETED: "success",
+  CANCELLED: "error",
+  EXPIRED: "warning",
 };
 
 const PRIORITY_LABEL: Record<TodoPriority, string> = {
-  low: "低",
-  medium: "中",
-  high: "高",
-  urgent: "紧急",
+  LOW: "低",
+  MEDIUM: "中",
+  HIGH: "高",
 };
 
-const ALL_STATUS_KEY = "__all_status__";
-const ALL_PRIORITY_KEY = "__all_priority__";
-const ALL_ASSIGNEE_KEY = "__all_assignee__";
-const UNASSIGNED_KEY = "__todo_unassigned__";
-
-type Filters = {
-  keyword: string;
-  status: string;
-  priority: string;
-  assignee_user_id: string;
+const PRIORITY_COLOR: Record<TodoPriority, string> = {
+  LOW: "success",
+  MEDIUM: "warning",
+  HIGH: "error",
 };
 
-const DEFAULT_FILTERS: Filters = {
-  keyword: "",
-  status: "",
-  priority: "",
-  assignee_user_id: "",
-};
-
-type CreateDraft = {
-  title: string;
-  description: string;
-  priority: TodoPriority;
-  status: TodoStatus;
-  assignee_user_id: string;
-  due_at: string;
-};
-
-const DEFAULT_CREATE_DRAFT: CreateDraft = {
+const DEFAULT_SEARCH_PARAMS: SearchParams = {
   title: "",
-  description: "",
-  priority: "medium",
-  status: "TODO",
-  assignee_user_id: "",
-  due_at: "",
+  status: "SCHEDULED",
+  priority: "",
 };
 
-const STATUS_TRANSITIONS: Record<TodoStatus, TodoStatus[]> = {
-  TODO: ["IN_PROGRESS", "DONE"],
-  IN_PROGRESS: ["TODO", "DONE"],
-  DONE: ["TODO", "IN_PROGRESS"],
+const DEFAULT_PAGINATION: PaginationState = {
+  current: 1,
+  pageSize: 20,
+  total: 0,
 };
 
-function formatDateTime(value: string | null) {
+function formatDateTime(value: string | null): string {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleString();
 }
 
-export default function TodoPage() {
-  const queryClient = useQueryClient();
-  const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
+function toLocalDateTimeString(value: Dayjs | null | undefined): string | null {
+  if (!value) return null;
+  return value.format("YYYY-MM-DDTHH:mm:ss");
+}
 
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createDraft, setCreateDraft] = useState<CreateDraft>(DEFAULT_CREATE_DRAFT);
+export default function TodoPage() {
+  const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
+  const router = useRouter();
+
+  const [searchForm] = Form.useForm<SearchParams>();
+  const [addForm] = Form.useForm<TodoFormValues>();
+  const [editForm] = Form.useForm<TodoFormValues>();
+
+  const [searchParams, setSearchParams] = useState<SearchParams>(DEFAULT_SEARCH_PARAMS);
+  const [pagination, setPagination] = useState<PaginationState>(DEFAULT_PAGINATION);
+
+  const [tableData, setTableData] = useState<TodoSummary[]>([]);
+  const [tableLoading, setTableLoading] = useState(false);
+  const [analyzeLoading, setAnalyzeLoading] = useState(false);
+
+  const [currentRecord, setCurrentRecord] = useState<TodoSummary | null>(null);
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [panelError, setPanelError] = useState("");
 
   const canRead = hasPermission("todo.read");
   const canCreate = hasPermission("todo.create") || hasPermission("todo.manage");
   const canProcess = hasPermission("todo.process") || hasPermission("todo.manage");
   const canManage = hasPermission("todo.manage");
-  const canManageUsers = hasPermission("user.manage");
+  const currentPage = pagination.current;
+  const currentPageSize = pagination.pageSize;
 
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams();
-    if (filters.keyword.trim()) params.set("keyword", filters.keyword.trim());
-    if (filters.status) params.set("status", filters.status);
-    if (filters.priority) params.set("priority", filters.priority);
-    if (filters.assignee_user_id) params.set("assignee_user_id", filters.assignee_user_id);
-    return params.toString();
-  }, [filters]);
+  const fetchTableData = useCallback(
+    async (
+      params: SearchParams,
+      pageSize: number,
+      current: number,
+    ) => {
+      setTableLoading(true);
+      try {
+        const query = new URLSearchParams();
+        if (params.title.trim()) query.set("title", params.title.trim());
+        if (params.status) query.set("status", params.status);
+        if (params.priority) query.set("priority", params.priority);
+        query.set("page_num", String(current - 1));
+        query.set("page_size", String(pageSize));
 
-  const todosPath = queryString ? `/api/v1/todos?${queryString}` : "/api/v1/todos";
+        const response = await fetchWithAuth(`/api/v1/todos?${query.toString()}`);
+        if (!response.ok) {
+          throw new Error(await readApiError(response));
+        }
 
-  const loadTodos = useCallback(async () => {
-    const response = await fetchWithAuth(todosPath);
-    if (!response.ok) {
-      throw new Error(await readApiError(response));
-    }
-    return (await response.json()) as TodoListResponse;
-  }, [fetchWithAuth, todosPath]);
-
-  const loadUsers = useCallback(async () => {
-    const response = await fetchWithAuth("/api/v1/users?limit=200&offset=0");
-    if (!response.ok) {
-      throw new Error(await readApiError(response));
-    }
-    return (await response.json()) as UserListResponse;
-  }, [fetchWithAuth]);
-
-  const todosQuery = useQuery({
-    queryKey: [todosPath],
-    queryFn: loadTodos,
-    enabled: !!user && canRead,
-  });
-
-  const usersQuery = useQuery({
-    queryKey: ["/api/v1/users?limit=200&offset=0"],
-    queryFn: loadUsers,
-    enabled: !!user && canManageUsers,
-  });
-
-  useTopicSubscription(
-    "todos",
-    useCallback(() => {
-      void queryClient.invalidateQueries({ queryKey: [todosPath] });
-    }, [queryClient, todosPath]),
+        const payload = (await response.json()) as TodoListResponse;
+        setPanelError("");
+        setTableData(payload.items ?? []);
+        setPagination((prev) => ({
+          ...prev,
+          current,
+          pageSize,
+          total: payload.total ?? 0,
+        }));
+      } catch (error) {
+        const messageText = error instanceof Error ? error.message : "获取待办数据失败";
+        setPanelError(messageText);
+      } finally {
+        setTableLoading(false);
+      }
+    },
+    [fetchWithAuth],
   );
 
-  const createMutation = useMutation({
-    mutationFn: async () => {
+  useEffect(() => {
+    if (!user || !canRead) return;
+    void fetchTableData(searchParams, currentPageSize, currentPage);
+  }, [canRead, currentPage, currentPageSize, fetchTableData, searchParams, user]);
+
+  const handleSearch = (values: SearchParams) => {
+    const nextParams: SearchParams = {
+      title: values.title ?? "",
+      status: values.status ?? "",
+      priority: values.priority ?? "",
+    };
+    setSearchParams(nextParams);
+    setPagination((prev) => ({ ...prev, current: 1 }));
+  };
+
+  const handleReset = () => {
+    searchForm.setFieldsValue(DEFAULT_SEARCH_PARAMS);
+    setSearchParams(DEFAULT_SEARCH_PARAMS);
+    setPagination((prev) => ({ ...prev, current: 1 }));
+  };
+
+  const handlePaginationChange = (current: number, pageSize: number) => {
+    setPagination((prev) => ({ ...prev, current, pageSize }));
+  };
+
+  const openAddModal = () => {
+    addForm.resetFields();
+    addForm.setFieldsValue({
+      status: "SCHEDULED",
+      priority: "MEDIUM",
+      descr: "",
+    });
+    setAddModalVisible(true);
+  };
+
+  const handleAddConfirm = async () => {
+    try {
+      const values = await addForm.validateFields();
       const response = await fetchWithAuth("/api/v1/todos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: createDraft.title,
-          description: createDraft.description,
-          status: createDraft.status,
-          priority: createDraft.priority,
-          assignee_user_id: createDraft.assignee_user_id || null,
-          due_at: createDraft.due_at ? new Date(createDraft.due_at).toISOString() : null,
+          title: values.title,
+          descr: values.descr ?? "",
+          status: values.status ?? "SCHEDULED",
+          priority: values.priority ?? "MEDIUM",
+          start_time: toLocalDateTimeString(values.start_time),
+          due_date: toLocalDateTimeString(values.due_date),
+          expire_time: toLocalDateTimeString(values.expire_time),
         }),
       });
       if (!response.ok) {
         throw new Error(await readApiError(response));
       }
-      return response.json();
-    },
-    onSuccess: async () => {
-      setPanelError("");
-      setCreateOpen(false);
-      setCreateDraft(DEFAULT_CREATE_DRAFT);
-      await queryClient.invalidateQueries({ queryKey: [todosPath] });
-    },
-    onError: (error) => {
-      setPanelError(error instanceof Error ? error.message : "创建待办失败");
-    },
-  });
+      message.success("待办创建成功");
+      setAddModalVisible(false);
+      addForm.resetFields();
+      await fetchTableData(searchParams, pagination.pageSize, pagination.current);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("out of date")) return;
+      const messageText = error instanceof Error ? error.message : "待办创建失败";
+      setPanelError(messageText);
+      message.error(messageText);
+    }
+  };
 
-  const transitionMutation = useMutation({
-    mutationFn: async ({ todoId, status }: { todoId: string; status: TodoStatus }) => {
-      const response = await fetchWithAuth(`/api/v1/todos/${todoId}/transition`, {
-        method: "POST",
+  const openEditModal = (record: TodoSummary) => {
+    setCurrentRecord(record);
+    editForm.setFieldsValue({
+      title: record.title,
+      descr: record.descr ?? "",
+      status: record.status,
+      priority: record.priority,
+      start_time: record.start_time ? dayjs(record.start_time) : null,
+      due_date: record.due_date ? dayjs(record.due_date) : null,
+      expire_time: record.expire_time ? dayjs(record.expire_time) : null,
+    });
+    setEditModalVisible(true);
+  };
+
+  const handleEditConfirm = async () => {
+    if (!currentRecord) return;
+    try {
+      const values = await editForm.validateFields();
+      const response = await fetchWithAuth(`/api/v1/todos/${currentRecord.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          title: values.title,
+          descr: values.descr ?? "",
+          status: values.status,
+          priority: values.priority,
+          start_time: toLocalDateTimeString(values.start_time),
+          due_date: toLocalDateTimeString(values.due_date),
+          expire_time: toLocalDateTimeString(values.expire_time),
+        }),
       });
       if (!response.ok) {
         throw new Error(await readApiError(response));
       }
-      return response.json();
-    },
-    onSuccess: async () => {
-      setPanelError("");
-      await queryClient.invalidateQueries({ queryKey: [todosPath] });
-    },
-    onError: (error) => {
-      setPanelError(error instanceof Error ? error.message : "状态流转失败");
-    },
-  });
+      message.success("待办更新成功");
+      setEditModalVisible(false);
+      setCurrentRecord(null);
+      await fetchTableData(searchParams, pagination.pageSize, pagination.current);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("out of date")) return;
+      const messageText = error instanceof Error ? error.message : "待办更新失败";
+      setPanelError(messageText);
+      message.error(messageText);
+    }
+  };
 
-  const deleteMutation = useMutation({
-    mutationFn: async (todoId: string) => {
-      const response = await fetchWithAuth(`/api/v1/todos/${todoId}`, {
+  const openDetailModal = (record: TodoSummary) => {
+    setCurrentRecord(record);
+    setDetailModalVisible(true);
+  };
+
+  const handleDelete = async (record: TodoSummary) => {
+    try {
+      const response = await fetchWithAuth(`/api/v1/todos/${record.id}`, {
         method: "DELETE",
       });
       if (!response.ok) {
         throw new Error(await readApiError(response));
       }
-      return response.json();
-    },
-    onSuccess: async () => {
-      setPanelError("");
-      await queryClient.invalidateQueries({ queryKey: [todosPath] });
-    },
-    onError: (error) => {
-      setPanelError(error instanceof Error ? error.message : "删除待办失败");
-    },
-  });
+      message.success("待办删除成功");
+      await fetchTableData(searchParams, pagination.pageSize, pagination.current);
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : "待办删除失败";
+      setPanelError(messageText);
+      message.error(messageText);
+    }
+  };
 
-  const todoError = todosQuery.error instanceof Error ? todosQuery.error.message : "";
+  const handleComplete = async (record: TodoSummary) => {
+    try {
+      const response = await fetchWithAuth(`/api/v1/todos/${record.id}/complete`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      message.success("待办已完成");
+      await fetchTableData(searchParams, pagination.pageSize, pagination.current);
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : "完成待办失败";
+      setPanelError(messageText);
+      message.error(messageText);
+    }
+  };
 
-  if (initializing || todosQuery.isLoading) {
+  const handleAnalyze = async (record: TodoSummary) => {
+    setAnalyzeLoading(true);
+    try {
+      const response = await fetchWithAuth(`/api/v1/todos/${record.id}/init-mindmap`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      const payload = (await response.json()) as { id: string; map_name?: string };
+      message.success(`思维导图初始化成功${payload.map_name ? `：${payload.map_name}` : ""}`);
+      router.push(`/admin/mindmap/edit/${payload.id}`);
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : "思维导图初始化失败";
+      setPanelError(messageText);
+      message.error(messageText);
+    } finally {
+      setAnalyzeLoading(false);
+    }
+  };
+
+  const columns: ColumnsType<TodoSummary> = [
+    {
+      title: "标题",
+      dataIndex: "title",
+      ellipsis: true,
+      render: (_, record) => (
+        <Button
+          type="link"
+          style={{ padding: 0 }}
+          onClick={() => {
+            if (record.status === "COMPLETED" || record.status === "EXPIRED") {
+              openDetailModal(record);
+            } else {
+              openEditModal(record);
+            }
+          }}
+        >
+          {record.title}
+        </Button>
+      ),
+    },
+    {
+      title: "状态",
+      dataIndex: "status",
+      width: 120,
+      align: "center",
+      render: (status: TodoStatus) => <Tag color={STATUS_COLOR[status]}>{STATUS_LABEL[status]}</Tag>,
+    },
+    {
+      title: "优先级",
+      dataIndex: "priority",
+      width: 120,
+      align: "center",
+      render: (priority: TodoPriority) => <Tag color={PRIORITY_COLOR[priority]}>{PRIORITY_LABEL[priority]}</Tag>,
+    },
+    {
+      title: "创建时间",
+      dataIndex: "create_date",
+      width: 190,
+      render: (value: string | null) => formatDateTime(value),
+    },
+    {
+      title: "操作",
+      width: 220,
+      align: "center",
+      render: (_, record) => (
+        <div className="flex items-center justify-center gap-3">
+          <Tooltip title="分析">
+            <Button type="text" size="small" onClick={() => void handleAnalyze(record)} loading={analyzeLoading}>
+              分析
+            </Button>
+          </Tooltip>
+
+          {record.status === "COMPLETED" || record.status === "EXPIRED" ? (
+            <Tooltip title={record.status === "EXPIRED" ? "待办已过期" : "待办已完成"}>
+              <Button
+                type="text"
+                size="small"
+                disabled
+                style={{ color: record.status === "EXPIRED" ? "var(--orange-9,#d97706)" : "var(--green-9,#15803d)" }}
+              >
+                完成
+              </Button>
+            </Tooltip>
+          ) : (
+            <Popconfirm title="确认完成该待办吗？" onConfirm={() => void handleComplete(record)}>
+              <Tooltip title="完成">
+                <Button type="text" size="small" disabled={!canProcess}>
+                  完成
+                </Button>
+              </Tooltip>
+            </Popconfirm>
+          )}
+
+          <Popconfirm title="确认删除该待办吗？" onConfirm={() => void handleDelete(record)}>
+            <Tooltip title="删除">
+              <Button type="text" size="small" danger disabled={!canManage}>
+                删除
+              </Button>
+            </Tooltip>
+          </Popconfirm>
+        </div>
+      ),
+    },
+  ];
+
+  if (initializing) {
     return <p className="text-sm text-[var(--gray-11)]">Loading todos...</p>;
   }
 
@@ -223,7 +450,10 @@ export default function TodoPage() {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
         <p className="text-sm text-[var(--gray-11)]">请先登录后再访问待办管理页面。</p>
-        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">
+        <Link
+          href="/"
+          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
+        >
           返回首页
         </Link>
       </main>
@@ -234,275 +464,194 @@ export default function TodoPage() {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
         <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `todo.read`）。</p>
-        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">
+        <Link
+          href="/"
+          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
+        >
           返回首页
         </Link>
       </main>
     );
   }
 
-  const users: UserPublic[] = usersQuery.data?.items ?? [];
-  const items = todosQuery.data?.items ?? [];
-
   return (
     <div className="space-y-6">
-      {(todoError || panelError) && <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">{todoError || panelError}</pre>}
+      {panelError && (
+        <pre className="overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">
+          {panelError}
+        </pre>
+      )}
 
       <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
         <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="text-lg font-semibold">待办列表</h2>
-            <p className="mt-1 text-sm text-[var(--gray-11)]">支持筛选、状态流转、删除与快捷创建。</p>
+            <p className="mt-1 text-sm text-[var(--gray-11)]">默认显示已计划任务，支持筛选、编辑、完成、删除。</p>
           </div>
           {canCreate && (
-            <Button onClick={() => setCreateOpen(true)} type="button">
+            <Button type="primary" onClick={openAddModal}>
               新建待办
             </Button>
           )}
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-4">
-          <TextField.Root
-            value={filters.keyword}
-            onChange={(event: ChangeEvent<HTMLInputElement>) =>
-              setFilters((prev) => ({ ...prev, keyword: event.currentTarget.value }))
-            }
-            placeholder="关键词"
-            className="w-full"
-          />
-
-          <Select.Root
-            value={filters.status || ALL_STATUS_KEY}
-            onValueChange={(value: string) => {
-              setFilters((prev) => ({
-                ...prev,
-                status: value !== ALL_STATUS_KEY ? value : "",
-              }));
-            }}
-          >
-            <Select.Trigger aria-label="状态筛选" className="w-full" />
-            <Select.Content>
-              <Select.Item value={ALL_STATUS_KEY}>全部状态</Select.Item>
-              {STATUS_OPTIONS.map((item) => (
-                <Select.Item key={item} value={item}>
-                  {STATUS_LABEL[item]}
-                </Select.Item>
-              ))}
-            </Select.Content>
-          </Select.Root>
-
-          <Select.Root
-            value={filters.priority || ALL_PRIORITY_KEY}
-            onValueChange={(value: string) => {
-              setFilters((prev) => ({
-                ...prev,
-                priority: value !== ALL_PRIORITY_KEY ? value : "",
-              }));
-            }}
-          >
-            <Select.Trigger aria-label="优先级筛选" className="w-full" />
-            <Select.Content>
-              <Select.Item value={ALL_PRIORITY_KEY}>全部优先级</Select.Item>
-              {PRIORITY_OPTIONS.map((item) => (
-                <Select.Item key={item} value={item}>
-                  {PRIORITY_LABEL[item]}
-                </Select.Item>
-              ))}
-            </Select.Content>
-          </Select.Root>
-
-          <Select.Root
-            value={filters.assignee_user_id || ALL_ASSIGNEE_KEY}
-            onValueChange={(value: string) => {
-              setFilters((prev) => ({
-                ...prev,
-                assignee_user_id: value !== ALL_ASSIGNEE_KEY ? value : "",
-              }));
-            }}
-          >
-            <Select.Trigger aria-label="指派人筛选" className="w-full" />
-            <Select.Content>
-              <Select.Item value={ALL_ASSIGNEE_KEY}>全部指派人</Select.Item>
-              {users.map((item) => (
-                <Select.Item key={item.id} value={item.id}>
-                  {item.username}
-                </Select.Item>
-              ))}
-            </Select.Content>
-          </Select.Root>
-        </div>
+        <Form
+          form={searchForm}
+          layout="inline"
+          initialValues={DEFAULT_SEARCH_PARAMS}
+          onFinish={(values) => handleSearch(values as SearchParams)}
+        >
+          <Form.Item label="标题" name="title">
+            <Input allowClear placeholder="请输入标题关键字" style={{ width: 220 }} />
+          </Form.Item>
+          <Form.Item label="状态" name="status">
+            <Select
+              allowClear
+              options={STATUS_OPTIONS}
+              placeholder="请选择状态"
+              style={{ width: 160 }}
+            />
+          </Form.Item>
+          <Form.Item label="优先级" name="priority">
+            <Select
+              allowClear
+              options={PRIORITY_OPTIONS}
+              placeholder="请选择优先级"
+              style={{ width: 160 }}
+            />
+          </Form.Item>
+          <Form.Item>
+            <div className="flex gap-2">
+              <Button type="primary" htmlType="submit">
+                查询
+              </Button>
+              <Button onClick={handleReset}>重置</Button>
+            </div>
+          </Form.Item>
+        </Form>
       </section>
 
       <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
-          <p className="text-sm text-[var(--gray-11)]">共 {todosQuery.data?.total ?? 0} 条</p>
-          {todosQuery.isFetching && <p className="text-xs text-[var(--gray-11)]">刷新中...</p>}
-        </div>
-
-        <Table.Root className="w-full">
-          <Table.Header>
-            <Table.Row>
-              <Table.ColumnHeaderCell>标题</Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>状态</Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>优先级</Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>指派人</Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>截止时间</Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>更新时间</Table.ColumnHeaderCell>
-              <Table.ColumnHeaderCell>操作</Table.ColumnHeaderCell>
-            </Table.Row>
-          </Table.Header>
-          <Table.Body>
-            {items.map((item) => (
-              <Table.Row key={item.id}>
-                <Table.Cell>
-                  <p className="font-medium">{item.title}</p>
-                  <p className="mt-1 line-clamp-2 text-xs text-[var(--gray-11)]">{item.description || "-"}</p>
-                </Table.Cell>
-                <Table.Cell>{STATUS_LABEL[item.status]}</Table.Cell>
-                <Table.Cell>{PRIORITY_LABEL[item.priority]}</Table.Cell>
-                <Table.Cell>{item.assignee?.username ?? "-"}</Table.Cell>
-                <Table.Cell>{formatDateTime(item.due_at)}</Table.Cell>
-                <Table.Cell>{formatDateTime(item.updated_at)}</Table.Cell>
-                <Table.Cell>
-                  <div className="flex flex-wrap gap-2">
-                    {canProcess &&
-                      STATUS_TRANSITIONS[item.status].map((next) => (
-                        <Button
-                          key={next}
-                          variant="soft"
-                          size="1"
-                          onClick={() => transitionMutation.mutate({ todoId: item.id, status: next })}
-                          disabled={transitionMutation.isPending}
-                          type="button"
-                        >
-                          {STATUS_LABEL[next]}
-                        </Button>
-                      ))}
-                    {canManage && (
-                      <Button
-                        color="red"
-                        variant="soft"
-                        size="1"
-                        onClick={() => deleteMutation.mutate(item.id)}
-                        disabled={deleteMutation.isPending}
-                        type="button"
-                      >
-                        删除
-                      </Button>
-                    )}
-                  </div>
-                </Table.Cell>
-              </Table.Row>
-            ))}
-          </Table.Body>
-        </Table.Root>
+        <Table<TodoSummary>
+          columns={columns}
+          dataSource={tableData}
+          loading={tableLoading}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: pagination.total,
+            showQuickJumper: true,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`,
+            onChange: handlePaginationChange,
+          }}
+          rowKey="id"
+        />
       </section>
 
-      <Dialog.Root open={createOpen} onOpenChange={setCreateOpen}>
-        <Dialog.Content className="max-w-3xl">
-          <Dialog.Title>新建待办</Dialog.Title>
+      <Modal
+        title="新增待办"
+        open={addModalVisible}
+        onOk={() => void handleAddConfirm()}
+        onCancel={() => setAddModalVisible(false)}
+        destroyOnClose
+      >
+        <Form
+          form={addForm}
+          layout="vertical"
+          initialValues={{ status: "SCHEDULED", priority: "MEDIUM", descr: "" }}
+        >
+          <Form.Item label="标题" name="title" rules={[{ required: true, message: "请输入标题" }]}>
+            <Input placeholder="请输入标题" />
+          </Form.Item>
+          <Form.Item label="详细描述" name="descr">
+            <Input.TextArea placeholder="请输入详细描述" autoSize={{ minRows: 3, maxRows: 6 }} />
+          </Form.Item>
+          <Form.Item label="状态" name="status">
+            <Select options={STATUS_OPTIONS.filter((item) => item.value !== "EXPIRED")} allowClear />
+          </Form.Item>
+          <Form.Item label="优先级" name="priority">
+            <Select options={PRIORITY_OPTIONS} allowClear />
+          </Form.Item>
+          <Form.Item label="开始时间" name="start_time">
+            <DatePicker showTime style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item label="截止时间" name="due_date">
+            <DatePicker showTime style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item label="过期时间" name="expire_time">
+            <DatePicker showTime style={{ width: "100%" }} />
+          </Form.Item>
+        </Form>
+      </Modal>
 
-          <div className="grid gap-3">
-            <TextField.Root
-              className="w-full"
-              value={createDraft.title}
-              onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                setCreateDraft((prev) => ({ ...prev, title: event.currentTarget.value }))
-              }
-              placeholder="标题"
+      <Modal
+        title="编辑待办"
+        open={editModalVisible}
+        onOk={() => void handleEditConfirm()}
+        onCancel={() => setEditModalVisible(false)}
+        destroyOnClose
+      >
+        <Form form={editForm} layout="vertical">
+          <Form.Item label="标题" name="title" rules={[{ required: true, message: "请输入标题" }]}>
+            <Input placeholder="请输入标题" />
+          </Form.Item>
+          <Form.Item label="详细描述" name="descr">
+            <Input.TextArea placeholder="请输入详细描述" autoSize={{ minRows: 3, maxRows: 6 }} />
+          </Form.Item>
+          <Form.Item label="状态" name="status">
+            <Select
+              options={STATUS_OPTIONS.map((item) =>
+                item.value === "EXPIRED" ? { ...item, disabled: true } : item,
+              )}
+              allowClear
             />
-            <TextArea
-              className="w-full"
-              rows={4}
-              value={createDraft.description}
-              onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-                setCreateDraft((prev) => ({ ...prev, description: event.currentTarget.value }))
-              }
-              placeholder="描述"
-            />
+          </Form.Item>
+          <Form.Item label="优先级" name="priority">
+            <Select options={PRIORITY_OPTIONS} allowClear />
+          </Form.Item>
+          <Form.Item label="开始时间" name="start_time">
+            <DatePicker showTime style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item label="截止时间" name="due_date">
+            <DatePicker showTime style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item label="过期时间" name="expire_time">
+            <DatePicker showTime style={{ width: "100%" }} />
+          </Form.Item>
+        </Form>
+      </Modal>
 
-            <div className="grid gap-3 md:grid-cols-2">
-              <Select.Root
-                value={createDraft.status}
-                onValueChange={(value: string) => {
-                  if (STATUS_OPTIONS.includes(value as TodoStatus)) {
-                    setCreateDraft((prev) => ({ ...prev, status: value as TodoStatus }));
-                  }
-                }}
-              >
-                <Select.Trigger aria-label="新建待办状态" className="w-full" />
-                <Select.Content>
-                  {STATUS_OPTIONS.map((item) => (
-                    <Select.Item key={item} value={item}>
-                      {STATUS_LABEL[item]}
-                    </Select.Item>
-                  ))}
-                </Select.Content>
-              </Select.Root>
-
-              <Select.Root
-                value={createDraft.priority}
-                onValueChange={(value: string) => {
-                  if (PRIORITY_OPTIONS.includes(value as TodoPriority)) {
-                    setCreateDraft((prev) => ({ ...prev, priority: value as TodoPriority }));
-                  }
-                }}
-              >
-                <Select.Trigger aria-label="新建待办优先级" className="w-full" />
-                <Select.Content>
-                  {PRIORITY_OPTIONS.map((item) => (
-                    <Select.Item key={item} value={item}>
-                      {PRIORITY_LABEL[item]}
-                    </Select.Item>
-                  ))}
-                </Select.Content>
-              </Select.Root>
-
-              <TextField.Root
-                type="datetime-local"
-                className="w-full"
-                value={createDraft.due_at}
-                onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                  setCreateDraft((prev) => ({ ...prev, due_at: event.currentTarget.value }))
-                }
-              />
-
-              <Select.Root
-                value={createDraft.assignee_user_id || UNASSIGNED_KEY}
-                onValueChange={(value: string) => {
-                  setCreateDraft((prev) => ({
-                    ...prev,
-                    assignee_user_id: value !== UNASSIGNED_KEY ? value : "",
-                  }));
-                }}
-              >
-                <Select.Trigger aria-label="新建待办指派人" className="w-full" />
-                <Select.Content>
-                  <Select.Item value={UNASSIGNED_KEY}>暂不指派</Select.Item>
-                  {users.map((item) => (
-                    <Select.Item key={item.id} value={item.id}>
-                      {item.username}
-                    </Select.Item>
-                  ))}
-                </Select.Content>
-              </Select.Root>
-            </div>
-          </div>
-
-          <div className="mt-4 flex justify-end gap-2">
-            <Button variant="soft" onClick={() => setCreateOpen(false)} type="button">
-              取消
-            </Button>
-            <Button
-              onClick={() => createMutation.mutate()}
-              disabled={createMutation.isPending || !createDraft.title.trim()}
-              type="button"
-            >
-              {createMutation.isPending ? "创建中..." : "创建待办"}
-            </Button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Root>
+      <Modal
+        title="待办详情"
+        open={detailModalVisible}
+        onCancel={() => setDetailModalVisible(false)}
+        footer={null}
+        destroyOnClose
+      >
+        {currentRecord && (
+          <Descriptions
+            column={1}
+            items={[
+              { label: "标题", children: currentRecord.title },
+              { label: "详细描述", children: currentRecord.descr || "-" },
+              {
+                label: "状态",
+                children: <Tag color={STATUS_COLOR[currentRecord.status]}>{STATUS_LABEL[currentRecord.status]}</Tag>,
+              },
+              {
+                label: "优先级",
+                children: (
+                  <Tag color={PRIORITY_COLOR[currentRecord.priority]}>{PRIORITY_LABEL[currentRecord.priority]}</Tag>
+                ),
+              },
+              { label: "开始时间", children: formatDateTime(currentRecord.start_time) },
+              { label: "截止时间", children: formatDateTime(currentRecord.due_date) },
+              { label: "过期时间", children: formatDateTime(currentRecord.expire_time) },
+            ]}
+          />
+        )}
+      </Modal>
     </div>
   );
 }

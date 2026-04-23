@@ -98,6 +98,12 @@
    docker compose up --build -d
    ```
 
+   如需同时启动本地 PostgreSQL 容器（`db`），使用：
+
+   ```bash
+   docker compose --profile local-db up --build -d
+   ```
+
 3. 查看运行状态和日志：
 
    ```bash
@@ -109,7 +115,8 @@
 
 - 前端：`http://localhost:3000`
 - 后端：`http://localhost:8000/health`
-- PostgreSQL：`localhost:5433`（可通过 `POSTGRES_PORT` 覆盖）
+- PostgreSQL：默认连接外部库（`DB_HOST/DB_PORT/DB_NAME/DB_SCHEMA/DB_USERNAME/DB_PASSWORD`）
+- 本地 PostgreSQL（可选）：启用 `local-db` profile 后使用 `localhost:5433`（可通过 `POSTGRES_PORT` 覆盖）
 
 5. 停止并清理：
 
@@ -119,7 +126,7 @@
 
 说明：
 - `NEXT_PUBLIC_API_BASE_URL` 在 Next.js 中是构建期注入；如果修改该值，需要重新执行 `docker compose up --build`。
-- 若使用 Docker Compose，默认 `DATABASE_URL` 指向容器内 `db` 服务（PostgreSQL）。
+- 若未显式设置 `DATABASE_URL`，API 会使用 `DB_*` 变量自动组装 PostgreSQL 连接，并将 `DB_SCHEMA` 作为 `search_path`（等价 JDBC 的 `currentSchema` 语义）。
 - 若出现跨域（CORS）错误，请在 `.env` 配置：
   - `API_CORS_ORIGINS`：精确来源列表（逗号分隔），如 `https://admin.example.com,http://localhost:3000`
   - `API_CORS_ORIGIN_REGEX`：来源正则（可选），如 `https://.*\\.example\\.com`

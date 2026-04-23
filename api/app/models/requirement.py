@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..core.database import Base
@@ -15,60 +15,31 @@ if TYPE_CHECKING:
 
 
 class Requirement(Base):
-    __tablename__ = "requirements"
+    __tablename__ = "project_requirement"
 
     id: Mapped[str] = mapped_column(
-        String(36),
+        String(32),
         primary_key=True,
-        default=lambda: str(uuid4()),
+        default=lambda: uuid4().hex,
     )
-    code: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    title: Mapped[str] = mapped_column(String(200), index=True)
-    description: Mapped[str] = mapped_column(Text(), default="")
-    status: Mapped[str] = mapped_column(String(32), default="PENDING_ANALYSIS", index=True)
-    priority: Mapped[str] = mapped_column(String(16), default="medium", index=True)
+    title: Mapped[str] = mapped_column(String(256), index=True)
     project_name: Mapped[str | None] = mapped_column(String(128), index=True)
-    module_name: Mapped[str | None] = mapped_column(String(128), index=True)
-    source: Mapped[str | None] = mapped_column(String(128), index=True)
-    creator_user_id: Mapped[str | None] = mapped_column(
-        String(36),
-        ForeignKey("users.id", ondelete="SET NULL"),
-        index=True,
-    )
-    assignee_user_id: Mapped[str | None] = mapped_column(
-        String(36),
-        ForeignKey("users.id", ondelete="SET NULL"),
-        index=True,
-    )
-    reviewer_user_id: Mapped[str | None] = mapped_column(
-        String(36),
-        ForeignKey("users.id", ondelete="SET NULL"),
-        index=True,
-    )
-    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
-    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
+    git_url: Mapped[str | None] = mapped_column(String(512))
+    branch: Mapped[str | None] = mapped_column(String(128), default="main")
+    descr: Mapped[str] = mapped_column(Text(), default="")
+    result_msg: Mapped[str | None] = mapped_column(Text())
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(30), default="PENDING_ANALYSIS", index=True)
+    priority: Mapped[str] = mapped_column(String(20), default="MEDIUM", index=True)
+    create_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    create_user: Mapped[str | None] = mapped_column(String(64), index=True)
+    update_date: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utcnow,
         onupdate=utcnow,
     )
+    update_user: Mapped[str | None] = mapped_column(String(64), index=True)
 
-    creator: Mapped[User | None] = relationship(
-        "User",
-        foreign_keys=[creator_user_id],
-        lazy="selectin",
-    )
-    assignee: Mapped[User | None] = relationship(
-        "User",
-        foreign_keys=[assignee_user_id],
-        lazy="selectin",
-    )
-    reviewer: Mapped[User | None] = relationship(
-        "User",
-        foreign_keys=[reviewer_user_id],
-        lazy="selectin",
-    )
     comments: Mapped[list[RequirementComment]] = relationship(
         "RequirementComment",
         back_populates="requirement",
@@ -81,7 +52,7 @@ class Requirement(Base):
         back_populates="requirement",
         lazy="selectin",
         cascade="all, delete-orphan",
-        order_by="RequirementEvent.created_at.desc()",
+        order_by="RequirementEvent.create_date.desc()",
     )
 
 
@@ -90,13 +61,13 @@ class RequirementComment(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     requirement_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("requirements.id", ondelete="CASCADE"),
+        String(32),
+        ForeignKey("project_requirement.id", ondelete="CASCADE"),
         index=True,
     )
     author_user_id: Mapped[str | None] = mapped_column(
         String(36),
-        ForeignKey("users.id", ondelete="SET NULL"),
+        ForeignKey("users.user_id", ondelete="SET NULL"),
         index=True,
     )
     content: Mapped[str] = mapped_column(Text())
@@ -112,28 +83,31 @@ class RequirementComment(Base):
 
 
 class RequirementEvent(Base):
-    __tablename__ = "requirement_events"
+    __tablename__ = "project_requirement_log"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[str] = mapped_column(
+        String(32),
+        primary_key=True,
+        default=lambda: uuid4().hex,
+    )
     requirement_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("requirements.id", ondelete="CASCADE"),
+        String(32),
+        ForeignKey("project_requirement.id", ondelete="CASCADE"),
         index=True,
     )
-    actor_user_id: Mapped[str | None] = mapped_column(
-        String(36),
-        ForeignKey("users.id", ondelete="SET NULL"),
-        index=True,
+    event_type: Mapped[str] = mapped_column(String(30), index=True)
+    from_status: Mapped[str | None] = mapped_column(String(30), index=True)
+    to_status: Mapped[str | None] = mapped_column(String(30), index=True)
+    before_descr: Mapped[str | None] = mapped_column(Text())
+    after_descr: Mapped[str | None] = mapped_column(Text())
+    remark: Mapped[str | None] = mapped_column(Text())
+    create_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    create_user: Mapped[str | None] = mapped_column(String(64), index=True)
+    update_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
     )
-    event_type: Mapped[str] = mapped_column(String(64), index=True)
-    from_status: Mapped[str | None] = mapped_column(String(32), index=True)
-    to_status: Mapped[str | None] = mapped_column(String(32), index=True)
-    payload_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    update_user: Mapped[str | None] = mapped_column(String(64), index=True)
 
     requirement: Mapped[Requirement] = relationship("Requirement", back_populates="events")
-    actor: Mapped[User | None] = relationship(
-        "User",
-        foreign_keys=[actor_user_id],
-        lazy="selectin",
-    )

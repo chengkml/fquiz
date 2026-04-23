@@ -4,7 +4,8 @@ import { ChangeEvent, useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/auth-provider";
-import { Checkbox, Dialog, Select, TextField, Button, Table } from "@radix-ui/themes";
+import { RowActionMenu, type RowActionMenuItem } from "@/components/row-action-menu";
+import { Checkbox, Dialog, Select, TextField, Button, Table } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { MenuItem, MenuListResponse } from "@/types/auth";
@@ -345,39 +346,42 @@ export default function AdminMenusPage() {
               </Table.Row>
             </Table.Header>
             <Table.Body className="divide-y divide-y">
-              {filteredMenus.map((menu) => (
-                <Table.Row key={menu.id}>
-                  <Table.Cell className="px-4 py-3">{menu.id}</Table.Cell>
-                  <Table.Cell className="px-4 py-3 font-mono text-xs">{menu.code}</Table.Cell>
-                  <Table.Cell className="px-4 py-3">{menu.name}</Table.Cell>
-                  <Table.Cell className="px-4 py-3">{menu.path ?? "-"}</Table.Cell>
-                  <Table.Cell className="px-4 py-3">{menu.permission_code ?? "-"}</Table.Cell>
-                  <Table.Cell className="px-4 py-3">{menu.parent_id ? (menuNameById.get(menu.parent_id) ?? menu.parent_id) : "-"}</Table.Cell>
-                  <Table.Cell className="px-4 py-3">{menu.sort_order}</Table.Cell>
-                  {canManage && (
-                    <Table.Cell className="px-4 py-3">
-                      <div className="flex gap-2">
-                        <Button
-                          color="gray" size="1" variant="soft"
-                          onClick={() => startEdit(menu)}
-                          type="button"
-                        >
-                          编辑
-                        </Button>
-                        {!protectedMenuCodes.has(menu.code) && (
-                          <Button
-                            color="red" size="1" variant="soft"
-                            onClick={() => void removeMenu(menu)}
-                            type="button"
-                          >
-                            删除
-                          </Button>
-                        )}
-                      </div>
-                    </Table.Cell>
-                  )}
-                </Table.Row>
-              ))}
+              {filteredMenus.map((menu) => {
+                const actionItems: RowActionMenuItem[] = [
+                  {
+                    key: "edit",
+                    label: "编辑",
+                    onSelect: () => startEdit(menu),
+                  },
+                ];
+                if (!protectedMenuCodes.has(menu.code)) {
+                  actionItems.push({
+                    key: "delete",
+                    label: "删除",
+                    color: "red",
+                    onSelect: () => {
+                      void removeMenu(menu);
+                    },
+                  });
+                }
+
+                return (
+                  <Table.Row key={menu.id}>
+                    <Table.Cell className="px-4 py-3">{menu.id}</Table.Cell>
+                    <Table.Cell className="px-4 py-3 font-mono text-xs">{menu.code}</Table.Cell>
+                    <Table.Cell className="px-4 py-3">{menu.name}</Table.Cell>
+                    <Table.Cell className="px-4 py-3">{menu.path ?? "-"}</Table.Cell>
+                    <Table.Cell className="px-4 py-3">{menu.permission_code ?? "-"}</Table.Cell>
+                    <Table.Cell className="px-4 py-3">{menu.parent_id ? (menuNameById.get(menu.parent_id) ?? menu.parent_id) : "-"}</Table.Cell>
+                    <Table.Cell className="px-4 py-3">{menu.sort_order}</Table.Cell>
+                    {canManage && (
+                      <Table.Cell className="px-4 py-3">
+                        <RowActionMenu items={actionItems} />
+                      </Table.Cell>
+                    )}
+                  </Table.Row>
+                );
+              })}
               {filteredMenus.length === 0 && (
                 <Table.Row>
                   <Table.Cell className="px-4 py-10 text-center text-sm text-[var(--gray-11)]" colSpan={canManage ? 8 : 7}>

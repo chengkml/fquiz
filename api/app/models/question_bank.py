@@ -27,12 +27,12 @@ class QuestionBank(Base):
     tags_json: Mapped[list[str] | None] = mapped_column(JSON)
     creator_user_id: Mapped[str | None] = mapped_column(
         String(36),
-        ForeignKey("users.id", ondelete="SET NULL"),
+        ForeignKey("users.user_id", ondelete="SET NULL"),
         index=True,
     )
     updater_user_id: Mapped[str | None] = mapped_column(
         String(36),
-        ForeignKey("users.id", ondelete="SET NULL"),
+        ForeignKey("users.user_id", ondelete="SET NULL"),
         index=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

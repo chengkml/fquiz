@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { Button, Table } from "@radix-ui/themes";
+import { Button, Table } from "@/components/ui-antd";
 
 import { useAuth } from "@/components/auth-provider";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";

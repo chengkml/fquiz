@@ -5,27 +5,32 @@ import Link from "next/link";
 import { ChangeEvent, useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { Select, TextField, Button, Table } from "@radix-ui/themes";
+import { RowActionMenu, type RowActionMenuItem } from "@/components/row-action-menu";
+import { Select, TextField, Button, Table } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { RequirementListResponse, RequirementPriority, RequirementStatus, UserListResponse, UserPublic } from "@/types/auth";
 
 const STATUS_OPTIONS: RequirementStatus[] = [
   "PENDING_ANALYSIS",
+  "PENDING_REVIEW",
   "PENDING_REVISION",
   "OPEN",
   "IN_PROGRESS",
   "COMPLETED",
+  "CLOSED",
   "CANCELLED",
 ];
 const PRIORITY_OPTIONS: RequirementPriority[] = ["low", "medium", "high", "urgent"];
 
 const STATUS_LABEL: Record<RequirementStatus, string> = {
   PENDING_ANALYSIS: "待分析",
+  PENDING_REVIEW: "待评审",
   PENDING_REVISION: "待修订",
   OPEN: "待处理",
   IN_PROGRESS: "处理中",
   COMPLETED: "已完成",
+  CLOSED: "已关闭",
   CANCELLED: "已取消",
 };
 
@@ -301,73 +306,71 @@ export default function RequirementsPage() {
               </Table.Row>
             </Table.Header>
             <Table.Body className="divide-y divide-y">
-              {items.map((item) => (
-                <Table.Row key={item.id}>
-                  <Table.Cell className="whitespace-nowrap px-4 py-3 font-mono text-xs">{item.code}</Table.Cell>
-                  <Table.Cell className="px-4 py-3">
-                    <Link href={`/admin/requirements/${item.id}`} className="font-medium underline-offset-2 hover:underline">
-                      {item.title}
-                    </Link>
-                    <p className="mt-1 line-clamp-2 text-xs text-[var(--gray-11)]">{item.description || "-"}</p>
-                  </Table.Cell>
-                  <Table.Cell className="whitespace-nowrap px-4 py-3">{STATUS_LABEL[item.status]}</Table.Cell>
-                  <Table.Cell className="whitespace-nowrap px-4 py-3">{PRIORITY_LABEL[item.priority]}</Table.Cell>
-                  <Table.Cell className="whitespace-nowrap px-4 py-3">{item.project_name ?? "-"}</Table.Cell>
-                  <Table.Cell className="whitespace-nowrap px-4 py-3">{item.assignee?.username ?? "-"}</Table.Cell>
-                  <Table.Cell className="whitespace-nowrap px-4 py-3 text-xs text-[var(--gray-11)]">{new Date(item.updated_at).toLocaleString()}</Table.Cell>
-                  <Table.Cell className="px-4 py-3">
-                    <div className="flex flex-wrap gap-2">
-                      {canProcess && (
-                        <Button
-                          type="button"
-                          color="gray" size="1" variant="soft"
-                          onClick={() => claimMutation.mutate(item.id)}
-                          disabled={claimMutation.isPending || deletingRequirementId === item.id}
-                        >
-                          领取
-                        </Button>
-                      )}
-                      {canProcess && item.status === "OPEN" && (
-                        <Button
-                          type="button"
-                          color="gray" size="1" variant="soft"
-                          onClick={() => transitionMutation.mutate({ requirementId: item.id, status: "IN_PROGRESS" })}
-                          disabled={transitionMutation.isPending || deletingRequirementId === item.id}
-                        >
-                          开始处理
-                        </Button>
-                      )}
-                      {canProcess && item.status === "IN_PROGRESS" && (
-                        <Button
-                          type="button"
-                          color="green" size="1" variant="soft"
-                          onClick={() => transitionMutation.mutate({ requirementId: item.id, status: "COMPLETED" })}
-                          disabled={transitionMutation.isPending || deletingRequirementId === item.id}
-                        >
-                          标记完成
-                        </Button>
-                      )}
-                      {canProcess && (
-                        <Button
-                          type="button"
-                          color="red" size="1" variant="soft"
-                          onClick={() => {
-                            const confirmed = window.confirm(`确认删除需求 ${item.code}（${item.title}）？`);
-                            if (!confirmed) {
-                              return;
-                            }
-                            setDeletingRequirementId(item.id);
-                            deleteMutation.mutate(item.id);
-                          }}
-                          disabled={deleteMutation.isPending || transitionMutation.isPending || claimMutation.isPending}
-                        >
-                          {deletingRequirementId === item.id ? "删除中..." : "删除"}
-                        </Button>
-                      )}
-                    </div>
-                  </Table.Cell>
-                </Table.Row>
-              ))}
+              {items.map((item) => {
+                const actionItems: RowActionMenuItem[] = [];
+                if (canProcess) {
+                  actionItems.push({
+                    key: "claim",
+                    label: "领取",
+                    disabled: claimMutation.isPending || deletingRequirementId === item.id,
+                    onSelect: () => claimMutation.mutate(item.id),
+                  });
+                  if (item.status === "OPEN") {
+                    actionItems.push({
+                      key: "start",
+                      label: "开始处理",
+                      disabled: transitionMutation.isPending || deletingRequirementId === item.id,
+                      onSelect: () => transitionMutation.mutate({ requirementId: item.id, status: "IN_PROGRESS" }),
+                    });
+                  }
+                  if (item.status === "IN_PROGRESS") {
+                    actionItems.push({
+                      key: "complete",
+                      label: "标记完成",
+                      color: "green",
+                      disabled: transitionMutation.isPending || deletingRequirementId === item.id,
+                      onSelect: () => transitionMutation.mutate({ requirementId: item.id, status: "COMPLETED" }),
+                    });
+                  }
+                  actionItems.push({
+                    key: "delete",
+                    label: deletingRequirementId === item.id ? "删除中..." : "删除",
+                    color: "red",
+                    disabled: deleteMutation.isPending || transitionMutation.isPending || claimMutation.isPending,
+                    onSelect: () => {
+                      const confirmed = window.confirm(`确认删除需求 ${item.code}（${item.title}）？`);
+                      if (!confirmed) {
+                        return;
+                      }
+                      setDeletingRequirementId(item.id);
+                      deleteMutation.mutate(item.id);
+                    },
+                  });
+                }
+
+                return (
+                  <Table.Row key={item.id}>
+                    <Table.Cell className="whitespace-nowrap px-4 py-3 font-mono text-xs">{item.code}</Table.Cell>
+                    <Table.Cell className="px-4 py-3">
+                      <Link href={`/admin/requirements/${item.id}`} className="font-medium underline-offset-2 hover:underline">
+                        {item.title}
+                      </Link>
+                      <p className="mt-1 line-clamp-2 text-xs text-[var(--gray-11)]">{item.description || "-"}</p>
+                    </Table.Cell>
+                    <Table.Cell className="whitespace-nowrap px-4 py-3">{STATUS_LABEL[item.status]}</Table.Cell>
+                    <Table.Cell className="whitespace-nowrap px-4 py-3">{PRIORITY_LABEL[item.priority]}</Table.Cell>
+                    <Table.Cell className="whitespace-nowrap px-4 py-3">{item.project_name ?? "-"}</Table.Cell>
+                    <Table.Cell className="whitespace-nowrap px-4 py-3">{item.assignee?.username ?? "-"}</Table.Cell>
+                    <Table.Cell className="whitespace-nowrap px-4 py-3 text-xs text-[var(--gray-11)]">{new Date(item.updated_at).toLocaleString()}</Table.Cell>
+                    <Table.Cell className="px-4 py-3">
+                      <RowActionMenu
+                        triggerLabel={deletingRequirementId === item.id ? "删除中..." : "操作"}
+                        items={actionItems}
+                      />
+                    </Table.Cell>
+                  </Table.Row>
+                );
+              })}
             </Table.Body>
           </Table.Root>
         </div>

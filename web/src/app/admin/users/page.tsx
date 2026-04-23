@@ -5,7 +5,8 @@ import Link from "next/link";
 import { ChangeEvent, FormEvent, useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { Button, Checkbox, TextField, Table } from "@radix-ui/themes";
+import { RowActionMenu } from "@/components/row-action-menu";
+import { Button, Checkbox, TextField, Table } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { RoleItem, RoleListResponse, UserListResponse, UserPublic } from "@/types/auth";
@@ -382,55 +383,59 @@ export default function AdminUsersPage() {
                   </Table.Cell>
                   <Table.Cell className="px-4 py-3">{item.permission_codes.join(", ") || "-"}</Table.Cell>
                   <Table.Cell className="px-4 py-3">
-                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <Button
-                        type="button"
-                        color="gray" size="1" variant="soft"
-                        disabled={updatingStatusUserId === item.id}
-                        onClick={() => {
-                          if (item.id === user.id) {
-                            setError("不能修改当前登录账号的状态");
-                            return;
-                          }
-                          const nextStatus: "active" | "disabled" = item.status === "active" ? "disabled" : "active";
-                          updateUserProfileMutation.mutate({ userId: item.id, status: nextStatus });
-                        }}
-                      >
-                        {updatingStatusUserId === item.id
-                          ? "更新中..."
-                          : item.status === "active"
-                            ? "禁用"
-                            : "启用"}
-                      </Button>
-                      <Button
-                        type="button"
-                        color="gray" size="1" variant="soft"
-                        disabled={resettingUserId === item.id}
-                        onClick={() => {
-                          const pwd = window.prompt(`请输入用户 ${item.username} 的新密码（至少8位）`);
-                          if (!pwd) return;
-                          if (pwd.length < 8) {
-                            setError("新密码长度至少 8 位");
-                            return;
-                          }
-                          resetPasswordMutation.mutate({ userId: item.id, password: pwd });
-                        }}
-                      >
-                        {resettingUserId === item.id ? "重置中..." : "改密码"}
-                      </Button>
-                      <Button
-                        type="button"
-                        color="gray" size="1" variant="soft"
-                        disabled={deletingUserId === item.id}
-                        onClick={() => {
-                          const confirmed = window.confirm(`确认删除用户 ${item.username}（${item.id}）？`);
-                          if (!confirmed) return;
-                          deleteUserMutation.mutate(item.id);
-                        }}
-                      >
-                        {deletingUserId === item.id ? "删除中..." : "删除"}
-                      </Button>
-                    </div>
+                    <RowActionMenu
+                      triggerLabel={
+                        updatingStatusUserId === item.id
+                        || resettingUserId === item.id
+                        || deletingUserId === item.id
+                          ? "处理中..."
+                          : "操作"
+                      }
+                      items={[
+                        {
+                          key: "status",
+                          label: updatingStatusUserId === item.id
+                            ? "更新中..."
+                            : item.status === "active"
+                              ? "禁用"
+                              : "启用",
+                          disabled: updatingStatusUserId === item.id,
+                          onSelect: () => {
+                            if (item.id === user.id) {
+                              setError("不能修改当前登录账号的状态");
+                              return;
+                            }
+                            const nextStatus: "active" | "disabled" = item.status === "active" ? "disabled" : "active";
+                            updateUserProfileMutation.mutate({ userId: item.id, status: nextStatus });
+                          },
+                        },
+                        {
+                          key: "reset-password",
+                          label: resettingUserId === item.id ? "重置中..." : "改密码",
+                          disabled: resettingUserId === item.id,
+                          onSelect: () => {
+                            const pwd = window.prompt(`请输入用户 ${item.username} 的新密码（至少8位）`);
+                            if (!pwd) return;
+                            if (pwd.length < 8) {
+                              setError("新密码长度至少 8 位");
+                              return;
+                            }
+                            resetPasswordMutation.mutate({ userId: item.id, password: pwd });
+                          },
+                        },
+                        {
+                          key: "delete",
+                          label: deletingUserId === item.id ? "删除中..." : "删除",
+                          color: "red",
+                          disabled: deletingUserId === item.id,
+                          onSelect: () => {
+                            const confirmed = window.confirm(`确认删除用户 ${item.username}（${item.id}）？`);
+                            if (!confirmed) return;
+                            deleteUserMutation.mutate(item.id);
+                          },
+                        },
+                      ]}
+                    />
                   </Table.Cell>
                 </Table.Row>
               ))}

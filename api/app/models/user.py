@@ -20,24 +20,37 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(
+        "user_id",
         String(36),
         primary_key=True,
         default=lambda: str(uuid4()),
     )
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    password_hash: Mapped[str] = mapped_column(String(255))
-    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
-    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    username: Mapped[str] = mapped_column("user_name", String(64), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column("password", String(255))
+    status: Mapped[str] = mapped_column("state", String(32), default="active", index=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        "create_date",
+        DateTime(timezone=False),
         default=utcnow,
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        "update_date",
+        DateTime(timezone=False),
         default=utcnow,
         onupdate=utcnow,
     )
+    create_user: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    update_user: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    @property
+    def last_login_at(self) -> datetime | None:
+        return self.updated_at
+
+    @last_login_at.setter
+    def last_login_at(self, value: datetime | None) -> None:
+        if value is not None:
+            self.updated_at = value
 
     roles: Mapped[list[Role]] = relationship(
         "Role",

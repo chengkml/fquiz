@@ -24,7 +24,7 @@ class LifeCountdownProfile(Base):
     )
     user_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("users.user_id", ondelete="CASCADE"),
         unique=True,
         index=True,
     )

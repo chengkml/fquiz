@@ -5,7 +5,7 @@ import { ChangeEvent, useCallback, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { readApiError } from "@/lib/api";
-import { Button, TextField } from "@radix-ui/themes";
+import { Button, TextField } from "@/components/ui-antd";
 
 type JwtGenerateResponse = {
   token_type: string;
