@@ -17,17 +17,17 @@ class Settings(BaseSettings):
     api_cors_origin_regex: str | None = None
 
     database_url: str | None = None
-    db_host: str = "223.109.142.84"
-    db_port: int = 5432
+    db_host: str = "127.0.0.1"
+    db_port: int = 5433
     db_name: str = "postgres"
     db_schema: str = "public"
-    db_username: str = "postgres"
-    db_password: str = "1qazZAQ!"
+    db_username: str = "fquiz"
+    db_password: str = "fquiz"
     file_vfs_root: str = "./data/vfs"
 
     jwt_secret_key: str = "change-this-in-production"
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 15
+    access_token_expire_minutes: int = 480
     refresh_token_expire_days: int = 30
 
     refresh_cookie_name: str = "refresh_token"

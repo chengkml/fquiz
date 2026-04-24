@@ -1,23 +1,27 @@
 "use client";
 
-import Link from "next/link";
+import { EllipsisOutlined, PlusOutlined } from "@ant-design/icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Alert,
   Button,
+  Dropdown,
+  Empty,
   Form,
   Input,
   Modal,
-  Popconfirm,
   Space,
   Table,
   Tag,
-  Tooltip,
+  Typography,
   message,
+  type MenuProps,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 
 import { useAuth } from "@/components/auth-provider";
+import { Card } from "@/components/ui-antd";
 import { readApiError } from "@/lib/api";
 import type { MindMapListResponse, MindMapSummary } from "@/types/auth";
 
@@ -66,7 +70,9 @@ export default function AdminMindMapPage() {
   const [searchKeyword, setSearchKeyword] = useState("");
   const [createVisible, setCreateVisible] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [createSaving, setCreateSaving] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [current, setCurrent] = useState<MindMapSummary | null>(null);
 
   const canRead = hasPermission("question_bank.read") || hasPermission("question_bank.manage");
@@ -143,7 +149,7 @@ export default function AdminMindMapPage() {
   const handleCreate = async () => {
     try {
       const values = await createForm.validateFields();
-      setSaving(true);
+      setCreateSaving(true);
       const response = await fetchWithAuth("/api/v1/mindmap/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -165,7 +171,7 @@ export default function AdminMindMapPage() {
       message.error(text);
       setPanelError(text);
     } finally {
-      setSaving(false);
+      setCreateSaving(false);
     }
   };
 
@@ -182,7 +188,7 @@ export default function AdminMindMapPage() {
     if (!current) return;
     try {
       const values = await editForm.validateFields();
-      setSaving(true);
+      setEditSaving(true);
       const response = await fetchWithAuth("/api/v1/mindmap/update-basic-info", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -205,12 +211,13 @@ export default function AdminMindMapPage() {
       message.error(text);
       setPanelError(text);
     } finally {
-      setSaving(false);
+      setEditSaving(false);
     }
   };
 
   const handleDelete = async (record: MindMapSummary) => {
     try {
+      setDeletingId(record.id);
       const response = await fetchWithAuth(`/api/v1/mindmap/delete/${record.id}`, {
         method: "DELETE",
       });
@@ -223,6 +230,25 @@ export default function AdminMindMapPage() {
       const text = error instanceof Error ? error.message : "删除思维导图失败";
       message.error(text);
       setPanelError(text);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleMoreAction = (record: MindMapSummary, key: string) => {
+    if (key === "edit") {
+      openEditBasicInfo(record);
+      return;
+    }
+    if (key === "delete") {
+      Modal.confirm({
+        title: "确认删除该思维导图吗？",
+        content: `导图名称：${record.map_name}`,
+        okText: "确认删除",
+        okType: "danger",
+        cancelText: "取消",
+        onOk: () => handleDelete(record),
+      });
     }
   };
 
@@ -231,6 +257,7 @@ export default function AdminMindMapPage() {
       {
         title: "导图名称",
         dataIndex: "map_name",
+        width: 280,
         ellipsis: true,
         render: (_, record) => (
           <Button type="link" style={{ padding: 0 }} onClick={() => router.push(`/admin/mindmap/edit/${record.id}`)}>
@@ -241,6 +268,7 @@ export default function AdminMindMapPage() {
       {
         title: "描述",
         dataIndex: "descr",
+        width: 320,
         ellipsis: true,
         render: (value: string | null) => value || "-",
       },
@@ -259,99 +287,123 @@ export default function AdminMindMapPage() {
       },
       {
         title: "操作",
-        width: 240,
+        width: 160,
+        fixed: "right",
         align: "center",
-        render: (_, record) => (
-          <Space size={12}>
-            <Tooltip title="绘图">
+        render: (_, record) => {
+          const menuItems: MenuProps["items"] = [
+            {
+              key: "edit",
+              label: "编辑信息",
+              disabled: !canManage,
+            },
+            {
+              key: "delete",
+              danger: true,
+              label: "删除导图",
+              disabled: !canManage || deletingId === record.id,
+            },
+          ];
+
+          return (
+            <Space size={4}>
               <Button type="link" size="small" onClick={() => router.push(`/admin/mindmap/edit/${record.id}`)}>
                 绘图
               </Button>
-            </Tooltip>
-            <Tooltip title="编辑信息">
-              <Button type="link" size="small" onClick={() => openEditBasicInfo(record)} disabled={!canManage}>
-                编辑
-              </Button>
-            </Tooltip>
-            <Popconfirm title="确认删除该思维导图吗？" onConfirm={() => void handleDelete(record)}>
-              <Tooltip title="删除">
-                <Button type="link" size="small" danger disabled={!canManage}>
-                  删除
-                </Button>
-              </Tooltip>
-            </Popconfirm>
-          </Space>
-        ),
+              <Dropdown menu={{ items: menuItems, onClick: ({ key }) => handleMoreAction(record, String(key)) }} trigger={["click"]}>
+                <Button size="small" icon={<EllipsisOutlined />} aria-label="更多操作" />
+              </Dropdown>
+            </Space>
+          );
+        },
       },
     ],
-    [canManage, router],
+    [canManage, deletingId, router],
   );
 
   if (initializing) {
-    return <p className="text-sm text-[var(--gray-11)]">Loading mind maps...</p>;
+    return <Card loading />;
   }
 
   if (!user) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问思维导图页面。</p>
-        <Link
-          href="/"
-          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
-        >
-          返回首页
-        </Link>
-      </main>
+      <Card>
+        <Typography.Title level={4} style={{ marginTop: 0 }}>请先登录</Typography.Title>
+        <Typography.Paragraph type="secondary">登录后可访问思维导图管理页面。</Typography.Paragraph>
+        <Button type="primary" onClick={() => router.push("/")}>返回首页</Button>
+      </Card>
     );
   }
 
   if (!canRead) {
-    return <p className="text-sm text-[var(--gray-11)]">缺少 `question_bank.read` 或 `question_bank.manage` 权限。</p>;
+    return (
+      <Card>
+        <Typography.Title level={4} style={{ marginTop: 0 }}>无访问权限</Typography.Title>
+        <Typography.Paragraph type="secondary">缺少 `question_bank.read` 或 `question_bank.manage` 权限。</Typography.Paragraph>
+      </Card>
+    );
   }
 
   return (
     <main className="flex flex-col gap-4">
-      <section className="rounded-xl border border-[var(--gray-6)] bg-white p-4 shadow-sm">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-lg font-semibold text-[var(--gray-12)]">思维导图</h1>
-            <p className="text-sm text-[var(--gray-11)]">使用老工程 `mind_map` 表结构与流程，管理导图并进入编辑页。</p>
-          </div>
-          <Space>
-            <Button type="primary" onClick={openCreate} disabled={!canManage}>
-              新建思维导图
-            </Button>
-            <Tag color="blue">总数 {pagination.total}</Tag>
-          </Space>
-        </div>
-
-        <Form form={searchForm} layout="inline" onFinish={handleSearch} initialValues={{ map_name: "" }}>
-          <Form.Item name="map_name" label="导图名称">
-            <Input allowClear placeholder="输入关键字" style={{ width: 260 }} />
-          </Form.Item>
-          <Form.Item>
+      <Card>
+        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <Typography.Title level={4} style={{ marginBottom: 0 }}>
+                思维导图
+              </Typography.Title>
+              <Typography.Text type="secondary">
+                使用老工程 `mind_map` 表结构与流程，管理导图并进入编辑页。
+              </Typography.Text>
+            </div>
             <Space>
-              <Button htmlType="submit" type="primary">
-                查询
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!canManage}>
+                新建思维导图
               </Button>
-              <Button onClick={handleReset}>重置</Button>
+              <Tag color="blue">总数 {pagination.total}</Tag>
             </Space>
-          </Form.Item>
-        </Form>
-      </section>
+          </div>
+
+          <Form form={searchForm} layout="inline" onFinish={handleSearch} initialValues={{ map_name: "" }}>
+            <Form.Item name="map_name" label="导图名称">
+              <Input allowClear placeholder="输入关键字" style={{ width: 260 }} />
+            </Form.Item>
+            <Form.Item>
+              <Space>
+                <Button htmlType="submit" type="primary" loading={loading}>
+                  查询
+                </Button>
+                <Button onClick={handleReset} disabled={loading}>
+                  重置
+                </Button>
+              </Space>
+            </Form.Item>
+          </Form>
+        </Space>
+      </Card>
 
       {panelError ? (
-        <section className="rounded-xl border border-[var(--red-6)] bg-[var(--red-2)] p-3 text-sm text-[var(--red-11)]">
-          {panelError}
-        </section>
+        <Alert
+          type="error"
+          showIcon
+          closable
+          message="操作失败"
+          description={panelError}
+          onClose={() => setPanelError("")}
+        />
       ) : null}
 
-      <section className="rounded-xl border border-[var(--gray-6)] bg-white p-4 shadow-sm">
+      <Card>
         <Table<MindMapSummary>
           rowKey="id"
           loading={loading}
           dataSource={items}
           columns={columns}
+          scroll={{ x: 1100 }}
+          locale={{
+            emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无思维导图数据" />,
+          }}
           pagination={{
             current: pagination.current,
             pageSize: pagination.pageSize,
@@ -361,14 +413,15 @@ export default function AdminMindMapPage() {
             onChange: handlePaginationChange,
           }}
         />
-      </section>
+      </Card>
 
       <Modal
         title="新建思维导图"
         open={createVisible}
         onCancel={() => setCreateVisible(false)}
         onOk={() => void handleCreate()}
-        confirmLoading={saving}
+        confirmLoading={createSaving}
+        okButtonProps={{ disabled: createSaving }}
         destroyOnHidden
       >
         <Form form={createForm} layout="vertical">
@@ -389,7 +442,8 @@ export default function AdminMindMapPage() {
           setCurrent(null);
         }}
         onOk={() => void handleEditBasicInfo()}
-        confirmLoading={saving}
+        confirmLoading={editSaving}
+        okButtonProps={{ disabled: editSaving }}
         destroyOnHidden
       >
         <Form form={editForm} layout="vertical">

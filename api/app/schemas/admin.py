@@ -12,11 +12,11 @@ class PermissionPublic(BaseModel):
 
 
 class RolePublic(BaseModel):
-    id: int
+    id: str
     code: str
     name: str
     permission_codes: list[str]
-    menu_ids: list[int] = Field(default_factory=list)
+    menu_ids: list[str] = Field(default_factory=list)
 
 
 class RoleListResponse(BaseModel):
@@ -28,22 +28,22 @@ class RoleCreateRequest(BaseModel):
     code: str = Field(min_length=2, max_length=64)
     name: str = Field(min_length=2, max_length=128)
     permission_codes: list[str] = Field(default_factory=list)
-    menu_ids: list[int] = Field(default_factory=list)
+    menu_ids: list[str] = Field(default_factory=list)
 
 
 class RoleUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=128)
     permission_codes: list[str] | None = None
-    menu_ids: list[int] | None = None
+    menu_ids: list[str] | None = None
 
 
 class MenuPublic(BaseModel):
-    id: int
+    id: str
     code: str
     name: str
     path: str | None = None
     icon: str | None = None
-    parent_id: int | None = None
+    parent_id: str | None = None
     type: str
     sort_order: int
     status: str
@@ -67,7 +67,7 @@ class MenuCreateRequest(BaseModel):
     name: str = Field(min_length=2, max_length=128)
     path: str | None = Field(default=None, max_length=255)
     icon: str | None = Field(default=None, max_length=64)
-    parent_id: int | None = None
+    parent_id: str | None = None
     type: str = Field(default="menu")
     sort_order: int = 0
     status: str = Field(default="enabled")
@@ -81,7 +81,7 @@ class MenuUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=128)
     path: str | None = Field(default=None, max_length=255)
     icon: str | None = Field(default=None, max_length=64)
-    parent_id: int | None = None
+    parent_id: str | None = None
     type: str | None = Field(default=None)
     sort_order: int | None = None
     status: str | None = Field(default=None)
@@ -92,7 +92,7 @@ class MenuUpdateRequest(BaseModel):
 
 
 class RoleMenuUpdateRequest(BaseModel):
-    menu_ids: list[int] = Field(default_factory=list)
+    menu_ids: list[str] = Field(default_factory=list)
 
 
 class AuditLogPublic(BaseModel):

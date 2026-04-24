@@ -7,10 +7,7 @@ from .v1.auth import router as auth_router
 from .v1.calendar import router as calendar_router
 from .v1.chat import router as chat_router
 from .v1.diary import router as diary_router
-from .v1.hot_search import router as hot_search_router
-from .v1.jwt_generator import router as jwt_generator_router
 from .v1.life_countdown import router as life_countdown_router
-from .v1.mdresolve import router as mdresolve_router
 from .v1.mermaids import router as mermaids_router
 from .v1.mind_map import router as mind_map_router
 from .v1.question_bank import router as question_bank_router
@@ -33,15 +30,12 @@ v1_router.include_router(todos_router)
 v1_router.include_router(token_usage_router)
 v1_router.include_router(system_messages_router)
 v1_router.include_router(system_params_router)
-v1_router.include_router(jwt_generator_router)
 v1_router.include_router(chat_router)
 v1_router.include_router(calendar_router)
 v1_router.include_router(diary_router)
 v1_router.include_router(life_countdown_router)
 v1_router.include_router(question_bank_router)
 v1_router.include_router(mind_map_router)
-v1_router.include_router(hot_search_router)
-v1_router.include_router(mdresolve_router)
 v1_router.include_router(mermaids_router)
 v1_router.include_router(vocabulary_router)
 v1_router.include_router(ws_router)

@@ -1,27 +1,30 @@
 "use client";
 
-import Link from "next/link";
+import { EllipsisOutlined, PlusOutlined } from "@ant-design/icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Alert,
   Button,
   Drawer,
+  Dropdown,
+  Empty,
   Form,
   Input,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Table,
   Tag,
-  Tooltip,
   Typography,
   message,
+  type MenuProps,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 
 import { MermaidViewer } from "@/components/mermaid-viewer";
 import { useAuth } from "@/components/auth-provider";
+import { Card } from "@/components/ui-antd";
 import { readApiError } from "@/lib/api";
 import type {
   MermaidDiagramPageResponse,
@@ -97,6 +100,7 @@ export default function AdminMermaidMgrPage() {
   const [editVisible, setEditVisible] = useState(false);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [current, setCurrent] = useState<MermaidDiagramSummary | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const canRead = hasPermission("question_bank.read") || hasPermission("question_bank.manage");
   const canManage = canRead;
@@ -282,6 +286,7 @@ export default function AdminMermaidMgrPage() {
 
   const handleDelete = async (record: MermaidDiagramSummary) => {
     try {
+      setDeletingId(record.id);
       const response = await fetchWithAuth(`/api/v1/mermaids/diagrams/delete/${record.id}`, {
         method: "DELETE",
       });
@@ -295,6 +300,25 @@ export default function AdminMermaidMgrPage() {
       const text = error instanceof Error ? error.message : "流程图删除失败";
       setPanelError(text);
       message.error(text);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleMoreAction = (record: MermaidDiagramSummary, key: string) => {
+    if (key === "edit") {
+      openEdit(record);
+      return;
+    }
+    if (key === "delete") {
+      Modal.confirm({
+        title: "确认删除该流程图吗？",
+        content: `流程图名称：${record.diagram_name}`,
+        okText: "确认删除",
+        okType: "danger",
+        cancelText: "取消",
+        onOk: () => handleDelete(record),
+      });
     }
   };
 
@@ -305,11 +329,7 @@ export default function AdminMermaidMgrPage() {
         dataIndex: "diagram_name",
         ellipsis: true,
         render: (_value, record) => (
-          <Button
-            type="link"
-            style={{ padding: 0 }}
-            onClick={() => openPreview(record)}
-          >
+          <Button type="link" style={{ padding: 0 }} onClick={() => openPreview(record)}>
             {record.diagram_name}
           </Button>
         ),
@@ -320,9 +340,7 @@ export default function AdminMermaidMgrPage() {
         width: 140,
         align: "center",
         render: (value: string | null, record) => (
-          <Tag color={pickTagColor(value || record.group_name)}>
-            {value || record.group_name || "未分组"}
-          </Tag>
+          <Tag color={pickTagColor(value || record.group_name)}>{value || record.group_name || "未分组"}</Tag>
         ),
       },
       {
@@ -333,123 +351,140 @@ export default function AdminMermaidMgrPage() {
       },
       {
         title: "操作",
-        width: 260,
+        width: 160,
         align: "center",
-        render: (_value, record) => (
-          <Space size={12}>
-            <Tooltip title="绘图">
+        render: (_value, record) => {
+          const menuItems: MenuProps["items"] = [
+            {
+              key: "edit",
+              label: "编辑信息",
+              disabled: !canManage,
+            },
+            {
+              key: "delete",
+              danger: true,
+              label: "删除流程图",
+              disabled: !canManage || deletingId === record.id,
+            },
+          ];
+
+          return (
+            <Space size={4}>
               <Button type="link" size="small" onClick={() => router.push(`/admin/mermaid-mgr/${record.id}`)}>
                 绘图
               </Button>
-            </Tooltip>
-            <Tooltip title="编辑信息">
-              <Button type="link" size="small" onClick={() => openEdit(record)} disabled={!canManage}>
-                编辑
-              </Button>
-            </Tooltip>
-            <Popconfirm title="确认删除该流程图吗？" onConfirm={() => void handleDelete(record)}>
-              <Tooltip title="删除">
-                <Button type="link" size="small" danger disabled={!canManage}>
-                  删除
-                </Button>
-              </Tooltip>
-            </Popconfirm>
-          </Space>
-        ),
+              <Dropdown menu={{ items: menuItems, onClick: ({ key }) => handleMoreAction(record, String(key)) }} trigger={["click"]}>
+                <Button size="small" icon={<EllipsisOutlined />} aria-label="更多操作" />
+              </Dropdown>
+            </Space>
+          );
+        },
       },
     ],
-    [canManage, router],
+    [canManage, deletingId, router],
   );
 
   if (initializing) {
-    return <p className="text-sm text-[var(--gray-11)]">Loading mermaid diagrams...</p>;
+    return <Card loading />;
   }
 
   if (!user) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问流程图页面。</p>
-        <Link
-          href="/"
-          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
-        >
+      <Card>
+        <Typography.Title level={4} style={{ marginTop: 0 }}>
+          请先登录
+        </Typography.Title>
+        <Typography.Paragraph type="secondary">登录后可访问流程图管理页面。</Typography.Paragraph>
+        <Button type="primary" onClick={() => router.push("/")}>
           返回首页
-        </Link>
-      </main>
+        </Button>
+      </Card>
     );
   }
 
   if (!canRead) {
-    return <p className="text-sm text-[var(--gray-11)]">缺少 `question_bank.read` 或 `question_bank.manage` 权限。</p>;
+    return (
+      <Card>
+        <Typography.Title level={4} style={{ marginTop: 0 }}>
+          无访问权限
+        </Typography.Title>
+        <Typography.Paragraph type="secondary">缺少 `question_bank.read` 或 `question_bank.manage` 权限。</Typography.Paragraph>
+      </Card>
+    );
   }
 
   return (
     <main className="flex flex-col gap-4">
-      <section className="rounded-xl border border-[var(--gray-6)] bg-white p-4 shadow-sm">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <Typography.Title level={4} style={{ marginBottom: 0 }}>
-              流程图管理
-            </Typography.Title>
-            <Typography.Text type="secondary">
-              对齐 quiz 的 Mermaid 管理逻辑：分组筛选、列表管理、编辑页绘图。
-            </Typography.Text>
-          </div>
-          <Space>
-            <Button type="primary" onClick={openCreate} disabled={!canManage}>
-              新建流程图
-            </Button>
-            <Tag color="blue">总数 {pagination.total}</Tag>
-          </Space>
-        </div>
-
-        <Form form={searchForm} layout="inline" onFinish={(values) => void handleSearch(values)}>
-          <Form.Item name="key_word" label="关键字">
-            <Input allowClear placeholder="按名称搜索" style={{ width: 240 }} />
-          </Form.Item>
-          <Form.Item name="group" label="分组">
-            <Select
-              allowClear
-              placeholder="全部分组"
-              style={{ width: 220 }}
-              options={groups}
-            />
-          </Form.Item>
-          <Form.Item>
+      <Card>
+        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <Typography.Title level={4} style={{ marginBottom: 0 }}>
+                流程图管理
+              </Typography.Title>
+              <Typography.Text type="secondary">对齐 quiz 的 Mermaid 管理逻辑：分组筛选、列表管理、编辑页绘图。</Typography.Text>
+            </div>
             <Space>
-              <Button htmlType="submit" type="primary">
-                查询
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} disabled={!canManage}>
+                新建流程图
               </Button>
-              <Button onClick={() => void handleReset()}>重置</Button>
+              <Tag color="blue">总数 {pagination.total}</Tag>
             </Space>
-          </Form.Item>
-        </Form>
-      </section>
+          </div>
+
+          <Form form={searchForm} layout="inline" onFinish={(values: SearchValues) => void handleSearch(values)}>
+            <Form.Item name="key_word" label="关键字">
+              <Input allowClear placeholder="按名称搜索" style={{ width: 240 }} />
+            </Form.Item>
+            <Form.Item name="group" label="分组">
+              <Select allowClear placeholder="全部分组" style={{ width: 220 }} options={groups} />
+            </Form.Item>
+            <Form.Item>
+              <Space>
+                <Button htmlType="submit" type="primary" loading={loading}>
+                  查询
+                </Button>
+                <Button onClick={() => void handleReset()} disabled={loading}>
+                  重置
+                </Button>
+              </Space>
+            </Form.Item>
+          </Form>
+        </Space>
+      </Card>
 
       {panelError ? (
-        <section className="rounded-xl border border-[var(--red-6)] bg-[var(--red-2)] p-3 text-sm text-[var(--red-11)]">
-          {panelError}
-        </section>
+        <Alert
+          type="error"
+          showIcon
+          closable
+          message="流程图操作失败"
+          description={panelError}
+          onClose={() => setPanelError("")}
+        />
       ) : null}
 
-      <section className="rounded-xl border border-[var(--gray-6)] bg-white p-4 shadow-sm">
+      <Card>
         <Table<MermaidDiagramSummary>
           rowKey="id"
           loading={loading}
           dataSource={items}
           columns={columns}
+          locale={{
+            emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无流程图数据" />,
+          }}
           pagination={{
             current: pagination.current,
             pageSize: pagination.pageSize,
             total: pagination.total,
             showSizeChanger: true,
             showQuickJumper: true,
-            onChange: (pageNum, pageSize) => {
+            onChange: (pageNum: number, pageSize: number) => {
               void handleTableChange(pageNum, pageSize);
             },
           }}
         />
-      </section>
+      </Card>
 
       <Modal
         title="新建流程图"

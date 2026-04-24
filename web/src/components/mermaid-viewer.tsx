@@ -1,7 +1,7 @@
 "use client";
-/* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useMemo, useState } from "react";
+import { Alert, Empty, Spin, Typography } from "antd";
 
 function toBase64Url(content: string): string {
   const utf8Bytes = new TextEncoder().encode(content);
@@ -20,6 +20,7 @@ type MermaidViewerProps = {
 
 export function MermaidViewer({ code, className }: MermaidViewerProps) {
   const [error, setError] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(false);
   const normalized = code.trim();
 
   const imageUrl = useMemo(() => {
@@ -31,30 +32,46 @@ export function MermaidViewer({ code, className }: MermaidViewerProps) {
 
   useEffect(() => {
     setError(null);
+    setImageLoading(Boolean(imageUrl));
   }, [imageUrl]);
+
+  if (!normalized) {
+    return (
+      <Empty
+        image={Empty.PRESENTED_IMAGE_SIMPLE}
+        description={
+          <Typography.Text type="secondary">暂无 Mermaid 代码，请先输入提示词或套用模板。</Typography.Text>
+        }
+      />
+    );
+  }
 
   return (
     <div className={className}>
       {error ? (
-        <div className="rounded-lg border border-[var(--red-6)] bg-[var(--red-2)] p-3 text-sm text-[var(--red-11)]">
-          {error}
-        </div>
+        <Alert
+          type="error"
+          showIcon
+          message="Mermaid 渲染失败"
+          description={error}
+          style={{ marginBottom: 12 }}
+        />
       ) : null}
-      {!normalized ? (
-        <div className="rounded-lg border border-dashed border-[var(--gray-6)] p-4 text-sm text-[var(--gray-11)]">
-          暂无 Mermaid 代码
-        </div>
-      ) : null}
-      {normalized ? (
-        <div className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-white p-4">
+
+      <div className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-white p-4">
+        <Spin spinning={imageLoading} tip="正在渲染预览...">
           <img
             src={imageUrl}
             alt="Mermaid Preview"
-            className="min-w-full"
-            onError={() => setError("Mermaid 渲染失败，请检查代码语法")}
+            className="w-full"
+            onLoad={() => setImageLoading(false)}
+            onError={() => {
+              setImageLoading(false);
+              setError("请检查 Mermaid 语法是否正确后重试");
+            }}
           />
-        </div>
-      ) : null}
+        </Spin>
+      </div>
     </div>
   );
 }

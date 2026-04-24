@@ -3,6 +3,7 @@ from datetime import timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, or_, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..models.audit_log import AuditLog
@@ -11,7 +12,11 @@ from ..models.base import utcnow
 from ..models.rbac import Role
 from ..models.user import User
 from ..schemas.auth import LoginRequest, RegisterRequest
-from .user_service import get_user_by_email
+from .legacy_authz_service import (
+    get_user_authorization,
+    is_user_enabled,
+)
+from .user_service import get_user_by_id
 from ..core.config import get_settings
 from ..core.security import (
     create_access_token,
@@ -50,20 +55,20 @@ def register_user(
             detail="Email or username already exists",
         )
 
-    role = db.scalar(select(Role).where(Role.code == "user"))
-    if not role:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Default role not initialized",
-        )
+    role: Role | None = None
+    try:
+        role = db.scalar(select(Role).where(Role.code == "user"))
+    except SQLAlchemyError:
+        role = None
 
     user = User(
         email=email,
         username=payload.username,
         password_hash=hash_password(payload.password),
-        status="active",
+        status="ENABLED",
     )
-    user.roles.append(role)
+    if role is not None:
+        user.roles.append(role)
     db.add(user)
     db.commit()
 
@@ -86,14 +91,14 @@ def login_user(
     user_agent: str | None,
     ip_address: str | None,
 ) -> AuthResult:
-    user = get_user_by_email(db, payload.email.lower())
+    user = get_user_by_id(db, payload.user_id.strip())
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="Invalid user_id or password",
         )
 
-    if user.status != "active":
+    if not is_user_enabled(user.status):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User is disabled",
@@ -190,7 +195,7 @@ def issue_auth_result_for_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
-    if user.status != "active":
+    if not is_user_enabled(user.status):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User is disabled",
@@ -214,10 +219,9 @@ def issue_auth_result_for_user(
     db.commit()
 
     user = get_user_by_id_with_rbac(db, user_id)
-    role_codes = sorted({role.code for role in user.roles})
-    permission_codes = sorted(
-        {permission.code for role in user.roles for permission in role.permissions}
-    )
+    authz = get_user_authorization(db, user.id)
+    role_codes = sorted(authz.role_codes)
+    permission_codes = sorted(authz.permission_codes)
     access_token, expires_in = create_access_token(
         user_id=user.id,
         role_codes=role_codes,

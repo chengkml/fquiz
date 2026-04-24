@@ -17,7 +17,7 @@ type AuthContextValue = {
   user: UserPublic | null;
   accessToken: string | null;
   initializing: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (userId: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshAccessToken: () => Promise<boolean>;
@@ -121,12 +121,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const login = useCallback(
-    async (email: string, password: string) => {
+    async (userId: string, password: string) => {
       const response = await fetch(withApiPath("/api/v1/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ user_id: userId, password }),
       });
       if (!response.ok) {
         throw new Error(await readApiError(response));
@@ -157,11 +157,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(async () => {
-    await fetch(withApiPath("/api/v1/auth/logout"), {
-      method: "POST",
-      credentials: "include",
-    });
-    clearAuth();
+    try {
+      await fetch(withApiPath("/api/v1/auth/logout"), {
+        method: "POST",
+        credentials: "include",
+      });
+    } finally {
+      clearAuth();
+      if (typeof window !== "undefined") {
+        window.location.replace("/");
+      }
+    }
   }, [clearAuth]);
 
   useEffect(() => {
@@ -181,7 +187,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
   const hasPermission = useCallback(
     (permissionCode: string) =>
-      user ? user.permission_codes.includes(permissionCode) : false,
+      user
+        ? user.role_codes.includes("admin") || user.permission_codes.includes(permissionCode)
+        : false,
     [user],
   );
 

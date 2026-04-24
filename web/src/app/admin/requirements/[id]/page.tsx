@@ -1,12 +1,26 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import {
+  Alert,
+  Button,
+  Descriptions,
+  Empty,
+  Form,
+  Input,
+  List,
+  Select,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+} from "antd";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ChangeEvent, useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { Button, Select, TextArea, TextField } from "@/components/ui-antd";
+import { Card } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type {
@@ -18,6 +32,8 @@ import type {
   RequirementSummary,
   UserListResponse,
 } from "@/types/auth";
+
+const { TextArea } = Input;
 
 const COMMENT_KIND_OPTIONS: RequirementCommentKind[] = ["comment", "analysis", "revision", "system"];
 const PRIORITY_OPTIONS: RequirementPriority[] = ["low", "medium", "high", "urgent"];
@@ -40,6 +56,7 @@ const PRIORITY_LABEL: Record<RequirementPriority, string> = {
   high: "高",
   urgent: "紧急",
 };
+
 const ALLOWED_TRANSITIONS: Record<RequirementStatus, RequirementStatus[]> = {
   PENDING_ANALYSIS: ["PENDING_REVIEW", "PENDING_REVISION", "OPEN", "CLOSED"],
   PENDING_REVIEW: ["PENDING_REVISION", "OPEN", "CLOSED"],
@@ -69,6 +86,49 @@ function toDatetimeLocalInput(value: string | null): string {
   if (Number.isNaN(date.getTime())) return "";
   const offsetMs = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
+
+function statusTagColor(status: RequirementStatus): string {
+  switch (status) {
+    case "PENDING_ANALYSIS":
+    case "PENDING_REVIEW":
+    case "PENDING_REVISION":
+      return "gold";
+    case "OPEN":
+      return "default";
+    case "IN_PROGRESS":
+      return "processing";
+    case "COMPLETED":
+      return "success";
+    case "CLOSED":
+      return "blue";
+    case "CANCELLED":
+      return "red";
+    default:
+      return "default";
+  }
+}
+
+function priorityTagColor(priority: RequirementPriority): string {
+  switch (priority) {
+    case "urgent":
+      return "red";
+    case "high":
+      return "orange";
+    case "medium":
+      return "gold";
+    case "low":
+      return "default";
+    default:
+      return "default";
+  }
 }
 
 async function invalidateRequirementQueries(
@@ -134,94 +194,71 @@ function RequirementEditSection({
   const error = updateMutation.error instanceof Error ? updateMutation.error.message : "";
 
   return (
-    <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold">编辑基础信息</h3>
-        <p className="mt-1 text-sm text-[var(--gray-11)]">支持更新标题、描述、优先级、项目、模块、来源和截止时间。</p>
-      </div>
+    <Card
+      title="编辑基础信息"
+      extra={<Typography.Text type="secondary">支持更新标题、描述、优先级、项目、模块、来源和截止时间</Typography.Text>}
+    >
+      <Space direction="vertical" size={16} className="w-full">
+        {error && <Alert type="error" showIcon message="保存失败" description={error} />}
 
-      {error && (
-        <pre className="mb-4 overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">{error}</pre>
-      )}
+        <Form layout="vertical">
+          <Form.Item label="标题" required>
+            <Input value={title} onChange={(event) => setTitle(event.target.value)} />
+          </Form.Item>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="space-y-2 text-sm md:col-span-2">
-          <span>标题</span>
-          <TextField.Root
-            value={title}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => setTitle(event.currentTarget.value)}
-            className="w-full"
-          />
-        </label>
+          <Form.Item label="描述">
+            <TextArea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              rows={8}
+              placeholder="请输入需求描述"
+            />
+          </Form.Item>
 
-        <label className="space-y-2 text-sm md:col-span-2">
-          <span>描述</span>
-          <TextArea
-            value={description}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setDescription(event.currentTarget.value)}
-            rows={8}
-            className="w-full"
-          />
-        </label>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Form.Item label="优先级" className="mb-0">
+              <Select
+                value={priority}
+                onChange={(value) => setPriority(value as RequirementPriority)}
+                options={PRIORITY_OPTIONS.map((item) => ({
+                  value: item,
+                  label: formatRequirementPriority(item),
+                }))}
+              />
+            </Form.Item>
 
-        <label className="space-y-2 text-sm">
-          <span>优先级</span>
-          <Select.Root value={priority} onValueChange={(value: string) => setPriority(value as RequirementPriority)}>
-            <Select.Trigger className="w-full" />
-            <Select.Content>
-              {PRIORITY_OPTIONS.map((item) => (
-                <Select.Item key={item} value={item}>
-                  {formatRequirementPriority(item)}
-                </Select.Item>
-              ))}
-            </Select.Content>
-          </Select.Root>
-        </label>
+            <Form.Item label="截止时间" className="mb-0">
+              <Input
+                type="datetime-local"
+                value={dueAt}
+                onChange={(event) => setDueAt(event.target.value)}
+              />
+            </Form.Item>
 
-        <label className="space-y-2 text-sm">
-          <span>截止时间</span>
-          <TextField.Root
-            type="datetime-local"
-            value={dueAt}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => setDueAt(event.currentTarget.value)}
-            className="w-full"
-          />
-        </label>
+            <Form.Item label="项目" className="mb-0">
+              <Input value={projectName} onChange={(event) => setProjectName(event.target.value)} />
+            </Form.Item>
 
-        <label className="space-y-2 text-sm">
-          <span>项目</span>
-          <TextField.Root
-            value={projectName}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => setProjectName(event.currentTarget.value)}
-            className="w-full"
-          />
-        </label>
+            <Form.Item label="模块" className="mb-0">
+              <Input value={moduleName} onChange={(event) => setModuleName(event.target.value)} />
+            </Form.Item>
+          </div>
 
-        <label className="space-y-2 text-sm">
-          <span>模块</span>
-          <TextField.Root
-            value={moduleName}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => setModuleName(event.currentTarget.value)}
-            className="w-full"
-          />
-        </label>
+          <Form.Item label="来源" className="mb-0">
+            <Input value={source} onChange={(event) => setSource(event.target.value)} />
+          </Form.Item>
+        </Form>
 
-        <label className="space-y-2 text-sm md:col-span-2">
-          <span>来源</span>
-          <TextField.Root
-            value={source}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => setSource(event.currentTarget.value)}
-            className="w-full"
-          />
-        </label>
-      </div>
-
-      <div className="mt-4">
-        <Button type="button" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending || !title.trim()}>
-          {updateMutation.isPending ? "保存中..." : "保存基础信息"}
+        <Button
+          type="primary"
+          onClick={() => updateMutation.mutate()}
+          loading={updateMutation.isPending}
+          disabled={!title.trim()}
+        >
+          保存基础信息
         </Button>
-      </div>
-    </section>
+      </Space>
+    </Card>
   );
 }
 
@@ -245,7 +282,9 @@ function RequirementActionsSection({
   queryClient: QueryClient;
 }) {
   const [assignUserId, setAssignUserId] = useState(detail.assignee_user_id ?? "");
-  const [transitionStatus, setTransitionStatus] = useState<RequirementStatus>(ALLOWED_TRANSITIONS[detail.status][0] ?? detail.status);
+  const [transitionStatus, setTransitionStatus] = useState<RequirementStatus>(
+    ALLOWED_TRANSITIONS[detail.status][0] ?? detail.status,
+  );
   const [transitionNote, setTransitionNote] = useState("");
 
   const availableTransitions = ALLOWED_TRANSITIONS[detail.status];
@@ -301,93 +340,95 @@ function RequirementActionsSection({
     },
   });
 
-  const error = [assignMutation.error, claimMutation.error, transitionMutation.error]
-    .find((item) => item instanceof Error);
+  const error = [assignMutation.error, claimMutation.error, transitionMutation.error].find(
+    (item) => item instanceof Error,
+  );
 
   return (
-    <section className="grid gap-6 lg:grid-cols-2">
-      <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
-        <h3 className="text-lg font-semibold">处理动作</h3>
-        {error instanceof Error && (
-          <pre className="mt-4 overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">{error.message}</pre>
-        )}
-        <div className="mt-4 space-y-4">
-          {canAssign && (
-            <div className="space-y-2">
-              <p className="text-sm font-medium">指派</p>
-              <div className="flex gap-2">
-                <Select.Root
-                  value={assignUserId || UNASSIGNED_ASSIGNEE}
-                  onValueChange={(value: string) => setAssignUserId(value === UNASSIGNED_ASSIGNEE ? "" : value)}
-                >
-                  <Select.Trigger className="w-full flex-1" />
-                  <Select.Content>
-                    <Select.Item value={UNASSIGNED_ASSIGNEE}>取消指派</Select.Item>
-                    {users.map((item) => (
-                      <Select.Item key={item.id} value={item.id}>
-                        {item.username}
-                      </Select.Item>
-                    ))}
-                  </Select.Content>
-                </Select.Root>
-                <Button variant="soft" type="button" onClick={() => assignMutation.mutate()} disabled={assignMutation.isPending}>
-                  保存
-                </Button>
-              </div>
-            </div>
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Card title="处理动作">
+        <Space direction="vertical" size={16} className="w-full">
+          {error instanceof Error && (
+            <Alert type="error" showIcon message="操作失败" description={error.message} />
           )}
 
-          <div className="space-y-2">
-            <p className="text-sm font-medium">领取</p>
-            <Button variant="soft" type="button" onClick={() => claimMutation.mutate()} disabled={claimMutation.isPending}>
-              我来领取
-            </Button>
-          </div>
+          {canAssign && (
+            <Form layout="vertical">
+              <Form.Item label="指派" className="mb-0">
+                <Space.Compact className="w-full">
+                  <Select
+                    className="w-full"
+                    value={assignUserId || UNASSIGNED_ASSIGNEE}
+                    onChange={(value) =>
+                      setAssignUserId(value === UNASSIGNED_ASSIGNEE ? "" : (value as string))
+                    }
+                    options={[
+                      { value: UNASSIGNED_ASSIGNEE, label: "取消指派" },
+                      ...users.map((item) => ({ value: item.id, label: item.username })),
+                    ]}
+                  />
+                  <Button
+                    onClick={() => assignMutation.mutate()}
+                    loading={assignMutation.isPending}
+                  >
+                    保存
+                  </Button>
+                </Space.Compact>
+              </Form.Item>
+            </Form>
+          )}
 
-          <div className="space-y-2">
-            <p className="text-sm font-medium">状态流转</p>
-            {availableTransitions.length > 0 ? (
-              <>
-                <Select.Root
-                  value={currentTransitionStatus}
-                  onValueChange={(value: string) => setTransitionStatus(value as RequirementStatus)}
-                >
-                  <Select.Trigger className="w-full" />
-                  <Select.Content>
-                    {availableTransitions.map((item) => (
-                      <Select.Item key={item} value={item}>
-                        {formatRequirementStatus(item)}
-                      </Select.Item>
-                    ))}
-                  </Select.Content>
-                </Select.Root>
-                <TextArea
-                  value={transitionNote}
-                  onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setTransitionNote(event.currentTarget.value)}
-                  rows={3}
-                  placeholder="流转备注（可选）"
-                  className="w-full"
-                />
-                <Button type="button" onClick={() => transitionMutation.mutate()} disabled={transitionMutation.isPending}>
-                  提交流转
-                </Button>
-              </>
-            ) : (
-              <p className="text-sm text-[var(--gray-11)]">当前状态没有可继续流转的目标状态。</p>
-            )}
-          </div>
-        </div>
-      </div>
+          <Form layout="vertical">
+            <Form.Item label="领取" className="mb-0">
+              <Button onClick={() => claimMutation.mutate()} loading={claimMutation.isPending}>
+                我来领取
+              </Button>
+            </Form.Item>
+          </Form>
 
-      <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
-        <h3 className="text-lg font-semibold">当前处理说明</h3>
-        <div className="mt-4 space-y-2 text-sm text-[var(--gray-11)]">
-          <p>当前状态：{formatRequirementStatus(detail.status)}</p>
-          <p>当前指派人：{detail.assignee?.username ?? "-"}</p>
-          <p>当前评审人：{detail.reviewer?.username ?? "-"}</p>
-        </div>
-      </div>
-    </section>
+          <Form layout="vertical">
+            <Form.Item label="状态流转" className="mb-0">
+              {availableTransitions.length > 0 ? (
+                <Space direction="vertical" size={8} className="w-full">
+                  <Select
+                    value={currentTransitionStatus}
+                    onChange={(value) => setTransitionStatus(value as RequirementStatus)}
+                    options={availableTransitions.map((item) => ({
+                      value: item,
+                      label: formatRequirementStatus(item),
+                    }))}
+                  />
+                  <TextArea
+                    value={transitionNote}
+                    onChange={(event) => setTransitionNote(event.target.value)}
+                    rows={3}
+                    placeholder="流转备注（可选）"
+                  />
+                  <Button
+                    type="primary"
+                    onClick={() => transitionMutation.mutate()}
+                    loading={transitionMutation.isPending}
+                  >
+                    提交流转
+                  </Button>
+                </Space>
+              ) : (
+                <Typography.Text type="secondary">当前状态没有可继续流转的目标状态。</Typography.Text>
+              )}
+            </Form.Item>
+          </Form>
+        </Space>
+      </Card>
+
+      <Card title="当前处理说明">
+        <Descriptions column={1} size="small">
+          <Descriptions.Item label="当前状态">{formatRequirementStatus(detail.status)}</Descriptions.Item>
+          <Descriptions.Item label="当前指派人">{detail.assignee?.username ?? "-"}</Descriptions.Item>
+          <Descriptions.Item label="当前评审人">{detail.reviewer?.username ?? "-"}</Descriptions.Item>
+          <Descriptions.Item label="当前进度">{detail.progress_percent ?? 0}%</Descriptions.Item>
+        </Descriptions>
+      </Card>
+    </div>
   );
 }
 
@@ -429,34 +470,39 @@ function RequirementCommentSection({
   const error = commentMutation.error instanceof Error ? commentMutation.error.message : "";
 
   return (
-    <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
-      <h3 className="text-lg font-semibold">新增评论</h3>
-      {error && (
-        <pre className="mt-4 overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">{error}</pre>
-      )}
-      <div className="mt-4 space-y-3">
-        <Select.Root value={commentKind} onValueChange={(value: string) => setCommentKind(value as RequirementCommentKind)}>
-          <Select.Trigger className="w-full" />
-          <Select.Content>
-            {COMMENT_KIND_OPTIONS.map((item) => (
-              <Select.Item key={item} value={item}>
-                {item}
-              </Select.Item>
-            ))}
-          </Select.Content>
-        </Select.Root>
-        <TextArea
-          value={commentContent}
-          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setCommentContent(event.currentTarget.value)}
-          rows={6}
-          placeholder="写点处理说明、分析结论或修订意见"
-          className="w-full"
-        />
-        <Button type="button" onClick={() => commentMutation.mutate()} disabled={commentMutation.isPending || !commentContent.trim()}>
+    <Card title="新增评论">
+      <Space direction="vertical" size={16} className="w-full">
+        {error && <Alert type="error" showIcon message="评论失败" description={error} />}
+
+        <Form layout="vertical">
+          <Form.Item label="评论类型" className="mb-0">
+            <Select
+              value={commentKind}
+              onChange={(value) => setCommentKind(value as RequirementCommentKind)}
+              options={COMMENT_KIND_OPTIONS.map((item) => ({ value: item, label: item }))}
+            />
+          </Form.Item>
+
+          <Form.Item label="评论内容" className="mb-0">
+            <TextArea
+              value={commentContent}
+              onChange={(event) => setCommentContent(event.target.value)}
+              rows={6}
+              placeholder="写点处理说明、分析结论或修订意见"
+            />
+          </Form.Item>
+        </Form>
+
+        <Button
+          type="primary"
+          onClick={() => commentMutation.mutate()}
+          loading={commentMutation.isPending}
+          disabled={!commentContent.trim()}
+        >
           发表评论
         </Button>
-      </div>
-    </div>
+      </Space>
+    </Card>
   );
 }
 
@@ -552,34 +598,49 @@ export default function RequirementDetailPage() {
   }, [commentsQuery.error, detailQuery.error, eventsQuery.error, usersQuery.error]);
 
   if (initializing || detailQuery.isLoading) {
-    return <p className="text-sm text-[var(--gray-11)]">Loading requirement...</p>;
+    return (
+      <Card>
+        <Space>
+          <Spin />
+          <Typography.Text type="secondary">加载需求详情中...</Typography.Text>
+        </Space>
+      </Card>
+    );
   }
 
   if (!requirementId) {
-    return <p className="text-sm text-[var(--gray-11)]">需求 ID 无效。</p>;
+    return <Alert type="warning" showIcon message="需求 ID 无效" />;
   }
 
   if (!user) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问需求详情。</p>
-        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回首页</Link>
-      </main>
+      <Card>
+        <Space direction="vertical" size={12}>
+          <Typography.Text type="secondary">请先登录后再访问需求详情。</Typography.Text>
+          <Link href="/">
+            <Button>返回首页</Button>
+          </Link>
+        </Space>
+      </Card>
     );
   }
 
   if (!canRead) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `requirement.read`）。</p>
-        <Link href="/admin/requirements" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回需求列表</Link>
-      </main>
+      <Card>
+        <Space direction="vertical" size={12}>
+          <Typography.Text type="secondary">你没有访问该页面的权限（需要 `requirement.read`）。</Typography.Text>
+          <Link href="/admin/requirements">
+            <Button>返回需求列表</Button>
+          </Link>
+        </Space>
+      </Card>
     );
   }
 
   const detail = detailQuery.data;
   if (!detail) {
-    return <p className="text-sm text-[var(--gray-11)]">需求不存在。</p>;
+    return <Alert type="info" showIcon message="需求不存在" />;
   }
 
   const comments = commentsQuery.data ?? [];
@@ -587,54 +648,59 @@ export default function RequirementDetailPage() {
   const users = usersQuery.data?.items ?? [];
 
   return (
-    <div className="space-y-6">
-      {anyError && (
-        <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">{anyError}</pre>
-      )}
+    <Space direction="vertical" size={16} className="w-full">
+      {anyError && <Alert type="error" showIcon message="加载或操作失败" description={anyError} />}
 
-      <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="font-mono text-xs text-[var(--gray-11)]">{detail.code}</p>
-            <h2 className="mt-1 text-2xl font-semibold tracking-tight">{detail.title}</h2>
-            <p className="mt-3 whitespace-pre-wrap text-sm text-[var(--gray-11)]">{detail.description || "暂无描述"}</p>
-          </div>
-          <div className="flex flex-col gap-2 text-sm text-[var(--gray-11)]">
-            <Link href="/admin/requirements" className="underline">返回需求列表</Link>
-            <span>状态：{formatRequirementStatus(detail.status)}</span>
-            <span>优先级：{formatRequirementPriority(detail.priority)}</span>
-            <span>创建人：{detail.creator?.username ?? "-"}</span>
-            <span>指派人：{detail.assignee?.username ?? "-"}</span>
-          </div>
-        </div>
+      <Card>
+        <Space direction="vertical" size={12} className="w-full">
+          <Space className="w-full justify-between" align="start" wrap>
+            <Space direction="vertical" size={4}>
+              <Typography.Text type="secondary" code>
+                {detail.code}
+              </Typography.Text>
+              <Typography.Title level={3} className="mb-0">
+                {detail.title}
+              </Typography.Title>
+            </Space>
 
-        <div className="mt-5 grid gap-3 text-sm md:grid-cols-3 xl:grid-cols-6">
-          <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--gray-a2)] p-3">
-            <p className="text-xs text-[var(--gray-11)]">项目</p>
-            <p className="mt-1">{detail.project_name ?? "-"}</p>
-          </div>
-          <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--gray-a2)] p-3">
-            <p className="text-xs text-[var(--gray-11)]">模块</p>
-            <p className="mt-1">{detail.module_name ?? "-"}</p>
-          </div>
-          <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--gray-a2)] p-3">
-            <p className="text-xs text-[var(--gray-11)]">来源</p>
-            <p className="mt-1">{detail.source ?? "-"}</p>
-          </div>
-          <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--gray-a2)] p-3">
-            <p className="text-xs text-[var(--gray-11)]">截止时间</p>
-            <p className="mt-1">{detail.due_at ? new Date(detail.due_at).toLocaleString() : "-"}</p>
-          </div>
-          <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--gray-a2)] p-3">
-            <p className="text-xs text-[var(--gray-11)]">完成时间</p>
-            <p className="mt-1">{detail.closed_at ? new Date(detail.closed_at).toLocaleString() : "-"}</p>
-          </div>
-          <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--gray-a2)] p-3">
-            <p className="text-xs text-[var(--gray-11)]">更新时间</p>
-            <p className="mt-1">{new Date(detail.updated_at).toLocaleString()}</p>
-          </div>
-        </div>
-      </section>
+            <Space direction="vertical" size={4} align="end">
+              <Link href="/admin/requirements">
+                <Button type="link" className="px-0">
+                  返回需求列表
+                </Button>
+              </Link>
+              <Space>
+                <Tag color={statusTagColor(detail.status)}>{formatRequirementStatus(detail.status)}</Tag>
+                <Tag color={priorityTagColor(detail.priority)}>{formatRequirementPriority(detail.priority)}</Tag>
+              </Space>
+            </Space>
+          </Space>
+
+          <Typography.Paragraph className="mb-0">
+            {detail.description || "暂无描述"}
+          </Typography.Paragraph>
+
+          <Descriptions
+            size="small"
+            column={{ xs: 1, sm: 2, md: 3 }}
+            items={[
+              { label: "项目", children: detail.project_name ?? "-" },
+              { label: "模块", children: detail.module_name ?? "-" },
+              { label: "来源", children: detail.source ?? "-" },
+              { label: "创建人", children: detail.creator?.username ?? "-" },
+              { label: "指派人", children: detail.assignee?.username ?? "-" },
+              { label: "评审人", children: detail.reviewer?.username ?? "-" },
+              { label: "进度", children: `${detail.progress_percent ?? 0}%` },
+              { label: "分支", children: detail.branch ?? "-" },
+              { label: "Git 地址", children: detail.git_url ?? "-" },
+              { label: "截止时间", children: formatDateTime(detail.due_at) },
+              { label: "完成时间", children: formatDateTime(detail.closed_at) },
+              { label: "更新时间", children: formatDateTime(detail.updated_at) },
+              { label: "处理结论", children: detail.result_msg || "-", span: 3 },
+            ]}
+          />
+        </Space>
+      </Card>
 
       {canEdit && (
         <RequirementEditSection
@@ -672,40 +738,54 @@ export default function RequirementDetailPage() {
         />
       )}
 
-      <section className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
-          <h3 className="text-lg font-semibold">评论区</h3>
-          <div className="mt-4 space-y-3">
-            {comments.length === 0 ? <p className="text-sm text-[var(--gray-11)]">暂无评论</p> : comments.map((item) => (
-              <div key={item.id} className="rounded-xl border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4">
-                <div className="flex items-center justify-between gap-3 text-xs text-[var(--gray-11)]">
-                  <span>{item.author?.username ?? "系统"} · {item.kind}</span>
-                  <span>{new Date(item.created_at).toLocaleString()}</span>
-                </div>
-                <p className="mt-2 whitespace-pre-wrap text-sm">{item.content}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card title="评论区">
+          <List
+            dataSource={comments}
+            locale={{
+              emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无评论" />,
+            }}
+            renderItem={(item) => (
+              <List.Item key={item.id}>
+                <Space direction="vertical" size={4} className="w-full">
+                  <Typography.Text type="secondary">
+                    {item.author?.username ?? "系统"} · {item.kind} · {formatDateTime(item.created_at)}
+                  </Typography.Text>
+                  <Typography.Paragraph className="mb-0 whitespace-pre-wrap">
+                    {item.content}
+                  </Typography.Paragraph>
+                </Space>
+              </List.Item>
+            )}
+          />
+        </Card>
 
-        <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
-          <h3 className="text-lg font-semibold">操作日志</h3>
-          <div className="mt-4 space-y-3">
-            {events.length === 0 ? <p className="text-sm text-[var(--gray-11)]">暂无日志</p> : events.map((item) => (
-              <div key={item.id} className="rounded-xl border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4">
-                <div className="flex items-center justify-between gap-3 text-xs text-[var(--gray-11)]">
-                  <span>{item.actor?.username ?? "系统"} · {item.event_type}</span>
-                  <span>{new Date(item.created_at).toLocaleString()}</span>
-                </div>
-                <p className="mt-2 text-sm">{formatRequirementStatus(item.from_status)} → {formatRequirementStatus(item.to_status)}</p>
-                {item.payload_json && (
-                  <pre className="mt-2 overflow-auto rounded-lg rounded-lg border border-[var(--border)] bg-[var(--accent-a3)] p-3 text-xs">{JSON.stringify(item.payload_json, null, 2)}</pre>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-    </div>
+        <Card title="操作日志">
+          <List
+            dataSource={events}
+            locale={{
+              emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无日志" />,
+            }}
+            renderItem={(item) => (
+              <List.Item key={item.id}>
+                <Space direction="vertical" size={4} className="w-full">
+                  <Typography.Text type="secondary">
+                    {item.actor?.username ?? "系统"} · {item.event_type} · {formatDateTime(item.created_at)}
+                  </Typography.Text>
+                  <Typography.Text>
+                    {formatRequirementStatus(item.from_status)} → {formatRequirementStatus(item.to_status)}
+                  </Typography.Text>
+                  {item.payload_json && (
+                    <pre className="overflow-auto rounded-lg border border-[var(--ant-color-border-secondary)] bg-[var(--accent-a3)] p-3 text-xs">
+                      {JSON.stringify(item.payload_json, null, 2)}
+                    </pre>
+                  )}
+                </Space>
+              </List.Item>
+            )}
+          />
+        </Card>
+      </div>
+    </Space>
   );
 }

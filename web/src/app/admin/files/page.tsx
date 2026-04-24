@@ -1,12 +1,42 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Breadcrumb,
+  Empty,
+  Form,
+  Input,
+  Modal,
+  Space,
+  Spin,
+  Table as AntTable,
+  Typography,
+  Upload,
+  Alert,
+  Dropdown,
+  message as antdMessage,
+  type MenuProps,
+  type TableProps,
+} from "antd";
+import {
+  DeleteOutlined,
+  DownloadOutlined,
+  FolderFilled,
+  FolderOpenOutlined,
+  ReloadOutlined,
+  EditOutlined,
+  DragOutlined,
+  FileOutlined,
+  PlusOutlined,
+  UploadOutlined,
+  MoreOutlined,
+} from "@ant-design/icons";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
-import type { ChangeEvent } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { Button, Table, TextField } from "@/components/ui-antd";
+import { Button, Card } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type {
@@ -49,16 +79,25 @@ function buildFilesApiPath(mountCode: string, path: string): string {
 
 export default function AdminFilesPage() {
   const queryClient = useQueryClient();
+  const [messageApi, messageContextHolder] = antdMessage.useMessage();
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
+
+  const pathname = usePathname();
   const [mountCode, setMountCode] = useState("");
   const [currentPath, setCurrentPath] = useState("/");
   const [newDirectoryName, setNewDirectoryName] = useState("");
-  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+
+  const isKnowledgeSetPage = pathname.startsWith("/admin/knowledge-set");
+  const pageDisplayName = isKnowledgeSetPage ? "知识集管理" : "文件管理";
+
+  const [renameTarget, setRenameTarget] = useState<FileEntryItem | null>(null);
   const [renameName, setRenameName] = useState("");
+
+  const [moveTarget, setMoveTarget] = useState<FileEntryItem | null>(null);
   const [moveTargetParentPath, setMoveTargetParentPath] = useState("/");
   const [moveNewName, setMoveNewName] = useState("");
-  const [activeItemPath, setActiveItemPath] = useState<string | null>(null);
 
   const canRead = hasPermission("file.read") || hasPermission("file.manage");
   const canManage = hasPermission("file.manage");
@@ -85,28 +124,48 @@ export default function AdminFilesPage() {
 
   const refreshAllFiles = useCallback(async () => {
     await queryClient.invalidateQueries({
-      predicate: (query) => Array.isArray(query.queryKey) && typeof query.queryKey[0] === "string" && query.queryKey[0].startsWith("/api/v1/admin/files?"),
+      predicate: (query) =>
+        Array.isArray(query.queryKey)
+        && typeof query.queryKey[0] === "string"
+        && query.queryKey[0].startsWith("/api/v1/admin/files?"),
     });
   }, [queryClient]);
 
-  const resetActionPanels = useCallback(() => {
-    setActiveItemPath(null);
+  const closeRenameModal = useCallback(() => {
+    setRenameTarget(null);
     setRenameName("");
+  }, []);
+
+  const closeMoveModal = useCallback(() => {
+    setMoveTarget(null);
     setMoveTargetParentPath(currentPath || "/");
     setMoveNewName("");
   }, [currentPath]);
 
-  const applyMutationSuccess = useCallback(async (payload: FileOperationResponse, fallbackMessage: string) => {
-    setFeedbackMessage(payload.action ? `操作成功：${payload.action}` : fallbackMessage);
-    setErrorMessage("");
-    resetActionPanels();
-    await refreshAllFiles();
-    await refreshCurrentPath();
-  }, [refreshAllFiles, refreshCurrentPath, resetActionPanels]);
+  const resetActionPanels = useCallback(() => {
+    closeRenameModal();
+    closeMoveModal();
+  }, [closeMoveModal, closeRenameModal]);
 
-  useTopicSubscription("admin.files", useCallback(() => {
-    void refreshCurrentPath();
-  }, [refreshCurrentPath]));
+  const applyMutationSuccess = useCallback(
+    async (payload: FileOperationResponse, fallbackMessage: string) => {
+      const nextMessage = payload.action ? `操作成功：${payload.action}` : fallbackMessage;
+      setSuccessMessage(nextMessage);
+      setErrorMessage("");
+      messageApi.success(nextMessage);
+      resetActionPanels();
+      await refreshAllFiles();
+      await refreshCurrentPath();
+    },
+    [messageApi, refreshAllFiles, refreshCurrentPath, resetActionPanels],
+  );
+
+  useTopicSubscription(
+    "admin.files",
+    useCallback(() => {
+      void refreshCurrentPath();
+    }, [refreshCurrentPath]),
+  );
 
   const createDirectoryMutation = useMutation({
     mutationFn: async () => {
@@ -132,8 +191,10 @@ export default function AdminFilesPage() {
       await applyMutationSuccess(payload, "目录已创建");
     },
     onError: (error) => {
-      setFeedbackMessage("");
-      setErrorMessage(error instanceof Error ? error.message : "目录创建失败");
+      setSuccessMessage("");
+      const message = error instanceof Error ? error.message : "目录创建失败";
+      setErrorMessage(message);
+      messageApi.error(message);
     },
   });
 
@@ -161,8 +222,10 @@ export default function AdminFilesPage() {
       await applyMutationSuccess(payload, "路径已删除");
     },
     onError: (error) => {
-      setFeedbackMessage("");
-      setErrorMessage(error instanceof Error ? error.message : "删除失败");
+      setSuccessMessage("");
+      const message = error instanceof Error ? error.message : "删除失败";
+      setErrorMessage(message);
+      messageApi.error(message);
     },
   });
 
@@ -190,8 +253,10 @@ export default function AdminFilesPage() {
       await applyMutationSuccess(payload, "重命名成功");
     },
     onError: (error) => {
-      setFeedbackMessage("");
-      setErrorMessage(error instanceof Error ? error.message : "重命名失败");
+      setSuccessMessage("");
+      const message = error instanceof Error ? error.message : "重命名失败";
+      setErrorMessage(message);
+      messageApi.error(message);
     },
   });
 
@@ -220,8 +285,10 @@ export default function AdminFilesPage() {
       await applyMutationSuccess(payload, "移动成功");
     },
     onError: (error) => {
-      setFeedbackMessage("");
-      setErrorMessage(error instanceof Error ? error.message : "移动失败");
+      setSuccessMessage("");
+      const message = error instanceof Error ? error.message : "移动失败";
+      setErrorMessage(message);
+      messageApi.error(message);
     },
   });
 
@@ -251,15 +318,17 @@ export default function AdminFilesPage() {
       await applyMutationSuccess(payload, "上传成功");
     },
     onError: (error) => {
-      setFeedbackMessage("");
-      setErrorMessage(error instanceof Error ? error.message : "上传失败");
+      setSuccessMessage("");
+      const message = error instanceof Error ? error.message : "上传失败";
+      setErrorMessage(message);
+      messageApi.error(message);
     },
   });
 
   const handleSelectMount = (mount: FileStorageMount) => {
     setMountCode(mount.code);
     setCurrentPath("/");
-    setFeedbackMessage("");
+    setSuccessMessage("");
     setErrorMessage("");
     resetActionPanels();
   };
@@ -269,65 +338,74 @@ export default function AdminFilesPage() {
       return;
     }
     setCurrentPath(item.path);
-    setFeedbackMessage("");
+    setSuccessMessage("");
     setErrorMessage("");
     resetActionPanels();
   };
 
-  const handleDelete = (item: FileEntryItem) => {
-    const tip = item.is_dir
-      ? `确认删除目录 ${item.name} 吗？将递归删除目录内全部内容。`
-      : `确认删除文件 ${item.name} 吗？`;
-    if (!window.confirm(tip)) {
-      return;
-    }
-    void deleteMutation.mutateAsync(item);
-  };
+  const handleDelete = useCallback(
+    (item: FileEntryItem) => {
+      const content = item.is_dir
+        ? `确认删除目录 ${item.name} 吗？将递归删除目录内全部内容。`
+        : `确认删除文件 ${item.name} 吗？`;
+
+      Modal.confirm({
+        title: "删除确认",
+        content,
+        okText: "确认删除",
+        cancelText: "取消",
+        okType: "danger",
+        onOk: () => deleteMutation.mutateAsync(item),
+      });
+    },
+    [deleteMutation],
+  );
 
   const startRename = (item: FileEntryItem) => {
-    setActiveItemPath(item.path);
+    setRenameTarget(item);
     setRenameName(item.name);
-    setMoveTargetParentPath(item.parent_path || currentPath || "/");
-    setMoveNewName("");
-    setFeedbackMessage("");
+    setSuccessMessage("");
     setErrorMessage("");
   };
 
   const startMove = (item: FileEntryItem) => {
-    setActiveItemPath(item.path);
-    setRenameName("");
-    setMoveTargetParentPath(currentPath || "/");
+    setMoveTarget(item);
+    setMoveTargetParentPath(item.parent_path || currentPath || "/");
     setMoveNewName(item.name);
-    setFeedbackMessage("");
+    setSuccessMessage("");
     setErrorMessage("");
   };
 
-  const submitRename = (item: FileEntryItem) => {
+  const submitRename = () => {
+    if (!renameTarget) {
+      return;
+    }
     if (!renameName.trim()) {
       setErrorMessage("新名称不能为空");
       return;
     }
-    void renameMutation.mutateAsync(item);
+    void renameMutation.mutateAsync(renameTarget);
   };
 
-  const submitMove = (item: FileEntryItem) => {
+  const submitMove = () => {
+    if (!moveTarget) {
+      return;
+    }
     if (!moveTargetParentPath.trim()) {
       setErrorMessage("目标目录不能为空");
       return;
     }
-    void moveMutation.mutateAsync(item);
+    void moveMutation.mutateAsync(moveTarget);
   };
 
-  const handleUploadChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const selected = event.target.files?.[0];
-    if (!selected) {
-      return;
-    }
-    setFeedbackMessage("");
-    setErrorMessage("");
-    void uploadMutation.mutateAsync(selected);
-    event.target.value = "";
-  };
+  const handleUploadFile = useCallback(
+    (file: File) => {
+      setSuccessMessage("");
+      setErrorMessage("");
+      void uploadMutation.mutateAsync(file);
+    },
+    [uploadMutation],
+  );
 
   const handleDownload = async (item: FileEntryItem) => {
     if (!activeMountCode) {
@@ -354,11 +432,14 @@ export default function AdminFilesPage() {
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(objectUrl);
-      setFeedbackMessage(`下载已开始：${item.name}`);
+      setSuccessMessage(`下载已开始：${item.name}`);
       setErrorMessage("");
+      messageApi.success(`下载已开始：${item.name}`);
     } catch (error) {
-      setFeedbackMessage("");
-      setErrorMessage(error instanceof Error ? error.message : "下载失败");
+      setSuccessMessage("");
+      const message = error instanceof Error ? error.message : "下载失败";
+      setErrorMessage(message);
+      messageApi.error(message);
     }
   };
 
@@ -367,20 +448,195 @@ export default function AdminFilesPage() {
   const mounts = listData?.mounts ?? [];
   const items = listData?.items ?? [];
   const operationBusy =
-    createDirectoryMutation.isPending ||
-    deleteMutation.isPending ||
-    renameMutation.isPending ||
-    moveMutation.isPending ||
-    uploadMutation.isPending;
+    createDirectoryMutation.isPending
+    || deleteMutation.isPending
+    || renameMutation.isPending
+    || moveMutation.isPending
+    || uploadMutation.isPending;
 
-  if (initializing || filesQuery.isLoading) {
-    return <p className="text-sm text-[var(--gray-11)]">Loading files...</p>;
+  const breadcrumbItems = useMemo(
+    () =>
+      (listData?.breadcrumbs ?? [{ name: "根目录", path: "/" }]).map((crumb) => ({
+        title: (
+          <Button
+            type="button"
+            variant="ghost"
+            color="gray"
+            size="1"
+            onClick={() => {
+              setCurrentPath(crumb.path);
+              resetActionPanels();
+            }}
+            className="px-1"
+          >
+            {crumb.name}
+          </Button>
+        ),
+      })),
+    [listData?.breadcrumbs, resetActionPanels],
+  );
+
+  const columns = useMemo<TableProps<FileEntryItem>["columns"]>(
+    () => [
+      {
+        title: "名称",
+        dataIndex: "name",
+        key: "name",
+        render: (_value, item) => (
+          <Space direction="vertical" size={2}>
+            <Space size={8}>
+              {item.is_dir ? <FolderFilled className="text-[var(--accent-11)]" /> : <FileOutlined className="text-[var(--gray-11)]" />}
+              {item.is_dir ? (
+                <Typography.Link onClick={() => handleOpenDirectory(item)}>{item.name}</Typography.Link>
+              ) : (
+                <Typography.Text>{item.name}</Typography.Text>
+              )}
+            </Space>
+            <Typography.Text type="secondary" className="text-xs">
+              {item.path}
+            </Typography.Text>
+          </Space>
+        ),
+      },
+      {
+        title: "类型",
+        key: "type",
+        width: 180,
+        render: (_value, item) => (item.is_dir ? "目录" : item.mime_type ?? "文件"),
+      },
+      {
+        title: "大小",
+        key: "size",
+        width: 140,
+        render: (_value, item) => (item.is_dir ? "-" : formatFileSize(item.size)),
+      },
+      {
+        title: "修改时间",
+        key: "modified_at",
+        width: 220,
+        render: (_value, item) => (
+          <Typography.Text type="secondary" className="text-xs">
+            {formatDate(item.modified_at)}
+          </Typography.Text>
+        ),
+      },
+      {
+        title: "索引同步时间",
+        key: "synced_at",
+        width: 220,
+        render: (_value, item) => (
+          <Typography.Text type="secondary" className="text-xs">
+            {formatDate(item.synced_at)}
+          </Typography.Text>
+        ),
+      },
+      {
+        title: "操作",
+        key: "actions",
+        width: 240,
+        render: (_value, item) => {
+          const menuItems: MenuProps["items"] = [
+            {
+              key: "rename",
+              label: "重命名",
+              icon: <EditOutlined />,
+              disabled: operationBusy,
+            },
+            {
+              key: "move",
+              label: "移动",
+              icon: <DragOutlined />,
+              disabled: operationBusy,
+            },
+            {
+              type: "divider",
+            },
+            {
+              key: "delete",
+              label: "删除",
+              icon: <DeleteOutlined />,
+              danger: true,
+              disabled: deleteMutation.isPending,
+            },
+          ];
+
+          return (
+            <Space wrap>
+              {item.is_dir ? (
+                <Button
+                  type="button"
+                  color="gray"
+                  size="1"
+                  variant="soft"
+                  onClick={() => handleOpenDirectory(item)}
+                  icon={<FolderOpenOutlined />}
+                >
+                  进入
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  color="gray"
+                  size="1"
+                  variant="soft"
+                  onClick={() => void handleDownload(item)}
+                  icon={<DownloadOutlined />}
+                >
+                  下载
+                </Button>
+              )}
+
+              {canManage && (
+                <Dropdown
+                  menu={{
+                    items: menuItems,
+                    onClick: ({ key }) => {
+                      if (key === "rename") {
+                        startRename(item);
+                        return;
+                      }
+                      if (key === "move") {
+                        startMove(item);
+                        return;
+                      }
+                      if (key === "delete") {
+                        handleDelete(item);
+                      }
+                    },
+                  }}
+                  trigger={["click"]}
+                >
+                  <Button
+                    type="button"
+                    color="gray"
+                    size="1"
+                    variant="soft"
+                    icon={<MoreOutlined />}
+                  >
+                    更多
+                  </Button>
+                </Dropdown>
+              )}
+            </Space>
+          );
+        },
+      },
+    ],
+    [canManage, deleteMutation.isPending, handleDelete, operationBusy],
+  );
+
+  if (initializing) {
+    return (
+      <div className="flex min-h-[240px] items-center justify-center">
+        <Spin tip={`正在加载${pageDisplayName}页面...`} />
+      </div>
+    );
   }
 
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问文件管理页面。</p>
+        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问{pageDisplayName}页面。</p>
         <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回首页</Link>
       </main>
     );
@@ -397,266 +653,222 @@ export default function AdminFilesPage() {
 
   return (
     <div className="space-y-6">
+      {messageContextHolder}
+
       {(listError || errorMessage) && (
-        <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">
-          {listError || errorMessage}
-        </pre>
-      )}
-      {feedbackMessage && (
-        <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--green-6)] bg-[var(--green-a2)] p-4 text-sm text-[var(--green-11)]">
-          {feedbackMessage}
-        </pre>
+        <Alert
+          type="error"
+          showIcon
+          closable
+          message="操作失败"
+          description={listError || errorMessage}
+          onClose={() => setErrorMessage("")}
+        />
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
-        <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
-          <h2 className="text-lg font-semibold">挂载点</h2>
-          <p className="mt-1 text-sm text-[var(--gray-11)]">一期按挂载点浏览目录树，支持 VFS/S3。</p>
-          <div className="mt-4 space-y-2">
+      {successMessage && (
+        <Alert
+          type="success"
+          showIcon
+          closable
+          message="操作成功"
+          description={successMessage}
+          onClose={() => setSuccessMessage("")}
+        />
+      )}
+
+      <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
+        <Card className="shadow-sm" title="挂载点" size="small">
+          <Typography.Paragraph type="secondary" className="!mt-0">
+            一期按挂载点浏览目录树，支持 VFS / S3。
+          </Typography.Paragraph>
+
+          <Space direction="vertical" size={8} className="w-full">
             {mounts.map((mount) => {
               const selected = mount.code === (listData?.current_mount.code ?? mountCode);
               return (
                 <Button
                   key={mount.id}
-                  type="button"
+                  type={selected ? "primary" : "default"}
+                  color={selected ? "indigo" : "gray"}
+                  variant={selected ? "solid" : "soft"}
                   onClick={() => handleSelectMount(mount)}
-                  className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition ${
-                    selected
-                      ? "border-[var(--accent-7)] bg-[var(--accent-9)] text-[var(--accent-contrast,#fff)]"
-                      : "border-[var(--border)] bg-[var(--color-panel-solid,var(--gray-1))] text-[var(--gray-12)] hover:border-[var(--accent-6)] hover:bg-[var(--accent-a2)]"
-                  }`}
+                  className="w-full !h-auto !justify-start px-3 py-2"
                 >
-                  <p className="font-medium">{mount.name}</p>
-                  <p className={`text-xs ${selected ? "text-[var(--accent-a2)]" : "text-[var(--gray-11)]"}`}>
-                    {mount.backend.driver_type} · {mount.code}
-                  </p>
+                  <div className="text-left">
+                    <p className="font-medium">{mount.name}</p>
+                    <p className="text-xs opacity-80">
+                      {mount.backend.driver_type} · {mount.code}
+                    </p>
+                  </div>
                 </Button>
               );
             })}
-            {mounts.length === 0 && (
-              <p className="text-sm text-[var(--gray-11)]">暂无可用挂载点。</p>
-            )}
-          </div>
-        </section>
+            {mounts.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可用挂载点" />}
+          </Space>
+        </Card>
 
-        <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
+        <Card className="shadow-sm" size="small">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold">文件列表</h2>
-              <p className="mt-1 text-sm text-[var(--gray-11)]">
+              <Typography.Title level={4} className="!mb-1">{pageDisplayName}列表</Typography.Title>
+              <Typography.Text type="secondary">
                 存储后端：{listData?.current_mount.backend.name ?? "-"}（{listData?.current_mount.backend.driver_type ?? "-"}）
-              </p>
+              </Typography.Text>
             </div>
-            <div className="flex items-center gap-2">
+            <Space wrap>
               <Button
                 type="button"
-                color="gray" size="1" variant="soft"
+                color="gray"
+                size="1"
+                variant="soft"
                 onClick={() => void refreshCurrentPath()}
                 disabled={filesQuery.isFetching}
+                icon={<ReloadOutlined />}
               >
                 {filesQuery.isFetching ? "刷新中..." : "刷新"}
               </Button>
+
               {canManage && (
-                <>
-                  <input
-                    type="file"
-                    aria-label="上传文件"
-                    className="block w-72 cursor-pointer rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-3 py-2 text-sm text-[var(--gray-12)] file:mr-3 file:cursor-pointer file:rounded file:border-0 file:bg-[var(--accent-9)] file:px-2.5 file:py-1 file:text-xs file:font-semibold file:text-[var(--accent-contrast,#fff)] hover:file:bg-[var(--accent-10)] disabled:cursor-not-allowed disabled:opacity-60"
-                    onChange={handleUploadChange}
-                    disabled={uploadMutation.isPending}
-                  />
-                </>
+                <Upload
+                  showUploadList={false}
+                  maxCount={1}
+                  beforeUpload={(file) => {
+                    handleUploadFile(file as File);
+                    return false;
+                  }}
+                  disabled={uploadMutation.isPending || !activeMountCode}
+                >
+                  <Button
+                    type="button"
+                    color="gray"
+                    size="1"
+                    variant="soft"
+                    disabled={uploadMutation.isPending || !activeMountCode}
+                    icon={<UploadOutlined />}
+                  >
+                    {uploadMutation.isPending ? "上传中..." : "上传文件"}
+                  </Button>
+                </Upload>
               )}
-            </div>
+            </Space>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--accent-a2)] px-3 py-2 text-sm">
-            {(listData?.breadcrumbs ?? [{ name: "根目录", path: "/" }]).map((crumb, index, all) => (
-              <div key={crumb.path} className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  onClick={() => {
-                    setCurrentPath(crumb.path);
-                    resetActionPanels();
-                  }}
-                  className="rounded px-1 py-0.5 hover:bg-[var(--accent-a3)]"
-                >
-                  {crumb.name}
-                </Button>
-                {index < all.length - 1 && <span className="text-[var(--gray-10)]">/</span>}
-              </div>
-            ))}
+          <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--accent-a2)] px-3 py-2">
+            <Breadcrumb items={breadcrumbItems} />
           </div>
 
           {canManage && (
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <TextField.Root
-                value={newDirectoryName}
-                onChange={(event: ChangeEvent<HTMLInputElement>) => setNewDirectoryName(event.currentTarget.value)}
-                placeholder="新建目录名"
-                className="w-full max-w-xs"
-              />
-              <Button
-                type="button"
-               
-                onClick={() => {
-                  if (!newDirectoryName.trim()) {
-                    setErrorMessage("目录名称不能为空");
-                    return;
-                  }
-                  void createDirectoryMutation.mutateAsync();
-                }}
-                disabled={createDirectoryMutation.isPending}
-              >
-                {createDirectoryMutation.isPending ? "创建中..." : "新建目录"}
-              </Button>
-            </div>
+            <Form layout="inline" className="mt-4">
+              <Form.Item className="min-w-[260px] flex-1">
+                <Input
+                  value={newDirectoryName}
+                  onChange={(event) => setNewDirectoryName(event.currentTarget.value)}
+                  placeholder="新建目录名"
+                  allowClear
+                />
+              </Form.Item>
+              <Form.Item>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    if (!newDirectoryName.trim()) {
+                      setErrorMessage("目录名称不能为空");
+                      return;
+                    }
+                    void createDirectoryMutation.mutateAsync();
+                  }}
+                  disabled={createDirectoryMutation.isPending}
+                  icon={<PlusOutlined />}
+                >
+                  {createDirectoryMutation.isPending ? "创建中..." : "新建目录"}
+                </Button>
+              </Form.Item>
+            </Form>
           )}
 
-          <div className="mt-4 overflow-x-auto">
-            <Table.Root className="w-full min-w-full text-left text-sm">
-              <Table.Header className="bg-[var(--gray-a3)]">
-                <Table.Row>
-                  <Table.ColumnHeaderCell className="px-4 py-3 font-medium">名称</Table.ColumnHeaderCell>
-                  <Table.ColumnHeaderCell className="px-4 py-3 font-medium">类型</Table.ColumnHeaderCell>
-                  <Table.ColumnHeaderCell className="px-4 py-3 font-medium">大小</Table.ColumnHeaderCell>
-                  <Table.ColumnHeaderCell className="px-4 py-3 font-medium">修改时间</Table.ColumnHeaderCell>
-                  <Table.ColumnHeaderCell className="px-4 py-3 font-medium">索引同步时间</Table.ColumnHeaderCell>
-                  <Table.ColumnHeaderCell className="px-4 py-3 font-medium">操作</Table.ColumnHeaderCell>
-                </Table.Row>
-              </Table.Header>
-              <Table.Body className="divide-y divide-y">
-                {items.map((item) => {
-                  const isActive = activeItemPath === item.path;
-                  return (
-                    <Table.Row key={`${item.path}-${item.id}`}>
-                      <Table.Cell className="px-4 py-3">
-                        <Button
-                          type="button"
-                          className={`text-left ${item.is_dir ? "font-medium underline-offset-2 hover:underline" : ""}`}
-                          onClick={() => handleOpenDirectory(item)}
-                        >
-                          {item.is_dir ? `[DIR] ${item.name}` : item.name}
-                        </Button>
-                        {isActive && canManage && (
-                          <div className="mt-2 space-y-2 rounded-md border border-[var(--border)] bg-[var(--accent-a3)] p-2 text-xs">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <TextField.Root
-                                value={renameName}
-                                onChange={(event: ChangeEvent<HTMLInputElement>) => setRenameName(event.currentTarget.value)}
-                                placeholder="新名称"
-                                className="w-48"
-                              />
-                              <Button
-                                type="button"
-                                color="gray" size="1" variant="soft"
-                                onClick={() => submitRename(item)}
-                                disabled={renameMutation.isPending}
-                              >
-                                {renameMutation.isPending ? "重命名中..." : "确认重命名"}
-                              </Button>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <TextField.Root
-                                value={moveTargetParentPath}
-                                onChange={(event: ChangeEvent<HTMLInputElement>) => setMoveTargetParentPath(event.currentTarget.value)}
-                                placeholder="目标目录（如 /a/b）"
-                                className="w-48"
-                              />
-                              <TextField.Root
-                                value={moveNewName}
-                                onChange={(event: ChangeEvent<HTMLInputElement>) => setMoveNewName(event.currentTarget.value)}
-                                placeholder="新名称（可选）"
-                                className="w-40"
-                              />
-                              <Button
-                                type="button"
-                                color="gray" size="1" variant="soft"
-                                onClick={() => submitMove(item)}
-                                disabled={moveMutation.isPending}
-                              >
-                                {moveMutation.isPending ? "移动中..." : "确认移动"}
-                              </Button>
-                              <Button
-                                type="button"
-                                color="gray" size="1" variant="soft"
-                                onClick={resetActionPanels}
-                              >
-                                取消
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                      </Table.Cell>
-                      <Table.Cell className="whitespace-nowrap px-4 py-3">{item.is_dir ? "目录" : item.mime_type ?? "文件"}</Table.Cell>
-                      <Table.Cell className="whitespace-nowrap px-4 py-3">{item.is_dir ? "-" : formatFileSize(item.size)}</Table.Cell>
-                      <Table.Cell className="whitespace-nowrap px-4 py-3 text-xs text-[var(--gray-11)]">{formatDate(item.modified_at)}</Table.Cell>
-                      <Table.Cell className="whitespace-nowrap px-4 py-3 text-xs text-[var(--gray-11)]">{formatDate(item.synced_at)}</Table.Cell>
-                      <Table.Cell className="whitespace-nowrap px-4 py-3">
-                        <div className="flex flex-wrap gap-2">
-                          {item.is_dir && (
-                            <Button
-                              type="button"
-                              color="gray" size="1" variant="soft"
-                              onClick={() => handleOpenDirectory(item)}
-                            >
-                              进入
-                            </Button>
-                          )}
-                          {!item.is_dir && (
-                            <Button
-                              type="button"
-                              color="gray" size="1" variant="soft"
-                              onClick={() => void handleDownload(item)}
-                            >
-                              下载
-                            </Button>
-                          )}
-                          {canManage && (
-                            <>
-                              <Button
-                                type="button"
-                                color="gray" size="1" variant="soft"
-                                onClick={() => startRename(item)}
-                                disabled={operationBusy}
-                              >
-                                重命名
-                              </Button>
-                              <Button
-                                type="button"
-                                color="gray" size="1" variant="soft"
-                                onClick={() => startMove(item)}
-                                disabled={operationBusy}
-                              >
-                                移动
-                              </Button>
-                              <Button
-                                type="button"
-                                color="red" size="1" variant="soft"
-                                onClick={() => handleDelete(item)}
-                                disabled={deleteMutation.isPending}
-                              >
-                                删除
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </Table.Cell>
-                    </Table.Row>
-                  );
-                })}
-                {items.length === 0 && (
-                  <Table.Row>
-                    <Table.Cell colSpan={6} className="px-4 py-8 text-center text-sm text-[var(--gray-11)]">
-                      当前目录为空
-                    </Table.Cell>
-                  </Table.Row>
-                )}
-              </Table.Body>
-            </Table.Root>
+          <div className="mt-4">
+            <AntTable<FileEntryItem>
+              rowKey={(item) => `${item.path}-${item.id}`}
+              columns={columns}
+              dataSource={items}
+              pagination={false}
+              loading={filesQuery.isLoading || filesQuery.isFetching}
+              size="middle"
+              scroll={{ x: 1100 }}
+              locale={{
+                emptyText: (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="当前目录为空"
+                  />
+                ),
+              }}
+            />
           </div>
-        </section>
+        </Card>
       </div>
+
+      <Modal
+        title={renameTarget ? `重命名：${renameTarget.name}` : "重命名"}
+        open={Boolean(renameTarget)}
+        onCancel={closeRenameModal}
+        onOk={submitRename}
+        okText="确认重命名"
+        cancelText="取消"
+        confirmLoading={renameMutation.isPending}
+        destroyOnClose
+      >
+        <Form layout="vertical">
+          <Form.Item
+            label="新名称"
+            required
+            validateStatus={renameName.trim() ? undefined : "error"}
+            help={renameName.trim() ? undefined : "新名称不能为空"}
+          >
+            <Input
+              value={renameName}
+              onChange={(event) => setRenameName(event.currentTarget.value)}
+              placeholder="请输入新名称"
+              autoFocus
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={moveTarget ? `移动：${moveTarget.name}` : "移动"}
+        open={Boolean(moveTarget)}
+        onCancel={closeMoveModal}
+        onOk={submitMove}
+        okText="确认移动"
+        cancelText="取消"
+        confirmLoading={moveMutation.isPending}
+        destroyOnClose
+      >
+        <Form layout="vertical">
+          <Form.Item
+            label="目标目录"
+            required
+            validateStatus={moveTargetParentPath.trim() ? undefined : "error"}
+            help={moveTargetParentPath.trim() ? undefined : "目标目录不能为空"}
+          >
+            <Input
+              value={moveTargetParentPath}
+              onChange={(event) => setMoveTargetParentPath(event.currentTarget.value)}
+              placeholder="目标目录（如 /a/b）"
+              autoFocus
+            />
+          </Form.Item>
+          <Form.Item label="新名称（可选）">
+            <Input
+              value={moveNewName}
+              onChange={(event) => setMoveNewName(event.currentTarget.value)}
+              placeholder="留空则使用当前名称"
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }

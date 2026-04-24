@@ -2,68 +2,129 @@
 
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChangeEvent, useCallback, useMemo, useState } from "react";
+import {
+  Alert,
+  Button,
+  Col,
+  DatePicker,
+  Empty,
+  Form,
+  Input,
+  Popconfirm,
+  Row,
+  Select,
+  Space,
+  Spin,
+  Table,
+  Tag,
+  Typography,
+  message,
+} from "antd";
+import type { ColumnsType } from "antd/es/table";
+import dayjs, { type Dayjs } from "dayjs";
+import { useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { Card } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
-import type { SystemMessageListResponse, SystemMessageSummary } from "@/types/auth";
-import { Button, Select, Table, TextArea, TextField } from "@/components/ui-antd";
+import type {
+  SystemMessageLevel,
+  SystemMessageListResponse,
+  SystemMessageStatus,
+  SystemMessageSummary,
+} from "@/types/auth";
 
-type StatusFilter = "all" | "draft" | "published" | "archived";
-type LevelFilter = "all" | "info" | "success" | "warning" | "error";
+type StatusFilter = "all" | SystemMessageStatus;
+type LevelFilter = "all" | SystemMessageLevel;
 
-type FormState = {
+type PromptFormValues = {
   title: string;
   content: string;
-  level: "info" | "success" | "warning" | "error";
-  status: "draft" | "published" | "archived";
-  start_at: string;
-  end_at: string;
+  level: SystemMessageLevel;
+  status: SystemMessageStatus;
+  start_at: Dayjs | null;
+  end_at: Dayjs | null;
 };
 
-const EMPTY_FORM: FormState = {
+const DEFAULT_FORM_VALUES: PromptFormValues = {
   title: "",
   content: "",
   level: "info",
   status: "draft",
-  start_at: "",
-  end_at: "",
+  start_at: null,
+  end_at: null,
 };
 
-function toDatetimeLocal(value: string | null): string {
-  if (!value) {
-    return "";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  const tzOffset = date.getTimezoneOffset() * 60000;
-  const local = new Date(date.getTime() - tzOffset);
-  return local.toISOString().slice(0, 16);
+const STATUS_OPTIONS: Array<{ label: string; value: StatusFilter }> = [
+  { label: "全部", value: "all" },
+  { label: "草稿", value: "draft" },
+  { label: "已发布", value: "published" },
+  { label: "已归档", value: "archived" },
+];
+
+const LEVEL_OPTIONS: Array<{ label: string; value: LevelFilter }> = [
+  { label: "全部", value: "all" },
+  { label: "信息", value: "info" },
+  { label: "成功", value: "success" },
+  { label: "警告", value: "warning" },
+  { label: "错误", value: "error" },
+];
+
+function levelText(level: SystemMessageLevel): string {
+  if (level === "success") return "成功";
+  if (level === "warning") return "警告";
+  if (level === "error") return "错误";
+  return "信息";
 }
 
-function toUtcIso(value: string): string | null {
-  if (!value.trim()) {
-    return null;
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return date.toISOString();
+function levelColor(level: SystemMessageLevel): string {
+  if (level === "success") return "success";
+  if (level === "warning") return "warning";
+  if (level === "error") return "error";
+  return "processing";
+}
+
+function statusText(status: SystemMessageStatus): string {
+  if (status === "published") return "已发布";
+  if (status === "archived") return "已归档";
+  return "草稿";
+}
+
+function statusColor(status: SystemMessageStatus): string {
+  if (status === "published") return "success";
+  if (status === "archived") return "default";
+  return "gold";
+}
+
+function toPickerValue(value: string | null): Dayjs | null {
+  if (!value) return null;
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed : null;
+}
+
+function toUtcIso(value: Dayjs | null | undefined): string | null {
+  if (!value) return null;
+  return value.toDate().toISOString();
+}
+
+function formatDateTime(value: string | null): string {
+  if (!value) return "-";
+  const parsed = dayjs(value);
+  if (!parsed.isValid()) return "-";
+  return parsed.format("YYYY-MM-DD HH:mm:ss");
 }
 
 export default function AdminSystemMessagePage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
+  const [form] = Form.useForm<PromptFormValues>();
+  const [messageApi, messageContextHolder] = message.useMessage();
 
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [levelFilter, setLevelFilter] = useState<LevelFilter>("all");
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -81,8 +142,8 @@ export default function AdminSystemMessagePage() {
     if (levelFilter !== "all") {
       params.set("level", levelFilter);
     }
-    const qs = params.toString();
-    return `/api/v1/admin/system-messages${qs ? `?${qs}` : ""}`;
+    const queryString = params.toString();
+    return `/api/v1/admin/system-messages${queryString ? `?${queryString}` : ""}`;
   }, [keyword, statusFilter, levelFilter]);
 
   const listQuery = useQuery({
@@ -106,51 +167,55 @@ export default function AdminSystemMessagePage() {
     });
   }, [queryClient]);
 
-  useTopicSubscription("admin.system-messages", useCallback(() => {
-    void refreshList();
-  }, [refreshList]));
+  useTopicSubscription(
+    "admin.system-messages",
+    useCallback(() => {
+      void refreshList();
+    }, [refreshList]),
+  );
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setEditingId(null);
-    setForm(EMPTY_FORM);
-  };
+    form.setFieldsValue(DEFAULT_FORM_VALUES);
+    form.resetFields();
+  }, [form]);
 
-  const startCreate = () => {
+  const startCreate = useCallback(() => {
     setError("");
     setSuccess("");
     resetForm();
-  };
+  }, [resetForm]);
 
-  const startEdit = (item: SystemMessageSummary) => {
-    setError("");
-    setSuccess("");
-    setEditingId(item.id);
-    setForm({
-      title: item.title,
-      content: item.content,
-      level: item.level,
-      status: item.status,
-      start_at: toDatetimeLocal(item.start_at),
-      end_at: toDatetimeLocal(item.end_at),
-    });
-  };
+  const startEdit = useCallback(
+    (item: SystemMessageSummary) => {
+      setError("");
+      setSuccess("");
+      setEditingId(item.id);
+      form.setFieldsValue({
+        title: item.title,
+        content: item.content,
+        level: item.level,
+        status: item.status,
+        start_at: toPickerValue(item.start_at),
+        end_at: toPickerValue(item.end_at),
+      });
+    },
+    [form],
+  );
 
   const saveMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (values: PromptFormValues) => {
       if (!canManage) {
         throw new Error("缺少 system_message.manage 权限");
       }
-      if (!form.title.trim() || !form.content.trim()) {
-        throw new Error("标题和内容不能为空");
-      }
 
       const payload = {
-        title: form.title.trim(),
-        content: form.content.trim(),
-        level: form.level,
-        status: form.status,
-        start_at: toUtcIso(form.start_at),
-        end_at: toUtcIso(form.end_at),
+        title: values.title.trim(),
+        content: values.content.trim(),
+        level: values.level,
+        status: values.status,
+        start_at: toUtcIso(values.start_at),
+        end_at: toUtcIso(values.end_at),
       };
 
       if (editingId === null) {
@@ -162,7 +227,7 @@ export default function AdminSystemMessagePage() {
         if (!response.ok) {
           throw new Error(await readApiError(response));
         }
-        return "created";
+        return "created" as const;
       }
 
       const response = await fetchWithAuth(`/api/v1/admin/system-messages/${editingId}`, {
@@ -173,17 +238,20 @@ export default function AdminSystemMessagePage() {
       if (!response.ok) {
         throw new Error(await readApiError(response));
       }
-      return "updated";
+      return "updated" as const;
     },
     onSuccess: async (mode) => {
       setError("");
-      setSuccess(mode === "created" ? "系统消息已创建" : "系统消息已更新");
+      setSuccess(mode === "created" ? "提示词已创建" : "提示词已更新");
+      messageApi.success(mode === "created" ? "创建成功" : "保存成功");
       resetForm();
       await refreshList();
     },
     onError: (candidate) => {
       setSuccess("");
-      setError(candidate instanceof Error ? candidate.message : "保存失败");
+      const nextError = candidate instanceof Error ? candidate.message : "保存失败";
+      setError(nextError);
+      messageApi.error(nextError);
     },
   });
 
@@ -202,27 +270,137 @@ export default function AdminSystemMessagePage() {
         resetForm();
       }
       setError("");
-      setSuccess("系统消息已删除");
+      setSuccess("提示词已删除");
+      messageApi.success("删除成功");
       await refreshList();
     },
     onError: (candidate) => {
       setSuccess("");
-      setError(candidate instanceof Error ? candidate.message : "删除失败");
+      const nextError = candidate instanceof Error ? candidate.message : "删除失败";
+      setError(nextError);
+      messageApi.error(nextError);
     },
   });
+
+  const handleSubmit = (values: PromptFormValues) => {
+    setError("");
+    setSuccess("");
+    saveMutation.mutate(values);
+  };
+
+  const handleResetFilters = useCallback(() => {
+    setKeyword("");
+    setStatusFilter("all");
+    setLevelFilter("all");
+  }, []);
 
   const items = listQuery.data?.items ?? [];
   const listError = listQuery.error instanceof Error ? listQuery.error.message : "";
 
-  if (initializing || listQuery.isLoading) {
-    return <p className="text-sm text-[var(--gray-11)]">Loading system messages...</p>;
+  const columns = useMemo<ColumnsType<SystemMessageSummary>>(
+    () => {
+      const baseColumns: ColumnsType<SystemMessageSummary> = [
+        {
+          title: "ID",
+          dataIndex: "id",
+          key: "id",
+          width: 90,
+        },
+        {
+          title: "标题 / 内容",
+          key: "content",
+          render: (_, record) => (
+            <Space direction="vertical" size={0}>
+              <Typography.Text strong>{record.title}</Typography.Text>
+              <Typography.Text type="secondary" ellipsis={{ tooltip: record.content }}>
+                {record.content}
+              </Typography.Text>
+            </Space>
+          ),
+        },
+        {
+          title: "等级",
+          key: "level",
+          dataIndex: "level",
+          width: 100,
+          render: (value: SystemMessageLevel) => <Tag color={levelColor(value)}>{levelText(value)}</Tag>,
+        },
+        {
+          title: "状态",
+          key: "status",
+          dataIndex: "status",
+          width: 110,
+          render: (value: SystemMessageStatus) => <Tag color={statusColor(value)}>{statusText(value)}</Tag>,
+        },
+        {
+          title: "有效期",
+          key: "period",
+          width: 300,
+          render: (_, record) => (
+            <Typography.Text type="secondary">
+              {formatDateTime(record.start_at)} ~ {formatDateTime(record.end_at)}
+            </Typography.Text>
+          ),
+        },
+        {
+          title: "更新时间",
+          key: "updated_at",
+          dataIndex: "updated_at",
+          width: 180,
+          render: (value: string) => formatDateTime(value),
+        },
+      ];
+
+      if (!canManage) {
+        return baseColumns;
+      }
+
+      baseColumns.push({
+        title: "操作",
+        key: "actions",
+        fixed: "right",
+        width: 170,
+        render: (_, item) => (
+          <Space>
+            <Button size="small" onClick={() => startEdit(item)}>
+              编辑
+            </Button>
+            <Popconfirm
+              title="删除提示词"
+              description={`确认删除「${item.title}」吗？`}
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => deleteMutation.mutate(item)}
+            >
+              <Button size="small" danger loading={deleteMutation.isPending}>
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        ),
+      });
+
+      return baseColumns;
+    },
+    [canManage, deleteMutation, startEdit],
+  );
+
+  if (initializing) {
+    return (
+      <div className="flex justify-center py-16">
+        <Spin size="large" tip="正在加载提示词页面..." />
+      </div>
+    );
   }
 
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问系统消息页面。</p>
-        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回首页</Link>
+        <Alert message="请先登录后再访问提示词管理页面。" type="info" showIcon />
+        <Link href="/">
+          <Button type="default">返回首页</Button>
+        </Link>
       </main>
     );
   }
@@ -230,219 +408,184 @@ export default function AdminSystemMessagePage() {
   if (!canRead) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `system_message.read`）。</p>
-        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回首页</Link>
+        <Alert message="你没有访问该页面的权限（需要 system_message.read）。" type="warning" showIcon />
+        <Link href="/">
+          <Button type="default">返回首页</Button>
+        </Link>
       </main>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {(error || listError) && <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">{error || listError}</pre>}
-      {success && <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--green-6)] bg-[var(--green-a2)] p-4 text-sm text-[var(--green-11)]">{success}</pre>}
+    <Space direction="vertical" size="large" className="w-full">
+      {messageContextHolder}
 
-      <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">系统消息列表</h2>
-            <p className="mt-1 text-sm text-[var(--gray-11)]">维护系统公告消息，支持等级、有效期与发布状态。</p>
-          </div>
-          {canManage && (
-            <Button type="button" onClick={startCreate}>新建消息</Button>
-          )}
-        </div>
+      {(error || listError) && (
+        <Alert
+          type="error"
+          showIcon
+          message="操作失败"
+          description={error || listError}
+          closable
+          onClose={() => setError("")}
+        />
+      )}
 
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <label className="space-y-1 text-sm md:col-span-1">
-            <span className="text-[var(--gray-11)]">关键词</span>
-            <TextField.Root
-              value={keyword}
-              onChange={(event: ChangeEvent<HTMLInputElement>) => setKeyword(event.currentTarget.value)}
-              placeholder="按标题/内容筛选"
-              className="w-full"
-            />
-          </label>
-          <label className="space-y-1 text-sm md:col-span-1">
-            <span className="text-[var(--gray-11)]">状态</span>
-            <Select.Root
-              value={statusFilter}
-              onValueChange={(value: string) => setStatusFilter(value as StatusFilter)}
-            >
-              <Select.Trigger className="w-full" />
-              <Select.Content>
-                <Select.Item value="all">全部</Select.Item>
-                <Select.Item value="draft">草稿</Select.Item>
-                <Select.Item value="published">已发布</Select.Item>
-                <Select.Item value="archived">已归档</Select.Item>
-              </Select.Content>
-            </Select.Root>
-          </label>
-          <label className="space-y-1 text-sm md:col-span-1">
-            <span className="text-[var(--gray-11)]">等级</span>
-            <Select.Root
-              value={levelFilter}
-              onValueChange={(value: string) => setLevelFilter(value as LevelFilter)}
-            >
-              <Select.Trigger className="w-full" />
-              <Select.Content>
-                <Select.Item value="all">全部</Select.Item>
-                <Select.Item value="info">信息</Select.Item>
-                <Select.Item value="success">成功</Select.Item>
-                <Select.Item value="warning">警告</Select.Item>
-                <Select.Item value="error">错误</Select.Item>
-              </Select.Content>
-            </Select.Root>
-          </label>
-        </div>
+      {success && (
+        <Alert
+          type="success"
+          showIcon
+          message="操作成功"
+          description={success}
+          closable
+          onClose={() => setSuccess("")}
+        />
+      )}
 
-        <div className="mt-4 overflow-x-auto">
-          <Table.Root className="w-full min-w-full text-left text-sm">
-            <Table.Header className="bg-[var(--gray-a3)]">
-              <Table.Row>
-                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">ID</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">标题</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">等级</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">状态</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">有效期</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">更新时间</Table.ColumnHeaderCell>
-                {canManage && <Table.ColumnHeaderCell className="px-4 py-3 font-medium">操作</Table.ColumnHeaderCell>}
-              </Table.Row>
-            </Table.Header>
-            <Table.Body className="divide-y divide-y">
-              {items.map((item) => (
-                <Table.Row key={item.id}>
-                  <Table.Cell className="px-4 py-3">{item.id}</Table.Cell>
-                  <Table.Cell className="px-4 py-3">
-                    <div className="font-medium">{item.title}</div>
-                    <div className="mt-1 max-w-[420px] truncate text-xs text-[var(--gray-11)]" title={item.content}>
-                      {item.content}
-                    </div>
-                  </Table.Cell>
-                  <Table.Cell className="px-4 py-3">{item.level}</Table.Cell>
-                  <Table.Cell className="px-4 py-3">{item.status}</Table.Cell>
-                  <Table.Cell className="px-4 py-3 text-xs text-[var(--gray-11)]">
-                    {item.start_at ? new Date(item.start_at).toLocaleString() : "-"}
-                    {" ~ "}
-                    {item.end_at ? new Date(item.end_at).toLocaleString() : "-"}
-                  </Table.Cell>
-                  <Table.Cell className="px-4 py-3">{new Date(item.updated_at).toLocaleString()}</Table.Cell>
-                  {canManage && (
-                    <Table.Cell className="px-4 py-3">
-                      <div className="flex gap-2">
-                        <Button color="gray" size="1" type="button" variant="soft" onClick={() => startEdit(item)}>编辑</Button>
-                        <Button
-                          color="red" size="1" variant="soft"
-                          type="button"
-                          onClick={() => {
-                            if (!window.confirm(`确认删除系统消息「${item.title}」吗？`)) {
-                              return;
-                            }
-                            deleteMutation.mutate(item);
-                          }}
-                        >
-                          删除
-                        </Button>
-                      </div>
-                    </Table.Cell>
-                  )}
-                </Table.Row>
-              ))}
-              {items.length === 0 && (
-                <Table.Row>
-                  <Table.Cell className="px-4 py-8 text-center text-sm text-[var(--gray-11)]" colSpan={canManage ? 7 : 6}>
-                    未找到系统消息。
-                  </Table.Cell>
-                </Table.Row>
-              )}
-            </Table.Body>
-          </Table.Root>
-        </div>
-      </section>
+      <Card
+        title="提示词列表"
+        extra={
+          canManage ? (
+            <Button type="primary" onClick={startCreate}>
+              新建提示词
+            </Button>
+          ) : null
+        }
+      >
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+          复用 system-message 接口维护提示词内容，支持关键词、状态、等级筛选。
+        </Typography.Paragraph>
+
+        <Form layout="vertical">
+          <Row gutter={16}>
+            <Col xs={24} md={8}>
+              <Form.Item label="关键词">
+                <Input
+                  allowClear
+                  placeholder="按标题或内容筛选"
+                  value={keyword}
+                  onChange={(event) => setKeyword(event.currentTarget.value)}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={6}>
+              <Form.Item label="状态">
+                <Select
+                  value={statusFilter}
+                  options={STATUS_OPTIONS}
+                  onChange={(value) => setStatusFilter(value)}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={6}>
+              <Form.Item label="等级">
+                <Select
+                  value={levelFilter}
+                  options={LEVEL_OPTIONS}
+                  onChange={(value) => setLevelFilter(value)}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={4}>
+              <Form.Item label=" " colon={false}>
+                <Button block onClick={handleResetFilters}>
+                  重置筛选
+                </Button>
+              </Form.Item>
+            </Col>
+          </Row>
+        </Form>
+
+        <Table<SystemMessageSummary>
+          rowKey="id"
+          columns={columns}
+          dataSource={items}
+          loading={listQuery.isFetching}
+          scroll={{ x: 980 }}
+          pagination={false}
+          locale={{
+            emptyText: listQuery.isLoading ? (
+              <Spin />
+            ) : (
+              <Empty description="未找到符合条件的提示词" />
+            ),
+          }}
+        />
+      </Card>
 
       {canManage && (
-        <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
-          <h2 className="text-lg font-semibold">{editingId === null ? "新建系统消息" : "编辑系统消息"}</h2>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <label className="space-y-1 text-sm md:col-span-2">
-              <span>标题</span>
-              <TextField.Root
-                value={form.title}
-                onChange={(event: ChangeEvent<HTMLInputElement>) => setForm((prev) => ({ ...prev, title: event.currentTarget.value }))}
-                placeholder="请输入消息标题"
-                className="w-full"
-              />
-            </label>
-            <label className="space-y-1 text-sm md:col-span-2">
-              <span>内容</span>
-              <TextArea
-                value={form.content}
-                onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setForm((prev) => ({ ...prev, content: event.currentTarget.value }))}
-                rows={5}
-                className="w-full"
-              />
-            </label>
-            <label className="space-y-1 text-sm md:col-span-1">
-              <span>等级</span>
-              <Select.Root
-                value={form.level}
-                onValueChange={(value: string) => setForm((prev) => ({ ...prev, level: value as FormState["level"] }))}
-              >
-                <Select.Trigger className="w-full" />
-                <Select.Content>
-                  <Select.Item value="info">信息</Select.Item>
-                  <Select.Item value="success">成功</Select.Item>
-                  <Select.Item value="warning">警告</Select.Item>
-                  <Select.Item value="error">错误</Select.Item>
-                </Select.Content>
-              </Select.Root>
-            </label>
-            <label className="space-y-1 text-sm md:col-span-1">
-              <span>状态</span>
-              <Select.Root
-                value={form.status}
-                onValueChange={(value: string) => setForm((prev) => ({ ...prev, status: value as FormState["status"] }))}
-              >
-                <Select.Trigger className="w-full" />
-                <Select.Content>
-                  <Select.Item value="draft">草稿</Select.Item>
-                  <Select.Item value="published">已发布</Select.Item>
-                  <Select.Item value="archived">已归档</Select.Item>
-                </Select.Content>
-              </Select.Root>
-            </label>
-            <label className="space-y-1 text-sm md:col-span-1">
-              <span>生效时间</span>
-              <TextField.Root
-                type="datetime-local"
-                value={form.start_at}
-                onChange={(event: ChangeEvent<HTMLInputElement>) => setForm((prev) => ({ ...prev, start_at: event.currentTarget.value }))}
-                className="w-full"
-              />
-            </label>
-            <label className="space-y-1 text-sm md:col-span-1">
-              <span>失效时间</span>
-              <TextField.Root
-                type="datetime-local"
-                value={form.end_at}
-                onChange={(event: ChangeEvent<HTMLInputElement>) => setForm((prev) => ({ ...prev, end_at: event.currentTarget.value }))}
-                className="w-full"
-              />
-            </label>
-          </div>
-
-          <div className="mt-4 flex gap-2">
-            <Button
-             
-              type="button"
-              onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending}
+        <Card title={editingId === null ? "新建提示词" : `编辑提示词 #${editingId}`}>
+          <Form<PromptFormValues>
+            form={form}
+            layout="vertical"
+            initialValues={DEFAULT_FORM_VALUES}
+            onFinish={handleSubmit}
+          >
+            <Form.Item
+              label="标题"
+              name="title"
+              rules={[{ required: true, whitespace: true, message: "请输入标题" }]}
             >
-              {saveMutation.isPending ? "提交中..." : editingId === null ? "创建" : "保存"}
-            </Button>
-            <Button color="gray" type="button" variant="soft" onClick={resetForm}>重置</Button>
-          </div>
-        </section>
+              <Input placeholder="请输入提示词标题" maxLength={120} showCount />
+            </Form.Item>
+
+            <Form.Item
+              label="内容"
+              name="content"
+              rules={[{ required: true, whitespace: true, message: "请输入内容" }]}
+            >
+              <Input.TextArea rows={6} placeholder="请输入提示词内容" showCount maxLength={5000} />
+            </Form.Item>
+
+            <Row gutter={16}>
+              <Col xs={24} md={6}>
+                <Form.Item label="等级" name="level" rules={[{ required: true, message: "请选择等级" }]}>
+                  <Select
+                    options={LEVEL_OPTIONS.filter((item) => item.value !== "all")}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={6}>
+                <Form.Item label="状态" name="status" rules={[{ required: true, message: "请选择状态" }]}>
+                  <Select options={STATUS_OPTIONS.filter((item) => item.value !== "all")} />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={6}>
+                <Form.Item label="生效时间" name="start_at">
+                  <DatePicker showTime className="w-full" placeholder="可选" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={6}>
+                <Form.Item
+                  label="失效时间"
+                  name="end_at"
+                  dependencies={["start_at"]}
+                  rules={[
+                    ({ getFieldValue }) => ({
+                      validator(_, value: Dayjs | null) {
+                        const start = getFieldValue("start_at") as Dayjs | null;
+                        if (!value || !start || value.isAfter(start)) {
+                          return Promise.resolve();
+                        }
+                        return Promise.reject(new Error("失效时间需晚于生效时间"));
+                      },
+                    }),
+                  ]}
+                >
+                  <DatePicker showTime className="w-full" placeholder="可选" />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Space>
+              <Button type="primary" htmlType="submit" loading={saveMutation.isPending}>
+                {saveMutation.isPending ? "提交中..." : editingId === null ? "创建" : "保存"}
+              </Button>
+              <Button onClick={resetForm}>重置</Button>
+            </Space>
+          </Form>
+        </Card>
       )}
-    </div>
+    </Space>
   );
 }

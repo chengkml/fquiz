@@ -1,20 +1,33 @@
 "use client";
 
-import Link from "next/link";
 import dayjs, { Dayjs } from "dayjs";
-import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  type ChangeEvent,
+  type FC,
+  type MouseEvent,
+  type ReactElement,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  Alert,
   Button,
   DatePicker,
+  Empty,
   Form,
   Input,
-  Layout,
   Modal,
+  Segmented,
   Select,
   Space,
   Spin,
   Switch,
   Tag,
+  Typography,
   message,
 } from "antd";
 import {
@@ -25,10 +38,11 @@ import {
 } from "@ant-design/icons";
 
 import { useAuth } from "@/components/auth-provider";
+import { Card } from "@/components/ui-antd";
 import { readApiError } from "@/lib/api";
 
-const { Content } = Layout;
 const { TextArea } = Input;
+const { Text } = Typography;
 
 type ViewType = "month" | "week" | "year";
 type ScheduleStatus = "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "EXPIRED";
@@ -590,7 +604,7 @@ export default function SchedulePage() {
                           <Button
                             size="small"
                             type="primary"
-                            onClick={(event) => {
+                            onClick={(event: MouseEvent<HTMLElement>) => {
                               event.stopPropagation();
                               openCompleteModal(schedule);
                             }}
@@ -673,62 +687,79 @@ export default function SchedulePage() {
   };
 
   if (initializing || loading) {
-    return <p className="text-sm text-[var(--gray-11)]">Loading schedules...</p>;
+    return (
+      <Card>
+        <Space>
+          <Spin size="small" />
+          <Text type="secondary">Loading schedules...</Text>
+        </Space>
+      </Card>
+    );
   }
 
   if (!user) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问日程管理页面。</p>
-        <Link href="/" className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]">
-          返回首页
-        </Link>
-      </main>
+      <Card>
+        <Space direction="vertical" size={12}>
+          <Text type="secondary">请先登录后再访问日程管理页面。</Text>
+          <Button type="primary" href="/">
+            返回首页
+          </Button>
+        </Space>
+      </Card>
     );
   }
 
   if (!canRead) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `todo.read`）。</p>
-        <Link href="/" className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]">
-          返回首页
-        </Link>
-      </main>
+      <Card>
+        <Space direction="vertical" size={12}>
+          <Text type="secondary">你没有访问该页面的权限（需要 `todo.read`）。</Text>
+          <Button type="primary" href="/">
+            返回首页
+          </Button>
+        </Space>
+      </Card>
     );
   }
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      {panelError ? (
-        <pre className="overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">{panelError}</pre>
-      ) : null}
+    <Space direction="vertical" size={16} style={{ display: "flex" }}>
+      {panelError ? <Alert type="error" showIcon message="请求失败" description={<pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{panelError}</pre>} /> : null}
 
-      <Layout style={{ border: "1px solid var(--gray-6)", borderRadius: 12, padding: 12, background: "var(--gray-1)" }}>
-        <Content>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-            <Space>
-              <Button type={viewType === "year" ? "primary" : "default"} onClick={() => setViewType("year")}>年</Button>
-              <Button type={viewType === "month" ? "primary" : "default"} onClick={() => setViewType("month")}>月</Button>
-              <Button type={viewType === "week" ? "primary" : "default"} onClick={() => setViewType("week")}>周</Button>
-            </Space>
+      <Card>
+        <Space direction="vertical" size={12} style={{ display: "flex" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <Segmented<ViewType>
+              value={viewType}
+              onChange={(value) => setViewType(value)}
+              options={[
+                { label: "年", value: "year" },
+                { label: "月", value: "month" },
+                { label: "周", value: "week" },
+              ]}
+            />
 
-            <Space>
+            <Space wrap>
               <Button icon={<LeftOutlined />} onClick={() => navigateDate("prev")} />
-              <strong>{formatCurrentDate()}</strong>
+              <Text strong>{formatCurrentDate()}</Text>
               <Button icon={<RightOutlined />} onClick={() => navigateDate("next")} />
               <Button onClick={() => setCurrentDate(dayjs())}>今天</Button>
-              {canCreate && (
+              {canCreate ? (
                 <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
                   新增日程
                 </Button>
-              )}
+              ) : null}
             </Space>
           </div>
 
-          <div>{renderCalendarView()}</div>
-        </Content>
-      </Layout>
+          {schedules.length === 0 ? (
+            <Empty description="当前时间范围暂无日程" />
+          ) : (
+            <div>{renderCalendarView()}</div>
+          )}
+        </Space>
+      </Card>
 
       <Modal
         title={isEditMode ? "编辑日程" : "新增日程"}
@@ -744,7 +775,10 @@ export default function SchedulePage() {
         width={isEditMode || generatedEventData ? 720 : 900}
         okText="保存"
         cancelText="取消"
-        footer={(_, { OkBtn, CancelBtn }) => {
+        footer={(
+          _origin: ReactNode,
+          { OkBtn, CancelBtn }: { OkBtn: FC; CancelBtn: FC },
+        ) => {
           if (isEditMode) {
             return (
               <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -775,7 +809,7 @@ export default function SchedulePage() {
                   placeholder="请描述要生成的日程，例如：明天下午3点开会，持续2小时"
                   rows={3}
                   value={generateDescription}
-                  onChange={(event) => setGenerateDescription(event.target.value)}
+                  onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setGenerateDescription(event.target.value)}
                   disabled={isGenerating}
                 />
                 <Space style={{ marginTop: 8 }}>
@@ -870,6 +904,6 @@ export default function SchedulePage() {
           确认将此日程标记为已完成吗？完成时间会自动设置为当前时间。
         </div>
       </Modal>
-    </div>
+    </Space>
   );
 }

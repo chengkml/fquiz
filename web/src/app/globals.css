@@ -1,5 +1,81 @@
 @import "tailwindcss";
 
+:root {
+  /* AntD base fallbacks */
+  --ant-color-primary: #4f46e5;
+  --ant-color-text: rgba(0, 0, 0, 0.88);
+  --ant-color-text-secondary: rgba(0, 0, 0, 0.65);
+  --ant-color-bg-layout: #f5f5f5;
+  --ant-color-border-secondary: #d9d9d9;
+
+  /* Legacy semantic vars (overridden by Theme token bridge at runtime) */
+  --color-panel-solid: #ffffff;
+  --border: #d9d9d9;
+
+  --gray-1: #ffffff;
+  --gray-2: #fafafa;
+  --gray-6: #d9d9d9;
+  --gray-10: rgba(0, 0, 0, 0.45);
+  --gray-11: rgba(0, 0, 0, 0.65);
+  --gray-12: rgba(0, 0, 0, 0.88);
+  --gray-a2: rgba(0, 0, 0, 0.02);
+  --gray-a3: rgba(0, 0, 0, 0.06);
+
+  --accent-6: #818cf8;
+  --accent-7: #6366f1;
+  --accent-9: #4f46e5;
+  --accent-10: #4338ca;
+  --accent-11: #3730a3;
+  --accent-12: #312e81;
+  --accent-a2: rgba(79, 70, 229, 0.12);
+  --accent-a3: rgba(79, 70, 229, 0.18);
+  --accent-contrast: #ffffff;
+
+  --indigo-2: #eef2ff;
+  --indigo-11: #3730a3;
+  --indigo-a2: rgba(79, 70, 229, 0.12);
+
+  --green-6: #95de64;
+  --green-9: #52c41a;
+  --green-11: #237804;
+  --green-a2: rgba(82, 196, 26, 0.14);
+  --green-a3: rgba(82, 196, 26, 0.2);
+
+  --red-2: #fff1f0;
+  --red-6: #ff7875;
+  --red-7: #ff4d4f;
+  --red-11: #cf1322;
+  --red-a2: rgba(255, 77, 79, 0.14);
+  --red-a3: rgba(255, 77, 79, 0.22);
+
+  --orange-9: #faad14;
+  --orange-11: #ad6800;
+  --orange-a3: rgba(250, 173, 20, 0.24);
+  --amber-11: #ad6800;
+}
+
 body {
   min-height: 100vh;
+  background: var(--ant-color-bg-layout);
+  color: var(--ant-color-text);
+}
+
+:root.fquiz-happy-work body {
+  animation: fquiz-happy-work-glow 12s ease-in-out infinite;
+}
+
+@keyframes fquiz-happy-work-glow {
+  0%,
+  100% {
+    filter: saturate(1) hue-rotate(0deg);
+  }
+  50% {
+    filter: saturate(1.06) hue-rotate(8deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root.fquiz-happy-work body {
+    animation: none;
+  }
 }

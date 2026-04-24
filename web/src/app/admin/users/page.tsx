@@ -1,12 +1,27 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Empty,
+  Form,
+  Input,
+  Modal,
+  Popconfirm,
+  Space,
+  Spin,
+  Table,
+  Tag,
+  Typography,
+} from "antd";
+import type { ColumnsType } from "antd/es/table";
 import Link from "next/link";
-import { ChangeEvent, FormEvent, useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { RowActionMenu } from "@/components/row-action-menu";
-import { Button, Checkbox, TextField, Table } from "@/components/ui-antd";
+import { Card } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { RoleItem, RoleListResponse, UserListResponse, UserPublic } from "@/types/auth";
@@ -15,17 +30,36 @@ type UserRolePayload = {
   role_codes: string[];
 };
 
+type CreateUserValues = {
+  user_id: string;
+  email: string;
+  username: string;
+  password: string;
+};
+
+type ResetPasswordValues = {
+  password: string;
+};
+
+function statusLabel(status: string): string {
+  if (status === "active") return "启用";
+  if (status === "disabled") return "禁用";
+  return status || "-";
+}
+
 export default function AdminUsersPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
+
+  const [createForm] = Form.useForm<CreateUserValues>();
+  const [resetPasswordForm] = Form.useForm<ResetPasswordValues>();
+
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [resettingUserId, setResettingUserId] = useState<string | null>(null);
   const [updatingStatusUserId, setUpdatingStatusUserId] = useState<string | null>(null);
-  const [newUserId, setNewUserId] = useState("");
-  const [newEmail, setNewEmail] = useState("");
-  const [newUsername, setNewUsername] = useState("");
-  const [newPassword, setNewPassword] = useState("");
+  const [resetPasswordTarget, setResetPasswordTarget] = useState<UserPublic | null>(null);
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -74,7 +108,7 @@ export default function AdminUsersPage() {
   const roles = useMemo<RoleItem[]>(() => {
     if (canReadRoles) return rolesQuery.data?.items ?? [];
     return Array.from(new Set(users.flatMap((item) => item.role_codes))).map((code, index) => ({
-      id: -(index + 1),
+      id: `fallback-${index + 1}`,
       code,
       name: code,
       permission_codes: [],
@@ -105,16 +139,11 @@ export default function AdminUsersPage() {
   };
 
   const createUserMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (values: CreateUserValues) => {
       const response = await fetchWithAuth("/api/v1/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: newUserId.trim(),
-          email: newEmail.trim(),
-          username: newUsername.trim(),
-          password: newPassword,
-        }),
+        body: JSON.stringify(values),
       });
       if (!response.ok) throw new Error(await readApiError(response));
       return response.json() as Promise<UserPublic>;
@@ -122,10 +151,7 @@ export default function AdminUsersPage() {
     onSuccess: async () => {
       setSuccess("用户已创建");
       setError("");
-      setNewUserId("");
-      setNewEmail("");
-      setNewUsername("");
-      setNewPassword("");
+      createForm.resetFields();
       await refreshData();
     },
     onError: (candidate) => {
@@ -174,7 +200,11 @@ export default function AdminUsersPage() {
       setError("");
       setSuccess("");
     },
-    onSuccess: () => setSuccess("密码已重置"),
+    onSuccess: () => {
+      setSuccess("密码已重置");
+      setResetPasswordTarget(null);
+      resetPasswordForm.resetFields();
+    },
     onError: (candidate) => {
       setSuccess("");
       setError(candidate instanceof Error ? candidate.message : "重置密码失败");
@@ -230,14 +260,20 @@ export default function AdminUsersPage() {
     onSettled: () => setDeletingUserId(null),
   });
 
-  const handleCreateUser = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const handleCreateUser = (values: CreateUserValues) => {
     setError("");
     setSuccess("");
 
-    const candidateUserId = newUserId.trim().toLowerCase();
-    const candidateEmail = newEmail.trim().toLowerCase();
-    const candidateUsername = newUsername.trim().toLowerCase();
+    const payload: CreateUserValues = {
+      user_id: values.user_id.trim(),
+      email: values.email.trim(),
+      username: values.username.trim(),
+      password: values.password,
+    };
+
+    const candidateUserId = payload.user_id.toLowerCase();
+    const candidateEmail = payload.email.toLowerCase();
+    const candidateUsername = payload.username.toLowerCase();
 
     if (existingUserIds.has(candidateUserId)) {
       setError("用户 ID 已存在，请更换后重试");
@@ -252,23 +288,170 @@ export default function AdminUsersPage() {
       return;
     }
 
-    createUserMutation.mutate();
+    createUserMutation.mutate(payload);
   };
 
-  const anyError =
-    error
-    || (usersQuery.error instanceof Error ? usersQuery.error.message : "")
+  const openResetPasswordModal = (target: UserPublic) => {
+    setError("");
+    setSuccess("");
+    setResetPasswordTarget(target);
+    resetPasswordForm.resetFields();
+  };
+
+  const closeResetPasswordModal = () => {
+    if (resetPasswordMutation.isPending) return;
+    setResetPasswordTarget(null);
+    resetPasswordForm.resetFields();
+  };
+
+  const handleSubmitResetPassword = (values: ResetPasswordValues) => {
+    if (!resetPasswordTarget) return;
+    resetPasswordMutation.mutate({ userId: resetPasswordTarget.id, password: values.password });
+  };
+
+  const queryError =
+    (usersQuery.error instanceof Error ? usersQuery.error.message : "")
     || (rolesQuery.error instanceof Error ? rolesQuery.error.message : "");
+  const anyError = error || queryError;
+
+  const columns: ColumnsType<UserPublic> = [
+    {
+      title: "用户 ID",
+      dataIndex: "id",
+      width: 180,
+      render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
+    },
+    {
+      title: "邮箱",
+      dataIndex: "email",
+      width: 240,
+    },
+    {
+      title: "用户名",
+      dataIndex: "username",
+      width: 180,
+    },
+    {
+      title: "状态",
+      dataIndex: "status",
+      width: 120,
+      render: (value: string) => (
+        <Tag color={value === "active" ? "green" : "default"}>{statusLabel(value)}</Tag>
+      ),
+    },
+    {
+      title: "角色",
+      dataIndex: "role_codes",
+      width: 340,
+      render: (_roleCodes: string[], row) => {
+        if (roleOptions.length === 0) {
+          return <Typography.Text type="secondary">暂无可分配角色</Typography.Text>;
+        }
+
+        return (
+          <Space wrap size={[8, 8]}>
+            {roleOptions.map((roleCode) => {
+              const checked = row.role_codes.includes(roleCode);
+              return (
+                <Checkbox
+                  key={`${row.id}-${roleCode}`}
+                  checked={checked}
+                  disabled={savingUserId === row.id}
+                  onChange={(event) => {
+                    const nextRoles = event.target.checked
+                      ? Array.from(new Set([...row.role_codes, roleCode]))
+                      : row.role_codes.filter((code) => code !== roleCode);
+                    updateRolesMutation.mutate({ userId: row.id, roleCodes: nextRoles });
+                  }}
+                >
+                  {roleCode}
+                </Checkbox>
+              );
+            })}
+          </Space>
+        );
+      },
+    },
+    {
+      title: "权限",
+      dataIndex: "permission_codes",
+      width: 280,
+      render: (value: string[]) => value.join(", ") || "-",
+    },
+    {
+      title: "操作",
+      key: "actions",
+      fixed: "right",
+      width: 260,
+      render: (_value, row) => {
+        const statusLoading = updatingStatusUserId === row.id;
+        const resetLoading = resettingUserId === row.id;
+        const deleteLoading = deletingUserId === row.id;
+        const rowBusy = statusLoading || resetLoading || deleteLoading;
+
+        return (
+          <Space wrap>
+            <Button
+              size="small"
+              loading={statusLoading}
+              disabled={rowBusy || row.id === user?.id}
+              onClick={() => {
+                if (row.id === user?.id) {
+                  setError("不能修改当前登录账号的状态");
+                  return;
+                }
+                const nextStatus: "active" | "disabled" = row.status === "active" ? "disabled" : "active";
+                updateUserProfileMutation.mutate({ userId: row.id, status: nextStatus });
+              }}
+            >
+              {row.status === "active" ? "禁用" : "启用"}
+            </Button>
+
+            <Button
+              size="small"
+              loading={resetLoading}
+              disabled={rowBusy}
+              onClick={() => openResetPasswordModal(row)}
+            >
+              重置密码
+            </Button>
+
+            <Popconfirm
+              title={`确认删除用户 ${row.username}（${row.id}）？`}
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true, loading: deleteLoading }}
+              onConfirm={() => deleteUserMutation.mutate(row.id)}
+              disabled={rowBusy}
+            >
+              <Button danger size="small" loading={deleteLoading} disabled={rowBusy}>
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        );
+      },
+    },
+  ];
 
   if (initializing || usersQuery.isLoading || rolesQuery.isLoading) {
-    return <p className="text-sm text-[var(--gray-11)]">Loading users...</p>;
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <Space direction="vertical" align="center" size={12}>
+          <Spin />
+          <Typography.Text type="secondary">正在加载用户数据...</Typography.Text>
+        </Space>
+      </div>
+    );
   }
 
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问用户管理页面。</p>
-        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回首页</Link>
+        <Typography.Text type="secondary">请先登录后再访问用户管理页面。</Typography.Text>
+        <Button type="default" className="w-fit">
+          <Link href="/">返回首页</Link>
+        </Button>
       </main>
     );
   }
@@ -276,173 +459,146 @@ export default function AdminUsersPage() {
   if (!canManage) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `user.manage`）。</p>
-        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回首页</Link>
+        <Typography.Text type="secondary">你没有访问该页面的权限（需要 `user.manage`）。</Typography.Text>
+        <Button type="default" className="w-fit">
+          <Link href="/">返回首页</Link>
+        </Button>
       </main>
     );
   }
 
   return (
     <div className="space-y-6">
-      {anyError && <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">{anyError}</pre>}
-      {success && <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--green-6)] bg-[var(--green-a2)] p-4 text-sm text-[var(--green-11)]">{success}</pre>}
+      {anyError && <Alert type="error" message="操作失败" description={anyError} showIcon />}
+      {success && <Alert type="success" message={success} showIcon />}
 
-      <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
-        <h2 className="text-lg font-semibold">新增用户</h2>
-        <p className="mt-1 text-sm text-[var(--gray-11)]">用户 ID 由管理员手动填写，系统会校验重复。</p>
-        <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={handleCreateUser}>
-          <TextField.Root
-            placeholder="用户 ID（例如 ck001）"
-            value={newUserId}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => setNewUserId(event.currentTarget.value)}
-            minLength={3}
-            maxLength={64}
-            required
-          />
-          <TextField.Root
-            placeholder="邮箱"
-            type="email"
-            value={newEmail}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => setNewEmail(event.currentTarget.value)}
-            required
-          />
-          <TextField.Root
-            placeholder="用户名"
-            value={newUsername}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => setNewUsername(event.currentTarget.value)}
-            minLength={3}
-            maxLength={64}
-            required
-          />
-          <TextField.Root
-            placeholder="初始密码（至少8位）"
-            type="password"
-            value={newPassword}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => setNewPassword(event.currentTarget.value)}
-            minLength={8}
-            maxLength={128}
-            required
-          />
-          <div className="md:col-span-2">
-            <Button type="submit" disabled={createUserMutation.isPending}>
-              {createUserMutation.isPending ? "创建中..." : "创建用户"}
+      <Card
+        title="新增用户"
+        extra={<Typography.Text type="secondary">用户 ID 由管理员手动填写，系统会校验重复。</Typography.Text>}
+      >
+        <Form<CreateUserValues>
+          form={createForm}
+          layout="vertical"
+          onFinish={handleCreateUser}
+          autoComplete="off"
+        >
+          <div className="grid gap-3 md:grid-cols-2">
+            <Form.Item
+              label="用户 ID"
+              name="user_id"
+              rules={[
+                { required: true, message: "请输入用户 ID" },
+                { min: 3, message: "用户 ID 至少 3 位" },
+                { max: 64, message: "用户 ID 不能超过 64 位" },
+              ]}
+            >
+              <Input placeholder="例如 ck001" />
+            </Form.Item>
+
+            <Form.Item
+              label="邮箱"
+              name="email"
+              rules={[
+                { required: true, message: "请输入邮箱" },
+                { type: "email", message: "邮箱格式不正确" },
+              ]}
+            >
+              <Input placeholder="请输入邮箱" />
+            </Form.Item>
+
+            <Form.Item
+              label="用户名"
+              name="username"
+              rules={[
+                { required: true, message: "请输入用户名" },
+                { min: 3, message: "用户名至少 3 位" },
+                { max: 64, message: "用户名不能超过 64 位" },
+              ]}
+            >
+              <Input placeholder="请输入用户名" />
+            </Form.Item>
+
+            <Form.Item
+              label="初始密码"
+              name="password"
+              rules={[
+                { required: true, message: "请输入初始密码" },
+                { min: 8, message: "密码至少 8 位" },
+                { max: 128, message: "密码不能超过 128 位" },
+              ]}
+            >
+              <Input.Password placeholder="至少 8 位" />
+            </Form.Item>
+          </div>
+
+          <Form.Item style={{ marginBottom: 0 }}>
+            <Button type="primary" htmlType="submit" loading={createUserMutation.isPending}>
+              创建用户
             </Button>
-          </div>
-        </form>
-      </section>
+          </Form.Item>
+        </Form>
+      </Card>
 
-      <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">用户列表</h2>
-            <p className="mt-1 text-sm text-[var(--gray-11)]">表头已中文化，支持改角色、重置密码、删除。</p>
-          </div>
-        </div>
+      <Card
+        title="用户列表"
+        extra={(
+          <Space>
+            {usersQuery.isFetching && <Spin size="small" />}
+            <Typography.Text type="secondary">共 {usersQuery.data?.total ?? 0} 条</Typography.Text>
+          </Space>
+        )}
+      >
+        <Table<UserPublic>
+          rowKey="id"
+          dataSource={users}
+          columns={columns}
+          pagination={false}
+          size="middle"
+          scroll={{ x: 1500 }}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="暂无用户数据"
+              />
+            ),
+          }}
+        />
+      </Card>
 
-        <div className="overflow-x-auto">
-          <Table.Root className="w-full min-w-full text-left text-sm">
-            <Table.Header className="bg-[var(--gray-a3)]">
-              <Table.Row>
-                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">用户ID</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">邮箱</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">用户名</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">状态</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">角色</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">权限</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">操作</Table.ColumnHeaderCell>
-              </Table.Row>
-            </Table.Header>
-            <Table.Body className="divide-y divide-y">
-              {users.map((item) => (
-                <Table.Row key={item.id}>
-                  <Table.Cell className="whitespace-nowrap px-4 py-3 font-mono text-xs">{item.id}</Table.Cell>
-                  <Table.Cell className="whitespace-nowrap px-4 py-3">{item.email}</Table.Cell>
-                  <Table.Cell className="whitespace-nowrap px-4 py-3">{item.username}</Table.Cell>
-                  <Table.Cell className="whitespace-nowrap px-4 py-3">{item.status === "active" ? "启用" : item.status === "disabled" ? "禁用" : item.status}</Table.Cell>
-                  <Table.Cell className="px-4 py-3">
-                    <div className="flex flex-wrap gap-2">
-                      {roleOptions.map((roleCode) => {
-                        const checked = item.role_codes.includes(roleCode);
-                        return (
-                          <label key={roleCode} className="flex items-center gap-1 rounded-full border border-[var(--border)] bg-white/80 px-2 py-1 text-xs">
-                            <Checkbox
-                              checked={checked}
-                              disabled={savingUserId === item.id}
-                              onCheckedChange={(state: boolean | "indeterminate") => {
-                                const nextRoles = state === true
-                                  ? [...item.role_codes, roleCode]
-                                  : item.role_codes.filter((code) => code !== roleCode);
-                                updateRolesMutation.mutate({ userId: item.id, roleCodes: nextRoles });
-                              }}
-                            />
-                            <span>{roleCode}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </Table.Cell>
-                  <Table.Cell className="px-4 py-3">{item.permission_codes.join(", ") || "-"}</Table.Cell>
-                  <Table.Cell className="px-4 py-3">
-                    <RowActionMenu
-                      triggerLabel={
-                        updatingStatusUserId === item.id
-                        || resettingUserId === item.id
-                        || deletingUserId === item.id
-                          ? "处理中..."
-                          : "操作"
-                      }
-                      items={[
-                        {
-                          key: "status",
-                          label: updatingStatusUserId === item.id
-                            ? "更新中..."
-                            : item.status === "active"
-                              ? "禁用"
-                              : "启用",
-                          disabled: updatingStatusUserId === item.id,
-                          onSelect: () => {
-                            if (item.id === user.id) {
-                              setError("不能修改当前登录账号的状态");
-                              return;
-                            }
-                            const nextStatus: "active" | "disabled" = item.status === "active" ? "disabled" : "active";
-                            updateUserProfileMutation.mutate({ userId: item.id, status: nextStatus });
-                          },
-                        },
-                        {
-                          key: "reset-password",
-                          label: resettingUserId === item.id ? "重置中..." : "改密码",
-                          disabled: resettingUserId === item.id,
-                          onSelect: () => {
-                            const pwd = window.prompt(`请输入用户 ${item.username} 的新密码（至少8位）`);
-                            if (!pwd) return;
-                            if (pwd.length < 8) {
-                              setError("新密码长度至少 8 位");
-                              return;
-                            }
-                            resetPasswordMutation.mutate({ userId: item.id, password: pwd });
-                          },
-                        },
-                        {
-                          key: "delete",
-                          label: deletingUserId === item.id ? "删除中..." : "删除",
-                          color: "red",
-                          disabled: deletingUserId === item.id,
-                          onSelect: () => {
-                            const confirmed = window.confirm(`确认删除用户 ${item.username}（${item.id}）？`);
-                            if (!confirmed) return;
-                            deleteUserMutation.mutate(item.id);
-                          },
-                        },
-                      ]}
-                    />
-                  </Table.Cell>
-                </Table.Row>
-              ))}
-            </Table.Body>
-          </Table.Root>
-        </div>
-      </section>
+      <Modal
+        title={resetPasswordTarget ? `重置密码：${resetPasswordTarget.username}（${resetPasswordTarget.id}）` : "重置密码"}
+        open={!!resetPasswordTarget}
+        destroyOnClose
+        onCancel={closeResetPasswordModal}
+        onOk={() => resetPasswordForm.submit()}
+        okText="确认重置"
+        cancelText="取消"
+        confirmLoading={
+          !!resetPasswordTarget
+          && resettingUserId === resetPasswordTarget.id
+          && resetPasswordMutation.isPending
+        }
+      >
+        <Form<ResetPasswordValues>
+          form={resetPasswordForm}
+          layout="vertical"
+          onFinish={handleSubmitResetPassword}
+          autoComplete="off"
+        >
+          <Form.Item
+            label="新密码"
+            name="password"
+            rules={[
+              { required: true, message: "请输入新密码" },
+              { min: 8, message: "新密码至少 8 位" },
+              { max: 128, message: "新密码不能超过 128 位" },
+            ]}
+          >
+            <Input.Password placeholder="请输入新密码" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }

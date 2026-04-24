@@ -1,24 +1,26 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Alert,
   Button,
-  Card,
+  Col,
   Drawer,
   Empty,
   Input,
+  List,
   Row,
-  Col,
   Select,
   Space,
+  Spin,
   Typography,
   message,
 } from "antd";
 
 import { MermaidViewer } from "@/components/mermaid-viewer";
 import { useAuth } from "@/components/auth-provider";
+import { Card } from "@/components/ui-antd";
 import { readApiError } from "@/lib/api";
 import type { MermaidChatTurn, MermaidDiagramSummary } from "@/types/auth";
 
@@ -227,58 +229,82 @@ export function MermaidEditor({ diagramId }: MermaidEditorProps) {
 
   const chatPanel = useMemo(() => {
     if (messages.length === 0) {
-      return (
-        <div className="h-full rounded-lg border border-dashed border-[var(--gray-6)] p-4">
-          <Empty description="输入需求，AI 将生成或修改 Mermaid 代码" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-        </div>
-      );
+      return <Empty description="输入需求，AI 将生成或修改 Mermaid 代码" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
     }
 
     return (
-      <div className="h-full overflow-y-auto rounded-lg border border-[var(--gray-6)] bg-white p-3">
-        <Space direction="vertical" size={12} style={{ width: "100%" }}>
-          {messages.map((msg, index) => (
-            <div
-              key={`${msg.role}-${index}`}
-              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`max-w-[88%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-all ${
-                  msg.role === "user"
-                    ? "bg-[var(--accent-a3)] text-[var(--accent-12)]"
-                    : "bg-[var(--gray-a3)] text-[var(--gray-12)]"
-                }`}
-              >
-                {msg.role === "assistant" && !msg.content ? "生成中..." : msg.content}
+      <div
+        style={{
+          height: 460,
+          overflowY: "auto",
+          border: "1px solid var(--ant-color-border-secondary)",
+          borderRadius: 8,
+          padding: 12,
+          background: "var(--ant-color-bg-container)",
+        }}
+      >
+        <List<MermaidChatTurn>
+          split={false}
+          dataSource={messages}
+          renderItem={(msg, index) => (
+            <List.Item key={`${msg.role}-${index}`} style={{ padding: "6px 0" }}>
+              <div style={{ width: "100%", display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
+                <div
+                  style={{
+                    maxWidth: "88%",
+                    borderRadius: 8,
+                    padding: "8px 12px",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                    background: msg.role === "user" ? "var(--ant-color-primary-bg)" : "var(--ant-color-fill-tertiary)",
+                    color: "var(--ant-color-text)",
+                  }}
+                >
+                  {msg.role === "assistant" && !msg.content ? (
+                    <Space size={8}>
+                      <Spin size="small" />
+                      <span>生成中...</span>
+                    </Space>
+                  ) : (
+                    msg.content
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-          <div ref={messageEndRef} />
-        </Space>
+            </List.Item>
+          )}
+        />
+        <div ref={messageEndRef} />
       </div>
     );
   }, [messages]);
 
   if (initializing) {
-    return <p className="text-sm text-[var(--gray-11)]">Loading mermaid editor...</p>;
+    return <Card loading />;
   }
 
   if (!user) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问流程图编辑页面。</p>
-        <Link
-          href="/"
-          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
-        >
+      <Card>
+        <Typography.Title level={4} style={{ marginTop: 0 }}>
+          请先登录
+        </Typography.Title>
+        <Typography.Paragraph type="secondary">登录后可访问流程图编辑页面。</Typography.Paragraph>
+        <Button type="primary" onClick={() => router.push("/")}>
           返回首页
-        </Link>
-      </main>
+        </Button>
+      </Card>
     );
   }
 
   if (!canRead) {
-    return <p className="text-sm text-[var(--gray-11)]">缺少 `question_bank.read` 或 `question_bank.manage` 权限。</p>;
+    return (
+      <Card>
+        <Typography.Title level={4} style={{ marginTop: 0 }}>
+          无访问权限
+        </Typography.Title>
+        <Typography.Paragraph type="secondary">缺少 `question_bank.read` 或 `question_bank.manage` 权限。</Typography.Paragraph>
+      </Card>
+    );
   }
 
   return (
@@ -304,9 +330,14 @@ export function MermaidEditor({ diagramId }: MermaidEditorProps) {
       </Card>
 
       {panelError ? (
-        <section className="rounded-xl border border-[var(--red-6)] bg-[var(--red-2)] p-3 text-sm text-[var(--red-11)]">
-          {panelError}
-        </section>
+        <Alert
+          type="error"
+          showIcon
+          closable
+          message="流程图编辑发生错误"
+          description={panelError}
+          onClose={() => setPanelError("")}
+        />
       ) : null}
 
       <Row gutter={16}>
@@ -318,8 +349,8 @@ export function MermaidEditor({ diagramId }: MermaidEditorProps) {
                 value={prompt}
                 disabled={streaming || !canManage}
                 placeholder="例如：把流程改成从左到右，增加异常分支"
-                onChange={(event) => setPrompt(event.target.value)}
-                onPressEnter={(event) => {
+                onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setPrompt(event.target.value)}
+                onPressEnter={(event: KeyboardEvent<HTMLTextAreaElement>) => {
                   if (!event.shiftKey) {
                     event.preventDefault();
                     void sendPrompt();
@@ -329,13 +360,13 @@ export function MermaidEditor({ diagramId }: MermaidEditorProps) {
               <Input
                 value={modelName}
                 disabled={streaming}
-                onChange={(event) => setModelName(event.target.value)}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setModelName(event.target.value)}
                 placeholder="可选：模型名称（不填则走默认路由）"
               />
               <Button type="primary" onClick={() => void sendPrompt()} loading={streaming} disabled={!canManage || !prompt.trim()}>
                 发送
               </Button>
-              <div className="h-[460px]">{chatPanel}</div>
+              {chatPanel}
             </Space>
           </Card>
         </Col>
@@ -347,13 +378,14 @@ export function MermaidEditor({ diagramId }: MermaidEditorProps) {
         </Col>
       </Row>
 
-      <Drawer
-        title="源代码编辑"
-        width={720}
-        open={drawerVisible}
-        onClose={() => setDrawerVisible(false)}
-      >
+      <Drawer title="源代码编辑" width={720} open={drawerVisible} onClose={() => setDrawerVisible(false)}>
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Alert
+            type="info"
+            showIcon
+            message="源码编辑说明"
+            description="可先套用模板，再按需微调 Mermaid 代码；保存后将以当前编辑器内容为准。"
+          />
           <div>
             <Typography.Text strong>模板</Typography.Text>
             <Space style={{ marginTop: 8 }}>
@@ -364,7 +396,7 @@ export function MermaidEditor({ diagramId }: MermaidEditorProps) {
                   label: type,
                   value: type,
                 }))}
-                onChange={(value) => setTemplateType(String(value))}
+                onChange={(value: string) => setTemplateType(String(value))}
               />
               <Button
                 onClick={() => {
@@ -380,7 +412,7 @@ export function MermaidEditor({ diagramId }: MermaidEditorProps) {
             value={code}
             rows={28}
             autoSize={{ minRows: 22, maxRows: 36 }}
-            onChange={(event) => setCode(event.target.value)}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setCode(event.target.value)}
             disabled={!canManage || streaming}
             style={{ fontFamily: "JetBrains Mono, Menlo, Monaco, Consolas, monospace" }}
           />

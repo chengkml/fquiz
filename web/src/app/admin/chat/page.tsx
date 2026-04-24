@@ -1,10 +1,31 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Alert,
+  Button,
+  Empty,
+  Form,
+  Input,
+  List,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+} from "antd";
+import {
+  type ChangeEvent,
+  type CSSProperties,
+  type FormEvent,
+  type KeyboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { TextArea, Button } from "@/components/ui-antd";
+import { Card } from "@/components/ui-antd";
 import { readApiError } from "@/lib/api";
 import type {
   ChatMessage,
@@ -145,129 +166,197 @@ export default function AdminChatPage() {
     },
   });
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const submit = (event?: FormEvent) => {
+    event?.preventDefault();
     setFeedback("");
     setError("");
     sendMessageMutation.mutate();
   };
 
+  const handlePressEnter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.shiftKey) {
+      return;
+    }
+    const nativeEvent = event.nativeEvent as { isComposing?: boolean };
+    if (nativeEvent.isComposing) {
+      return;
+    }
+    event.preventDefault();
+    if (!effectiveSessionId || sendMessageMutation.isPending || !draft.trim()) {
+      return;
+    }
+    submit();
+  };
+
+  const combinedError = useMemo(() => {
+    if (error) {
+      return error;
+    }
+    if (sessionsQuery.error instanceof Error) {
+      return sessionsQuery.error.message;
+    }
+    if (messagesQuery.error instanceof Error) {
+      return messagesQuery.error.message;
+    }
+    return "";
+  }, [error, messagesQuery.error, sessionsQuery.error]);
+
   if (initializing) {
     return (
-      <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm text-sm text-[var(--gray-11)]">Loading chat workspace...</div>
+      <Card>
+        <Space>
+          <Spin size="small" />
+          <Typography.Text type="secondary">Loading chat workspace...</Typography.Text>
+        </Space>
+      </Card>
     );
   }
 
   if (!user) {
-    return (
-      <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm text-sm text-[var(--gray-11)]">请先登录后再使用 AI 聊天。</div>
-    );
+    return <Alert type="info" showIcon message="请先登录后再使用 AI 聊天。" />;
   }
 
   if (!canUseChat) {
-    return (
-      <div className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">当前账号没有 `chat.use` 权限。</div>
-    );
+    return <Alert type="error" showIcon message="当前账号没有 `chat.use` 权限。" />;
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-      <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
-        <div className="mb-4 flex items-center justify-between gap-2">
-          <h2 className="text-base font-semibold">会话列表</h2>
-          <Button
-            type="button"
-            color="gray" size="1" variant="soft"
-            onClick={() => createSessionMutation.mutate()}
-            disabled={createSessionMutation.isPending}
-          >
-            {createSessionMutation.isPending ? "创建中..." : "新建会话"}
-          </Button>
-        </div>
+    <Space direction="vertical" size={16} className="w-full">
+      {combinedError ? <Alert type="error" showIcon closable message={combinedError} /> : null}
+      {feedback ? <Alert type="success" showIcon closable message={feedback} /> : null}
 
-        {sessionsQuery.isLoading ? (
-          <p className="text-sm text-[var(--gray-11)]">加载中...</p>
-        ) : sessions.length === 0 ? (
-          <p className="text-sm text-[var(--gray-11)]">暂无会话，点击“新建会话”开始。</p>
-        ) : (
-          <div className="space-y-2">
-            {sessions.map((session) => (
-              <Button
-                key={session.id}
-                type="button"
-                onClick={() => setActiveSessionId(session.id)}
-                className={`w-full rounded-lg border px-3 py-2 text-left transition ${
-                  effectiveSessionId === session.id
-                    ? "border-[var(--accent-7)] bg-[var(--accent-a3)]"
-                    : "border-[var(--border)] bg-[var(--color-panel-solid,var(--gray-1))] hover:border-[var(--accent-6)]"
-                }`}
-              >
-                <p className="truncate text-sm font-medium">{session.title || "未命名会话"}</p>
-                <p className="mt-1 text-xs text-[var(--gray-11)]">{formatTime(session.last_message_at || session.updated_at)}</p>
-              </Button>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm flex min-h-[70vh] flex-col">
-        <div className="mb-4 border-b border-[var(--border)] pb-3">
-          <h2 className="text-base font-semibold">{activeSession?.title || "请选择会话"}</h2>
-          <p className="mt-1 text-xs text-[var(--gray-11)]">
-            {activeSession?.model_code ? `最近使用模型：${activeSession.model_code}` : "模型将按 chat.default -> GLOBAL 路由规则自动选择"}
-          </p>
-        </div>
-
-        {(error || sessionsQuery.error || messagesQuery.error) && (
-          <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)] mb-3 text-xs">
-            {error
-              || (sessionsQuery.error instanceof Error ? sessionsQuery.error.message : "")
-              || (messagesQuery.error instanceof Error ? messagesQuery.error.message : "")}
-          </pre>
-        )}
-        {feedback && <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--green-6)] bg-[var(--green-a2)] p-4 text-sm text-[var(--green-11)] mb-3 text-xs">{feedback}</pre>}
-
-        <div className="flex-1 space-y-3 overflow-y-auto pr-1">
-          {!effectiveSessionId ? (
-            <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-6 text-sm text-[var(--gray-11)]">
-              请先创建或选择会话。
-            </div>
-          ) : messagesQuery.isLoading ? (
-            <p className="text-sm text-[var(--gray-11)]">加载消息中...</p>
-          ) : messages.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-6 text-sm text-[var(--gray-11)]">
-              暂无消息，发送第一条消息开始对话。
-            </div>
-          ) : (
-            messages.map((message) => (
-              <MessageItem key={message.id} message={message} currentUserId={user.id} />
-            ))
-          )}
-          <div ref={messageEndRef} />
-        </div>
-
-        <form className="mt-4 border-t border-[var(--border)] pt-4" onSubmit={handleSubmit}>
-          <label className="mb-2 block text-sm text-[var(--gray-11)]">输入消息</label>
-          <TextArea
-            rows={3}
-            className="w-full"
-            placeholder="请输入你的问题..."
-            value={draft}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setDraft(event.currentTarget.value)}
-            disabled={!effectiveSessionId || sendMessageMutation.isPending}
-          />
-          <div className="mt-3 flex items-center justify-end gap-2">
+      <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <Card
+          size="small"
+          title="会话列表"
+          extra={(
             <Button
-              type="submit"
-             
-              disabled={!effectiveSessionId || sendMessageMutation.isPending || !draft.trim()}
+              type="default"
+              onClick={() => createSessionMutation.mutate()}
+              loading={createSessionMutation.isPending}
             >
-              {sendMessageMutation.isPending ? "发送中..." : "发送"}
+              新建会话
             </Button>
+          )}
+        >
+          {sessionsQuery.isLoading ? (
+            <div className="flex min-h-40 items-center justify-center">
+              <Spin />
+            </div>
+          ) : sessions.length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无会话，点击“新建会话”开始。"
+            >
+              <Button type="primary" onClick={() => createSessionMutation.mutate()}>
+                新建会话
+              </Button>
+            </Empty>
+          ) : (
+            <List
+              dataSource={sessions}
+              split={false}
+              renderItem={(session) => {
+                const selected = effectiveSessionId === session.id;
+                return (
+                  <List.Item style={{ paddingInline: 0, border: "none", paddingBlock: 4 }}>
+                    <Button
+                      block
+                      type={selected ? "primary" : "text"}
+                      onClick={() => setActiveSessionId(session.id)}
+                      style={{
+                        height: "auto",
+                        textAlign: "left",
+                        justifyContent: "flex-start",
+                        padding: "10px 12px",
+                      }}
+                    >
+                      <Space direction="vertical" size={2} style={{ width: "100%" }}>
+                        <Typography.Text ellipsis strong>
+                          {session.title || "未命名会话"}
+                        </Typography.Text>
+                        <Typography.Text type={selected ? undefined : "secondary"} style={{ fontSize: 12 }}>
+                          {formatTime(session.last_message_at || session.updated_at)}
+                        </Typography.Text>
+                      </Space>
+                    </Button>
+                  </List.Item>
+                );
+              }}
+            />
+          )}
+        </Card>
+
+        <Card
+          size="small"
+          title={activeSession?.title || "请选择会话"}
+          extra={
+            activeSession?.model_code ? <Tag>{activeSession.model_code}</Tag> : <Tag>chat.default -&gt; GLOBAL</Tag>
+          }
+        >
+          <div className="flex min-h-[70vh] flex-col">
+            <Typography.Text type="secondary" className="mb-3 text-xs">
+              {activeSession?.model_code
+                ? "最近使用模型"
+                : "模型将按 chat.default -> GLOBAL 路由规则自动选择"}
+            </Typography.Text>
+
+            <div className="flex-1 overflow-y-auto pr-1">
+              {!effectiveSessionId ? (
+                <div className="flex min-h-40 items-center justify-center">
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请先创建或选择会话。" />
+                </div>
+              ) : messagesQuery.isLoading ? (
+                <div className="flex min-h-40 items-center justify-center">
+                  <Spin />
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="flex min-h-40 items-center justify-center">
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无消息，发送第一条消息开始对话。" />
+                </div>
+              ) : (
+                <List
+                  dataSource={messages}
+                  split={false}
+                  renderItem={(message) => (
+                    <List.Item key={message.id} style={{ border: "none", paddingBlock: 6, paddingInline: 0 }}>
+                      <MessageItem message={message} currentUserId={user.id} />
+                    </List.Item>
+                  )}
+                />
+              )}
+              <div ref={messageEndRef} />
+            </div>
+
+            <Form layout="vertical" className="mt-4 border-t border-[var(--border)] pt-4" onSubmitCapture={submit}>
+              <Form.Item label="输入消息" required className="mb-3">
+                <Input.TextArea
+                  rows={3}
+                  placeholder="请输入你的问题..."
+                  value={draft}
+                  onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setDraft(event.currentTarget.value)}
+                  onPressEnter={handlePressEnter}
+                  disabled={!effectiveSessionId || sendMessageMutation.isPending}
+                />
+              </Form.Item>
+              <div className="flex items-center justify-between gap-3">
+                <Typography.Text type="secondary" className="text-xs">
+                  Enter 发送，Shift + Enter 换行
+                </Typography.Text>
+                <Button
+                  htmlType="submit"
+                  type="primary"
+                  loading={sendMessageMutation.isPending}
+                  disabled={!effectiveSessionId || sendMessageMutation.isPending || !draft.trim()}
+                >
+                  发送
+                </Button>
+              </div>
+            </Form>
           </div>
-        </form>
-      </section>
-    </div>
+        </Card>
+      </div>
+    </Space>
   );
 }
 
@@ -275,25 +364,49 @@ function MessageItem({ message, currentUserId }: { message: ChatMessage; current
   const fromCurrentUser = message.role === "user" && message.author_user_id === currentUserId;
   const isAssistant = message.role === "assistant";
 
+  const bubbleStyle: CSSProperties = fromCurrentUser
+    ? {
+        background: "var(--accent-9)",
+        borderColor: "var(--accent-7)",
+        color: "var(--accent-contrast, #fff)",
+      }
+    : message.is_error
+      ? {
+          background: "var(--red-a2)",
+          borderColor: "var(--red-6)",
+          color: "var(--red-11)",
+        }
+      : {};
+
   return (
     <div className={`flex ${fromCurrentUser ? "justify-end" : "justify-start"}`}>
-      <article
-        className={`max-w-[90%] rounded-xl border px-4 py-3 text-sm shadow-sm ${
-          fromCurrentUser
-            ? "border-[var(--accent-7)] bg-[var(--accent-9)] text-[var(--accent-contrast,#fff)]"
-            : message.is_error
-              ? "border-[var(--red-7)] bg-[var(--red-a3)] text-[var(--red-11)]"
-              : "border-[var(--border)] bg-[var(--color-panel-solid,var(--gray-1))] text-[var(--gray-12)]"
-        }`}
-      >
-        <p className="whitespace-pre-wrap break-words leading-6">{message.content}</p>
-        <div className={`mt-2 text-xs ${fromCurrentUser ? "text-[var(--accent-a2)]" : "text-[var(--gray-11)]"}`}>
-          <span>{formatTime(message.created_at)}</span>
-          {isAssistant && message.model_code && <span className="ml-2">· {message.model_code}</span>}
-          {isAssistant && message.total_tokens !== null && <span className="ml-2">· tokens {message.total_tokens}</span>}
-          {isAssistant && message.latency_ms !== null && <span className="ml-2">· {message.latency_ms}ms</span>}
-        </div>
-      </article>
+      <Card size="small" className="max-w-[90%]" style={bubbleStyle}>
+        <Typography.Paragraph
+          style={{
+            marginBottom: 8,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            color: fromCurrentUser ? "inherit" : undefined,
+          }}
+        >
+          {message.content}
+        </Typography.Paragraph>
+
+        <Space size={6} wrap>
+          <Typography.Text
+            type={fromCurrentUser ? undefined : "secondary"}
+            style={{
+              fontSize: 12,
+              color: fromCurrentUser ? "var(--accent-a2)" : undefined,
+            }}
+          >
+            {formatTime(message.created_at)}
+          </Typography.Text>
+          {isAssistant && message.model_code ? <Tag>{message.model_code}</Tag> : null}
+          {isAssistant && message.total_tokens !== null ? <Tag>tokens {message.total_tokens}</Tag> : null}
+          {isAssistant && message.latency_ms !== null ? <Tag>{message.latency_ms}ms</Tag> : null}
+        </Space>
+      </Card>
     </div>
   );
 }

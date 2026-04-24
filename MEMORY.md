@@ -193,12 +193,15 @@
 - 后台表格行内“操作”入口推荐统一为下拉菜单形态，优先复用 `web/src/components/row-action-menu.tsx`，避免页面内重复堆叠小按钮并降低操作列宽度波动。
 - Phase B 样板页已落地：`/admin/users`、`/admin/requirements`、`/admin/menus`；后续页面迁移默认保持“业务逻辑不动，仅替换操作入口承载组件”的最小改动策略。
 
-## 数据库连接口径（2026-04-22）
+## 数据库连接口径（2026-04-23）
 
-- API 默认数据库连接改为外部 PostgreSQL：优先读取 `DATABASE_URL`；若未设置则由 `DB_HOST/DB_PORT/DB_NAME/DB_USERNAME/DB_PASSWORD` 组装。
+- API 默认数据库连接切换为本地 PostgreSQL：优先读取 `DATABASE_URL`；若未设置则由 `DB_HOST/DB_PORT/DB_NAME/DB_USERNAME/DB_PASSWORD` 组装。
+- 默认参数口径：
+  - Docker 内：`DB_HOST=db`、`DB_PORT=5432`、`DB_NAME=postgres`、`DB_USERNAME=fquiz`、`DB_PASSWORD=fquiz`。
+  - 本机直连（非 Docker）：`DB_HOST=127.0.0.1`、`DB_PORT=5433`、`DB_NAME=postgres`、`DB_USERNAME=fquiz`、`DB_PASSWORD=fquiz`。
+- `docker compose` 的 `db` 服务已取消 `local-db` profile，默认 `up` 即启动本地库；`api` 增加 `depends_on: db (healthy)`。
 - `DB_SCHEMA` 通过 PostgreSQL `search_path` 注入，语义等价 JDBC 的 `currentSchema`。
-- `docker compose` 中本地 `db` 服务改为 `local-db` profile（默认不启动）；仅在需要本地库时显式 `docker compose --profile local-db up -d`。
-- API 启动初始化口径：`seed_defaults` 仅对本地数据库目标执行（`db/localhost/127.0.0.1/::1` 或 `DATABASE_URL` 指向本地）；非本地目标跳过默认数据写入，避免对外部库做不兼容初始化。
+- API 启动初始化口径：`seed_defaults` 对本地目标执行；为兼容老表状态约束，初始管理员状态写入值统一为 `ENABLED`（不使用 `active`）。
 - 用户表兼容口径：用户主键列对齐旧库 `users.user_id`，与用户关联的外键统一引用 `users.user_id`（不再引用 `users.id`）。
 
 ## 前端组件栈口径（2026-04-22）
@@ -284,3 +287,262 @@
   - 读：`menu.read | menu.manage`
   - 写：`menu.manage`
   后续若需细粒度可拆分 `diary.read/diary.manage`。
+
+## 登录鉴权兼容口径（2026-04-23）
+
+- 登录请求口径对齐 quiz 老工程：`/api/v1/auth/login` 使用 `user_id + password`，不再使用 `email + password`。
+- 密码校验采用双栈兼容：
+  - 优先兼容老库 `BCrypt` 哈希；
+  - 继续兼容现有 `Argon2` 哈希。
+- 用户状态采用兼容归一：
+  - `ENABLED/ACTIVE/1/TRUE` 视为可登录（`active`）；
+  - `DISABLED/INACTIVE/0/FALSE` 视为禁用（`disabled`）。
+- 角色/权限读取优先走老表链路：
+  - `user_role_rela -> user_role` 计算 `role_codes`
+  - `role_menu_rela -> menu` 映射 `permission_codes`
+- 管理员角色兼容别名：
+  - 命中 `admin/sys_mgr/administrator` 或角色名含“管理员”时，统一附加 `admin` 角色码，用于现有 `require_permission` 放行逻辑。
+- 菜单树读取优先走老 `menu` 表构建（用于 `/api/v1/admin/me/menus`）；读取失败时回退现有实现。
+
+## 角色菜单管理兼容口径（2026-04-23）
+
+- 后台角色/菜单管理（`/api/v1/admin/roles*`、`/api/v1/admin/menus*`）已切换为老表链路：
+  - 角色主表：`user_role`
+  - 用户角色关系：`user_role_rela`
+  - 角色菜单关系：`role_menu_rela`
+  - 菜单主表：`menu`
+- 角色/菜单 ID 口径统一为字符串（含前后端契约）：
+  - 后端 `api/app/schemas/admin.py` 的 `RolePublic/MenuPublic` 及其请求体均使用字符串 ID；
+  - 前端 `web/src/types/auth.ts` 的 `RoleItem/MenuItem/MenuTreeItem` 同步使用字符串 ID。
+- 菜单树（`/api/v1/admin/me/menus`）ID 口径已对齐老表：
+  - 直接返回 `menu.menu_id/parent_id`，不再生成临时递增 ID。
+- 旧库无独立 `permissions` 表，`/api/v1/admin/permissions` 与角色权限展示继续采用“菜单编码 -> 权限码”兼容映射策略。
+
+## 前端构建类型口径（2026-04-23）
+
+- `web` 在 `strict` 配置下，`web/src/app/admin/**` 中事件/回调参数（如 `onChange/onClick/onFinish/showTotal/footer`）需显式标注类型，避免 `noImplicitAny` 在 `next build` 阶段阻断。
+- `antd` 的 `Card` 在当前仓库类型环境下不稳定，页面层默认优先使用 `@/components/ui-antd` 的 `Card` 兼容包装；兼容层内部通过显式类型收敛渲染 `AntCard`，避免 JSX 构造签名缺失报错。
+- 前端类型巡检推荐命令：`npm --workspace web exec tsc --noEmit --pretty false`；用于在完整 `next build` 前快速发现 `strict` 类型门禁问题。
+- `antd` 的 `Modal.footer` 自定义回调中，`extra.OkBtn/CancelBtn` 必须按组件类型标注为 `FC`（或由上下文推断），不要写成 `() => ReactElement`；否则在 `next build` 的 TS 阶段会出现签名不兼容报错（`Target signature provides too few arguments`）。
+
+## 后台菜单组件口径（2026-04-23）
+
+- 后台壳层菜单（`web/src/app/admin/layout.tsx`）统一使用 Ant Design `Menu`（`mode="inline"`）承载菜单树，不再使用递归 `Button + Link` 手工渲染。
+- 菜单数据仍来自 `/api/v1/admin/me/menus`，并通过 `pathname` 计算 `selectedKeys`，保证当前路由高亮。
+- 菜单默认全展开（`openKeys` 覆盖全部带子节点菜单），与历史交互保持一致，避免层级菜单在首次进入时不可见。
+- 顶部账号操作入口继续使用 `DropdownMenu` 兼容层，不在本口径范围内。
+- 后台导航布局基线为“左侧导航”：
+  - 桌面端（`md` 及以上）在左侧栏显示 `Menu`；
+  - 移动端通过左侧 `Drawer` 展示同一套菜单树；
+  - 不再使用顶部横向 `Menu` 作为主导航承载。
+
+## 后端运行时口径（2026-04-23）
+
+- 登录兼容新增了 `bcrypt` 校验分支后，`api/requirements.txt` 必须包含 `bcrypt`；否则 Docker 重建后 `api` 会在启动阶段报 `ModuleNotFoundError: No module named 'bcrypt'`。
+- 老菜单树构建（`build_legacy_menu_tree`）在字符串 ID 口径下，节点字典键必须使用 `legacy_id`（即 `menu_id`）；避免残留旧变量名导致 `/api/v1/admin/me/menus` 500。
+
+## 后台壳层布局口径（2026-04-23）
+
+- `web/src/app/admin/layout.tsx` 当前基线为“顶部固定头 + 左侧内嵌菜单 + 主内容区”：
+  - 右上角提供菜单按钮，支持左侧菜单隐藏/显示；
+  - 左侧菜单承载组件统一为 `AntMenu (inline)`，不再使用 `Drawer` 作为主菜单容器。
+- 后台菜单数据口径不变：继续读取 `/api/v1/admin/me/menus`，按 `pathname` 计算选中项和展开项。
+- 后续后台页面改造默认遵循“左侧内嵌菜单可折叠（显隐）”交互，除非有明确业务理由变更。
+
+## 本地数据库初始化口径（2026-04-23）
+
+- 当需要把 84 库老工程鉴权链路数据落到本地时，目标应优先选本地 `fquiz-db` 的 `postgres` 数据库（非 `fquiz`），避免覆盖新结构表。
+- 本地初始化范围（本轮基线）：
+  - `public.users`
+  - `public.user_role`
+  - `public.menu`
+  - `public.role_menu_rela`
+- 标准流程：
+  1. 从 `223.109.142.84:5432/postgres` 导出上述表 `schema + data`；
+  2. 本地 `postgres` 库执行 `DROP ... CASCADE` 后回放；
+  3. 导入数据阶段用同一会话临时 `SET session_replication_role=replica`，规避 `menu.parent_id` 自关联外键顺序问题；
+  4. 用 `count + md5(signature)` 对比远端与本地一致性。
+
+## 登录页双角色视觉口径（2026-04-23）
+
+- 登录页主视觉已从单怪兽升级为“双角色怪兽”（毛怪 + 大眼仔）构图，实现在 `web/src/app/page.tsx`。
+- 交互基线保持：眼睛跟随鼠标；密码输入时执行避视动作（毛怪转头，大眼仔轻微眯眼）。
+- 视觉实现采用纯前端结构与 CSS 动效，不引入外部图片资源，不影响登录/注册链路。
+
+## 前端配色口径（2026-04-23）
+
+- 前端主题基线统一以 AntD token 为主，不再依赖历史 Radix 变量作为真实配色来源。
+- `web/src/components/ui-antd.tsx` 的 `Theme` 内置 `ThemeCssVarsScope`：
+  - 使用 `antdTheme.useToken()` 将历史变量（`--gray-*`、`--accent-*`、`--red-*`、`--green-*`、`--orange-*`、`--indigo-*`、`--color-panel-solid`、`--border`）映射到 AntD token。
+  - 同步注入 `--ant-color-primary/bg-layout/border-secondary/text-secondary/text`，供页面直接使用。
+- `web/src/app/globals.css` 保留上述变量的静态 fallback；运行时以 `ThemeCssVarsScope` 注入值为准。
+- 后续页面改造优先级：
+  1. 新页面优先直接使用 AntD 组件与 token（含 `--ant-color-*`）；
+  2. 存量页面可保留历史变量写法，由映射层兜底，不做一次性大迁移。
+- 主题色切换口径：
+  - 全局主题色由 `ThemeAppearanceContext` 管理；
+  - 通过 `useThemeAppearance()` 读写当前 `accentColor`；
+  - 已在后台顶栏提供选择入口（`web/src/app/admin/layout.tsx`）；
+  - 用户选择持久化到 `localStorage` 键 `fquiz:theme:accent-color`，刷新后保持。
+
+## 前端路由展示口径（2026-04-23）
+
+- 用户可见后台地址默认不再带 `/admin` 前缀（例如 `/users`、`/requirements`、`/dashboard`）。
+- 兼容策略：
+  - 无前缀地址通过前端中间层 rewrite 到现有 `app/admin/**` 页面实现；
+  - 历史 `/admin/**` 地址继续可访问，并自动重定向到无前缀地址。
+- 后台首页映射口径：`/admin` 对外统一为 `/dashboard`。
+- 菜单路径展示口径：前端渲染菜单时将后端返回的 `/admin/**` 路径规范化为无前缀地址，避免导航条继续暴露 `/admin`。
+
+## 后台功能下线口径（2026-04-23）
+
+- 已下线菜单编码：
+  - `admin.life_countdown`
+  - `admin.password`
+  - `admin.token_usage`
+  - `admin.history`
+  - `admin.vocabulary`
+  - `admin.diary`
+  - `admin.homework`
+  - `admin.question_bank`
+- 下线策略：
+  - 种子菜单与 admin 默认菜单绑定中移除上述编码；
+  - 旧库授权链路通过 `legacy_authz_service.DISABLED_MENU_CODES` 过滤，确保历史菜单记录不再出现在 `/api/v1/admin/me/menus`；
+  - 前端删除对应路由页面与首页卡片入口，直链不可达。
+- 保留能力说明：
+  - `admin.job_mgr`（作业监控）继续复用 `question_bank` API；
+  - `question_bank` 与 `vocabulary` 相关底层 API 保留，用于已保留模块（如分组管理/知识点管理/单词统计）。
+
+## 功能下线口径（2026-04-23）
+
+- 后台以下功能已统一下线：
+  - 微信小程序（`admin.wxapp`）
+  - MD解析（`admin.mdresolve`）
+  - 数据查询（`admin.data_query`）
+  - 热搜（`admin.hot_search`）
+  - 文件识别（`admin.filedetector`）
+  - 百度网盘（`admin.baidu_pan`）
+  - 分组管理（`admin.tag`）
+  - 知识点管理（`admin.knowledge_point_mgr`）
+- 下线语义为“三重约束”：
+  1) 前端页面路由删除；
+  2) 后端菜单树与权限推导过滤上述菜单码；
+  3) 种子菜单与默认角色绑定中移除上述菜单码。
+- 兼容口径：即使旧数据库仍有历史菜单记录，也会被后端过滤，不再下发到 `/api/v1/admin/me/menus`。
+- 补充口径：历史别名页面 `/admin/tag` 已一并删除，避免“分组管理”通过旧路由绕过下线策略。
+
+## 功能下线口径补充（2026-04-23）
+
+- 以下后台功能已进一步下线：
+  - 脚本管理（`admin.cron_task_mgr`）
+  - 待办管理（`admin.todos`）
+  - 作业监控（`admin.job_mgr`）
+  - JWT 生成器（`admin.jwt_generator`）
+- 下线语义：
+  1) 前端页面路由删除（`/admin/cron`、`/admin/todos`、`/admin/job`、`/admin/jwt-generator`）；
+  2) 后端菜单树和权限推导过滤上述菜单码；
+  3) 种子菜单与 admin 默认菜单绑定移除上述菜单码；
+  4) JWT 生成器路由从 `api_router` 取消挂载。
+- 兼容口径：待办底层 API 继续保留给其他模块复用；菜单/页面是否暴露以后续下线口径为准。
+
+## 功能下线口径补充（2026-04-24）
+
+- 以下后台功能已进一步下线：
+  - 单词统计（`admin.knowledge_mastery`）
+  - 队列管理（`admin.queue_mgr`）
+- 下线语义：
+  1) 前端页面路由删除（`/admin/vocabulary-proficiency`、`/admin/knowledge-mastery`、`/admin/jobqueue`）；
+  2) 后台首页入口卡片移除；
+  3) 后端菜单种子与 admin 默认菜单绑定移除上述菜单码；
+  4) 旧库菜单下发过滤集合新增上述菜单码，确保历史菜单残留不再透出。
+
+## 管理员权限口径（2026-04-23）
+
+- 默认将 `admin` 角色视为“全权限角色”。
+- 后端口径：
+  - `api/app/core/dependencies.py` 的 `require_permission/require_any_permission` 对 `admin` 角色直接放行。
+- 前端口径：
+  - `web/src/components/auth-provider.tsx` 的 `hasPermission` 对 `admin` 角色直接返回 `true`，避免因 `permission_codes` 枚举不全导致入口误隐藏。
+- 安全边界：
+  - 前端仅负责显隐与交互；最终权限判定以后端依赖校验为准。
+
+## 首页与登录口径（2026-04-23）
+
+- `/` 默认作为登录入口页，不再承载“已登录后停留的首页面板”。
+- 登录态（含刷新会话恢复）进入 `/` 时，前端立即跳转 `/dashboard`，实现“登录后直达后台”。
+- 后台壳层文案对齐：
+  - 未登录访问后台时提示“前往登录”（`/`）；
+  - 账号菜单提供“后台首页”（`/dashboard`），不再出现“返回首页”歧义入口。
+- 退出登录口径：统一跳转到登录页 `/`（不保留在当前后台路由）。
+
+## 站点标题口径（2026-04-24）
+
+- 全局浏览器 Tab 标题统一为“需求管理”。
+- 入口配置位于 `web/src/app/layout.tsx` 的 `metadata.title`。
+
+## 登录页视觉口径（2026-04-24）
+
+- 登录页采用“双栏工作台”视觉基线：
+  - 左侧为品牌与机器人主题视觉区；
+  - 右侧为白色登录卡片（品牌头、表单、主操作按钮、辅助链接）。
+- 交互口径保持：
+  - 登录态进入 `/` 仍自动跳转 `/dashboard`；
+  - 登录/注册逻辑不变，视觉改造不改变鉴权接口契约。
+
+## 后台账号入口口径（2026-04-23）
+
+- 后台右上角账号入口采用 AntD `Avatar` 作为下拉触发器，不再使用“账号”文字按钮。
+- Avatar 文案默认使用用户名首字母（大写），空值兜底 `U`。
+- 下拉内容口径保持不变：账号信息 + 后台首页 + 退出登录。
+
+## 后台左侧导航口径（2026-04-24）
+
+- 后台壳层左侧导航采用“AntD 文档站点式”固定侧栏布局（参考 `https://ant.design/components/avatar-cn`）：
+  - 桌面端（`md` 及以上）常驻显示；
+  - 位于顶部栏下方（`top: 64px`），高度 `calc(100vh - 64px)`；
+  - 菜单区可独立滚动，侧栏与主内容通过右边框分隔。
+- 右上角不再提供“隐藏菜单”按钮；主布局不再依赖菜单显隐状态切换。
+
+## 授权兼容口径（2026-04-24）
+
+- `legacy_authz_service` 在读取 legacy 关系表失败时，必须对会话做安全回滚，再执行 modern 兜底查询，避免事务错误污染导致角色/权限误判为空。
+- `legacy_authz_service._load_modern_roles` 需显式预热 `Role` mapper 后再解析 `User.roles`，避免首轮 mapper 解析异常被吞掉后出现“空权限”。
+- 对 `user_id in {admin, administrator, root, sysadmin}` 且无角色映射的账号，授权链路提供内置 `admin` 兜底，确保本地/迁移期管理员账户可用。
+- 当本地兼容库缺少 `user_role_rela` 且用户无显式角色映射时，授权链路可回退到 `user` 角色（前提是 `user` 角色存在），防止 `/api/v1/admin/me/menus` 返回空数组导致后台左侧菜单空白。
+
+## 后台主题切换口径（2026-04-24）
+
+- 后台右上角主题入口统一采用 Ant Design 文档站（`avatar-cn`）的“主题图标 + Dropdown 菜单”交互，不再使用简单 Select 模式切换。
+- 主题文案口径固定为：`跟随系统 / 浅色主题 / 暗黑主题 / 紧凑主题 / 快乐工作特效 / AI 生成主题 / 主题编辑器`。
+- 主题状态模型固定为“主模式 + 开关项”：
+  - 主模式：`auto/light/dark`（互斥）
+  - 开关项：`compact`、`happy-work`（独立开关）
+- 持久化键口径：
+  - `fquiz:theme:primary-mode`
+  - `fquiz:theme:compact`
+  - `fquiz:theme:happy-work`
+  - 兼容保留：`fquiz:theme:mode`（legacy 四态映射）
+- `AI 生成主题` 当前为交互与文案对齐态，未内置站内 AI 主题生成流程；“主题编辑器”默认跳转官方编辑器页。
+
+## 登录页文案口径（2026-04-24）
+
+- 登录页（`web/src/app/page.tsx`）默认展示文案统一为中文，不再保留英文提示文案。
+
+## 前端编译口径（2026-04-24）
+
+- 在当前栈（Next.js 16 + React 19 + Ant Design 5）下，页面层直接使用 `antd` 的 `Card` / `Image` 容易触发 JSX 类型不兼容报错（`TS2604/TS2786`）。
+- 项目口径：页面层优先使用 `@/components/ui-antd` 提供的 `Card` 封装；Mermaid 预览改用原生 `<img>`。
+- 当前 `web/tsconfig.json` 已显式设置 `noImplicitAny=false` 以保证存量页面可编译；若后续要恢复更严格类型检查，需要分批补齐事件/回调参数类型。
+
+## 菜单删除兼容口径（2026-04-24）
+
+- `legacy_admin_rbac_service` 中涉及 legacy 关系表 `user_role_rela` 的查询（如 `_get_users_with_menu_access`、`_get_role_user_ids`）必须按“缺表可降级”策略实现：
+  - 捕获 `SQLAlchemyError`；
+  - 执行 `db.rollback()` 清理失败事务；
+  - 返回空集合兜底，避免向上冒泡为 500。
+- 背景约束：当前本地兼容库可能不存在 `user_role_rela`（仅保留 `user_role` / `role_menu_rela`），菜单删除链路需在该条件下可用。
+
+## 认证时效口径（2026-04-24）
+
+- API `access token` 默认有效期已调整为 `8 小时`（`ACCESS_TOKEN_EXPIRE_MINUTES=480`）。
+- `refresh token`（Refresh Session）默认有效期保持 `30 天`（`REFRESH_TOKEN_EXPIRE_DAYS=30`）不变。

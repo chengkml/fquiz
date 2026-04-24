@@ -41,13 +41,15 @@ from ...schemas.model_registry import (
 )
 from ...services.admin_service import (
     build_menu_tree,
+    list_audit_logs,
+)
+from ...services.legacy_admin_rbac_service import (
     create_menu,
     create_role,
     delete_menu,
     delete_role,
     get_menu_by_id,
     get_role_by_id,
-    list_audit_logs,
     list_menus,
     list_permissions,
     list_role_menu_ids,
@@ -103,7 +105,7 @@ def create_role_endpoint(
 
 @router.patch("/roles/{role_id}", response_model=RolePublic)
 def update_role_endpoint(
-    role_id: int,
+    role_id: str,
     payload: RoleUpdateRequest,
     _: CurrentUser = Depends(require_permission("role.manage")),
     db: Session = Depends(get_db),
@@ -116,7 +118,7 @@ def update_role_endpoint(
 
 @router.delete("/roles/{role_id}")
 def delete_role_endpoint(
-    role_id: int,
+    role_id: str,
     _: CurrentUser = Depends(require_permission("role.manage")),
     db: Session = Depends(get_db),
 ) -> dict[str, bool]:
@@ -128,10 +130,10 @@ def delete_role_endpoint(
 
 @router.get("/roles/{role_id}/menus")
 def get_role_menus(
-    role_id: int,
+    role_id: str,
     _: CurrentUser = Depends(require_any_permission("role.read", "role.manage")),
     db: Session = Depends(get_db),
-) -> dict[str, list[int]]:
+) -> dict[str, list[str]]:
     if not get_role_by_id(db, role_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
     menu_ids = list_role_menu_ids(db, role_id)
@@ -140,7 +142,7 @@ def get_role_menus(
 
 @router.put("/roles/{role_id}/menus", response_model=RolePublic)
 def replace_role_menus_endpoint(
-    role_id: int,
+    role_id: str,
     payload: RoleMenuUpdateRequest,
     _: CurrentUser = Depends(require_permission("role.manage")),
     db: Session = Depends(get_db),
@@ -193,38 +195,6 @@ def get_models(
     db: Session = Depends(get_db),
 ) -> ModelListResponse:
     return list_models(db, status_filter=status_filter, keyword=keyword)
-
-
-@router.get("/password/models", response_model=ModelListResponse)
-def get_password_models(
-    status_filter: str | None = Query(default=None, alias="status"),
-    keyword: str | None = Query(default=None),
-    _: CurrentUser = Depends(require_any_permission("model.read", "model.manage")),
-    db: Session = Depends(get_db),
-) -> ModelListResponse:
-    """密钥管理菜单专用：模型列表（复用模型服务）。"""
-    return list_models(db, status_filter=status_filter, keyword=keyword)
-
-
-@router.get("/password/models/{model_id}/keys", response_model=ModelApiKeyListResponse)
-def get_password_model_keys(
-    model_id: int,
-    _: CurrentUser = Depends(require_any_permission("model.read", "model.manage")),
-    db: Session = Depends(get_db),
-) -> ModelApiKeyListResponse:
-    """密钥管理菜单专用：模型密钥列表。"""
-    return list_model_keys(db, model_id)
-
-
-@router.post("/password/models/{model_id}/rotate-key", response_model=ModelApiKeyPublic)
-def rotate_password_model_key_endpoint(
-    model_id: int,
-    payload: ModelRotateKeyRequest,
-    current_user: CurrentUser = Depends(require_permission("model.manage")),
-    db: Session = Depends(get_db),
-) -> ModelApiKeyPublic:
-    """密钥管理菜单专用：轮换模型密钥。"""
-    return rotate_model_key(db, model_id, payload, actor=current_user.user)
 
 
 @router.get("/models/{model_id}", response_model=ModelRegistryPublic)
@@ -410,7 +380,7 @@ def create_menu_endpoint(
 
 @router.patch("/menus/{menu_id}", response_model=MenuPublic)
 def update_menu_endpoint(
-    menu_id: int,
+    menu_id: str,
     payload: MenuUpdateRequest,
     _: CurrentUser = Depends(require_permission("menu.manage")),
     db: Session = Depends(get_db),
@@ -425,7 +395,7 @@ def update_menu_endpoint(
 
 @router.delete("/menus/{menu_id}")
 def delete_menu_endpoint(
-    menu_id: int,
+    menu_id: str,
     _: CurrentUser = Depends(require_permission("menu.manage")),
     db: Session = Depends(get_db),
 ) -> dict[str, bool]:

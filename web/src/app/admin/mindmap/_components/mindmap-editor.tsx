@@ -1,12 +1,14 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { DownOutlined, RobotOutlined, SaveOutlined } from "@ant-design/icons";
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Alert,
   Button,
-  Card,
   Col,
+  Dropdown,
+  Empty,
   Input,
   Modal,
   Row,
@@ -14,10 +16,12 @@ import {
   Tree,
   Typography,
   message,
+  type MenuProps,
 } from "antd";
 import type { DataNode } from "antd/es/tree";
 
 import { useAuth } from "@/components/auth-provider";
+import { Card } from "@/components/ui-antd";
 import { readApiError } from "@/lib/api";
 import type { MindMapSummary } from "@/types/auth";
 
@@ -48,6 +52,8 @@ type RootShapeNode = {
 type RootShapeData = {
   root?: RootShapeNode;
 };
+
+type AiStage = "idle" | "streaming" | "parsing" | "success" | "failed";
 
 function parseJsonObject(text: string): Record<string, unknown> | null {
   const normalized = text.trim();
@@ -178,6 +184,22 @@ function downloadTextFile(filename: string, content: string, mimeType: string): 
   URL.revokeObjectURL(url);
 }
 
+function getAiStageMessage(stage: AiStage): { type: "info" | "success" | "error"; text: string } {
+  switch (stage) {
+    case "streaming":
+      return { type: "info", text: "AI 正在生成内容，请稍候..." };
+    case "parsing":
+      return { type: "info", text: "已收到导图结果，正在解析并应用..." };
+    case "success":
+      return { type: "success", text: "AI 导图已生成并应用到编辑区。" };
+    case "failed":
+      return { type: "error", text: "AI 生成失败，请调整描述后重试。" };
+    case "idle":
+    default:
+      return { type: "info", text: "输入需求描述后可生成导图，建议描述目标、层级和关键节点。" };
+  }
+}
+
 export function MindMapEditor({ initialId = null }: MindMapEditorProps) {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const router = useRouter();
@@ -195,6 +217,7 @@ export function MindMapEditor({ initialId = null }: MindMapEditorProps) {
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiStreaming, setAiStreaming] = useState(false);
   const [aiOutput, setAiOutput] = useState("");
+  const [aiStage, setAiStage] = useState<AiStage>("idle");
 
   const canRead = hasPermission("question_bank.read") || hasPermission("question_bank.manage");
   const canManage = hasPermission("question_bank.manage");
@@ -244,6 +267,13 @@ export function MindMapEditor({ initialId = null }: MindMapEditorProps) {
   }, [canRead, loadMindMap, mindMapId, user]);
 
   const treeData = useMemo(() => mapDataToTreeData(mapData), [mapData]);
+
+  const mapDataJsonError = useMemo(() => {
+    if (!mapData.trim()) {
+      return "";
+    }
+    return parseJsonObject(mapData) ? "" : "当前 JSON 格式不合法，保存前请修复。";
+  }, [mapData]);
 
   const saveMindMap = async () => {
     if (!mapName.trim()) {
@@ -343,6 +373,16 @@ export function MindMapEditor({ initialId = null }: MindMapEditorProps) {
     }
   };
 
+  const handleExportMenuClick: MenuProps["onClick"] = ({ key }) => {
+    if (key === "json") {
+      exportJson();
+      return;
+    }
+    if (key === "markdown") {
+      exportMarkdown();
+    }
+  };
+
   const startAiGenerate = async () => {
     const prompt = aiPrompt.trim();
     if (!prompt) {
@@ -352,6 +392,9 @@ export function MindMapEditor({ initialId = null }: MindMapEditorProps) {
 
     setAiStreaming(true);
     setAiOutput("");
+    setAiStage("streaming");
+    setPanelError("");
+
     try {
       const response = await fetchWithAuth(`/api/v1/mindmap/generate/stream?descr=${encodeURIComponent(prompt)}`);
       if (!response.ok) {
@@ -374,28 +417,33 @@ export function MindMapEditor({ initialId = null }: MindMapEditorProps) {
         }
         if (data.startsWith("[ERROR]")) {
           streamError = data.slice("[ERROR]".length) || "AI 生成失败";
+          setAiStage("failed");
           return;
         }
         if (data.startsWith("[MINDMAP]")) {
+          setAiStage("parsing");
           const payload = data.slice("[MINDMAP]".length);
           const parsed = parseJsonObject(payload);
           if (!parsed) {
             streamError = "AI 返回导图 JSON 无法解析";
+            setAiStage("failed");
             return;
           }
           setMapData(JSON.stringify(parsed, null, 2));
           if (!mapName.trim()) {
-            const candidateTitle = typeof parsed.nodeData === "object" && parsed.nodeData && !Array.isArray(parsed.nodeData)
-              ? String((parsed.nodeData as Record<string, unknown>).topic || "").trim()
-              : "";
+            const candidateTitle =
+              typeof parsed.nodeData === "object" && parsed.nodeData && !Array.isArray(parsed.nodeData)
+                ? String((parsed.nodeData as Record<string, unknown>).topic || "").trim()
+                : "";
             if (candidateTitle) {
               setMapName(candidateTitle);
             }
           }
           parsedMindMap = true;
+          setAiStage("success");
           return;
         }
-        setAiOutput((prev) => prev + data);
+        setAiOutput((prev) => (prev ? `${prev}\n${data}` : data));
       };
 
       while (true) {
@@ -433,13 +481,14 @@ export function MindMapEditor({ initialId = null }: MindMapEditorProps) {
       }
       if (parsedMindMap) {
         message.success("AI 已生成导图数据");
-        setAiModalOpen(false);
       } else {
+        setAiStage("failed");
         message.warning("AI 返回完成，但未识别到导图 JSON");
       }
     } catch (error) {
       const text = error instanceof Error ? error.message : "AI 生成失败";
       setPanelError(text);
+      setAiStage("failed");
       message.error(text);
     } finally {
       setAiStreaming(false);
@@ -447,26 +496,29 @@ export function MindMapEditor({ initialId = null }: MindMapEditorProps) {
   };
 
   if (initializing) {
-    return <p className="text-sm text-[var(--gray-11)]">Loading mind map editor...</p>;
+    return <Card loading />;
   }
 
   if (!user) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问思维导图编辑页面。</p>
-        <Link
-          href="/"
-          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
-        >
-          返回首页
-        </Link>
-      </main>
+      <Card>
+        <Typography.Title level={4} style={{ marginTop: 0 }}>请先登录</Typography.Title>
+        <Typography.Paragraph type="secondary">登录后可访问思维导图编辑页面。</Typography.Paragraph>
+        <Button type="primary" onClick={() => router.push("/")}>返回首页</Button>
+      </Card>
     );
   }
 
   if (!canRead) {
-    return <p className="text-sm text-[var(--gray-11)]">缺少 `question_bank.read` 或 `question_bank.manage` 权限。</p>;
+    return (
+      <Card>
+        <Typography.Title level={4} style={{ marginTop: 0 }}>无访问权限</Typography.Title>
+        <Typography.Paragraph type="secondary">缺少 `question_bank.read` 或 `question_bank.manage` 权限。</Typography.Paragraph>
+      </Card>
+    );
   }
+
+  const aiStageMessage = getAiStageMessage(aiStage);
 
   return (
     <main className="flex flex-col gap-4">
@@ -480,14 +532,33 @@ export function MindMapEditor({ initialId = null }: MindMapEditorProps) {
               老工程逻辑：基础信息与导图数据分离保存，支持 AI 生成流式回填。
             </Typography.Text>
           </div>
-          <Space>
+          <Space wrap>
             <Button onClick={() => router.push("/admin/mindmap")}>返回列表</Button>
-            <Button onClick={() => setAiModalOpen(true)} disabled={!canManage}>
+            <Button icon={<RobotOutlined />} onClick={() => setAiModalOpen(true)} disabled={!canManage || saving}>
               AI 生成
             </Button>
-            <Button onClick={exportJson}>导出 JSON</Button>
-            <Button onClick={exportMarkdown}>导出 Markdown</Button>
-            <Button type="primary" loading={saving} onClick={() => void saveMindMap()} disabled={!canManage}>
+            <Dropdown
+              menu={{
+                items: [
+                  { key: "json", label: "导出 JSON" },
+                  { key: "markdown", label: "导出 Markdown" },
+                ],
+                onClick: handleExportMenuClick,
+              }}
+              trigger={["click"]}
+            >
+              <Button disabled={saving}>
+                导出
+                <DownOutlined />
+              </Button>
+            </Dropdown>
+            <Button
+              type="primary"
+              icon={<SaveOutlined />}
+              loading={saving}
+              onClick={() => void saveMindMap()}
+              disabled={!canManage || !!mapDataJsonError}
+            >
               保存
             </Button>
           </Space>
@@ -495,10 +566,17 @@ export function MindMapEditor({ initialId = null }: MindMapEditorProps) {
       </Card>
 
       {panelError ? (
-        <section className="rounded-xl border border-[var(--red-6)] bg-[var(--red-2)] p-3 text-sm text-[var(--red-11)]">
-          {panelError}
-        </section>
+        <Alert
+          type="error"
+          showIcon
+          closable
+          message="操作失败"
+          description={panelError}
+          onClose={() => setPanelError("")}
+        />
       ) : null}
+
+      {mapDataJsonError ? <Alert type="warning" showIcon message={mapDataJsonError} /> : null}
 
       <Row gutter={16}>
         <Col xs={24} lg={14}>
@@ -509,7 +587,7 @@ export function MindMapEditor({ initialId = null }: MindMapEditorProps) {
                 <Input
                   value={mapName}
                   maxLength={255}
-                  onChange={(event) => setMapName(event.target.value)}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setMapName(event.target.value)}
                   disabled={!canManage}
                   placeholder="请输入导图名称"
                 />
@@ -520,7 +598,7 @@ export function MindMapEditor({ initialId = null }: MindMapEditorProps) {
                 <Input.TextArea
                   value={descr}
                   maxLength={20000}
-                  onChange={(event) => setDescr(event.target.value)}
+                  onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setDescr(event.target.value)}
                   disabled={!canManage}
                   rows={3}
                   placeholder="请输入导图描述（可选）"
@@ -531,7 +609,7 @@ export function MindMapEditor({ initialId = null }: MindMapEditorProps) {
                 <Typography.Text strong>JSON 代码</Typography.Text>
                 <Input.TextArea
                   value={mapData}
-                  onChange={(event) => setMapData(event.target.value)}
+                  onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setMapData(event.target.value)}
                   autoSize={{ minRows: 18, maxRows: 26 }}
                   disabled={!canManage}
                   style={{ fontFamily: "JetBrains Mono, Menlo, Monaco, Consolas, monospace" }}
@@ -546,7 +624,10 @@ export function MindMapEditor({ initialId = null }: MindMapEditorProps) {
             {treeData.length > 0 ? (
               <Tree treeData={treeData} defaultExpandAll selectable={false} />
             ) : (
-              <Typography.Text type="secondary">当前 JSON 无法解析为导图树，请检查结构。</Typography.Text>
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={mapDataJsonError || "当前结构暂不支持预览，请检查 nodeData/root 字段。"}
+              />
             )}
           </Card>
         </Col>
@@ -558,29 +639,47 @@ export function MindMapEditor({ initialId = null }: MindMapEditorProps) {
         onCancel={() => {
           if (!aiStreaming) {
             setAiModalOpen(false);
+            setAiStage("idle");
           }
         }}
         onOk={() => void startAiGenerate()}
-        confirmLoading={aiStreaming}
         okText={aiStreaming ? "生成中..." : "开始生成"}
         cancelText="关闭"
+        confirmLoading={aiStreaming}
+        okButtonProps={{ disabled: aiStreaming || !aiPrompt.trim() }}
+        cancelButtonProps={{ disabled: aiStreaming }}
         maskClosable={!aiStreaming}
+        destroyOnHidden
       >
         <Space direction="vertical" style={{ width: "100%" }} size={12}>
+          <Alert type={aiStageMessage.type} showIcon message={aiStageMessage.text} />
+
           <Input.TextArea
             value={aiPrompt}
-            onChange={(event) => setAiPrompt(event.target.value)}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setAiPrompt(event.target.value)}
             rows={5}
             disabled={aiStreaming}
             placeholder="输入描述，例如：帮我生成一份 FastAPI 项目改造计划思维导图"
           />
 
           {(aiStreaming || aiOutput) && (
-            <Card size="small" title="流式输出" style={{ maxHeight: 220, overflow: "auto" }}>
+            <Card size="small" title="流式输出" style={{ maxHeight: 240, overflow: "auto" }}>
               <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "JetBrains Mono, monospace" }}>
                 {aiOutput || "正在生成..."}
               </pre>
             </Card>
+          )}
+
+          {aiStage === "success" && (
+            <Button
+              type="primary"
+              onClick={() => {
+                setAiModalOpen(false);
+                setAiStage("idle");
+              }}
+            >
+              完成并返回编辑页
+            </Button>
           )}
         </Space>
       </Modal>

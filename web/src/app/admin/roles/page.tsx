@@ -4,7 +4,8 @@ import { ChangeEvent, useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/auth-provider";
-import { Checkbox, Dialog, TextField, Button, Table } from "@/components/ui-antd";
+import { Checkbox, Dialog, TextField, Button, Table, Callout } from "@/components/ui-antd";
+import { Modal } from "antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { MenuItem, PermissionItem, RoleItem, RoleListResponse } from "@/types/auth";
@@ -16,7 +17,7 @@ const EMPTY_FORM = {
   code: "",
   name: "",
   permission_codes: "",
-  menu_ids: [] as number[],
+  menu_ids: [] as string[],
 };
 
 export default function AdminRolesPage() {
@@ -28,7 +29,7 @@ export default function AdminRolesPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [editingRoleId, setEditingRoleId] = useState<number | null>(null);
+  const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
 
@@ -172,24 +173,31 @@ export default function AdminRolesPage() {
     setSaving(false);
   };
 
-  const removeRole = async (role: RoleItem) => {
-    if (!window.confirm(`确认删除角色 ${role.code} 吗？`)) {
-      return;
-    }
-    setError("");
-    setSuccess("");
-    const response = await fetchWithAuth(`/api/v1/admin/roles/${role.id}`, {
-      method: "DELETE",
+  const removeRole = (role: RoleItem) => {
+    Modal.confirm({
+      title: `确认删除角色 ${role.code} 吗？`,
+      content: "删除后无法恢复，请谨慎操作。",
+      okText: "删除",
+      okType: "danger",
+      cancelText: "取消",
+      onOk: async () => {
+        setError("");
+        setSuccess("");
+        const response = await fetchWithAuth(`/api/v1/admin/roles/${role.id}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) {
+          const message = await readApiError(response);
+          setError(message);
+          throw new Error(message);
+        }
+        setSuccess("角色已删除");
+        if (editingRoleId === role.id) {
+          resetForm();
+        }
+        await loadData();
+      },
     });
-    if (!response.ok) {
-      setError(await readApiError(response));
-      return;
-    }
-    setSuccess("角色已删除");
-    if (editingRoleId === role.id) {
-      resetForm();
-    }
-    await loadData();
   };
 
   if (initializing || loading) {
@@ -217,10 +225,14 @@ export default function AdminRolesPage() {
   return (
     <div className="space-y-6">
       {error && (
-        <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--red-6)] bg-[var(--red-a2)] p-4 text-sm text-[var(--red-11)]">{error}</pre>
+        <Callout.Root color="red">
+          <Callout.Text>{error}</Callout.Text>
+        </Callout.Root>
       )}
       {success && (
-        <pre className="overflow-auto rounded-lg border border-[var(--gray-6)] bg-[var(--gray-a2)] p-4 text-sm overflow-auto rounded-lg border border-[var(--green-6)] bg-[var(--green-a2)] p-4 text-sm text-[var(--green-11)]">{success}</pre>
+        <Callout.Root color="green">
+          <Callout.Text>{success}</Callout.Text>
+        </Callout.Root>
       )}
 
       <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
@@ -245,7 +257,7 @@ export default function AdminRolesPage() {
                 {canManage && <Table.ColumnHeaderCell className="px-4 py-3 font-medium">操作</Table.ColumnHeaderCell>}
               </Table.Row>
             </Table.Header>
-            <Table.Body className="divide-y divide-y">
+            <Table.Body className="divide-y">
               {roles.map((role) => (
                 <Table.Row key={role.id}>
                   <Table.Cell className="px-4 py-3 font-mono text-xs">{role.code}</Table.Cell>
@@ -269,7 +281,7 @@ export default function AdminRolesPage() {
                         {!['admin', 'user'].includes(role.code) && (
                           <Button
                             color="red" size="1" variant="soft"
-                            onClick={() => void removeRole(role)}
+                            onClick={() => removeRole(role)}
                             type="button"
                           >
                             删除

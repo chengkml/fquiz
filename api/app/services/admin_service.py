@@ -22,6 +22,7 @@ from ..schemas.admin import (
     RolePublic,
     RoleUpdateRequest,
 )
+from .legacy_authz_service import build_legacy_menu_tree
 from .push_service import publish_topic
 from .user_service import queue_users_auth_refresh
 
@@ -29,6 +30,27 @@ from .user_service import queue_users_auth_refresh
 AUDIT_LOG_LOAD_OPTIONS = (
     selectinload(AuditLog.user).selectinload(User.roles),
 )
+
+REMOVED_MENU_CODES = {
+    "admin.wxapp",
+    "admin.mdresolve",
+    "admin.data_query",
+    "admin.hot_search",
+    "admin.filedetector",
+    "admin.baidu_pan",
+    "admin.tag",
+    "admin.knowledge_point_mgr",
+    "admin.cron_task_mgr",
+    "admin.todos",
+    "admin.job_mgr",
+    "admin.jwt_generator",
+    "admin.queue_mgr",
+    "admin.knowledge_mastery",
+}
+
+
+def _is_removed_menu_code(code: str | None) -> bool:
+    return (code or "").strip() in REMOVED_MENU_CODES
 
 
 def _audit_log_stmt():
@@ -255,20 +277,28 @@ def serialize_menu(menu: Menu) -> MenuPublic:
 
 
 def list_menus(db: Session) -> MenuListResponse:
-    total = db.scalar(select(func.count()).select_from(Menu)) or 0
     menus = db.execute(_menu_stmt().order_by(Menu.sort_order.asc(), Menu.id.asc())).scalars().all()
+    menus = [menu for menu in menus if not _is_removed_menu_code(menu.code)]
+    total = len(menus)
     return MenuListResponse(items=[serialize_menu(menu) for menu in menus], total=total)
 
 
 def get_menu_by_id(db: Session, menu_id: int) -> Menu | None:
-    return db.execute(_menu_stmt().where(Menu.id == menu_id)).scalar_one_or_none()
+    menu = db.execute(_menu_stmt().where(Menu.id == menu_id)).scalar_one_or_none()
+    if menu and _is_removed_menu_code(menu.code):
+        return None
+    return menu
 
 
 def get_menu_by_code(db: Session, code: str) -> Menu | None:
+    if _is_removed_menu_code(code):
+        return None
     return db.execute(_menu_stmt().where(Menu.code == code)).scalar_one_or_none()
 
 
 def create_menu(db: Session, payload: MenuCreateRequest) -> MenuPublic | None:
+    if _is_removed_menu_code(payload.code):
+        return None
     existing = db.scalar(select(Menu.id).where(Menu.code == payload.code))
     if existing:
         return None
@@ -359,7 +389,7 @@ def update_menu(db: Session, menu_id: int, payload: MenuUpdateRequest) -> MenuPu
 
 def delete_menu(db: Session, menu_id: int) -> bool:
     menu = get_menu_by_id(db, menu_id)
-    if not menu or menu.code in {"dashboard", "admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.wxapp", "admin.system_message", "admin.code_review", "admin.git_desktop", "admin.agent", "admin.mcp_server", "admin.files", "admin.filedetector", "admin.baidu_pan", "admin.requirements", "admin.data_query", "admin.hot_search", "admin.schedule", "admin.cron_task_mgr", "admin.queue_mgr", "admin.todos", "admin.mindmap", "admin.knowledge_mastery", "admin.mdresolve", "admin.mermaid_mgr", "admin.tag", "admin.knowledge_point_mgr", "admin.question_bank", "admin.homework", "admin.job_mgr", "admin.history", "admin.vocabulary", "admin.diary", "admin.syslog", "admin.chat", "admin.jwt_generator", "admin.life_countdown", "admin.password", "admin.token_usage", "admin.api_tester", "admin.models", "admin.orchestration"}:
+    if not menu or menu.code in {"dashboard", "admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.system_message", "admin.inbox", "admin.code_review", "admin.git_desktop", "admin.agent", "admin.mcp_server", "admin.files", "admin.requirements", "admin.schedule", "admin.mindmap", "admin.mermaid_mgr", "admin.syslog", "admin.chat", "admin.api_tester", "admin.models", "admin.orchestration"}:
         return False
     child_exists = db.scalar(select(Menu.id).where(Menu.parent_id == menu_id))
     if child_exists is not None:
@@ -383,7 +413,12 @@ def delete_menu(db: Session, menu_id: int) -> bool:
 
 
 def build_menu_tree(db: Session, *, role_codes: set[str] | None = None) -> list[MenuTreeItem]:
+    legacy_tree = build_legacy_menu_tree(db, role_codes=role_codes)
+    if legacy_tree:
+        return [MenuTreeItem.model_validate(item) for item in legacy_tree]
+
     menus = db.execute(_menu_stmt().order_by(Menu.sort_order.asc(), Menu.id.asc())).scalars().all()
+    menus = [menu for menu in menus if not _is_removed_menu_code(menu.code)]
     if role_codes is not None and "admin" not in role_codes:
         allowed_ids = _get_allowed_menu_ids(db, role_codes)
         menus = [menu for menu in menus if menu.id in allowed_ids and menu.status == "enabled" and menu.visible]
@@ -453,7 +488,8 @@ def _load_menus_by_ids(db: Session, menu_ids: list[int]) -> list[Menu]:
     normalized = sorted(set(menu_ids))
     if not normalized:
         return []
-    return db.execute(select(Menu).where(Menu.id.in_(normalized))).scalars().all()
+    menus = db.execute(select(Menu).where(Menu.id.in_(normalized))).scalars().all()
+    return [menu for menu in menus if not _is_removed_menu_code(menu.code)]
 
 
 def _get_allowed_menu_ids(db: Session, role_codes: set[str]) -> set[int]:

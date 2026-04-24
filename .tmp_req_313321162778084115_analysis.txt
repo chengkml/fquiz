@@ -1,0 +1,158 @@
+【需求分析结论】
+该需求可按“仅前端组件层改造、后端协议不动”的方式落地，且当前已有可复用基础：`/admin/knowledge-set` 目前直接复用 `files` 页面（`web/src/app/admin/knowledge-set/page.tsx` -> `../files/page`），`files` 页面已接入 `@/components/ui-antd` 的 Ant Design 封装组件。建议本次定位为“从基础 AntD 化升级到一致化/可维护的 AntD 页面规范”，避免重复造页或改动接口。
+
+一、目标
+1) 将 `/admin/knowledge-set` 页面升级为一致的 Ant Design 交互与视觉规范页面；
+2) 保持现有文件管理业务行为一致（挂载切换、目录浏览、创建目录、上传、下载、重命名、移动、删除）；
+3) 不改后端接口协议与权限语义，仅做前端组件层与交互层改造。
+
+二、现状（基于代码）
+1) 路由复用关系：
+- `web/src/app/admin/knowledge-set/page.tsx`：仅 `export { default } from "../files/page";`
+- 说明知识集页面当前即“文件管理页别名”。
+
+2) 页面实现现状：
+- `web/src/app/admin/files/page.tsx`
+  - 数据层：`useQuery/useMutation` + `fetchWithAuth`，操作后通过 query invalidation 刷新。
+  - 组件层：使用 `@/components/ui-antd` 中 `Button/Table/TextField`，但仍保留较多 Tailwind 自定义样式拼接。
+  - 交互：行内“重命名/移动”以内嵌编辑区展开；删除使用 `window.confirm`；错误/成功反馈用 `<pre>` 文本块。
+
+3) 后端接口与权限（已稳定可复用）：
+- 接口：`api/app/api/v1/admin_files.py`
+  - `GET /api/v1/admin/files`
+  - `POST /api/v1/admin/files/directories|delete|rename|move|upload`
+  - `GET /api/v1/admin/files/download`
+- 服务：`api/app/services/file_service.py`（路径规范化、索引同步、事件推送）
+- 权限：`file.read / file.manage`（只读与可管理区分清晰）
+
+4) 菜单/入口现状：
+- `web/src/app/admin/page.tsx` 已将“知识集管理”指向 `/admin/knowledge-set`
+- `api/app/services/seed_service.py` 中 `admin.files` 也绑定 `/admin/knowledge-set`
+
+三、范围（In Scope）
+1) 仅 `web/src/app/admin/files/page.tsx`（及必要的前端 UI 适配文件）做组件替换与交互优化；
+2) 统一列表、筛选/操作区、反馈、空态/加载态、二次确认交互为 AntD 风格；
+3) 保持 `knowledge-set` 与 `files` 的复用关系不变（不拆分新业务页）。
+
+四、非范围（Out of Scope）
+1) 不修改 `api/app/api/v1/admin_files.py` 与 `api/app/services/file_service.py` 的接口协议与业务语义；
+2) 不新增“知识库语义能力”（如向量化、文档解析、标签体系）；
+3) 不改 RBAC 规则（`file.read/file.manage`）；
+4) 不做跨模块重构（如后台整体导航、全站主题体系重做）。
+
+五、UI/UX 专项评估（先行结论，来自 UI/UX 规则集）
+执行摘要（4 条）：
+1) 当前页面核心流程可用，但“高风险动作确认/反馈”仍偏原生实现，缺少统一 AntD 交互语言。
+2) 行内展开编辑导致表格行高波动，复杂目录下可读性下降，建议用 Drawer/Modal 承载重命名与移动。
+3) 错误/成功信息采用 `<pre>` 块，信息层级与可读性偏弱，建议统一为 `Alert` + `message`/`notification`。
+4) 页面虽然已响应式，但移动端操作密度偏高，建议收敛到“更多操作”菜单，减少误触。
+
+P0（高优先，必须先做）
+P0-1 破坏性操作确认标准化
+- 现状：删除依赖 `window.confirm`。
+- 影响：交互风格与 AntD 不一致，批量操作时代码可维护性低。
+- 改法：改为 `Modal.confirm`（明确资源名、类型、是否递归删除）。
+- 建议位置：`web/src/app/admin/files/page.tsx`（`handleDelete` 调用链）。
+
+P0-2 反馈体系统一
+- 现状：成功/失败反馈使用 `<pre>`。
+- 影响：信息等级不直观，移动端阅读体验较差。
+- 改法：页面级错误用 `Alert`，动作级反馈用 `message.success/error`；保留必要的详细错误文本折叠区。
+- 建议位置：`web/src/app/admin/files/page.tsx`。
+
+P0-3 行内编辑改为弹层
+- 现状：重命名/移动在单元格内展开编辑块。
+- 影响：表格布局跳变、可读性下降、误操作风险增高。
+- 改法：使用 `Drawer` 或 `Modal` 承载表单（目标目录、新名称），提交后关闭并刷新。
+- 建议位置：`web/src/app/admin/files/page.tsx`（`activeItemPath` 相关状态区域）。
+
+P1（中优先，建议本期完成）
+P1-1 操作入口收敛
+- 现状：行内多个按钮并排。
+- 影响：窄屏拥挤、误触概率高。
+- 改法：使用 `Dropdown` + `Menu` 作为“更多操作”，主操作保留“进入/下载”。
+- 建议位置：`web/src/app/admin/files/page.tsx` 操作列。
+
+P1-2 上传控件体验优化
+- 现状：原生 `<input type="file">` 可用但视觉不统一。
+- 影响：与页面其他 AntD 控件风格割裂。
+- 改法：改为 `Upload`（`beforeUpload={() => false}` + 手动提交 mutation）以保持现有上传 API。
+- 建议位置：`web/src/app/admin/files/page.tsx` 上传区域。
+
+P1-3 空态/加载态升级
+- 现状：空目录以纯文本“当前目录为空”，加载以文本提示。
+- 影响：状态识别效率一般。
+- 改法：使用 `Empty` + `Skeleton/Spin`，并附“新建目录/上传文件”快捷动作。
+- 建议位置：`web/src/app/admin/files/page.tsx` 列表渲染区。
+
+P2（可延后）
+P2-1 列表增强
+- 建议：增加列排序（名称/修改时间/大小）与密度切换（默认/紧凑）。
+
+P2-2 面包屑与路径输入联动
+- 建议：支持手工输入路径跳转与校验提示，提升深层目录导航效率。
+
+P2-3 批量操作能力
+- 建议：增加多选 + 批量删除/移动（保持接口兼容前提下逐步扩展）。
+
+UI Quick Wins（至少 3 条，可快速落地）
+1) 把删除确认从 `window.confirm` 改成 `Modal.confirm`（低改动高收益）。
+2) 用 `Alert` + `message` 替换 `<pre>` 反馈块（提升可读性与一致性）。
+3) 操作列收敛为“主按钮 + 更多下拉”，移动端减少拥挤。
+4) 空态改为 `Empty` 并附“上传文件/新建目录”操作按钮。
+
+六、实现思路（最小改动）
+阶段 1：结构与反馈统一（不动数据流）
+- 保留现有 React Query 与 mutation；
+- 先替换反馈与确认交互（`Alert/message/Modal.confirm`）；
+- 先不改 API 与类型。
+
+阶段 2：表格操作重构
+- 行内编辑改为 `Drawer/Modal`；
+- 操作列改“更多菜单”；
+- 保持现有 mutation 参数与刷新机制。
+
+阶段 3：状态体验完善
+- 引入 `Empty/Skeleton/Spin`；
+- 增加必要无障碍属性（按钮 aria-label、状态可读文案）。
+
+七、影响点
+1) 前端：
+- 主要影响 `web/src/app/admin/files/page.tsx`（`/admin/knowledge-set` 自动受益）；
+- 可能少量扩展 `web/src/components/ui-antd.tsx`（若需补充 Drawer/Upload/Message 的统一封装）。
+
+2) 后端：
+- 无接口变更、无数据库变更、无权限模型变更。
+
+3) 用户体验：
+- 操作更一致、反馈更清晰、误操作风险下降；
+- 行为语义不变，学习成本低。
+
+八、风险 / 疑问
+1) 疑问：`/admin/knowledge-set` 是否长期作为“文件管理别名”，还是后续要演进为独立“知识集语义管理”页面？
+- 若后续独立，建议本次仍先做通用文件交互优化，避免返工。
+
+2) 风险：若一次性引入过多新组件（Upload/Drawer/Notification），回归测试范围会扩大。
+- 规避：分阶段提交，先做 P0，再做 P1。
+
+3) 风险：操作入口调整（按钮->下拉）可能影响老用户操作路径。
+- 规避：保留高频主操作“进入/下载”直出，其余收敛到更多菜单。
+
+九、建议验收标准
+1) 功能一致性
+- 挂载切换、目录进入、面包屑跳转、新建目录、上传、下载、重命名、移动、删除均可正常完成；
+- 请求路径与 payload 与改造前一致。
+
+2) 交互一致性
+- 删除必须走 AntD Confirm；
+- 成功/失败反馈不再使用 `<pre>`，改为统一 AntD 反馈组件；
+- 行内编辑区不再导致表格跳行。
+
+3) 权限一致性
+- `file.read` 用户仅可浏览/下载；
+- `file.manage` 用户可执行新建/上传/重命名/移动/删除。
+
+4) 质量门禁
+- 页面可正常访问：`/admin/knowledge-set`；
+- 前端类型检查通过（如 `npm --workspace web exec tsc --noEmit --pretty false`）；
+- 关键链路手工冒烟通过（至少：上传->重命名->移动->下载->删除）。

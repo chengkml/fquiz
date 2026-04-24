@@ -1,12 +1,12 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class UserPublic(BaseModel):
     id: str
-    email: EmailStr
+    email: str
     username: str
     status: str
     role_codes: list[str]
@@ -22,7 +22,7 @@ class UserListResponse(BaseModel):
 
 class UserUpdateRequest(BaseModel):
     username: str | None = Field(default=None, min_length=3, max_length=64)
-    status: Literal["active", "disabled"] | None = None
+    status: Literal["active", "disabled", "enabled"] | None = None
 
 
 class UserRoleUpdateRequest(BaseModel):
@@ -35,7 +35,7 @@ class UserPasswordResetRequest(BaseModel):
 
 class UserCreateRequest(BaseModel):
     user_id: str = Field(min_length=3, max_length=64)
-    email: EmailStr
+    email: str
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=8, max_length=128)
 

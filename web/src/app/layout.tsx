@@ -9,7 +9,7 @@ import "antd/dist/reset.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Quiz",
+  title: "需求管理",
   description: "Quiz admin workspace",
 };
 

@@ -28,11 +28,11 @@ export type PermissionItem = {
 };
 
 export type RoleItem = {
-  id: number;
+  id: string;
   code: string;
   name: string;
   permission_codes: string[];
-  menu_ids: number[];
+  menu_ids: string[];
 };
 
 export type RoleListResponse = {
@@ -41,12 +41,12 @@ export type RoleListResponse = {
 };
 
 export type MenuItem = {
-  id: number;
+  id: string;
   code: string;
   name: string;
   path: string | null;
   icon: string | null;
-  parent_id: number | null;
+  parent_id: string | null;
   type: string;
   sort_order: number;
   status: string;
