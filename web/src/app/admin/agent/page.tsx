@@ -1404,8 +1404,8 @@ export default function AdminAgentPage() {
               <label className="flex items-center gap-2 text-sm md:col-span-2">
                 <Checkbox
                   checked={routeForm.enabled}
-                  onCheckedChange={(checked: boolean) => {
-                    setRouteForm((previous) => ({ ...previous, enabled: checked }));
+                  onCheckedChange={(checked) => {
+                    setRouteForm((previous) => ({ ...previous, enabled: checked === true }));
                   }}
                 >
                   启用该规则

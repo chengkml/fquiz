@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Button,
+  Card,
   Checkbox,
   Empty,
   Form,
@@ -15,16 +16,18 @@ import {
   Table,
   Tag,
   Typography,
+  type CardProps,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ComponentType } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { Card } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { RoleItem, RoleListResponse, UserListResponse, UserPublic } from "@/types/auth";
+
+const AntCard = Card as unknown as ComponentType<CardProps>;
 
 type UserRolePayload = {
   role_codes: string[];
@@ -58,6 +61,7 @@ export default function AdminUsersPage() {
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [resettingUserId, setResettingUserId] = useState<string | null>(null);
   const [updatingStatusUserId, setUpdatingStatusUserId] = useState<string | null>(null);
+  const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
   const [resetPasswordTarget, setResetPasswordTarget] = useState<UserPublic | null>(null);
 
   const [error, setError] = useState("");
@@ -152,6 +156,7 @@ export default function AdminUsersPage() {
       setSuccess("用户已创建");
       setError("");
       createForm.resetFields();
+      setCreateUserModalOpen(false);
       await refreshData();
     },
     onError: (candidate) => {
@@ -307,6 +312,19 @@ export default function AdminUsersPage() {
   const handleSubmitResetPassword = (values: ResetPasswordValues) => {
     if (!resetPasswordTarget) return;
     resetPasswordMutation.mutate({ userId: resetPasswordTarget.id, password: values.password });
+  };
+
+  const openCreateUserModal = () => {
+    setError("");
+    setSuccess("");
+    createForm.resetFields();
+    setCreateUserModalOpen(true);
+  };
+
+  const closeCreateUserModal = () => {
+    if (createUserMutation.isPending) return;
+    setCreateUserModalOpen(false);
+    createForm.resetFields();
   };
 
   const queryError =
@@ -472,9 +490,45 @@ export default function AdminUsersPage() {
       {anyError && <Alert type="error" message="操作失败" description={anyError} showIcon />}
       {success && <Alert type="success" message={success} showIcon />}
 
-      <Card
+      <AntCard
+        title="用户列表"
+        extra={(
+          <Space>
+            {usersQuery.isFetching && <Spin size="small" />}
+            <Typography.Text type="secondary">共 {usersQuery.data?.total ?? 0} 条</Typography.Text>
+            <Button type="primary" onClick={openCreateUserModal}>
+              新增用户
+            </Button>
+          </Space>
+        )}
+      >
+        <Table<UserPublic>
+          rowKey="id"
+          dataSource={users}
+          columns={columns}
+          pagination={false}
+          size="middle"
+          scroll={{ x: 1500 }}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="暂无用户数据"
+              />
+            ),
+          }}
+        />
+      </AntCard>
+
+      <Modal
         title="新增用户"
-        extra={<Typography.Text type="secondary">用户 ID 由管理员手动填写，系统会校验重复。</Typography.Text>}
+        open={createUserModalOpen}
+        destroyOnClose
+        onCancel={closeCreateUserModal}
+        onOk={() => createForm.submit()}
+        okText="创建用户"
+        cancelText="取消"
+        confirmLoading={createUserMutation.isPending}
       >
         <Form<CreateUserValues>
           form={createForm}
@@ -530,41 +584,8 @@ export default function AdminUsersPage() {
               <Input.Password placeholder="至少 8 位" />
             </Form.Item>
           </div>
-
-          <Form.Item style={{ marginBottom: 0 }}>
-            <Button type="primary" htmlType="submit" loading={createUserMutation.isPending}>
-              创建用户
-            </Button>
-          </Form.Item>
         </Form>
-      </Card>
-
-      <Card
-        title="用户列表"
-        extra={(
-          <Space>
-            {usersQuery.isFetching && <Spin size="small" />}
-            <Typography.Text type="secondary">共 {usersQuery.data?.total ?? 0} 条</Typography.Text>
-          </Space>
-        )}
-      >
-        <Table<UserPublic>
-          rowKey="id"
-          dataSource={users}
-          columns={columns}
-          pagination={false}
-          size="middle"
-          scroll={{ x: 1500 }}
-          locale={{
-            emptyText: (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="暂无用户数据"
-              />
-            ),
-          }}
-        />
-      </Card>
+      </Modal>
 
       <Modal
         title={resetPasswordTarget ? `重置密码：${resetPasswordTarget.username}（${resetPasswordTarget.id}）` : "重置密码"}

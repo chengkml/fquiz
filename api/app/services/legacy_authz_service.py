@@ -18,13 +18,19 @@ DEFAULT_ADMIN_PERMISSION_CODES: set[str] = {
     "menu.manage",
     "system_param.read",
     "system_param.manage",
-    "system_message.read",
-    "system_message.manage",
     "model.read",
     "model.manage",
     "file.read",
     "file.manage",
     "chat.use",
+    "line.read",
+    "line.manage",
+    "tower.read",
+    "tower.manage",
+    "lightning.read",
+    "lightning.manage",
+    "wine.read",
+    "wine.manage",
     "requirement.read",
     "requirement.create",
     "requirement.process",
@@ -48,6 +54,10 @@ ADMIN_ROLE_IDS = {
 
 DISABLED_MENU_CODES: set[str] = {
     "admin.wxapp",
+    "admin.system_message",
+    "admin.inbox",
+    "admin.code_review",
+    "admin.git_desktop",
     "admin.mdresolve",
     "admin.data_query",
     "admin.hot_search",
@@ -82,19 +92,46 @@ MENU_CODE_PERMISSION_MAP: dict[str, set[str]] = {
     "admin.roles": {"role.read", "role.manage"},
     "admin.menus": {"menu.read", "menu.manage"},
     "admin.system_params": {"system_param.read", "system_param.manage"},
-    "admin.system_message": {"system_message.read", "system_message.manage"},
-    "admin.inbox": {"menu.read", "menu.manage"},
     "admin.files": {"file.read", "file.manage"},
     "admin.chat": {"chat.use"},
     "admin.requirements": {"requirement.read", "requirement.create", "requirement.process", "requirement.manage"},
+    "admin.task_monitor": {"requirement.read", "todo.read"},
+    "admin.lightning_currents": {"lightning.read", "lightning.manage"},
+    "admin.lightning_distribution": {"lightning.read", "lightning.manage"},
     "admin.schedule": {"todo.read", "todo.create", "todo.process", "todo.manage"},
     "admin.mermaid_mgr": {"question_bank.read", "question_bank.manage"},
     "admin.models": {"model.read", "model.manage"},
     "admin.api_tester": {"model.read", "model.manage"},
     "admin.mcp_server": {"model.read", "model.manage"},
     "admin.agent": {"model.read", "model.manage"},
+    "admin.wine_runner": {"wine.read", "wine.manage"},
     "dashboard": {"menu.read"},
 }
+
+SYNTHETIC_LEGACY_MENU_ROWS: list[dict[str, Any]] = [
+    {
+        "menu_id": "admin.task_monitor",
+        "menu_name": "admin.task_monitor",
+        "menu_label": "任务监控",
+        "menu_type": "MENU",
+        "parent_id": None,
+        "url": "/admin/task-monitor",
+        "menu_icon": "RadarChart",
+        "seq": 53,
+        "state": "ENABLED",
+    },
+    {
+        "menu_id": "admin.wine_runner",
+        "menu_name": "admin.wine_runner",
+        "menu_label": "Wine执行器",
+        "menu_type": "MENU",
+        "parent_id": None,
+        "url": "/admin/wine-runner",
+        "menu_icon": "Terminal",
+        "seq": 65,
+        "state": "ENABLED",
+    },
+]
 
 LEGACY_URL_PATH_MAP = {
     "user": "/admin/users",
@@ -404,7 +441,12 @@ def _load_legacy_menus(db: Session) -> list[dict[str, Any]]:
     except SQLAlchemyError:
         _rollback_safely(db)
         return []
-    return [dict(row) for row in rows]
+    items = [dict(row) for row in rows]
+    existing_codes = {str(row.get("menu_name") or "").strip() for row in items}
+    for row in SYNTHETIC_LEGACY_MENU_ROWS:
+        if str(row["menu_name"]) not in existing_codes:
+            items.append(dict(row))
+    return items
 
 
 def _load_legacy_allowed_menu_ids(db: Session, role_codes: set[str]) -> set[str]:

@@ -15,6 +15,7 @@ from ...schemas.file_storage import (
 from ...services.file_service import (
     create_directory,
     delete_file_path,
+    download_directory_as_zip,
     download_file_from_path,
     list_files,
     move_file_path,
@@ -109,3 +110,20 @@ def download_file_endpoint(
     media_type = content_type or "application/octet-stream"
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return StreamingResponse(iter([content]), media_type=media_type, headers=headers)
+
+
+@router.get("/download-zip")
+def download_directory_zip_endpoint(
+    mount_code: str = Query(..., min_length=2, max_length=64),
+    path: str = Query(..., min_length=1, max_length=2048),
+    _: CurrentUser = Depends(require_any_permission("file.read", "file.manage")),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    filename, content, content_type = download_directory_as_zip(
+        db,
+        mount_code=mount_code,
+        path=path,
+    )
+
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(iter([content]), media_type=content_type, headers=headers)

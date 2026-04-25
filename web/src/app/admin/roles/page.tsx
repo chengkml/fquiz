@@ -1,40 +1,79 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import {
+  Alert,
+  App,
+  Button,
+  Card,
+  Empty,
+  Form,
+  Input,
+  Modal,
+  Result,
+  Select,
+  Space,
+  Spin,
+  Table,
+  Tag,
+  Typography,
+  type CardProps,
+  type ResultProps,
+} from "antd";
+import type { ColumnsType } from "antd/es/table";
+import type { ComponentType } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { Checkbox, Dialog, TextField, Button, Table, Callout } from "@/components/ui-antd";
-import { Modal } from "antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { MenuItem, PermissionItem, RoleItem, RoleListResponse } from "@/types/auth";
 
+const AntCard = Card as unknown as ComponentType<CardProps>;
+const AntResult = Result as unknown as ComponentType<ResultProps>;
+
 type PermissionResponse = { items: PermissionItem[] };
 type MenuListResponse = { items: MenuItem[]; total: number };
 
-const EMPTY_FORM = {
+type RoleFormValues = {
+  code: string;
+  name: string;
+  permission_codes: string[];
+  menu_ids: string[];
+};
+
+const EMPTY_FORM: RoleFormValues = {
   code: "",
   name: "",
-  permission_codes: "",
-  menu_ids: [] as string[],
+  permission_codes: [],
+  menu_ids: [],
 };
 
 export default function AdminRolesPage() {
+  const { message, modal } = App.useApp();
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
+  const [form] = Form.useForm<RoleFormValues>();
   const [roles, setRoles] = useState<RoleItem[]>([]);
+  const [searchKeyword, setSearchKeyword] = useState("");
   const [permissions, setPermissions] = useState<PermissionItem[]>([]);
   const [menus, setMenus] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
   const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
 
   const canRead = hasPermission("role.read") || hasPermission("role.manage");
   const canManage = hasPermission("role.manage");
+
+  const permissionOptions = useMemo(
+    () =>
+      permissions.map((permission) => ({
+        value: permission.code,
+        label: `${permission.name || permission.code} (${permission.code})`,
+      })),
+    [permissions],
+  );
 
   const menuOptions = useMemo(
     () => menus.map((menu) => ({ value: menu.id, label: `${menu.name} (${menu.code})` })),
@@ -45,6 +84,28 @@ export default function AdminRolesPage() {
     return new Map(menus.map((menu) => [menu.id, `${menu.name} (${menu.code})`]));
   }, [menus]);
 
+  const filteredRoles = useMemo(() => {
+    const keyword = searchKeyword.trim().toLowerCase();
+    if (!keyword) {
+      return roles;
+    }
+
+    return roles.filter((role) => {
+      const menuNames = role.menu_ids
+        .map((menuId) => menuNameById.get(menuId) ?? String(menuId))
+        .join(" ");
+      const haystack = [
+        role.code,
+        role.name,
+        role.permission_codes.join(" "),
+        menuNames,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(keyword);
+    });
+  }, [menuNameById, roles, searchKeyword]);
+
   const loadData = useCallback(async () => {
     if (!canRead) {
       setLoading(false);
@@ -53,37 +114,35 @@ export default function AdminRolesPage() {
 
     setLoading(true);
     setError("");
+    try {
+      const [roleRes, permissionRes, menuRes] = await Promise.all([
+        fetchWithAuth("/api/v1/admin/roles"),
+        fetchWithAuth("/api/v1/admin/permissions"),
+        fetchWithAuth("/api/v1/admin/menus"),
+      ]);
 
-    const [roleRes, permissionRes, menuRes] = await Promise.all([
-      fetchWithAuth("/api/v1/admin/roles"),
-      fetchWithAuth("/api/v1/admin/permissions"),
-      fetchWithAuth("/api/v1/admin/menus"),
-    ]);
+      if (!roleRes.ok) {
+        throw new Error(await readApiError(roleRes));
+      }
+      if (!permissionRes.ok) {
+        throw new Error(await readApiError(permissionRes));
+      }
+      if (!menuRes.ok) {
+        throw new Error(await readApiError(menuRes));
+      }
 
-    if (!roleRes.ok) {
-      setError(await readApiError(roleRes));
+      const rolePayload = (await roleRes.json()) as RoleListResponse;
+      const permissionPayload = (await permissionRes.json()) as PermissionResponse;
+      const menuPayload = (await menuRes.json()) as MenuListResponse;
+
+      setRoles(rolePayload.items);
+      setPermissions(permissionPayload.items);
+      setMenus(menuPayload.items);
+    } catch (candidate) {
+      setError(candidate instanceof Error ? candidate.message : "角色数据加载失败");
+    } finally {
       setLoading(false);
-      return;
     }
-    if (!permissionRes.ok) {
-      setError(await readApiError(permissionRes));
-      setLoading(false);
-      return;
-    }
-    if (!menuRes.ok) {
-      setError(await readApiError(menuRes));
-      setLoading(false);
-      return;
-    }
-
-    const rolePayload = (await roleRes.json()) as RoleListResponse;
-    const permissionPayload = (await permissionRes.json()) as PermissionResponse;
-    const menuPayload = (await menuRes.json()) as MenuListResponse;
-
-    setRoles(rolePayload.items);
-    setPermissions(permissionPayload.items);
-    setMenus(menuPayload.items);
-    setLoading(false);
   }, [canRead, fetchWithAuth]);
 
   useEffect(() => {
@@ -107,74 +166,85 @@ export default function AdminRolesPage() {
     }
   }, [canRead, loadData, user]));
 
-  const resetForm = () => {
+  const closeDialog = useCallback(() => {
     setEditingRoleId(null);
-    setForm(EMPTY_FORM);
     setDialogOpen(false);
-  };
+    form.resetFields();
+  }, [form]);
 
-  const startCreate = () => {
+  const startCreate = useCallback(() => {
     setEditingRoleId(null);
-    setForm(EMPTY_FORM);
+    form.setFieldsValue(EMPTY_FORM);
     setDialogOpen(true);
-  };
+  }, [form]);
 
-  const startEdit = (role: RoleItem) => {
+  const startEdit = useCallback((role: RoleItem) => {
     setEditingRoleId(role.id);
-    setForm({
+    form.setFieldsValue({
       code: role.code,
       name: role.name,
-      permission_codes: role.permission_codes.join(", "),
+      permission_codes: role.permission_codes,
       menu_ids: role.menu_ids,
     });
     setDialogOpen(true);
-  };
+  }, [form]);
 
-  const submit = async () => {
+  const submit = useCallback(async () => {
     setSaving(true);
     setError("");
-    setSuccess("");
 
-    const payload = {
-      code: form.code.trim(),
-      name: form.name.trim(),
-      permission_codes: form.permission_codes
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean),
-      menu_ids: form.menu_ids,
-    };
+    try {
+      const values = await form.validateFields();
+      const payload: RoleFormValues = {
+        code: values.code.trim(),
+        name: values.name.trim(),
+        permission_codes: values.permission_codes ?? [],
+        menu_ids: values.menu_ids ?? [],
+      };
 
-    const response = editingRoleId
-      ? await fetchWithAuth(`/api/v1/admin/roles/${editingRoleId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: payload.name,
-            permission_codes: payload.permission_codes,
-            menu_ids: payload.menu_ids,
-          }),
-        })
-      : await fetchWithAuth("/api/v1/admin/roles", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
+      const response = editingRoleId
+        ? await fetchWithAuth(`/api/v1/admin/roles/${editingRoleId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: payload.name,
+              permission_codes: payload.permission_codes,
+              menu_ids: payload.menu_ids,
+            }),
+          })
+        : await fetchWithAuth("/api/v1/admin/roles", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
 
-    if (!response.ok) {
-      setError(await readApiError(response));
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+
+      message.success(editingRoleId ? "角色已更新" : "角色已创建");
+      closeDialog();
+      await loadData();
+    } catch (candidate) {
+      if (
+        candidate
+        && typeof candidate === "object"
+        && "errorFields" in candidate
+        && Array.isArray((candidate as { errorFields?: unknown }).errorFields)
+      ) {
+        return;
+      }
+
+      const nextError = candidate instanceof Error ? candidate.message : "提交失败，请稍后重试";
+      setError(nextError);
+      message.error(nextError);
+    } finally {
       setSaving(false);
-      return;
     }
+  }, [closeDialog, editingRoleId, fetchWithAuth, form, loadData, message]);
 
-    setSuccess(editingRoleId ? "角色已更新" : "角色已创建");
-    resetForm();
-    await loadData();
-    setSaving(false);
-  };
-
-  const removeRole = (role: RoleItem) => {
-    Modal.confirm({
+  const removeRole = useCallback((role: RoleItem) => {
+    modal.confirm({
       title: `确认删除角色 ${role.code} 吗？`,
       content: "删除后无法恢复，请谨慎操作。",
       okText: "删除",
@@ -182,211 +252,258 @@ export default function AdminRolesPage() {
       cancelText: "取消",
       onOk: async () => {
         setError("");
-        setSuccess("");
         const response = await fetchWithAuth(`/api/v1/admin/roles/${role.id}`, {
           method: "DELETE",
         });
         if (!response.ok) {
-          const message = await readApiError(response);
-          setError(message);
-          throw new Error(message);
+          const nextError = await readApiError(response);
+          setError(nextError);
+          throw new Error(nextError);
         }
-        setSuccess("角色已删除");
+        message.success("角色已删除");
         if (editingRoleId === role.id) {
-          resetForm();
+          closeDialog();
         }
         await loadData();
       },
     });
-  };
+  }, [closeDialog, editingRoleId, fetchWithAuth, loadData, message, modal]);
+
+  const columns = useMemo<ColumnsType<RoleItem>>(() => {
+    const base: ColumnsType<RoleItem> = [
+      {
+        title: "角色编码",
+        dataIndex: "code",
+        width: 180,
+        render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
+      },
+      {
+        title: "角色名称",
+        dataIndex: "name",
+        width: 180,
+      },
+      {
+        title: "权限",
+        dataIndex: "permission_codes",
+        render: (value: string[]) => {
+          if (value.length === 0) {
+            return <Typography.Text type="secondary">未绑定权限</Typography.Text>;
+          }
+          return (
+            <Space wrap size={[4, 4]}>
+              {value.map((permissionCode) => (
+                <Tag key={permissionCode}>{permissionCode}</Tag>
+              ))}
+            </Space>
+          );
+        },
+      },
+      {
+        title: "菜单",
+        dataIndex: "menu_ids",
+        render: (value: string[]) => {
+          if (value.length === 0) {
+            return <Typography.Text type="secondary">未绑定菜单</Typography.Text>;
+          }
+          return (
+            <Space wrap size={[4, 4]}>
+              {value.map((menuId) => (
+                <Tag color="blue" key={menuId}>
+                  {menuNameById.get(menuId) ?? String(menuId)}
+                </Tag>
+              ))}
+            </Space>
+          );
+        },
+      },
+    ];
+
+    if (canManage) {
+      base.push({
+        title: "操作",
+        key: "actions",
+        fixed: "right",
+        width: 160,
+        render: (_, role) => (
+          <Space size="small">
+            <Button size="small" onClick={() => startEdit(role)}>
+              编辑
+            </Button>
+            {!["admin", "user"].includes(role.code) && (
+              <Button danger size="small" onClick={() => removeRole(role)}>
+                删除
+              </Button>
+            )}
+          </Space>
+        ),
+      });
+    }
+
+    return base;
+  }, [canManage, menuNameById, removeRole, startEdit]);
 
   if (initializing || loading) {
-    return <p className="text-sm text-[var(--gray-11)]">Loading roles...</p>;
+    return (
+      <div className="flex min-h-[240px] items-center justify-center">
+        <Space align="center" direction="vertical" size={12}>
+          <Spin />
+          <Typography.Text type="secondary">角色数据加载中...</Typography.Text>
+        </Space>
+      </div>
+    );
   }
 
   if (!user) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问角色管理页面。</p>
-        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回首页</Link>
-      </main>
+      <AntCard>
+        <AntResult
+          status="403"
+          title="请先登录"
+          subTitle="登录后才能访问角色管理页面。"
+          extra={(
+            <Button type="primary">
+              <Link href="/">返回登录</Link>
+            </Button>
+          )}
+        />
+      </AntCard>
     );
   }
 
   if (!canRead) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `role.read`）。</p>
-        <Link href="/" className="inline-flex items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)] disabled:cursor-not-allowed disabled:opacity-60 w-fit">返回首页</Link>
-      </main>
+      <AntCard>
+        <AntResult
+          status="403"
+          title="无访问权限"
+          subTitle="你没有访问该页面的权限（需要 role.read）。"
+          extra={(
+            <Button>
+              <Link href="/dashboard">返回工作台</Link>
+            </Button>
+          )}
+        />
+      </AntCard>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <Space direction="vertical" size={24} style={{ width: "100%" }}>
       {error && (
-        <Callout.Root color="red">
-          <Callout.Text>{error}</Callout.Text>
-        </Callout.Root>
-      )}
-      {success && (
-        <Callout.Root color="green">
-          <Callout.Text>{success}</Callout.Text>
-        </Callout.Root>
+        <Alert
+          closable
+          showIcon
+          type="error"
+          message="操作失败"
+          description={error}
+          onClose={() => setError("")}
+        />
       )}
 
-      <section className="rounded-xl border border-[var(--gray-6)] bg-[var(--color-panel-solid,var(--gray-1))] p-5 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">角色列表</h2>
-            <p className="mt-1 text-sm text-[var(--gray-11)]">当前已配置 {roles.length} 个角色。</p>
-          </div>
-          {canManage && (
-            <Button type="button" onClick={startCreate}>新建角色</Button>
-          )}
-        </div>
+      <AntCard
+        title="角色列表"
+        extra={
+          canManage ? (
+            <Button type="primary" onClick={startCreate}>
+              新建角色
+            </Button>
+          ) : null
+        }
+      >
+        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          <Space align="center" wrap>
+            <Input.Search
+              allowClear
+              placeholder="搜索角色编码、名称、权限或菜单"
+              style={{ width: 360, maxWidth: "100%" }}
+              value={searchKeyword}
+              onChange={(event) => setSearchKeyword(event.currentTarget.value)}
+            />
+            <Typography.Text type="secondary">
+              共 {roles.length} 个角色{searchKeyword.trim() ? `，匹配 ${filteredRoles.length} 个` : ""}
+            </Typography.Text>
+          </Space>
 
-        <div className="overflow-x-auto">
-          <Table.Root className="w-full min-w-full text-left text-sm">
-            <Table.Header className="bg-[var(--gray-a3)]">
-              <Table.Row>
-                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">角色编码</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">角色名称</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">权限</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell className="px-4 py-3 font-medium">菜单</Table.ColumnHeaderCell>
-                {canManage && <Table.ColumnHeaderCell className="px-4 py-3 font-medium">操作</Table.ColumnHeaderCell>}
-              </Table.Row>
-            </Table.Header>
-            <Table.Body className="divide-y">
-              {roles.map((role) => (
-                <Table.Row key={role.id}>
-                  <Table.Cell className="px-4 py-3 font-mono text-xs">{role.code}</Table.Cell>
-                  <Table.Cell className="px-4 py-3">{role.name}</Table.Cell>
-                  <Table.Cell className="px-4 py-3">{role.permission_codes.join(", ") || "-"}</Table.Cell>
-                  <Table.Cell className="px-4 py-3">
-                    {role.menu_ids.length
-                      ? role.menu_ids.map((menuId) => menuNameById.get(menuId) ?? String(menuId)).join(", ")
-                      : "-"}
-                  </Table.Cell>
-                  {canManage && (
-                    <Table.Cell className="px-4 py-3">
-                      <div className="flex gap-2">
-                        <Button
-                          color="gray" size="1" variant="soft"
-                          onClick={() => startEdit(role)}
-                          type="button"
-                        >
-                          编辑
-                        </Button>
-                        {!['admin', 'user'].includes(role.code) && (
-                          <Button
-                            color="red" size="1" variant="soft"
-                            onClick={() => removeRole(role)}
-                            type="button"
-                          >
-                            删除
-                          </Button>
-                        )}
-                      </div>
-                    </Table.Cell>
-                  )}
-                </Table.Row>
-              ))}
-            </Table.Body>
-          </Table.Root>
-        </div>
-      </section>
+          <Table<RoleItem>
+            rowKey="id"
+            columns={columns}
+            dataSource={filteredRoles}
+            scroll={{ x: 1200 }}
+            pagination={{
+              pageSize: 20,
+              showSizeChanger: true,
+              pageSizeOptions: [10, 20, 50, 100],
+              showTotal: (total) => `共 ${total} 条`,
+            }}
+            locale={{
+              emptyText: <Empty description="未找到匹配角色，请调整搜索条件。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
+            }}
+          />
+        </Space>
+      </AntCard>
 
       {canManage && (
-        <Dialog.Root
+        <Modal
+          title={editingRoleId ? "编辑角色" : "新建角色"}
           open={dialogOpen}
-          onOpenChange={(open: boolean) => {
-            if (!open) {
-              resetForm();
-            }
-          }}
+          destroyOnClose
+          width={760}
+          okText={saving ? "提交中..." : editingRoleId ? "保存修改" : "创建角色"}
+          cancelText="取消"
+          confirmLoading={saving}
+          onCancel={closeDialog}
+          onOk={() => void submit()}
         >
-          <Dialog.Content className="max-h-[85vh] w-full max-w-2xl overflow-auto">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold">{editingRoleId ? "编辑角色" : "新建角色"}</h2>
-                <p className="mt-1 text-sm text-[var(--gray-11)]">角色绑定权限点和可见菜单。</p>
-              </div>
-              <Button className="w-fit" color="gray" type="button" variant="soft" onClick={resetForm}>取消</Button>
-            </div>
+          <Form<RoleFormValues>
+            form={form}
+            layout="vertical"
+            initialValues={EMPTY_FORM}
+            preserve={false}
+          >
+            <Form.Item
+              label="角色编码"
+              name="code"
+              rules={[
+                { required: true, message: "请输入角色编码" },
+                { max: 80, message: "角色编码不能超过 80 位" },
+              ]}
+            >
+              <Input disabled={editingRoleId !== null} placeholder="admin.operator" />
+            </Form.Item>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="space-y-2 text-sm">
-                <span>角色编码</span>
-                <TextField.Root
-                  value={form.code}
-                  disabled={editingRoleId !== null}
-                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                    setForm((prev) => ({ ...prev, code: event.currentTarget.value }))
-                  }
-                  className="w-full"
-                />
-              </label>
-              <label className="space-y-2 text-sm">
-                <span>角色名称</span>
-                <TextField.Root
-                  value={form.name}
-                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                    setForm((prev) => ({ ...prev, name: event.currentTarget.value }))
-                  }
-                  className="w-full"
-                />
-              </label>
-              <label className="space-y-2 text-sm md:col-span-2">
-                <span>权限编码（逗号分隔）</span>
-                <TextField.Root
-                  value={form.permission_codes}
-                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                    setForm((prev) => ({ ...prev, permission_codes: event.currentTarget.value }))
-                  }
-                  placeholder={permissions.map((item) => item.code).join(", ")}
-                  className="w-full"
-                />
-              </label>
-              <div className="space-y-2 text-sm md:col-span-2">
-                <span>可见菜单</span>
-                <div className="grid gap-2 rounded-xl border border-[var(--gray-6)] bg-[var(--gray-a2)] p-3 md:grid-cols-2">
-                  {menuOptions.map((item) => {
-                    const checked = form.menu_ids.includes(item.value);
-                    return (
-                      <label key={item.value} className="flex items-center gap-2 text-sm">
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={(state: boolean | "indeterminate") => {
-                            setForm((prev) => ({
-                              ...prev,
-                              menu_ids: state === true
-                                ? [...prev.menu_ids, item.value]
-                                : prev.menu_ids.filter((menuId) => menuId !== item.value),
-                            }));
-                          }}
-                        />
-                        <span>{item.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+            <Form.Item
+              label="角色名称"
+              name="name"
+              rules={[
+                { required: true, message: "请输入角色名称" },
+                { max: 120, message: "角色名称不能超过 120 位" },
+              ]}
+            >
+              <Input placeholder="运营管理员" />
+            </Form.Item>
 
-            <div className="mt-4">
-              <Button
-               
-                disabled={saving}
-                onClick={() => void submit()}
-                type="button"
-              >
-                {saving ? "提交中..." : editingRoleId ? "保存修改" : "创建角色"}
-              </Button>
-            </div>
-          </Dialog.Content>
-        </Dialog.Root>
+            <Form.Item label="权限点" name="permission_codes">
+              <Select
+                allowClear
+                mode="multiple"
+                optionFilterProp="label"
+                options={permissionOptions}
+                placeholder="请选择权限点"
+              />
+            </Form.Item>
+
+            <Form.Item label="可见菜单" name="menu_ids">
+              <Select
+                allowClear
+                mode="multiple"
+                optionFilterProp="label"
+                options={menuOptions}
+                placeholder="请选择可见菜单"
+              />
+            </Form.Item>
+          </Form>
+        </Modal>
       )}
-    </div>
+    </Space>
   );
 }

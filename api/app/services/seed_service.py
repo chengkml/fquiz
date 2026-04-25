@@ -20,8 +20,6 @@ DEFAULT_PERMISSIONS: dict[str, str] = {
     "menu.manage": "Manage menus",
     "system_param.read": "Read system parameters",
     "system_param.manage": "Manage system parameters",
-    "system_message.read": "Read system messages",
-    "system_message.manage": "Manage system messages",
     "model.read": "Read model registry and routing summary",
     "model.manage": "Manage model registry, routes, keys, and health checks",
     "file.read": "Read file mounts and indexed entries",
@@ -39,6 +37,14 @@ DEFAULT_PERMISSIONS: dict[str, str] = {
     "question_bank.manage": "Manage question bank entries",
     "vocabulary.read": "Read vocabulary words",
     "vocabulary.manage": "Manage vocabulary words",
+    "line.read": "Read power lines",
+    "line.manage": "Manage power lines",
+    "tower.read": "Read line towers",
+    "tower.manage": "Manage line towers",
+    "lightning.read": "Read lightning current events and features",
+    "lightning.manage": "Manage lightning current events and data imports",
+    "wine.read": "Read Wine executor status",
+    "wine.manage": "Run Windows executables through Wine",
 }
 
 DEFAULT_ROLES: dict[str, dict[str, object]] = {
@@ -54,8 +60,6 @@ DEFAULT_ROLES: dict[str, dict[str, object]] = {
             "menu.manage",
             "system_param.read",
             "system_param.manage",
-            "system_message.read",
-            "system_message.manage",
             "model.read",
             "model.manage",
             "file.read",
@@ -73,6 +77,14 @@ DEFAULT_ROLES: dict[str, dict[str, object]] = {
             "question_bank.manage",
             "vocabulary.read",
             "vocabulary.manage",
+            "line.read",
+            "line.manage",
+            "tower.read",
+            "tower.manage",
+            "lightning.read",
+            "lightning.manage",
+            "wine.read",
+            "wine.manage",
         ],
     },
     "user": {
@@ -148,58 +160,6 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "permission_code": "system_param.read",
     },
     {
-        "code": "admin.system_message",
-        "name": "提示词管理",
-        "path": "/admin/prompt",
-        "icon": "Bell",
-        "parent_code": None,
-        "type": "menu",
-        "sort_order": 46,
-        "status": "enabled",
-        "visible": True,
-        "cacheable": False,
-        "permission_code": "system_message.read",
-    },
-    {
-        "code": "admin.inbox",
-        "name": "收件箱",
-        "path": "/admin/inbox",
-        "icon": "Inbox",
-        "parent_code": None,
-        "type": "menu",
-        "sort_order": 47,
-        "status": "enabled",
-        "visible": True,
-        "cacheable": False,
-        "permission_code": "menu.read",
-    },
-    {
-        "code": "admin.code_review",
-        "name": "代码评审",
-        "path": "/admin/code-review",
-        "icon": "Code2",
-        "parent_code": None,
-        "type": "menu",
-        "sort_order": 49,
-        "status": "enabled",
-        "visible": True,
-        "cacheable": False,
-        "permission_code": "requirement.read",
-    },
-    {
-        "code": "admin.git_desktop",
-        "name": "Git管理",
-        "path": "/admin/git-desktop",
-        "icon": "GitBranch",
-        "parent_code": None,
-        "type": "menu",
-        "sort_order": 50,
-        "status": "enabled",
-        "visible": True,
-        "cacheable": False,
-        "permission_code": "requirement.read",
-    },
-    {
         "code": "admin.agent",
         "name": "编排管理",
         "path": "/admin/orchestration",
@@ -265,6 +225,45 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "permission_code": "requirement.read",
     },
     {
+        "code": "admin.power_lines",
+        "name": "线路管理",
+        "path": "/admin/power-lines",
+        "icon": "Network",
+        "parent_code": None,
+        "type": "menu",
+        "sort_order": 50,
+        "status": "enabled",
+        "visible": True,
+        "cacheable": False,
+        "permission_code": "line.read",
+    },
+    {
+        "code": "admin.lightning_currents",
+        "name": "雷电幅值统计",
+        "path": "/admin/lightning-currents",
+        "icon": "Zap",
+        "parent_code": None,
+        "type": "menu",
+        "sort_order": 51,
+        "status": "enabled",
+        "visible": True,
+        "cacheable": False,
+        "permission_code": "lightning.read",
+    },
+    {
+        "code": "admin.lightning_distribution",
+        "name": "雷电分布统计",
+        "path": "/admin/lightning-distribution",
+        "icon": "Map",
+        "parent_code": None,
+        "type": "menu",
+        "sort_order": 52,
+        "status": "enabled",
+        "visible": True,
+        "cacheable": False,
+        "permission_code": "lightning.read",
+    },
+    {
         "code": "admin.mindmap",
         "name": "思维导图",
         "path": "/admin/mindmap",
@@ -289,6 +288,19 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "visible": True,
         "cacheable": False,
         "permission_code": "todo.read",
+    },
+    {
+        "code": "admin.task_monitor",
+        "name": "任务监控",
+        "path": "/admin/task-monitor",
+        "icon": "RadarChart",
+        "parent_code": None,
+        "type": "menu",
+        "sort_order": 53,
+        "status": "enabled",
+        "visible": True,
+        "cacheable": False,
+        "permission_code": "requirement.read",
     },
     {
         "code": "admin.syslog",
@@ -342,48 +354,66 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "cacheable": False,
         "permission_code": "model.read",
     },
+    {
+        "code": "admin.wine_runner",
+        "name": "Wine执行器",
+        "path": "/admin/wine-runner",
+        "icon": "Terminal",
+        "parent_code": None,
+        "type": "menu",
+        "sort_order": 65,
+        "status": "enabled",
+        "visible": True,
+        "cacheable": False,
+        "permission_code": "wine.read",
+    },
 ]
 
 ROLE_MENU_BINDINGS: dict[str, list[str]] = {
-    "admin": ["dashboard", "admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.system_message", "admin.inbox", "admin.code_review", "admin.git_desktop", "admin.agent", "admin.mcp_server", "admin.files", "admin.requirements", "admin.mindmap", "admin.schedule", "admin.mermaid_mgr", "admin.syslog", "admin.chat", "admin.api_tester", "admin.models"],
+    "admin": ["dashboard", "admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.agent", "admin.mcp_server", "admin.files", "admin.requirements", "admin.power_lines", "admin.lightning_currents", "admin.lightning_distribution", "admin.mindmap", "admin.schedule", "admin.task_monitor", "admin.mermaid_mgr", "admin.syslog", "admin.chat", "admin.api_tester", "admin.models", "admin.wine_runner"],
     "user": ["dashboard"],
 }
 
-DEFAULT_FILE_STORAGE_BACKENDS: list[dict[str, object]] = [
-    {
-        "code": "files.vfs.default",
-        "name": "本地 VFS 存储",
-        "driver_type": "VFS",
-        "status": "enabled",
-        "is_default": True,
-        "config_json": lambda: {"root_dir": settings.file_vfs_root},
-    },
-    {
-        "code": "files.s3.default",
-        "name": "S3 对象存储",
-        "driver_type": "S3",
-        "status": "disabled",
-        "is_default": False,
-        "config_json": {
-            "bucket": "",
-            "region_name": "",
-            "endpoint_url": "",
-            "access_key_id": "",
-            "secret_access_key": "",
+def _default_file_storage_backends() -> list[dict[str, object]]:
+    minio_enabled = bool(settings.minio_enabled)
+    return [
+        {
+            "code": "files.vfs.default",
+            "name": "本地 VFS 存储",
+            "driver_type": "VFS",
+            "status": "disabled" if minio_enabled else "enabled",
+            "is_default": not minio_enabled,
+            "config_json": {"root_dir": settings.file_vfs_root},
         },
-    },
-]
+        {
+            "code": "files.s3.default",
+            "name": "S3 对象存储",
+            "driver_type": "S3",
+            "status": "enabled" if minio_enabled else "disabled",
+            "is_default": minio_enabled,
+            "config_json": {
+                "bucket": settings.minio_bucket,
+                "region_name": settings.minio_region,
+                "endpoint_url": settings.minio_endpoint,
+                "access_key_id": settings.minio_access_key,
+                "secret_access_key": settings.minio_secret_key,
+            },
+        },
+    ]
 
-DEFAULT_FILE_STORAGE_MOUNTS: list[dict[str, object]] = [
-    {
-        "code": "main",
-        "name": "主文件区",
-        "backend_code": "files.vfs.default",
-        "mount_path": "/",
-        "root_path": "/",
-        "is_enabled": True,
-    },
-]
+
+def _default_file_storage_mounts() -> list[dict[str, object]]:
+    default_backend_code = "files.s3.default" if settings.minio_enabled else "files.vfs.default"
+    return [
+        {
+            "code": "main",
+            "name": "主文件区",
+            "backend_code": default_backend_code,
+            "mount_path": "/",
+            "root_path": "/",
+            "is_enabled": True,
+        },
+    ]
 
 
 def seed_defaults(db: Session) -> None:
@@ -502,11 +532,10 @@ def _seed_initial_admin(db: Session) -> None:
 def _seed_file_storage(db: Session) -> None:
     backend_map: dict[str, FileStorageBackend] = {}
 
-    for backend_info in DEFAULT_FILE_STORAGE_BACKENDS:
+    for backend_info in _default_file_storage_backends():
         code = str(backend_info["code"])
         backend = db.scalar(select(FileStorageBackend).where(FileStorageBackend.code == code))
-        config_factory = backend_info.get("config_json")
-        config_json = config_factory() if callable(config_factory) else config_factory
+        config_json = backend_info.get("config_json")
         normalized_config = config_json if isinstance(config_json, dict) else {}
 
         if not backend:
@@ -523,11 +552,12 @@ def _seed_file_storage(db: Session) -> None:
         else:
             backend.name = str(backend_info["name"])
             backend.driver_type = str(backend_info["driver_type"])
-            if not backend.config_json:
-                backend.config_json = normalized_config
+            backend.status = str(backend_info["status"])
+            backend.is_default = bool(backend_info["is_default"])
+            backend.config_json = normalized_config
         backend_map[code] = backend
 
-    for mount_info in DEFAULT_FILE_STORAGE_MOUNTS:
+    for mount_info in _default_file_storage_mounts():
         code = str(mount_info["code"])
         backend_code = str(mount_info["backend_code"])
         backend = backend_map.get(backend_code)

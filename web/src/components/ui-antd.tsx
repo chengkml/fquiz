@@ -21,6 +21,7 @@ import {
 } from "react";
 import {
   Alert,
+  App as AntApp,
   Button as AntButton,
   Card as AntCard,
   Checkbox as AntCheckbox,
@@ -33,7 +34,9 @@ import {
   theme as antdTheme,
   type CardProps as AntCardProps,
   type MenuProps,
+  type ThemeConfig,
 } from "antd";
+import zhCN from "antd/locale/zh_CN";
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -248,9 +251,9 @@ export function useThemeAppearance(): ThemeAppearanceContextValue {
 
 const RADIUS_MAP: Record<string, number> = {
   none: 0,
-  small: 6,
-  medium: 10,
-  large: 14,
+  small: 4,
+  medium: 6,
+  large: 8,
   full: 999,
 };
 
@@ -265,7 +268,15 @@ function ThemeCssVarsScope({ children }: { children: ReactNode }) {
         "--ant-color-text": token.colorText,
         "--ant-color-text-secondary": token.colorTextSecondary,
         "--ant-color-bg-layout": token.colorBgLayout,
+        "--ant-color-bg-container": token.colorBgContainer,
+        "--ant-color-fill-alter": token.colorFillAlter,
         "--ant-color-border-secondary": token.colorBorderSecondary,
+        "--ant-border-radius": `${token.borderRadius}px`,
+        "--ant-border-radius-lg": `${token.borderRadiusLG}px`,
+        "--ant-padding": `${token.padding}px`,
+        "--ant-padding-lg": `${token.paddingLG}px`,
+        "--ant-margin-lg": `${token.marginLG}px`,
+        "--ant-box-shadow-tertiary": token.boxShadowTertiary,
 
         // Legacy semantic vars remapped to AntD palette
         "--color-panel-solid": token.colorBgContainer,
@@ -338,12 +349,21 @@ export function Theme({
     if (typeof window === "undefined") {
       return;
     }
-    const storedAccentColor = window.localStorage.getItem(THEME_ACCENT_STORAGE_KEY);
-    if (storedAccentColor) {
-      setResolvedAccentColor(normalizeAccentColor(storedAccentColor));
-      return;
-    }
-    setResolvedAccentColor(normalizeAccentColor(accentColor));
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) {
+        return;
+      }
+      const storedAccentColor = window.localStorage.getItem(THEME_ACCENT_STORAGE_KEY);
+      if (storedAccentColor) {
+        setResolvedAccentColor(normalizeAccentColor(storedAccentColor));
+        return;
+      }
+      setResolvedAccentColor(normalizeAccentColor(accentColor));
+    });
+    return () => {
+      active = false;
+    };
   }, [accentColor]);
 
   useEffect(() => {
@@ -351,32 +371,41 @@ export function Theme({
       return;
     }
 
-    const storedPrimaryMode = window.localStorage.getItem(THEME_PRIMARY_MODE_STORAGE_KEY);
-    const storedCompactMode = normalizeBooleanFlag(window.localStorage.getItem(THEME_COMPACT_STORAGE_KEY));
-    const storedHappyWorkMode = normalizeBooleanFlag(
-      window.localStorage.getItem(THEME_HAPPY_WORK_STORAGE_KEY),
-    );
-    const legacyThemeMode = normalizeLegacyThemeMode(
-      window.localStorage.getItem(THEME_MODE_STORAGE_KEY),
-    );
-
-    if (storedPrimaryMode) {
-      setThemePrimaryModeState(normalizeThemePrimaryMode(storedPrimaryMode));
-    } else {
-      setThemePrimaryModeState(
-        legacyThemeMode === "dark" || legacyThemeMode === "dark-compact" ? "dark" : "light",
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) {
+        return;
+      }
+      const storedPrimaryMode = window.localStorage.getItem(THEME_PRIMARY_MODE_STORAGE_KEY);
+      const storedCompactMode = normalizeBooleanFlag(window.localStorage.getItem(THEME_COMPACT_STORAGE_KEY));
+      const storedHappyWorkMode = normalizeBooleanFlag(
+        window.localStorage.getItem(THEME_HAPPY_WORK_STORAGE_KEY),
       );
-    }
+      const legacyThemeMode = normalizeLegacyThemeMode(
+        window.localStorage.getItem(THEME_MODE_STORAGE_KEY),
+      );
 
-    if (storedCompactMode !== null) {
-      setCompactModeState(storedCompactMode);
-    } else {
-      setCompactModeState(legacyThemeMode === "compact" || legacyThemeMode === "dark-compact");
-    }
+      if (storedPrimaryMode) {
+        setThemePrimaryModeState(normalizeThemePrimaryMode(storedPrimaryMode));
+      } else {
+        setThemePrimaryModeState(
+          legacyThemeMode === "dark" || legacyThemeMode === "dark-compact" ? "dark" : "light",
+        );
+      }
 
-    if (storedHappyWorkMode !== null) {
-      setHappyWorkModeState(storedHappyWorkMode);
-    }
+      if (storedCompactMode !== null) {
+        setCompactModeState(storedCompactMode);
+      } else {
+        setCompactModeState(legacyThemeMode === "compact" || legacyThemeMode === "dark-compact");
+      }
+
+      if (storedHappyWorkMode !== null) {
+        setHappyWorkModeState(storedHappyWorkMode);
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -472,15 +501,37 @@ export function Theme({
     };
   }, [happyWorkMode]);
 
-  const themeConfig = useMemo(
+  const themeConfig = useMemo<ThemeConfig>(
     () => ({
       algorithm: themeAlgorithm,
       token: {
         colorPrimary: PRIMARY_COLOR_MAP[resolvedAccentColor] ?? PRIMARY_COLOR_MAP.blue,
         borderRadius: RADIUS_MAP[radius] ?? RADIUS_MAP.medium,
+        fontFamily:
+          "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif",
+        colorBgLayout: isDark ? "#0f1419" : "#f5f5f5",
+      },
+      components: {
+        Layout: {
+          headerBg: isDark ? "#111a2c" : "#ffffff",
+          siderBg: isDark ? "#111a2c" : "#ffffff",
+          bodyBg: isDark ? "#0f1419" : "#f5f5f5",
+          headerHeight: 64,
+          headerPadding: "0 24px",
+        },
+        Card: {
+          borderRadiusLG: RADIUS_MAP.large,
+        },
+        Menu: {
+          itemBorderRadius: RADIUS_MAP.medium,
+          subMenuItemBorderRadius: RADIUS_MAP.medium,
+        },
+        Table: {
+          headerBg: isDark ? "#1f1f1f" : "#fafafa",
+        },
       },
     }),
-    [radius, resolvedAccentColor, themeAlgorithm],
+    [isDark, radius, resolvedAccentColor, themeAlgorithm],
   );
 
   return (
@@ -499,8 +550,10 @@ export function Theme({
         isDark,
       }}
     >
-      <ConfigProvider theme={themeConfig}>
-        <ThemeCssVarsScope>{children}</ThemeCssVarsScope>
+      <ConfigProvider locale={zhCN} theme={themeConfig}>
+        <AntApp>
+          <ThemeCssVarsScope>{children}</ThemeCssVarsScope>
+        </AntApp>
       </ConfigProvider>
     </ThemeAppearanceContext.Provider>
   );
@@ -758,11 +811,12 @@ const AntCardComponent = AntCard as unknown as (props: AntCardProps) => ReactEle
 export function Card({
   asChild = false,
   size,
-  variant: _variant,
+  variant,
   className,
   children,
   ...rest
 }: CardProps) {
+  void variant;
   const mappedSize = size === "2" ? "small" : "default";
 
   if (asChild && isValidElement(children)) {
@@ -862,14 +916,17 @@ type SelectItemProps = {
 };
 
 function SelectTrigger(_props: SelectTriggerProps) {
+  void _props;
   return null;
 }
 
 function SelectContent(_props: SelectContentProps) {
+  void _props;
   return null;
 }
 
 function SelectItem(_props: SelectItemProps) {
+  void _props;
   return null;
 }
 
@@ -1091,18 +1148,22 @@ type DropdownMenuLabelProps = {
 };
 
 function DropdownMenuTrigger(_props: DropdownMenuTriggerProps) {
+  void _props;
   return null;
 }
 
 function DropdownMenuContent(_props: DropdownMenuContentProps) {
+  void _props;
   return null;
 }
 
 function DropdownMenuItem(_props: DropdownMenuItemProps) {
+  void _props;
   return null;
 }
 
 function DropdownMenuLabel(_props: DropdownMenuLabelProps) {
+  void _props;
   return null;
 }
 

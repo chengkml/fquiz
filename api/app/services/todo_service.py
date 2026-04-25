@@ -21,6 +21,7 @@ from .mind_map_service import build_initial_mind_map_data
 from .push_service import publish_topic
 
 TOPIC_NAME = "todos"
+TODO_ACTIVE_STATUSES = {"SCHEDULED", "IN_PROGRESS"}
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "SCHEDULED": {"IN_PROGRESS", "COMPLETED", "CANCELLED", "EXPIRED"},
     "IN_PROGRESS": {"SCHEDULED", "COMPLETED", "CANCELLED", "EXPIRED"},
@@ -254,6 +255,28 @@ def init_todo_mindmap(
         descr=mind_map.descr,
         map_data=mind_map.map_data or "",
     )
+
+
+def expire_overdue_todos(db: Session) -> int:
+    now = utcnow()
+    todos = db.execute(
+        select(Todo).where(
+            Todo.expire_time.is_not(None),
+            Todo.expire_time <= now,
+            Todo.status.in_(sorted(TODO_ACTIVE_STATUSES)),
+        )
+    ).scalars().all()
+
+    if not todos:
+        return 0
+
+    for todo in todos:
+        todo.status = "EXPIRED"
+        todo.update_user = "system"
+        todo.update_date = now
+
+    db.commit()
+    return len(todos)
 
 
 def delete_todo(db: Session, todo_id: str, *, actor: User, syncing: bool = False) -> dict[str, bool]:

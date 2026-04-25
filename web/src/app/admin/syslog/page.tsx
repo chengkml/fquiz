@@ -214,10 +214,8 @@ export default function AdminSyslogPage() {
             重置
           </Button>
         </Space>
-      </Card>
 
-      <Card>
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-4 mt-5 flex flex-wrap items-center justify-between gap-3">
           <Typography.Text type="secondary">
             共 {total} 条，当前第 {currentPage} 页
           </Typography.Text>

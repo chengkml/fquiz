@@ -35,7 +35,7 @@ def search_calendar_events(
     *,
     actor: User,
 ) -> CalendarEventPageResponse:
-    _expire_overdue_events(db)
+    expire_overdue_events(db)
 
     filters = [CalendarEvent.create_user == actor.username]
     if payload.title:
@@ -497,7 +497,7 @@ def _sync_update_todo_for_event(db: Session, *, event: CalendarEvent, actor: Use
         logger.warning("Failed to sync schedule->todo update: %s", exc)
 
 
-def _expire_overdue_events(db: Session) -> int:
+def expire_overdue_events(db: Session) -> int:
     now = utcnow()
     events = db.execute(
         select(CalendarEvent).where(

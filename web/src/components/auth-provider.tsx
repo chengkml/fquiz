@@ -44,6 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [initializing, setInitializing] = useState(true);
   const accessTokenRef = useRef<string | null>(null);
+  const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
 
   const applyToken = useCallback((token: string | null) => {
     accessTokenRef.current = token;
@@ -64,18 +65,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const refreshAccessToken = useCallback(async (): Promise<boolean> => {
-    const response = await fetch(withApiPath("/api/v1/auth/refresh"), {
-      method: "POST",
-      credentials: "include",
-    });
-    if (!response.ok) {
-      clearAuth();
-      return false;
+    if (refreshPromiseRef.current) {
+      return refreshPromiseRef.current;
     }
 
-    const payload = (await response.json()) as AuthTokenResponse;
-    applyAuthPayload(payload);
-    return true;
+    const refreshTask = (async (): Promise<boolean> => {
+      const response = await fetch(withApiPath("/api/v1/auth/refresh"), {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        clearAuth();
+        return false;
+      }
+
+      const payload = (await response.json()) as AuthTokenResponse;
+      applyAuthPayload(payload);
+      return true;
+    })();
+
+    refreshPromiseRef.current = refreshTask;
+    try {
+      return await refreshTask;
+    } finally {
+      if (refreshPromiseRef.current === refreshTask) {
+        refreshPromiseRef.current = null;
+      }
+    }
   }, [applyAuthPayload, clearAuth]);
 
   const fetchWithAuth = useCallback(

@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  App,
   Button,
+  Card,
   Checkbox,
   Col,
   Empty,
@@ -17,18 +19,19 @@ import {
   Select,
   Space,
   Spin,
-  Statistic,
   Table,
   Tag,
-  message,
+  type CardProps,
   type TableColumnsType,
 } from "antd";
+import type { ComponentType } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { Card } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { MenuItem, MenuListResponse } from "@/types/auth";
+
+const AntCard = Card as unknown as ComponentType<CardProps>;
 
 type SortKey = "sort_order" | "id" | "name";
 type FilterStatus = "all" | "enabled" | "disabled";
@@ -61,19 +64,19 @@ const PROTECTED_MENU_CODES = new Set([
   "admin.menus",
   "admin.system_params",
   "admin.wxapp",
-  "admin.system_message",
-  "admin.inbox",
-  "admin.code_review",
-  "admin.git_desktop",
   "admin.agent",
   "admin.mcp_server",
   "admin.files",
   "admin.filedetector",
   "admin.baidu_pan",
   "admin.requirements",
+  "admin.power_lines",
+  "admin.lightning_currents",
+  "admin.lightning_distribution",
   "admin.data_query",
   "admin.hot_search",
   "admin.schedule",
+  "admin.task_monitor",
   "admin.cron_task_mgr",
   "admin.queue_mgr",
   "admin.todos",
@@ -98,6 +101,7 @@ const PROTECTED_MENU_CODES = new Set([
   "admin.life_countdown",
   "admin.api_tester",
   "admin.orchestration",
+  "admin.wine_runner",
 ]);
 
 const DEFAULT_FORM_VALUES: MenuFormValues = {
@@ -126,6 +130,7 @@ function compareMenuIds(a: string, b: string): number {
 
 export default function AdminMenusPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
+  const { message: messageApi } = App.useApp();
   const [menus, setMenus] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -137,7 +142,6 @@ export default function AdminMenusPage() {
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
   const [sortKey, setSortKey] = useState<SortKey>("sort_order");
   const [form] = Form.useForm<MenuFormValues>();
-  const [messageApi, messageContextHolder] = message.useMessage();
 
   const canRead = hasPermission("menu.read") || hasPermission("menu.manage");
   const canManage = hasPermission("menu.manage");
@@ -189,13 +193,6 @@ export default function AdminMenusPage() {
       });
   }, [keyword, menus, sortKey, statusFilter]);
 
-  const stats = useMemo(() => {
-    const enabled = menus.filter((item) => item.status === "enabled").length;
-    const disabled = menus.filter((item) => item.status === "disabled").length;
-    const topLevel = menus.filter((item) => item.parent_id === null).length;
-    return { total: menus.length, enabled, disabled, topLevel };
-  }, [menus]);
-
   const loadMenus = useCallback(async () => {
     if (!canRead) {
       setLoading(false);
@@ -235,19 +232,19 @@ export default function AdminMenusPage() {
     }, [canRead, loadMenus, user]),
   );
 
-  const closeDialog = () => {
+  const closeDialog = useCallback(() => {
     setDialogOpen(false);
     setEditingMenuId(null);
     form.resetFields();
-  };
+  }, [form]);
 
-  const startCreate = () => {
+  const startCreate = useCallback(() => {
     setEditingMenuId(null);
     form.setFieldsValue(DEFAULT_FORM_VALUES);
     setDialogOpen(true);
-  };
+  }, [form]);
 
-  const startEdit = (menu: MenuItem) => {
+  const startEdit = useCallback((menu: MenuItem) => {
     setEditingMenuId(menu.id);
     form.setFieldsValue({
       code: menu.code,
@@ -264,9 +261,9 @@ export default function AdminMenusPage() {
       permission_code: menu.permission_code ?? "",
     });
     setDialogOpen(true);
-  };
+  }, [form]);
 
-  const submit = async () => {
+  const submit = useCallback(async () => {
     try {
       setSaving(true);
       setError("");
@@ -326,9 +323,9 @@ export default function AdminMenusPage() {
     } finally {
       setSaving(false);
     }
-  };
+  }, [closeDialog, editingMenuId, fetchWithAuth, form, loadMenus, messageApi]);
 
-  const removeMenu = async (menu: MenuItem) => {
+  const removeMenu = useCallback(async (menu: MenuItem) => {
     setDeletingMenuId(menu.id);
     setError("");
 
@@ -351,7 +348,7 @@ export default function AdminMenusPage() {
     } finally {
       setDeletingMenuId(null);
     }
-  };
+  }, [closeDialog, editingMenuId, fetchWithAuth, loadMenus, messageApi]);
 
   const columns = useMemo<TableColumnsType<MenuItem>>(() => {
     const base: TableColumnsType<MenuItem> = [
@@ -432,7 +429,7 @@ export default function AdminMenusPage() {
     });
 
     return base;
-  }, [canManage, deletingMenuId, menuNameById]);
+  }, [canManage, deletingMenuId, menuNameById, removeMenu, startEdit]);
 
   if (initializing) {
     return (
@@ -472,8 +469,6 @@ export default function AdminMenusPage() {
 
   return (
     <div className="space-y-6">
-      {messageContextHolder}
-
       {error && (
         <Alert
           type="error"
@@ -485,7 +480,7 @@ export default function AdminMenusPage() {
         />
       )}
 
-      <Card
+      <AntCard
         title="菜单列表"
         extra={
           canManage ? (
@@ -495,30 +490,7 @@ export default function AdminMenusPage() {
           ) : null
         }
       >
-        <Row gutter={[12, 12]}>
-          <Col xs={24} sm={12} md={6}>
-            <Card size="small">
-              <Statistic title="总菜单数" value={stats.total} />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card size="small">
-              <Statistic title="启用" value={stats.enabled} valueStyle={{ color: "#16a34a" }} />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card size="small">
-              <Statistic title="禁用" value={stats.disabled} valueStyle={{ color: "#d97706" }} />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card size="small">
-              <Statistic title="顶级菜单" value={stats.topLevel} />
-            </Card>
-          </Col>
-        </Row>
-
-        <Form layout="inline" className="mt-4" style={{ rowGap: 12 }}>
+        <Form layout="inline" style={{ rowGap: 12 }}>
           <Form.Item label="关键词" className="min-w-[240px]">
             <Input
               allowClear
@@ -578,7 +550,7 @@ export default function AdminMenusPage() {
             emptyText: <Empty description="未找到符合筛选条件的菜单项。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
           }}
         />
-      </Card>
+      </AntCard>
 
       <Modal
         title={editingMenuId ? "编辑菜单" : "新建菜单"}

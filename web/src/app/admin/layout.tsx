@@ -1,33 +1,53 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type SVGProps } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { usePathname } from "next/navigation";
 import Icon, {
   BgColorsOutlined,
   CompressOutlined,
+  DashboardOutlined,
+  HomeOutlined,
   LinkOutlined,
+  LogoutOutlined,
+  MenuFoldOutlined,
+  MenuOutlined,
+  MenuUnfoldOutlined,
   MoonOutlined,
   ShopOutlined,
   SmileOutlined,
   SunOutlined,
   SyncOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
-import { Avatar, Badge, Button as AntButton, Dropdown, Menu as AntMenu, Tooltip, type MenuProps } from "antd";
+import {
+  Alert,
+  Avatar,
+  Badge,
+  Breadcrumb,
+  Button,
+  Drawer,
+  Dropdown,
+  Grid,
+  Layout as AntLayout,
+  Menu as AntMenu,
+  Result,
+  Space,
+  Spin,
+  Tooltip,
+  Typography,
+  type MenuProps,
+  type ResultProps,
+} from "antd";
 
 import { useAuth } from "@/components/auth-provider";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { MenuTreeItem } from "@/types/auth";
-import {
-  Button,
-  Callout,
-  DropdownMenu,
-  Flex,
-  Heading,
-  Text,
-  useThemeAppearance,
-} from "@/components/ui-antd";
+import { useThemeAppearance } from "@/components/ui-antd";
+
+const { Header, Sider, Content } = AntLayout;
+const AntResult = Result as unknown as ComponentType<ResultProps>;
 
 const ThemeSvgIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg width={20} height={20} viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -42,20 +62,6 @@ const ThemeSvgIcon = (props: SVGProps<SVGSVGElement>) => (
 
 function ThemeIcon() {
   return <Icon component={ThemeSvgIcon} />;
-}
-
-function flattenMenuTree(tree: MenuTreeItem[]): MenuTreeItem[] {
-  const result: MenuTreeItem[] = [];
-  const walk = (items: MenuTreeItem[]) => {
-    for (const item of items) {
-      result.push(item);
-      if (item.children.length > 0) {
-        walk(item.children);
-      }
-    }
-  };
-  walk(tree);
-  return result;
 }
 
 function normalizeAdminPath(path: string | null): string | null {
@@ -142,8 +148,40 @@ function findActiveMenuState(
   };
 }
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+function findActiveMenuTrail(
+  items: MenuTreeItem[],
+  pathname: string,
+  parentTrail: MenuTreeItem[] = [],
+): MenuTreeItem[] {
+  for (const item of items) {
+    const nextTrail = [...parentTrail, item];
+    if (isActivePath(pathname, item.path)) {
+      return nextTrail;
+    }
+
+    if (item.children.length > 0) {
+      const childTrail = findActiveMenuTrail(item.children, pathname, nextTrail);
+      if (childTrail.length > 0) {
+        return childTrail;
+      }
+    }
+  }
+
+  return [];
+}
+
+function AdminCenteredState({ children }: { children: ReactNode }) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[var(--ant-color-bg-layout)] px-6 py-20">
+      {children}
+    </main>
+  );
+}
+
+export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const screens = Grid.useBreakpoint();
+  const isDesktop = screens.md === true;
   const { user, initializing, fetchWithAuth, logout } = useAuth();
   const {
     themePrimaryMode,
@@ -157,6 +195,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [loadingMenus, setLoadingMenus] = useState(true);
   const [menuError, setMenuError] = useState("");
   const [menuOpenKeys, setMenuOpenKeys] = useState<string[]>([]);
+  const [siderCollapsed, setSiderCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [aiThemeEnabled, setAiThemeEnabled] = useState(false);
 
   const loadMenus = useCallback(async () => {
@@ -201,27 +241,61 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     void loadMenus();
   }, [loadMenus]));
 
-  const flatMenus = useMemo(() => flattenMenuTree(menuTree), [menuTree]);
   const menuItems = useMemo(() => buildMenuItems(menuTree), [menuTree]);
   const activeMenuState = useMemo(() => findActiveMenuState(menuTree, pathname), [menuTree, pathname]);
-  const currentTitle = useMemo(() => {
-    const current = flatMenus.find((item) => isActivePath(pathname, item.path));
-    return current?.name ?? "后台管理";
-  }, [flatMenus, pathname]);
+  const activeMenuTrail = useMemo(() => findActiveMenuTrail(menuTree, pathname), [menuTree, pathname]);
+  const currentMenu = activeMenuTrail.at(-1);
+  const currentTitle = currentMenu?.name ?? (pathname === "/dashboard" ? "工作台" : "后台模块");
+  const currentDescription =
+    pathname === "/dashboard"
+      ? "总览当前账号可访问的后台模块，按业务域进入管理工作流。"
+      : "按角色权限访问当前模块，完成查询、维护、协作与操作留痕。";
+  const breadcrumbItems = useMemo(() => {
+    const trail = activeMenuTrail.filter((item) => item.path !== "/dashboard");
+    return [
+      {
+        title: (
+          <Link href="/dashboard">
+            <Space size={4}>
+              <DashboardOutlined />
+              工作台
+            </Space>
+          </Link>
+        ),
+      },
+      ...trail.map((item, index) => {
+        const isLast = index === trail.length - 1;
+        return {
+          title: item.path && !isLast ? <Link href={item.path}>{item.name}</Link> : item.name,
+        };
+      }),
+    ];
+  }, [activeMenuTrail]);
 
   useEffect(() => {
-    setMenuOpenKeys(activeMenuState.openKeys);
+    queueMicrotask(() => {
+      setMenuOpenKeys(activeMenuState.openKeys);
+    });
   }, [activeMenuState.openKeys]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-    const persisted = window.localStorage.getItem("fquiz:theme:ai-market");
-    setAiThemeEnabled(persisted === "1");
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) {
+        return;
+      }
+      const persisted = window.localStorage.getItem("fquiz:theme:ai-market");
+      setAiThemeEnabled(persisted === "1");
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const themeBadge = <Badge color="blue" style={{ marginTop: -1 }} />;
+  const themeBadge = useMemo(() => <Badge color="blue" style={{ marginTop: -1 }} />, []);
   const themeMenuItems = useMemo<NonNullable<MenuProps["items"]>>(
     () => [
       {
@@ -274,7 +348,37 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         extra: <LinkOutlined />,
       },
     ],
-    [aiThemeEnabled, compactMode, happyWorkMode, themePrimaryMode],
+    [aiThemeEnabled, compactMode, happyWorkMode, themeBadge, themePrimaryMode],
+  );
+
+  const accountMenuItems = useMemo<NonNullable<MenuProps["items"]>>(
+    () => [
+      {
+        key: "account",
+        icon: <UserOutlined />,
+        disabled: true,
+        label: (
+          <Space direction="vertical" size={0}>
+            <Typography.Text strong>{user?.username}</Typography.Text>
+            <Typography.Text type="secondary">角色：{user?.role_codes.join(", ") || "-"}</Typography.Text>
+            <Typography.Text type="secondary">状态：{user?.status || "-"}</Typography.Text>
+          </Space>
+        ),
+      },
+      { type: "divider" },
+      {
+        key: "home",
+        icon: <HomeOutlined />,
+        label: <Link href="/dashboard">后台首页</Link>,
+      },
+      {
+        key: "logout",
+        danger: true,
+        icon: <LogoutOutlined />,
+        label: "退出登录",
+      },
+    ],
+    [user?.role_codes, user?.status, user?.username],
   );
 
   const onThemeMenuClick = useCallback(
@@ -307,119 +411,166 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     [compactMode, happyWorkMode, setCompactMode, setHappyWorkMode, setThemePrimaryMode],
   );
 
+  const onAccountMenuClick = useCallback(
+    ({ key }: Parameters<NonNullable<MenuProps["onClick"]>>[0]) => {
+      if (key === "logout") {
+        void logout();
+      }
+    },
+    [logout],
+  );
+
+  const navigationMenu = (
+    <AntMenu
+      mode="inline"
+      items={menuItems}
+      openKeys={siderCollapsed && isDesktop ? [] : menuOpenKeys}
+      selectedKeys={activeMenuState.selectedKeys}
+      style={{ borderInlineEnd: "none", background: "transparent" }}
+      onClick={() => setMobileMenuOpen(false)}
+      onOpenChange={(keys: string[]) => setMenuOpenKeys(keys)}
+    />
+  );
+
   if (initializing || loadingMenus) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center px-6 py-20">
-        <p className="text-sm text-[var(--ant-color-text-secondary)]">Loading admin workspace...</p>
-      </main>
+      <AdminCenteredState>
+        <Space align="center" direction="vertical" size={12}>
+          <Spin size="large" />
+          <Typography.Text type="secondary">正在加载后台工作台...</Typography.Text>
+        </Space>
+      </AdminCenteredState>
     );
   }
 
   if (!user) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <Text color="gray" size="2">请先登录后再访问后台。</Text>
-        <Button asChild className="w-fit" color="gray" variant="soft">
-          <Link href="/">前往登录</Link>
-        </Button>
-      </main>
+      <AdminCenteredState>
+        <AntResult
+          status="403"
+          title="请先登录"
+          subTitle="登录后才能访问后台工作台。"
+          extra={(
+            <Button type="primary">
+              <Link href="/">前往登录</Link>
+            </Button>
+          )}
+        />
+      </AdminCenteredState>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[var(--ant-color-bg-layout)]">
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-[var(--ant-color-border-secondary)] bg-white/95 backdrop-blur">
-        <div className="mx-auto flex h-16 w-full max-w-[1760px] items-center gap-3 px-3 sm:px-4 xl:px-6">
-          <Link className="flex shrink-0 items-center gap-2" href="/dashboard">
-            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--ant-color-primary)] text-sm font-semibold text-white">
-              Q
-            </span>
-            <div className="hidden sm:block">
-              <Text size="2" weight="bold">fquiz</Text>
-            </div>
+    <AntLayout className="admin-design-shell">
+      <Header className="admin-design-header">
+        <Space size={8}>
+          {!isDesktop && (
+            <Button
+              aria-label="打开菜单"
+              icon={<MenuOutlined />}
+              type="text"
+              onClick={() => setMobileMenuOpen(true)}
+            />
+          )}
+          {isDesktop && (
+            <Button
+              aria-label={siderCollapsed ? "展开菜单" : "收起菜单"}
+              icon={siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              type="text"
+              onClick={() => setSiderCollapsed((previous) => !previous)}
+            />
+          )}
+          <Link className="admin-design-brand" href="/dashboard">
+            <span className="admin-design-logo">Q</span>
+            <Typography.Text strong>fquiz</Typography.Text>
           </Link>
+        </Space>
 
-          <div className="ml-auto flex items-center gap-2">
-            <Dropdown
-              menu={{ items: themeMenuItems, onClick: onThemeMenuClick }}
-              arrow={{ pointAtCenter: true }}
-              placement="bottomRight"
-              trigger={["click"]}
-            >
-              <Tooltip title="主题">
-                <AntButton icon={<ThemeIcon />} style={{ fontSize: 16 }} type="text" />
-              </Tooltip>
-            </Dropdown>
+        <Space style={{ marginLeft: "auto" }}>
+          <Dropdown
+            menu={{ items: themeMenuItems, onClick: onThemeMenuClick }}
+            arrow={{ pointAtCenter: true }}
+            placement="bottomRight"
+            trigger={["click"]}
+          >
+            <Tooltip title="主题">
+              <Button icon={<ThemeIcon />} type="text" />
+            </Tooltip>
+          </Dropdown>
 
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger>
-                <Avatar
-                  size="small"
-                  style={{ backgroundColor: "var(--ant-color-primary)", verticalAlign: "middle" }}
-                >
+          <Dropdown
+            menu={{ items: accountMenuItems, onClick: onAccountMenuClick }}
+            arrow={{ pointAtCenter: true }}
+            placement="bottomRight"
+            trigger={["click"]}
+          >
+            <Button type="text">
+              <Space size={8}>
+                <Avatar size="small" style={{ backgroundColor: "var(--ant-color-primary)" }}>
                   {user.username.trim().charAt(0).toUpperCase() || "U"}
                 </Avatar>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Content align="end" size="2" variant="soft">
-                <DropdownMenu.Label>{user.username}</DropdownMenu.Label>
-                <DropdownMenu.Label>角色：{user.role_codes.join(", ") || "-"}</DropdownMenu.Label>
-                <DropdownMenu.Label>状态：{user.status || "-"}</DropdownMenu.Label>
-                <DropdownMenu.Separator />
-                <DropdownMenu.Item asChild>
-                  <Link href="/dashboard">后台首页</Link>
-                </DropdownMenu.Item>
-                <DropdownMenu.Item color="red" onSelect={() => void logout()}>
-                  退出登录
-                </DropdownMenu.Item>
-              </DropdownMenu.Content>
-            </DropdownMenu.Root>
-          </div>
-        </div>
-      </header>
+                <Typography.Text className="hidden sm:inline">{user.username}</Typography.Text>
+              </Space>
+            </Button>
+          </Dropdown>
+        </Space>
+      </Header>
 
-      <div
-        className="mx-auto grid w-full max-w-[1760px] grid-cols-1 gap-0 px-3 pb-6 pt-[64px] sm:px-4 xl:px-6 md:grid-cols-[256px_minmax(0,1fr)]"
-      >
-        <aside className="hidden md:block">
-          <div className="sticky top-[64px] h-[calc(100vh-64px)] overflow-y-auto border-r border-[var(--ant-color-border-secondary)] bg-white px-3 py-4">
-            <Text color="gray" size="2">系统菜单</Text>
-            <AntMenu
-              mode="inline"
-              items={menuItems}
-              openKeys={menuOpenKeys}
-              selectedKeys={activeMenuState.selectedKeys}
-              style={{ marginTop: 8, borderInlineEnd: "none", background: "transparent" }}
-              onOpenChange={(keys: string[]) => setMenuOpenKeys(keys)}
-            />
-
-            <div className="mt-3 space-y-2 border-t border-[var(--ant-color-border-secondary)] pt-3">
-              <Text color="gray" size="1">当前角色：{user.role_codes.join(", ") || "-"}</Text>
-              <Text color="gray" size="1">账号状态：{user.status || "-"}</Text>
+      <AntLayout>
+        {isDesktop && (
+          <Sider
+            className="admin-design-sider"
+            collapsed={siderCollapsed}
+            collapsedWidth={72}
+            theme="light"
+            trigger={null}
+            width={256}
+          >
+            <div className="admin-design-sider-inner">
+              {navigationMenu}
             </div>
-          </div>
-        </aside>
+          </Sider>
+        )}
 
-        <main className="min-w-0 px-0 py-4 md:px-6">
-          <Flex className="mb-4 gap-2" align="center" justify="between" wrap="wrap">
-            <div className="min-w-0">
-              <Text color="gray" size="2">后台管理</Text>
-              <Heading as="h2" className="truncate" size="6">{currentTitle}</Heading>
+        <Drawer
+          title={null}
+          placement="left"
+          open={!isDesktop && mobileMenuOpen}
+          width={288}
+          onClose={() => setMobileMenuOpen(false)}
+        >
+          {navigationMenu}
+        </Drawer>
+
+        <AntLayout className="admin-design-main">
+          <Content className="admin-design-content">
+            <div className="admin-design-page-header">
+              <Breadcrumb items={breadcrumbItems} />
+              <div className="admin-design-page-title">
+                <div>
+                  <Typography.Title level={3} style={{ margin: 0 }}>
+                    {currentTitle}
+                  </Typography.Title>
+                  <Typography.Text type="secondary">{currentDescription}</Typography.Text>
+                </div>
+              </div>
             </div>
-            <div className="max-w-[320px] text-right">
-              <Text size="2" weight="medium">{user.username}</Text>
-              <Text className="block truncate" color="gray" size="1">{user.email}</Text>
+
+            <div className="admin-design-page-body">
+              {menuError && (
+                <Alert
+                  showIcon
+                  type="error"
+                  message="菜单加载失败"
+                  description={menuError}
+                  style={{ marginBottom: 24 }}
+                />
+              )}
+              {children}
             </div>
-          </Flex>
-
-          {menuError && (
-            <Callout.Root className="mb-6" color="red">
-              <Callout.Text>{menuError}</Callout.Text>
-            </Callout.Root>
-          )}
-
-          {children}
-        </main>
-      </div>
-    </div>
+          </Content>
+        </AntLayout>
+      </AntLayout>
+    </AntLayout>
   );
 }

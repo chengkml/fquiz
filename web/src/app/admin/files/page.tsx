@@ -407,7 +407,7 @@ export default function AdminFilesPage() {
     [uploadMutation],
   );
 
-  const handleDownload = async (item: FileEntryItem) => {
+  const handleDownloadFile = async (item: FileEntryItem) => {
     if (!activeMountCode) {
       setErrorMessage("当前未选择可用挂载点");
       return;
@@ -438,6 +438,42 @@ export default function AdminFilesPage() {
     } catch (error) {
       setSuccessMessage("");
       const message = error instanceof Error ? error.message : "下载失败";
+      setErrorMessage(message);
+      messageApi.error(message);
+    }
+  };
+
+  const handleDownloadDirectory = async (item: FileEntryItem) => {
+    if (!activeMountCode) {
+      setErrorMessage("当前未选择可用挂载点");
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams({
+        mount_code: activeMountCode,
+        path: item.path,
+      });
+      const response = await fetchWithAuth(`/api/v1/admin/files/download-zip?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = `${item.name || "directory"}.zip`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+      setSuccessMessage(`目录下载已开始：${item.name}`);
+      setErrorMessage("");
+      messageApi.success(`目录下载已开始：${item.name}`);
+    } catch (error) {
+      setSuccessMessage("");
+      const message = error instanceof Error ? error.message : "目录下载失败";
       setErrorMessage(message);
       messageApi.error(message);
     }
@@ -533,7 +569,7 @@ export default function AdminFilesPage() {
       {
         title: "操作",
         key: "actions",
-        width: 240,
+        width: 320,
         render: (_value, item) => {
           const menuItems: MenuProps["items"] = [
             {
@@ -563,23 +599,35 @@ export default function AdminFilesPage() {
           return (
             <Space wrap>
               {item.is_dir ? (
-                <Button
-                  type="button"
-                  color="gray"
-                  size="1"
-                  variant="soft"
-                  onClick={() => handleOpenDirectory(item)}
-                  icon={<FolderOpenOutlined />}
-                >
-                  进入
-                </Button>
+                <>
+                  <Button
+                    type="button"
+                    color="gray"
+                    size="1"
+                    variant="soft"
+                    onClick={() => handleOpenDirectory(item)}
+                    icon={<FolderOpenOutlined />}
+                  >
+                    进入
+                  </Button>
+                  <Button
+                    type="button"
+                    color="gray"
+                    size="1"
+                    variant="soft"
+                    onClick={() => void handleDownloadDirectory(item)}
+                    icon={<DownloadOutlined />}
+                  >
+                    下载目录
+                  </Button>
+                </>
               ) : (
                 <Button
                   type="button"
                   color="gray"
                   size="1"
                   variant="soft"
-                  onClick={() => void handleDownload(item)}
+                  onClick={() => void handleDownloadFile(item)}
                   icon={<DownloadOutlined />}
                 >
                   下载

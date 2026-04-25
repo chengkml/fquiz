@@ -103,30 +103,6 @@ export type SystemParamListResponse = {
   total: number;
 };
 
-export type SystemMessageLevel = "info" | "success" | "warning" | "error";
-export type SystemMessageStatus = "draft" | "published" | "archived";
-
-export type SystemMessageSummary = {
-  id: number;
-  title: string;
-  content: string;
-  level: SystemMessageLevel;
-  status: SystemMessageStatus;
-  start_at: string | null;
-  end_at: string | null;
-  created_by_user_id: string | null;
-  updated_by_user_id: string | null;
-  created_at: string;
-  updated_at: string;
-  created_by: UserPublic | null;
-  updated_by: UserPublic | null;
-};
-
-export type SystemMessageListResponse = {
-  items: SystemMessageSummary[];
-  total: number;
-};
-
 export type QuestionType =
   | "single_choice"
   | "multiple_choice"
@@ -766,4 +742,293 @@ export type RequirementEvent = {
   payload_json: Record<string, unknown> | null;
   created_at: string;
   actor: UserPublic | null;
+};
+
+export type LineStatus = "enabled" | "disabled";
+
+export type LineSummary = {
+  id: string;
+  code: string;
+  name: string;
+  voltage_kv: number | null;
+  tower_shape: string | null;
+  phase_sequence_json: Record<string, unknown>;
+  arrester_install_json: Record<string, unknown>;
+  lightning_param_json: Record<string, unknown>;
+  status: LineStatus;
+  tower_count: number;
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
+};
+
+export type LineListResponse = {
+  items: LineSummary[];
+  total: number;
+};
+
+export type LineTowerSummary = {
+  id: string;
+  line_id: string;
+  seq_no: number;
+  tower_no: string;
+  tower_model: string | null;
+  tower_type: string | null;
+  longitude: number | null;
+  latitude: number | null;
+  altitude_m: number | null;
+  terrain: string | null;
+  ground_resistance_ohm: number | null;
+  lightning_density: number | null;
+  span_small_m: number | null;
+  span_large_m: number | null;
+  slope_1: number | null;
+  slope_2: number | null;
+  risk_level: string | null;
+  circuit_geometry_json: Record<string, unknown>;
+  lightning_result_json: Record<string, unknown>;
+  raw_extra_json: Record<string, unknown>;
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
+};
+
+export type LineTowerListResponse = {
+  items: LineTowerSummary[];
+  total: number;
+};
+
+export type LineTowerImportResponse = {
+  line: LineSummary;
+  imported_count: number;
+  updated_count: number;
+  skipped_count: number;
+  warning_count: number;
+  warnings: string[];
+};
+
+export type LightningPolarity = "positive" | "negative" | "mixed" | "unknown";
+
+export type LightningCurrentEventSummary = {
+  id: string;
+  event_id: string;
+  source_file_name: string | null;
+  event_time: string | null;
+  sample_count: number;
+  sample_interval_us: number | null;
+  sampling_frequency_hz: number | null;
+  peak_current_ka: number | null;
+  peak_abs_current_ka: number | null;
+  wavefront_time_t1_us: number | null;
+  half_value_time_t2_us: number | null;
+  steepness_ka_per_us: number | null;
+  action_integral_j_ohm: number | null;
+  wave_shape: string | null;
+  polarity: LightningPolarity;
+  stroke_count: number;
+  stroke_peaks_json: Array<Record<string, unknown>>;
+  region_id: string | null;
+  location_tag: string | null;
+  city: string | null;
+  longitude: number | null;
+  latitude: number | null;
+  altitude_m: number | null;
+  sensor_model: string | null;
+  install_position: string | null;
+  weather_level: string | null;
+  pressure_hpa: number | null;
+  humidity_percent: number | null;
+  is_synthetic: boolean;
+  feature_json: Record<string, unknown>;
+  notes: string | null;
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
+};
+
+export type LightningCurrentEventListResponse = {
+  items: LightningCurrentEventSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type LightningCurrentImportResponse = {
+  event: LightningCurrentEventSummary;
+  warning_count: number;
+  warnings: string[];
+};
+
+export type LightningCurrentSampleItem = {
+  id: number;
+  event_ref_id: string;
+  seq_no: number;
+  time_us: number;
+  current_ka: number;
+};
+
+export type LightningCurrentSampleListResponse = {
+  items: LightningCurrentSampleItem[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type LightningCurrentExceedancePoint = {
+  threshold_ka: number;
+  exceedance_probability: number;
+  exceedance_count: number;
+};
+
+export type LightningCurrentExceedanceResponse = {
+  total_events: number;
+  thresholds: LightningCurrentExceedancePoint[];
+};
+
+export type LightningDistributionImportResponse = {
+  imported_count: number;
+  skipped_count: number;
+  warning_count: number;
+  warnings: string[];
+};
+
+export type LightningDistributionSummary = {
+  total_records: number;
+  area_km2: number;
+  data_years: number;
+  grid_size_km: number;
+  overall_ng_per_km2_year: number;
+  max_abs_current_ka: number | null;
+  avg_abs_current_ka: number | null;
+};
+
+export type LightningPolarityStats = {
+  positive_count: number;
+  negative_count: number;
+  mixed_count: number;
+  unknown_count: number;
+  positive_ratio: number;
+  negative_ratio: number;
+};
+
+export type LightningSourceStats = {
+  measured_count: number;
+  synthetic_count: number;
+};
+
+export type LightningDistributionGridCell = {
+  grid_x: number;
+  grid_y: number;
+  min_lat: number;
+  max_lat: number;
+  min_lon: number;
+  max_lon: number;
+  center_lat: number;
+  center_lon: number;
+  strike_count: number;
+  ng_per_km2_year: number;
+  i_max_ka: number | null;
+  i_avg_ka: number | null;
+  positive_ratio: number;
+};
+
+export type LightningDistributionScatterPoint = {
+  id: string;
+  event_id: string;
+  longitude: number;
+  latitude: number;
+  current_ka: number | null;
+  abs_current_ka: number | null;
+  polarity: LightningPolarity;
+  region_id: string | null;
+  city: string | null;
+  location_tag: string | null;
+  event_time: string | null;
+};
+
+export type LightningDistributionStatsResponse = {
+  summary: LightningDistributionSummary;
+  polarity: LightningPolarityStats;
+  sources: LightningSourceStats;
+  grid_cells: LightningDistributionGridCell[];
+  scatter_points: LightningDistributionScatterPoint[];
+  p_curve: LightningCurrentExceedancePoint[];
+};
+
+export type LightningTowerBufferEventItem = {
+  id: string;
+  event_id: string;
+  longitude: number | null;
+  latitude: number | null;
+  current_ka: number | null;
+  abs_current_ka: number | null;
+  polarity: LightningPolarity;
+  event_time: string | null;
+  location_tag: string | null;
+  city: string | null;
+  distance_km: number;
+};
+
+export type LightningTowerBufferStatsResponse = {
+  tower_id: string | null;
+  tower_no: string | null;
+  line_id: string | null;
+  center_longitude: number;
+  center_latitude: number;
+  radius_km: number;
+  design_current_ka: number;
+  strike_count: number;
+  exceed_design_count: number;
+  max_abs_current_ka: number | null;
+  avg_abs_current_ka: number | null;
+  ng_per_km2_year: number;
+  positive_ratio: number;
+  risk_level: string;
+  recommended_action: string;
+  events: LightningTowerBufferEventItem[];
+};
+
+export type LightningSyntheticDatasetStats = {
+  count: number;
+  max_abs_current_ka: number | null;
+  avg_abs_current_ka: number | null;
+  positive_ratio: number;
+  ng_per_km2_year: number;
+};
+
+export type LightningSyntheticCompareResponse = {
+  grid_size_km: number;
+  data_years: number;
+  measured: LightningSyntheticDatasetStats;
+  synthetic: LightningSyntheticDatasetStats;
+  grid_cosine_similarity: number | null;
+  note: string | null;
+};
+
+export type LightningDistributionEventBrief = {
+  id: string;
+  event_id: string;
+  longitude: number | null;
+  latitude: number | null;
+  current_ka: number | null;
+  abs_current_ka: number | null;
+  polarity: LightningPolarity;
+  event_time: string | null;
+  location_tag: string | null;
+  city: string | null;
+};
+
+export type LightningDistributionReportResponse = {
+  period: "week" | "month";
+  start_time: string;
+  end_time: string;
+  strike_count: number;
+  max_abs_current_ka: number | null;
+  avg_abs_current_ka: number | null;
+  positive_ratio: number;
+  ng_per_km2_year: number;
+  most_severe_event: LightningDistributionEventBrief | null;
 };

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import mimetypes
+import zipfile
 from datetime import datetime
+from io import BytesIO
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import and_, delete, or_, select
@@ -383,6 +385,65 @@ def download_file_from_path(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     return result.name, result.content, result.mime_type
+
+
+def download_directory_as_zip(
+    db: Session,
+    *,
+    mount_code: str,
+    path: str,
+) -> tuple[str, bytes, str]:
+    mount = _require_mount(db, mount_code)
+    driver = _build_driver_or_400(mount)
+
+    try:
+        normalized_path = normalize_virtual_path(path)
+    except StorageInvalidPathError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    try:
+        root_entries = driver.list_dir(normalized_path)
+    except StoragePathNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except StorageInvalidPathError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except StorageDriverError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    folder_name = normalized_path.strip("/").split("/")[-1] if normalized_path != "/" else "root"
+    safe_folder_name = folder_name or "root"
+    zip_filename = f"{safe_folder_name}.zip"
+
+    buffer = BytesIO()
+    try:
+        with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+            stack: list[tuple[str, str, list[StorageObject] | None]] = [(normalized_path, "", root_entries)]
+            while stack:
+                current_path, relative_prefix, prefetched = stack.pop()
+                entries = prefetched if prefetched is not None else driver.list_dir(current_path)
+                for entry in entries:
+                    relative_name = f"{relative_prefix}{entry.name}"
+                    if entry.is_dir:
+                        stack.append((entry.path, f"{relative_name}/", None))
+                        continue
+                    try:
+                        read_result = driver.read_file(entry.path)
+                    except StoragePathNotFoundError as exc:
+                        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+                    except StorageInvalidPathError as exc:
+                        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+                    except StorageDriverError as exc:
+                        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+                    archive.writestr(relative_name, read_result.content)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Create zip archive failed: {exc}",
+        ) from exc
+
+    return zip_filename, buffer.getvalue(), "application/zip"
 
 
 def list_enabled_mounts(db: Session) -> list[FileStorageMount]:

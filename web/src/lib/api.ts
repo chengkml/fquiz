@@ -25,14 +25,17 @@ export function getApiBaseUrl(): string {
 
   const browserHost = window.location.hostname;
   const shouldRewriteLoopback =
-    isLoopbackHost(parsed.hostname) && !isLoopbackHost(browserHost);
+    isLoopbackHost(parsed.hostname)
+    && parsed.hostname.toLowerCase() !== browserHost.toLowerCase();
   if (!shouldRewriteLoopback) {
     return trimTrailingSlash(configured);
   }
 
-  const port = parsed.port || "8000";
-  const pathname = parsed.pathname === "/" ? "" : parsed.pathname.replace(/\/+$/, "");
-  return `${parsed.protocol}//${browserHost}:${port}${pathname}`;
+  parsed.hostname = browserHost;
+  if (!parsed.port) {
+    parsed.port = "8000";
+  }
+  return trimTrailingSlash(parsed.toString());
 }
 
 export const API_BASE_URL = getApiBaseUrl();

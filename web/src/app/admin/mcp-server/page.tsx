@@ -1,7 +1,7 @@
 "use client";
 
-import AdminModelsPage from "@/app/admin/models/page";
+import AdminModelsPageContent from "@/app/admin/models/models-page-content";
 
 export default function AdminMcpServerPage() {
-  return <AdminModelsPage scene="mcp" />;
+  return <AdminModelsPageContent scene="mcp" />;
 }
