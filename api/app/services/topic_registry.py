@@ -23,11 +23,10 @@ TOPIC_RULES: dict[str, TopicRule] = {
     "admin.menus": TopicRule(any_permission_codes={"menu.read", "menu.manage"}),
     "admin.system-params": TopicRule(any_permission_codes={"system_param.read", "system_param.manage"}),
     "admin.files": TopicRule(any_permission_codes={"file.read", "file.manage"}),
+    "admin.atp-models": TopicRule(any_permission_codes={"atp.read", "atp.run", "atp.manage"}),
     "admin.audit_logs": TopicRule(any_permission_codes={"menu.read", "menu.manage"}),
     "admin.question_bank": TopicRule(any_permission_codes={"question_bank.read", "question_bank.manage"}),
     "admin.vocabulary": TopicRule(any_permission_codes={"vocabulary.read", "vocabulary.manage"}),
-    "requirements": TopicRule(any_permission_codes={"requirement.read", "requirement.process", "requirement.manage"}),
-    "todos": TopicRule(any_permission_codes={"todo.read", "todo.process", "todo.manage"}),
 }
 
 

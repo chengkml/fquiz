@@ -37,6 +37,16 @@ REMOVED_MENU_CODES = {
     "admin.inbox",
     "admin.code_review",
     "admin.git_desktop",
+    "admin.agent",
+    "admin.mcp_server",
+    "admin.requirements",
+    "admin.schedule",
+    "admin.mindmap",
+    "admin.mermaid_mgr",
+    "admin.chat",
+    "admin.api_tester",
+    "admin.models",
+    "admin.orchestration",
     "admin.mdresolve",
     "admin.data_query",
     "admin.hot_search",
@@ -393,7 +403,7 @@ def update_menu(db: Session, menu_id: int, payload: MenuUpdateRequest) -> MenuPu
 
 def delete_menu(db: Session, menu_id: int) -> bool:
     menu = get_menu_by_id(db, menu_id)
-    if not menu or menu.code in {"dashboard", "admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.agent", "admin.mcp_server", "admin.files", "admin.requirements", "admin.power_lines", "admin.lightning_currents", "admin.lightning_distribution", "admin.schedule", "admin.mindmap", "admin.mermaid_mgr", "admin.syslog", "admin.chat", "admin.api_tester", "admin.models", "admin.orchestration", "admin.wine_runner"}:
+    if not menu or menu.code in {"dashboard", "admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.power_lines", "admin.lightning_currents", "admin.lightning_distribution", "admin.task_monitor", "admin.atp_models", "admin.files", "admin.syslog", "admin.wine_runner"}:
         return False
     child_exists = db.scalar(select(Menu.id).where(Menu.parent_id == menu_id))
     if child_exists is not None:

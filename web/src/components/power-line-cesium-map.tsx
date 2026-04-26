@@ -1,7 +1,7 @@
 "use client";
 
-import { Alert, Empty, Spin, Typography } from "antd";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Button, Checkbox, Empty, Spin, Typography } from "antd";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { reloadOnceOnChunkError } from "@/lib/chunk-error";
 import type { LineTowerSummary } from "@/types/auth";
@@ -25,6 +25,16 @@ type TowerGeoPoint = {
   riskLevel: string | null;
 };
 
+type RouteSegment = {
+  key: string;
+  points: TowerGeoPoint[];
+};
+
+type RouteViewState = {
+  boundingSphere: import("cesium").BoundingSphere;
+  range: number;
+};
+
 declare global {
   interface Window {
     CESIUM_BASE_URL?: string;
@@ -34,6 +44,7 @@ declare global {
 const MAP_HEIGHT = 560;
 const DEFAULT_ALTITUDE_M = 0;
 const MIN_CAMERA_RANGE = 1500;
+const DEFAULT_POINT_COLOR = "#38bdf8";
 const RISK_COLOR_BY_LEVEL: Record<string, string> = {
   "1": "#22c55e",
   "2": "#f59e0b",
@@ -58,6 +69,74 @@ function hasValidGeo(tower: LineTowerSummary): boolean {
   return true;
 }
 
+function toRad(value: number): number {
+  return (value * Math.PI) / 180;
+}
+
+function calcGeoDistanceKm(start: TowerGeoPoint, end: TowerGeoPoint): number {
+  const lat1 = toRad(start.latitude);
+  const lat2 = toRad(end.latitude);
+  const dLat = lat2 - lat1;
+  const dLon = toRad(end.longitude - start.longitude);
+  const sinHalfLat = Math.sin(dLat / 2);
+  const sinHalfLon = Math.sin(dLon / 2);
+  const a = sinHalfLat * sinHalfLat
+    + Math.cos(lat1) * Math.cos(lat2) * sinHalfLon * sinHalfLon;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const EARTH_RADIUS_KM = 6371;
+  return EARTH_RADIUS_KM * c;
+}
+
+function buildRouteSegments(points: TowerGeoPoint[]): RouteSegment[] {
+  if (points.length === 0) {
+    return [];
+  }
+
+  const segments: RouteSegment[] = [];
+  let current: TowerGeoPoint[] = [];
+
+  points.forEach((point, index) => {
+    if (current.length === 0) {
+      current.push(point);
+      return;
+    }
+
+    const prev = current[current.length - 1];
+    if (point.seqNo === prev.seqNo + 1) {
+      current.push(point);
+      return;
+    }
+
+    segments.push({
+      key: `${current[0].id}-${index}`,
+      points: current,
+    });
+    current = [point];
+  });
+
+  if (current.length > 0) {
+    segments.push({
+      key: `${current[0].id}-tail`,
+      points: current,
+    });
+  }
+
+  return segments;
+}
+
+function estimateRouteLengthKm(segments: RouteSegment[]): number {
+  return segments.reduce((total, segment) => {
+    if (segment.points.length < 2) {
+      return total;
+    }
+    let length = 0;
+    for (let index = 1; index < segment.points.length; index += 1) {
+      length += calcGeoDistanceKm(segment.points[index - 1], segment.points[index]);
+    }
+    return total + length;
+  }, 0);
+}
+
 export function PowerLineCesiumMap({
   lineCode,
   lineName,
@@ -67,13 +146,20 @@ export function PowerLineCesiumMap({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<import("cesium").Viewer | null>(null);
   const cesiumRef = useRef<CesiumNamespace | null>(null);
+  const routeViewRef = useRef<RouteViewState | null>(null);
   const [initError, setInitError] = useState("");
   const [ready, setReady] = useState(false);
+  const [colorByRisk, setColorByRisk] = useState(true);
+  const [showLabels, setShowLabels] = useState(true);
+
+  const sortedTowers = useMemo(
+    () => [...towers].sort((a, b) => a.seq_no - b.seq_no),
+    [towers],
+  );
 
   const towerGeoPoints = useMemo<TowerGeoPoint[]>(() => {
-    return towers
+    return sortedTowers
       .filter(hasValidGeo)
-      .sort((a, b) => a.seq_no - b.seq_no)
       .map((tower) => ({
         id: tower.id,
         seqNo: tower.seq_no,
@@ -83,7 +169,31 @@ export function PowerLineCesiumMap({
         altitudeM: tower.altitude_m ?? DEFAULT_ALTITUDE_M,
         riskLevel: tower.risk_level,
       }));
-  }, [towers]);
+  }, [sortedTowers]);
+
+  const routeSegments = useMemo(
+    () => buildRouteSegments(towerGeoPoints),
+    [towerGeoPoints],
+  );
+  const routeGapCount = Math.max(routeSegments.length - 1, 0);
+  const routeLengthKm = useMemo(
+    () => estimateRouteLengthKm(routeSegments),
+    [routeSegments],
+  );
+  const invalidGeoCount = Math.max(sortedTowers.length - towerGeoPoints.length, 0);
+
+  const focusRoute = useCallback(() => {
+    const viewer = viewerRef.current;
+    const Cesium = cesiumRef.current;
+    const routeView = routeViewRef.current;
+    if (!viewer || !Cesium || !routeView) {
+      return;
+    }
+    viewer.camera.flyToBoundingSphere(routeView.boundingSphere, {
+      duration: 0.75,
+      offset: new Cesium.HeadingPitchRange(0, -0.65, routeView.range),
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -103,6 +213,7 @@ export function PowerLineCesiumMap({
         cesiumRef.current = Cesium;
         const viewer = new Cesium.Viewer(containerRef.current, {
           animation: false,
+          baseLayer: false,
           baseLayerPicker: false,
           fullscreenButton: false,
           geocoder: false,
@@ -111,11 +222,16 @@ export function PowerLineCesiumMap({
           navigationHelpButton: false,
           sceneModePicker: false,
           selectionIndicator: false,
+          skyBox: false,
+          skyAtmosphere: false,
           timeline: false,
           shouldAnimate: false,
         });
 
         viewer.scene.globe.depthTestAgainstTerrain = false;
+        viewer.scene.globe.showGroundAtmosphere = false;
+        viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0f172a");
+        viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#020617");
         const creditContainer = viewer.cesiumWidget.creditContainer as HTMLElement | null;
         if (creditContainer) {
           creditContainer.style.display = "none";
@@ -144,6 +260,7 @@ export function PowerLineCesiumMap({
       }
       viewerRef.current = null;
       cesiumRef.current = null;
+      routeViewRef.current = null;
       setReady(false);
     };
   }, []);
@@ -156,42 +273,60 @@ export function PowerLineCesiumMap({
     }
 
     viewer.entities.removeAll();
+    routeViewRef.current = null;
     if (towerGeoPoints.length === 0) {
       return;
     }
 
-    const polylinePositions = towerGeoPoints.map((tower) => (
-      Cesium.Cartesian3.fromDegrees(tower.longitude, tower.latitude, tower.altitudeM)
-    ));
-
-    viewer.entities.add({
-      id: "line-polyline",
-      polyline: {
-        positions: polylinePositions,
-        width: 4,
-        material: Cesium.Color.fromCssColorString("#f97316"),
-      },
+    const allPositions: import("cesium").Cartesian3[] = [];
+    routeSegments.forEach((segment) => {
+      if (segment.points.length < 2) {
+        return;
+      }
+      const positions = segment.points.map((tower) => (
+        Cesium.Cartesian3.fromDegrees(tower.longitude, tower.latitude, tower.altitudeM)
+      ));
+      allPositions.push(...positions);
+      viewer.entities.add({
+        id: `line-polyline-${segment.key}`,
+        polyline: {
+          positions,
+          width: 4,
+          material: Cesium.Color.fromCssColorString("#f97316"),
+        },
+      });
     });
 
-    const shouldShowAllLabels = towerGeoPoints.length <= 30;
+    if (allPositions.length === 0) {
+      allPositions.push(
+        ...towerGeoPoints.map((tower) => (
+          Cesium.Cartesian3.fromDegrees(tower.longitude, tower.latitude, tower.altitudeM)
+        )),
+      );
+    }
+
+    const shouldShowAllLabels = towerGeoPoints.length <= 40;
     const lastIndex = towerGeoPoints.length - 1;
 
     towerGeoPoints.forEach((tower, index) => {
       const risk = normalizeRiskLevel(tower.riskLevel);
-      const color = RISK_COLOR_BY_LEVEL[risk] ?? "#2563eb";
+      const color = colorByRisk ? (RISK_COLOR_BY_LEVEL[risk] ?? DEFAULT_POINT_COLOR) : DEFAULT_POINT_COLOR;
+      const isEdgePoint = index === 0 || index === lastIndex;
+      const shouldRenderLabel = showLabels && (shouldShowAllLabels || isEdgePoint);
+      const labelPrefix = index === 0 ? "起点" : index === lastIndex ? "终点" : "";
 
       viewer.entities.add({
         id: `tower-${tower.id}`,
         position: Cesium.Cartesian3.fromDegrees(tower.longitude, tower.latitude, tower.altitudeM),
         point: {
-          pixelSize: 9,
+          pixelSize: isEdgePoint ? 11 : 8,
           color: Cesium.Color.fromCssColorString(color),
           outlineColor: Cesium.Color.WHITE,
-          outlineWidth: 1.5,
+          outlineWidth: isEdgePoint ? 2 : 1.5,
         },
-        label: shouldShowAllLabels || index === 0 || index === lastIndex
+        label: shouldRenderLabel
           ? {
-            text: tower.towerNo,
+            text: labelPrefix ? `${labelPrefix} ${tower.towerNo}` : tower.towerNo,
             font: "13px sans-serif",
             style: Cesium.LabelStyle.FILL_AND_OUTLINE,
             fillColor: Cesium.Color.WHITE,
@@ -213,23 +348,39 @@ export function PowerLineCesiumMap({
       });
     });
 
-    const boundingSphere = Cesium.BoundingSphere.fromPoints(polylinePositions);
+    const boundingSphere = Cesium.BoundingSphere.fromPoints(allPositions);
     const range = Math.max(boundingSphere.radius * 2.4, MIN_CAMERA_RANGE);
-    viewer.camera.flyToBoundingSphere(boundingSphere, {
-      duration: 0.8,
-      offset: new Cesium.HeadingPitchRange(0, -0.65, range),
-    });
-  }, [towerGeoPoints]);
+    routeViewRef.current = {
+      boundingSphere,
+      range,
+    };
+    focusRoute();
+  }, [towerGeoPoints, routeSegments, colorByRisk, showLabels, focusRoute]);
 
   return (
     <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <Checkbox checked={colorByRisk} onChange={(event) => setColorByRisk(event.target.checked)}>
+          按风险着色
+        </Checkbox>
+        <Checkbox checked={showLabels} onChange={(event) => setShowLabels(event.target.checked)}>
+          显示塔号
+        </Checkbox>
+        <Button size="small" onClick={focusRoute} disabled={!ready || towerGeoPoints.length === 0}>
+          居中重置
+        </Button>
+      </div>
       <Typography.Text type="secondary">
-        地图展示线路：{lineName || "-"}（{lineCode || "-"}），当前加载 {towerGeoPoints.length} 个有效坐标点。
+        线路走向图：{lineName || "-"}（{lineCode || "-"}），有效坐标 {towerGeoPoints.length}/{sortedTowers.length}，缺失 {invalidGeoCount}，
+        估算长度 {routeLengthKm.toFixed(2)} km，断点段 {routeGapCount}。
       </Typography.Text>
-      {initError ? <Alert type="error" showIcon message="地图加载失败" description={initError} /> : null}
+      {initError ? <Alert type="error" showIcon message="走向图加载失败" description={initError} /> : null}
 
       <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-900/90" style={{ height: MAP_HEIGHT }}>
         <div ref={containerRef} className="h-full w-full" />
+        <div className="pointer-events-none absolute left-3 top-3 rounded bg-slate-950/75 px-2 py-1 text-xs text-slate-200">
+          线路走向专题视图
+        </div>
         {(loading || !ready) && !initError ? (
           <div className="absolute inset-0 flex items-center justify-center bg-black/25">
             <Spin size="large" />
@@ -240,7 +391,7 @@ export function PowerLineCesiumMap({
       {towerGeoPoints.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="当前筛选条件下没有可用经纬度数据，无法绘制线路。"
+          description="当前筛选条件下没有可用经纬度数据，无法绘制线路走向。"
         />
       ) : null}
     </div>

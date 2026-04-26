@@ -39,6 +39,9 @@ from ..schemas.lightning import (
     LightningSyntheticDatasetStats,
     LightningTowerBufferEventItem,
     LightningTowerBufferStatsResponse,
+    LightningTowerTerrainComputeRequest,
+    LightningTowerTerrainComputeResponse,
+    LightningTowerTerrainMetrics,
 )
 from .push_service import publish_topic
 
@@ -54,6 +57,7 @@ STANDARD_WAVE_SHAPES: tuple[tuple[str, float, float], ...] = (
 )
 TOKEN_SPLIT_PATTERN = re.compile(r"[,\t; ]+")
 DEGREE_TO_KM = 111.32
+TERRAIN_ALGORITHM_VERSION = "horn_3x3.v1"
 
 
 @dataclass
@@ -880,14 +884,23 @@ def get_tower_buffer_stats(
     area_km2 = math.pi * (radius_km ** 2)
     ng = strike_count / (area_km2 * data_years) if strike_count > 0 else 0.0
     positive_ratio = (positive_count / strike_count) if strike_count > 0 else 0.0
+    terrain_metrics = _build_tower_terrain_metrics_from_tower(tower)
+    terrain_exposure = (
+        terrain_metrics.terrain_exposure_index
+        if terrain_metrics is not None and terrain_metrics.terrain_exposure_index is not None
+        else 0.0
+    )
+    ng_for_risk = ng * (1.0 + 0.25 * max(0.0, min(1.0, terrain_exposure)))
     risk_level = _derive_tower_risk_level(
         strike_count=strike_count,
         exceed_design_count=exceed_count,
         max_abs_current_ka=max_abs if strike_count > 0 else None,
         design_current_ka=design_current_ka,
-        ng_per_km2_year=ng,
+        ng_per_km2_year=ng_for_risk,
     )
     recommended_action = _tower_risk_recommendation(risk_level)
+    if terrain_metrics is not None and terrain_exposure >= 0.7:
+        recommended_action = f"{recommended_action} 地形暴露指数较高，建议同步复核边坡防护与接地体布置。"
 
     sorted_events = sorted(events, key=lambda item: ((item.abs_current_ka or 0.0), -item.distance_km), reverse=True)
     return LightningTowerBufferStatsResponse(
@@ -907,6 +920,126 @@ def get_tower_buffer_stats(
         risk_level=risk_level,
         recommended_action=recommended_action,
         events=sorted_events[:include_events_limit],
+        terrain_metrics=terrain_metrics,
+    )
+
+
+def compute_tower_terrain_metrics(
+    db: Session,
+    *,
+    payload: LightningTowerTerrainComputeRequest,
+    actor_user_id: str,
+    can_persist: bool,
+) -> LightningTowerTerrainComputeResponse:
+    warnings: list[str] = []
+    tower: LineTower | None = None
+
+    if payload.tower_id:
+        tower = db.execute(select(LineTower).where(LineTower.id == payload.tower_id)).scalar_one_or_none()
+        if not tower:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="杆塔不存在")
+
+    center_lon = payload.longitude if payload.longitude is not None else (float(tower.longitude) if tower and tower.longitude is not None else None)
+    center_lat = payload.latitude if payload.latitude is not None else (float(tower.latitude) if tower and tower.latitude is not None else None)
+    if center_lon is None or center_lat is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少中心经纬度，请传入 tower_id 或经纬度")
+
+    z = payload.dem_grid_m
+    cell_size_m = float(payload.cell_size_m)
+    dem_resolution_m = float(payload.dem_resolution_m) if payload.dem_resolution_m is not None else cell_size_m
+
+    dz_dx, dz_dy = _compute_horn_gradient(z, cell_size_m=cell_size_m)
+    slope_rad = math.atan(math.sqrt(dz_dx * dz_dx + dz_dy * dz_dy))
+    slope_deg = math.degrees(slope_rad)
+    aspect_deg = _compute_aspect_deg(dz_dx, dz_dy)
+    relief_m_50 = max(max(row) for row in z) - min(min(row) for row in z)
+
+    neighbor_slopes = _compute_neighbor_slopes(z, cell_size_m=cell_size_m)
+    slope_mean_deg = (sum(neighbor_slopes) / len(neighbor_slopes)) if neighbor_slopes else None
+    slope_p95_deg = _percentile(neighbor_slopes, 0.95) if neighbor_slopes else None
+    slope_max_deg = max(neighbor_slopes) if neighbor_slopes else None
+
+    line_azimuth_deg = _infer_tower_line_azimuth_deg(db, tower) if tower else None
+    slope_along_line_deg: float | None = None
+    slope_cross_line_deg: float | None = None
+    if line_azimuth_deg is not None:
+        slope_along_line_deg = math.degrees(math.atan(_directional_gradient(dz_dx, dz_dy, line_azimuth_deg)))
+        slope_cross_line_deg = math.degrees(math.atan(_directional_gradient(dz_dx, dz_dy, (line_azimuth_deg + 90.0) % 360.0)))
+    elif tower is not None and tower.line_id:
+        warnings.append("未找到可用相邻杆塔坐标，无法推导线路方向纵坡/横坡")
+
+    windward_factor: float | None = None
+    if payload.wind_direction_deg is not None and aspect_deg is not None:
+        diff = _angle_difference_deg(aspect_deg, float(payload.wind_direction_deg))
+        windward_factor = max(0.0, math.cos(math.radians(diff)))
+
+    terrain_exposure_index = min(
+        1.0,
+        max(0.0, slope_deg / 45.0) * ((0.6 + 0.4 * windward_factor) if windward_factor is not None else 1.0),
+    )
+
+    quality_score, quality_level = _evaluate_terrain_quality(
+        dem_resolution_m=dem_resolution_m,
+        search_radius_m=float(payload.search_radius_m),
+        warnings=warnings,
+    )
+
+    metrics = LightningTowerTerrainMetrics(
+        slope_deg=round(slope_deg, 6),
+        aspect_deg=(round(aspect_deg, 6) if aspect_deg is not None else None),
+        slope_mean_deg=(round(slope_mean_deg, 6) if slope_mean_deg is not None else None),
+        slope_p95_deg=(round(slope_p95_deg, 6) if slope_p95_deg is not None else None),
+        slope_max_deg=(round(slope_max_deg, 6) if slope_max_deg is not None else None),
+        slope_along_line_deg=(round(slope_along_line_deg, 6) if slope_along_line_deg is not None else None),
+        slope_cross_line_deg=(round(slope_cross_line_deg, 6) if slope_cross_line_deg is not None else None),
+        relief_m_50=round(relief_m_50, 6),
+        dem_source=(payload.dem_source or "manual-grid"),
+        dem_resolution_m=round(dem_resolution_m, 6),
+        quality_score=round(quality_score, 2),
+        quality_level=quality_level,
+        terrain_exposure_index=round(terrain_exposure_index, 6),
+        windward_factor=(round(windward_factor, 6) if windward_factor is not None else None),
+        algorithm_version=TERRAIN_ALGORITHM_VERSION,
+        computed_at=utcnow(),
+        land_cover_type=payload.land_cover_type,
+    )
+
+    persisted = False
+    if payload.persist:
+        if tower is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="persist=true 时必须传入 tower_id")
+        if not can_persist:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="缺少 tower.manage/lightning.manage 权限，无法持久化")
+
+        raw_extra = dict(tower.raw_extra_json or {})
+        terrain_payload = metrics.model_dump(mode="json", exclude_none=True)
+        terrain_payload["search_radius_m"] = float(payload.search_radius_m)
+        if line_azimuth_deg is not None:
+            terrain_payload["line_azimuth_deg"] = round(line_azimuth_deg, 6)
+        raw_extra["terrain_metrics"] = terrain_payload
+
+        tower.raw_extra_json = raw_extra
+        if slope_along_line_deg is not None:
+            tower.slope_1 = abs(float(slope_along_line_deg))
+        if slope_cross_line_deg is not None:
+            tower.slope_2 = abs(float(slope_cross_line_deg))
+        if payload.altitude_m is not None:
+            tower.altitude_m = payload.altitude_m
+        tower.update_user = actor_user_id
+        tower.update_date = utcnow()
+        db.commit()
+        persisted = True
+
+    return LightningTowerTerrainComputeResponse(
+        tower_id=tower.id if tower else None,
+        tower_no=tower.tower_no if tower else None,
+        line_id=tower.line_id if tower else None,
+        center_longitude=float(center_lon),
+        center_latitude=float(center_lat),
+        method="horn_3x3",
+        persisted=persisted,
+        terrain_metrics=metrics,
+        warnings=warnings,
     )
 
 
@@ -1375,6 +1508,218 @@ def _infer_data_years(db: Session, filters: list[Any]) -> float:
         return 1.0
     delta_days = (row.max_time - row.min_time).total_seconds() / 86400.0
     return max(delta_days / 365.25, 1.0)
+
+
+def _build_tower_terrain_metrics_from_tower(tower: LineTower | None) -> LightningTowerTerrainMetrics | None:
+    if tower is None:
+        return None
+
+    raw_extra = tower.raw_extra_json or {}
+    terrain_payload = raw_extra.get("terrain_metrics") if isinstance(raw_extra, dict) else None
+    if isinstance(terrain_payload, dict):
+        try:
+            return LightningTowerTerrainMetrics.model_validate(terrain_payload)
+        except Exception:
+            pass
+
+    slope_along = float(tower.slope_1) if tower.slope_1 is not None else None
+    slope_cross = float(tower.slope_2) if tower.slope_2 is not None else None
+    if slope_along is None and slope_cross is None:
+        return None
+
+    slope_candidates = [abs(value) for value in (slope_along, slope_cross) if value is not None]
+    slope_deg = max(slope_candidates) if slope_candidates else None
+    terrain_exposure = min(1.0, (slope_deg / 45.0)) if slope_deg is not None else None
+    return LightningTowerTerrainMetrics(
+        slope_deg=slope_deg,
+        slope_max_deg=slope_deg,
+        slope_along_line_deg=slope_along,
+        slope_cross_line_deg=slope_cross,
+        terrain_exposure_index=terrain_exposure,
+        algorithm_version="tower-legacy",
+    )
+
+
+def _compute_horn_gradient(grid_m: list[list[float]], *, cell_size_m: float) -> tuple[float, float]:
+    if len(grid_m) != 3 or any(len(row) != 3 for row in grid_m):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="DEM 网格必须是 3x3")
+    if cell_size_m <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="cell_size_m 必须大于 0")
+
+    z1, z2, z3 = float(grid_m[0][0]), float(grid_m[0][1]), float(grid_m[0][2])
+    z4, z5, z6 = float(grid_m[1][0]), float(grid_m[1][1]), float(grid_m[1][2])
+    z7, z8, z9 = float(grid_m[2][0]), float(grid_m[2][1]), float(grid_m[2][2])
+
+    dz_dx = ((z3 + 2.0 * z6 + z9) - (z1 + 2.0 * z4 + z7)) / (8.0 * cell_size_m)
+    dz_dy = ((z1 + 2.0 * z2 + z3) - (z7 + 2.0 * z8 + z9)) / (8.0 * cell_size_m)
+    return dz_dx, dz_dy
+
+
+def _compute_aspect_deg(dz_dx: float, dz_dy: float) -> float | None:
+    if math.isclose(dz_dx, 0.0, abs_tol=1e-12) and math.isclose(dz_dy, 0.0, abs_tol=1e-12):
+        return None
+    downslope_east = -dz_dx
+    downslope_north = -dz_dy
+    return (math.degrees(math.atan2(downslope_east, downslope_north)) + 360.0) % 360.0
+
+
+def _compute_neighbor_slopes(grid_m: list[list[float]], *, cell_size_m: float) -> list[float]:
+    center = float(grid_m[1][1])
+    slopes: list[float] = []
+    for row in range(3):
+        for col in range(3):
+            if row == 1 and col == 1:
+                continue
+            delta_h = float(grid_m[row][col]) - center
+            distance = cell_size_m * math.sqrt(float((row - 1) ** 2 + (col - 1) ** 2))
+            if distance <= 0:
+                continue
+            slopes.append(math.degrees(math.atan(abs(delta_h) / distance)))
+    return slopes
+
+
+def _percentile(values: list[float], quantile: float) -> float:
+    if not values:
+        return 0.0
+    if quantile <= 0:
+        return min(values)
+    if quantile >= 1:
+        return max(values)
+
+    sorted_values = sorted(values)
+    position = (len(sorted_values) - 1) * quantile
+    lower = int(math.floor(position))
+    upper = int(math.ceil(position))
+    if lower == upper:
+        return float(sorted_values[lower])
+    lower_value = float(sorted_values[lower])
+    upper_value = float(sorted_values[upper])
+    weight = position - lower
+    return lower_value * (1.0 - weight) + upper_value * weight
+
+
+def _infer_tower_line_azimuth_deg(db: Session, tower: LineTower | None) -> float | None:
+    if (
+        tower is None
+        or tower.line_id is None
+        or tower.seq_no is None
+        or tower.longitude is None
+        or tower.latitude is None
+    ):
+        return None
+
+    rows = db.execute(
+        select(LineTower.seq_no, LineTower.longitude, LineTower.latitude)
+        .where(
+            LineTower.line_id == tower.line_id,
+            LineTower.longitude.is_not(None),
+            LineTower.latitude.is_not(None),
+        )
+        .order_by(LineTower.seq_no.asc())
+    ).all()
+    if not rows:
+        return None
+
+    previous: tuple[float, float] | None = None
+    next_point: tuple[float, float] | None = None
+    for row in rows:
+        seq_no = int(row.seq_no)
+        point = (float(row.longitude), float(row.latitude))
+        if seq_no < tower.seq_no:
+            previous = point
+            continue
+        if seq_no > tower.seq_no:
+            next_point = point
+            break
+
+    if previous is not None and next_point is not None:
+        start_lon, start_lat = previous
+        end_lon, end_lat = next_point
+    elif next_point is not None:
+        start_lon = float(tower.longitude)
+        start_lat = float(tower.latitude)
+        end_lon, end_lat = next_point
+    elif previous is not None:
+        start_lon, start_lat = previous
+        end_lon = float(tower.longitude)
+        end_lat = float(tower.latitude)
+    else:
+        return None
+
+    if math.isclose(start_lon, end_lon, abs_tol=1e-12) and math.isclose(start_lat, end_lat, abs_tol=1e-12):
+        return None
+
+    start_lat_rad = math.radians(start_lat)
+    end_lat_rad = math.radians(end_lat)
+    delta_lon_rad = math.radians(end_lon - start_lon)
+    x = math.sin(delta_lon_rad) * math.cos(end_lat_rad)
+    y = (
+        math.cos(start_lat_rad) * math.sin(end_lat_rad)
+        - math.sin(start_lat_rad) * math.cos(end_lat_rad) * math.cos(delta_lon_rad)
+    )
+    if math.isclose(x, 0.0, abs_tol=1e-12) and math.isclose(y, 0.0, abs_tol=1e-12):
+        return None
+    return (math.degrees(math.atan2(x, y)) + 360.0) % 360.0
+
+
+def _directional_gradient(dz_dx: float, dz_dy: float, azimuth_deg: float) -> float:
+    azimuth_rad = math.radians(azimuth_deg % 360.0)
+    direction_east = math.sin(azimuth_rad)
+    direction_north = math.cos(azimuth_rad)
+    return dz_dx * direction_east + dz_dy * direction_north
+
+
+def _angle_difference_deg(angle_1_deg: float, angle_2_deg: float) -> float:
+    return abs((angle_1_deg - angle_2_deg + 180.0) % 360.0 - 180.0)
+
+
+def _evaluate_terrain_quality(
+    *,
+    dem_resolution_m: float,
+    search_radius_m: float,
+    warnings: list[str],
+) -> tuple[float, str]:
+    score = 100.0
+
+    def add_warning(message: str) -> None:
+        if message not in warnings:
+            warnings.append(message)
+
+    if dem_resolution_m <= 5.0:
+        score -= 0.0
+    elif dem_resolution_m <= 10.0:
+        score -= 5.0
+    elif dem_resolution_m <= 12.5:
+        score -= 10.0
+    elif dem_resolution_m <= 30.0:
+        score -= 25.0
+        add_warning("DEM 分辨率大于 12.5m，微地形倾角结果可能偏平滑。")
+    elif dem_resolution_m <= 90.0:
+        score -= 45.0
+        add_warning("DEM 分辨率较低（30-90m），建议使用 10m 及以上数据复核。")
+    else:
+        score -= 60.0
+        add_warning("DEM 分辨率超过 90m，当前结果仅可用于粗略评估。")
+
+    if search_radius_m < 30.0:
+        score -= 15.0
+        add_warning("地形检索半径过小（<30m），建议提高到 50m 左右。")
+    elif search_radius_m < 50.0:
+        score -= 8.0
+    elif search_radius_m > 300.0:
+        score -= 10.0
+        add_warning("地形检索半径较大（>300m），局部坡度可能被稀释。")
+    elif search_radius_m > 150.0:
+        score -= 5.0
+
+    score = max(0.0, min(100.0, score))
+    if score >= 80.0:
+        quality_level = "HIGH"
+    elif score >= 60.0:
+        quality_level = "MEDIUM"
+    else:
+        quality_level = "LOW"
+    return score, quality_level
 
 
 def _derive_tower_risk_level(

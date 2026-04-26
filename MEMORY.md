@@ -173,7 +173,8 @@
 - `admin.wxapp` 已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口，确保可见、可达且不被误删。
 - `单词统计` 菜单迁移采用最小改动策略：保留菜单编码 `admin.knowledge_mastery`（`/admin/vocabulary-proficiency`，权限 `vocabulary.read`），并由 `web/src/app/admin/vocabulary-proficiency/page.tsx` 承载词条总量、状态分布、缺失字段与最近更新趋势统计能力；已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
 - `队列管理` 菜单迁移采用最小改动策略：新增菜单编码 `admin.queue_mgr`（`/admin/jobqueue`，权限 `todo.read`），并由 `web/src/app/admin/jobqueue/page.tsx` 复用 `todos` 页面承载队列任务清单能力；已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
-- `提示词管理` 菜单迁移沿用系统消息能力：保留菜单编码 `admin.system_message` 与权限 `system_message.read/system_message.manage`，菜单文案统一为“提示词管理”，默认路由迁移为 `/admin/prompt`，并由 `web/src/app/admin/prompt/page.tsx` 复用 `system-message` 页面承载提示词内容、等级、有效期与发布状态维护能力。
+- `提示词管理` 菜单能力已于 2026-04-26 下线：`admin.system_message`、`system_message.read/system_message.manage`、`/admin/prompt`、`/admin/system-message` 与 `/api/v1/admin/system-messages*` 均不再作为有效功能入口；历史数据库表不主动删除。
+- `收件箱`、`代码评审`、`Git管理` 功能已于 2026-04-26 下线：`admin.inbox`、`admin.code_review`、`admin.git_desktop` 仅保留在 removed/disabled 过滤集合中，用于屏蔽存量菜单；前端路由 `/admin/inbox`、`/admin/code-review`、`/admin/git-desktop` 不再提供页面。
 - `历史答卷` 菜单迁移采用最小改动策略：保留菜单编码 `admin.history`（`/admin/history`，权限 `question_bank.read`），并由 `web/src/app/admin/history/page.tsx` 复用 `question-bank` 页面承载历史答卷查询与管理能力；已加入后端与前端受保护菜单集合与后台首页入口。
 - `脚本管理` 菜单迁移采用最小改动策略：保留菜单编码 `admin.cron_task_mgr`（`/admin/cron`，权限 `todo.read`），菜单文案统一为“脚本管理”，并继续由 `web/src/app/admin/cron/page.tsx` 复用 `todos` 页面承载脚本任务清单能力。
 - `百度网盘` 菜单迁移采用最小改动策略：新增菜单编码 `admin.baidu_pan`（`/admin/baidu-pan`，权限 `file.read`），并由 `web/src/app/admin/baidu-pan/page.tsx` 复用 `files` 页面承载目录浏览、上传、重命名、移动、删除与下载能力；已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
@@ -217,6 +218,7 @@
 ## 数据库连接口径（2026-04-23）
 
 - API 默认数据库连接切换为本地 PostgreSQL：优先读取 `DATABASE_URL`；若未设置则由 `DB_HOST/DB_PORT/DB_NAME/DB_USERNAME/DB_PASSWORD` 组装。
+
 - 默认参数口径：
   - Docker 内：`DB_HOST=db`、`DB_PORT=5432`、`DB_NAME=postgres`、`DB_USERNAME=fquiz`、`DB_PASSWORD=fquiz`。
   - 本机直连（非 Docker）：`DB_HOST=127.0.0.1`、`DB_PORT=5433`、`DB_NAME=postgres`、`DB_USERNAME=fquiz`、`DB_PASSWORD=fquiz`。
@@ -224,6 +226,17 @@
 - `DB_SCHEMA` 通过 PostgreSQL `search_path` 注入，语义等价 JDBC 的 `currentSchema`。
 - API 启动初始化口径：`seed_defaults` 对本地目标执行；为兼容老表状态约束，初始管理员状态写入值统一为 `ENABLED`（不使用 `active`）。
 - 用户表兼容口径：用户主键列对齐旧库 `users.user_id`，与用户关联的外键统一引用 `users.user_id`（不再引用 `users.id`）。
+
+## 发布验收口径（2026-04-26）
+
+- 发布链路默认执行：
+  - `docker compose build`
+  - `docker compose up -d`
+- 最小运行态验收：
+  - `docker compose ps`（关键服务 `api/web/celery-worker/celery-beat/db/redis/minio` 为 Up，关键依赖健康）。
+  - `curl -fsS http://127.0.0.1:8000/health` 返回 API 健康 JSON。
+  - `curl -I -fsS http://127.0.0.1:3000/` 返回 `HTTP/1.1 200 OK`。
+  - 结合 `docker compose logs --tail` 抽样检查 `api/web/celery-worker/celery-beat` 启动日志是否正常。
 
 ## 前端组件栈口径（2026-04-22）
 
@@ -650,6 +663,16 @@
 - 工程约束：
   - `web/public/cesium` 属于构建生成资产，不纳入 Git 版本管理（由 `.gitignore` 忽略）。
 
+## 线路走向图专题口径（2026-04-26）
+
+- `线路管理` 页面地图视图已升级为“走向图”专题视图（保留表格/走向图双视图切换）。
+- 走向图默认关闭通用底图能力（Cesium `baseLayer: false`），仅突出线路业务语义：
+  - 按杆塔 `seq_no` 连线展示线路走向；
+  - 展示杆塔点位、起点/终点标识；
+  - 支持按风险着色、塔号显隐、居中重置。
+- 走向图统计信息固定包含：有效坐标、缺失坐标、断点段数、线路估算长度（Haversine）。
+- 对序号断档采用分段折线渲染，避免缺失坐标导致的跨段误连线。
+
 ## 雷电流数据管理口径（2026-04-25）
 
 - 雷电流模块一期后端入口统一在 `/api/v1/lightning-currents`，权限码为：
@@ -809,3 +832,110 @@
   - 待办：统计状态/优先级分布，输出超期待办（`due_date/expire_time` 触发）。
 - 权限分层：接口按 `requirement.*` 与 `todo.*` 权限分别返回对应数据块，避免越权暴露。
 - 菜单保护：`admin.task_monitor` 已纳入前后端受保护菜单集合，避免在菜单管理中误删。
+
+## 文件管理单挂载 UI 口径（2026-04-26）
+
+- `web/src/app/admin/files/page.tsx` 默认按“单挂载”交互：不再展示左侧挂载点列表，不提供前端挂载点切换。
+- 当前挂载上下文统一以接口返回的 `current_mount` 为准；文件操作仍透传 `mount_code`，保持与后端接口契约一致。
+- 后端仍保留多挂载点模型能力（`file_storage_mounts`），本次仅收敛前端交互层。
+
+## 任务监控口径更新（2026-04-26）
+
+- `/admin/task-monitor` 与 `GET /api/v1/admin/task-monitor/overview` 已收口为 **Celery 运行态监控**，不再承载需求/待办风险聚合。
+- 接口查询参数：
+  - `task_limit`：返回任务明细上限。
+  - `history_limit`：历史任务扫描上限（Redis result backend）。
+- 数据来源口径：
+  - 队列积压（`pending_count`）在 Redis broker 下按队列 `LLEN` 读取，非 Redis broker 回退为 `0`。
+  - 历史任务状态（`SUCCESS/FAILURE/RETRY/REVOKED`）在 Redis result backend 下通过 `SCAN celery-task-meta-*` 采样聚合。
+- 接口与页面权限统一为：`celery.read` 或 `celery.manage`。
+- 前端展示结构固定为三块：
+  - Worker 概览（在线状态、并发、预取、活跃/预留/定时任务数）
+  - Queue 概览（pending、consumer、active/reserved/scheduled）
+  - Task 明细（状态、队列、worker、ETA/开始/完成、错误摘要）
+
+## 后台页面顶部信息口径（2026-04-26）
+
+- 后台壳层 `web/src/app/admin/layout.tsx` 不再渲染内容区顶部公共信息块（Breadcrumb + 页面标题 + 页面描述）。
+- 后台页面默认直接进入业务内容区，避免在每个页面重复展示“模块标题 + 描述文案”。
+
+## ATP 模型管理口径（2026-04-26）
+
+- ATP 功能一期定位为“ATPDraw 产物版本管理 + ATP 引擎调用”：
+  - 模型台账：`atp_model`
+  - 版本管理：`atp_model_version`
+  - 运行记录：`atp_simulation_run`
+- 后端 API 统一前缀：`/api/v1/atp/models`，包含：
+  - 引擎状态：`GET /engine/status`
+  - 模型 CRUD：`GET/POST/PATCH/DELETE /`
+  - 版本管理：`GET/POST/PATCH /{model_id}/versions*` + `POST /activate`
+  - 运行管理：`GET/POST /{model_id}/runs*`
+- 权限口径：
+  - `atp.read`：查看模型/版本/运行
+  - `atp.manage`：维护模型与版本、激活版本
+  - `atp.run`：执行仿真
+- 菜单口径：
+  - 新增 `admin.atp_models`，路由 `/admin/power-lines/atp-viewer`，默认绑定 admin 角色。
+- 推送订阅口径：
+  - 主题 `admin.atp-models`（权限 `atp.read/atp.run/atp.manage`）。
+- 配置口径：
+  - `atp_engine_mode`：`wine|native`
+  - `atp_engine_executable`
+  - `atp_storage_root`
+  - `atp_engine_workdir`
+  - `atp_engine_default_timeout_seconds`
+  - `atp_engine_max_timeout_seconds`
+
+## 功能下线口径（2026-04-26）
+
+- 以下后台功能已下线，不再作为有效入口、默认菜单、默认权限或公开 API 提供：
+  - AI 聊天：`/admin/chat`、`/api/v1/chat*`、`chat.use`
+  - 编排管理：`/admin/orchestration`
+  - MCP管理：`/admin/mcp-server`
+  - 模型管理/API测试：`/admin/models`、`/admin/api-tester`、`/api/v1/admin/models*`、`/api/v1/admin/model-routes*`、`model.read/model.manage`
+  - 知识集/文件管理：`/admin/knowledge-set`、`/admin/files`、`/api/v1/admin/files*`、`file.read/file.manage`
+  - 流程图：`/admin/mermaid-mgr`、`/api/v1/mermaids*`、legacy `/api/mermaids*`
+  - 思维导图：`/admin/mindmap`、`/api/v1/mindmap*`
+  - 需求管理：`/admin/requirements`、`/api/v1/requirements*`、`/api/project/requirement*`、`requirement.*`
+  - 日程管理：`/admin/schedule`、`/api/v1/calendar*`、`/api/v1/todos*`、`todo.*`
+- `admin.agent/admin.mcp_server/admin.files/admin.requirements/admin.schedule/admin.mindmap/admin.mermaid_mgr/admin.chat/admin.api_tester/admin.models/admin.orchestration` 仅保留在 removed/disabled 过滤集合中，用于屏蔽历史菜单数据。
+- 本次不执行数据库 drop；历史表若已存在，作为历史数据保留。模型注册表/路由表仍保留给内部 LLM 网关和寿命倒计时等内部能力使用，但无后台管理页面/API。
+- `/admin/task-monitor` 已独立为 Celery Worker/Queue/Task 监控，不再读取需求/待办数据。
+
+## 文件管理恢复口径（2026-04-26）
+
+- 文件管理模块恢复路径：
+  - 前端页面：`/admin/files`（后台首页卡片入口 `/files`）。
+  - 后端接口：`/api/v1/admin/files` 及其 `directories/delete/rename/move/upload/download/download-zip` 子接口。
+- 权限口径：`file.read`（读）与 `file.manage`（写操作）。
+- 订阅口径：`admin.files` topic 已恢复，文件操作后触发前端刷新。
+- 模型与 seed：`file_storage_backends` / `file_storage_mounts` / `file_index_entries` 已恢复注册；默认 seed 会创建 `files.vfs.default`、`files.s3.default` 与 `main` 挂载。
+- 交互口径：页面保持“单挂载点”模式，不展示左侧挂载点切换面板。
+
+## ATP 查看器口径（2026-04-26）
+
+- ATP 文本查看能力已落地在线路模块子路由：`/power-lines/atp-viewer`（内部路由 `web/src/app/admin/power-lines/atp-viewer/page.tsx`）。
+- 技术栈固定为“前端本地解析 + 前端只读渲染”：
+  - 解析：`web/src/lib/atp/parse-atp-text.ts`
+  - 渲染：`@maxgraph/core` + `web/src/components/atp-maxgraph-viewer.tsx`
+- 当前目标是“查看保真优先”，明确不包含仿真内核调用。
+- 解析覆盖常见元件行格式，复杂 ATP 控制卡/模型卡默认容错跳过并输出 warnings，不阻断基础图形查看。
+
+## 雷电地形倾角口径（2026-04-26）
+
+- 地面倾角计算接口固定为：
+  - `POST /api/v1/lightning-currents/stats/tower-terrain`
+- 入参口径：
+  - `dem_grid_m` 必须为 3x3 高程矩阵（中心点 + 邻域 8 点）。
+  - `cell_size_m` 为 DEM 栅格间距（米）。
+  - `dem_resolution_m` 可单独传入用于质量评分（不传时默认等于 `cell_size_m`）。
+- 算法口径：
+  - 梯度：Horn 3x3（`algorithm_version=horn_3x3.v1`）。
+  - 输出：`slope_deg`、`aspect_deg`、`slope_mean/p95/max`、`slope_along/cross_line_deg`、`relief_m_50`、`terrain_exposure_index`、`quality_score/level`。
+  - 坡向定义为“顺坡向（下坡方向）方位角”，0-360°，顺时针（0=北，90=东）。
+- 持久化口径：
+  - `persist=true` 时要求 `tower_id`，且调用方需具备 `tower.manage` 或 `lightning.manage`（admin 放行）。
+  - 持久化位置：`power_line_tower.raw_extra_json.terrain_metrics`，并同步更新 `slope_1/slope_2`（纵坡/横坡绝对值）。
+- 缓冲区分析联动：
+  - `GET /api/v1/lightning-currents/stats/tower-buffer` 返回 `terrain_metrics`（若杆塔已有地形指标）。
+  - 风险分级引入地形暴露权重：`ng_for_risk = ng * (1 + 0.25 * exposure)`，但原始返回字段 `ng_per_km2_year` 保持未加权值。

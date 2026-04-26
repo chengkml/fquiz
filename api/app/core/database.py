@@ -49,10 +49,10 @@ def get_db() -> Generator[Session, None, None]:
 def init_db() -> None:
     # Import models so metadata includes every table before create_all.
     from ..models import (
+        atp_model,
         audit_log,
         auth_session,
         calendar_event,
-        chat,
         diary,
         file_storage,
         hot_search,
@@ -62,8 +62,6 @@ def init_db() -> None:
         line,
         line_tower,
         menu,
-        mermaid_diagram,
-        mind_map,
         model_registry,
         object_group,
         question_bank,

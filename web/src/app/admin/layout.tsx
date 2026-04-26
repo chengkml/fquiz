@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import Icon, {
   BgColorsOutlined,
   CompressOutlined,
-  DashboardOutlined,
   HomeOutlined,
   LinkOutlined,
   LogoutOutlined,
@@ -24,7 +23,6 @@ import {
   Alert,
   Avatar,
   Badge,
-  Breadcrumb,
   Button,
   Drawer,
   Dropdown,
@@ -148,28 +146,6 @@ function findActiveMenuState(
   };
 }
 
-function findActiveMenuTrail(
-  items: MenuTreeItem[],
-  pathname: string,
-  parentTrail: MenuTreeItem[] = [],
-): MenuTreeItem[] {
-  for (const item of items) {
-    const nextTrail = [...parentTrail, item];
-    if (isActivePath(pathname, item.path)) {
-      return nextTrail;
-    }
-
-    if (item.children.length > 0) {
-      const childTrail = findActiveMenuTrail(item.children, pathname, nextTrail);
-      if (childTrail.length > 0) {
-        return childTrail;
-      }
-    }
-  }
-
-  return [];
-}
-
 function AdminCenteredState({ children }: { children: ReactNode }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[var(--ant-color-bg-layout)] px-6 py-20">
@@ -243,34 +219,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
   const menuItems = useMemo(() => buildMenuItems(menuTree), [menuTree]);
   const activeMenuState = useMemo(() => findActiveMenuState(menuTree, pathname), [menuTree, pathname]);
-  const activeMenuTrail = useMemo(() => findActiveMenuTrail(menuTree, pathname), [menuTree, pathname]);
-  const currentMenu = activeMenuTrail.at(-1);
-  const currentTitle = currentMenu?.name ?? (pathname === "/dashboard" ? "工作台" : "后台模块");
-  const currentDescription =
-    pathname === "/dashboard"
-      ? "总览当前账号可访问的后台模块，按业务域进入管理工作流。"
-      : "按角色权限访问当前模块，完成查询、维护、协作与操作留痕。";
-  const breadcrumbItems = useMemo(() => {
-    const trail = activeMenuTrail.filter((item) => item.path !== "/dashboard");
-    return [
-      {
-        title: (
-          <Link href="/dashboard">
-            <Space size={4}>
-              <DashboardOutlined />
-              工作台
-            </Space>
-          </Link>
-        ),
-      },
-      ...trail.map((item, index) => {
-        const isLast = index === trail.length - 1;
-        return {
-          title: item.path && !isLast ? <Link href={item.path}>{item.name}</Link> : item.name,
-        };
-      }),
-    ];
-  }, [activeMenuTrail]);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -544,18 +492,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
         <AntLayout className="admin-design-main">
           <Content className="admin-design-content">
-            <div className="admin-design-page-header">
-              <Breadcrumb items={breadcrumbItems} />
-              <div className="admin-design-page-title">
-                <div>
-                  <Typography.Title level={3} style={{ margin: 0 }}>
-                    {currentTitle}
-                  </Typography.Title>
-                  <Typography.Text type="secondary">{currentDescription}</Typography.Text>
-                </div>
-              </div>
-            </div>
-
             <div className="admin-design-page-body">
               {menuError && (
                 <Alert

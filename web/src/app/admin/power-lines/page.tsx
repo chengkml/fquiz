@@ -692,7 +692,19 @@ export default function AdminPowerLinesPage() {
       )}
       {success && <Alert type="success" showIcon message="操作成功" description={success} />}
 
-      <Card title="线路管理" extra={canLineManage ? <Button type="primary" onClick={openCreateLineModal}>新建线路</Button> : undefined}>
+      <Card
+        title="线路管理"
+        extra={(
+          <Space size={8} wrap>
+            <Button href="/power-lines/atp-viewer">ATP查看器</Button>
+            {canLineManage && (
+              <Button type="primary" onClick={openCreateLineModal}>
+                新建线路
+              </Button>
+            )}
+          </Space>
+        )}
+      >
         <Space direction="vertical" size={12} className="w-full">
           <Typography.Text type="secondary">
             维护线路基础信息并选择一条线路进入杆塔管理。
@@ -733,7 +745,7 @@ export default function AdminPowerLinesPage() {
               value={towerViewMode}
               options={[
                 { label: "表格", value: "table" },
-                { label: "地图", value: "map" },
+                { label: "走向图", value: "map" },
               ]}
               onChange={(value) => setTowerViewMode(value as "table" | "map")}
               disabled={!selectedLineId}
@@ -772,7 +784,7 @@ export default function AdminPowerLinesPage() {
         ) : (
           <Space direction="vertical" size={12} className="w-full">
             <Typography.Text type="secondary">
-              当前线路编码：{selectedLine?.code ?? "-"}，杆塔总数：{selectedLine?.tower_count ?? 0}，当前视图：{towerViewMode === "table" ? "表格" : "地图"}
+              当前线路编码：{selectedLine?.code ?? "-"}，杆塔总数：{selectedLine?.tower_count ?? 0}，当前视图：{towerViewMode === "table" ? "表格" : "走向图"}
             </Typography.Text>
             <div className="grid gap-3 md:grid-cols-3">
               <Input

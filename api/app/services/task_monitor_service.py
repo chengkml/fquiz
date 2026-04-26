@@ -1,300 +1,445 @@
 from __future__ import annotations
 
-import math
-from datetime import UTC, datetime, timedelta
+import json
+from collections.abc import Iterable
+from datetime import datetime, timezone
+from urllib.parse import urlsplit, urlunsplit
 
-from sqlalchemy import and_, func, or_, select
-from sqlalchemy.orm import Session
+try:
+    import redis
+except Exception:  # pragma: no cover - optional dependency in non-runtime environments
+    redis = None
 
+from ..core.celery_app import celery_app
+from ..core.config import get_settings
 from ..models.base import utcnow
-from ..models.requirement import Requirement
-from ..models.todo import Todo
-from ..models.user import User
 from ..schemas.task_monitor import (
     TaskMonitorBucketItem,
     TaskMonitorOverviewResponse,
-    TaskMonitorRequirementRiskItem,
-    TaskMonitorTodoRiskItem,
+    TaskMonitorQueueItem,
+    TaskMonitorTaskItem,
+    TaskMonitorWorkerItem,
 )
 
-REQUIREMENT_STATUS_LABELS: dict[str, str] = {
-    "PENDING_ANALYSIS": "待分析",
-    "PENDING_REVIEW": "待评审",
-    "PENDING_REVISION": "待修订",
-    "OPEN": "待处理",
-    "IN_PROGRESS": "处理中",
-    "COMPLETED": "已完成",
-    "CLOSED": "已关闭",
-    "CANCELLED": "已取消",
+STATE_LABELS = {
+    "PENDING": "待执行",
+    "RECEIVED": "已接收",
+    "STARTED": "执行中",
+    "SCHEDULED": "定时中",
+    "RETRY": "重试中",
+    "SUCCESS": "成功",
+    "FAILURE": "失败",
+    "REVOKED": "已撤销",
 }
-REQUIREMENT_DONE_STATUSES = {"COMPLETED", "CLOSED", "CANCELLED"}
-HIGH_PRIORITY_VALUES = {"HIGH", "URGENT"}
 
-TODO_STATUS_LABELS: dict[str, str] = {
-    "SCHEDULED": "已计划",
-    "IN_PROGRESS": "处理中",
-    "COMPLETED": "已完成",
-    "CANCELLED": "已取消",
-    "EXPIRED": "已过期",
-}
-TODO_ACTIVE_STATUSES = {"SCHEDULED", "IN_PROGRESS"}
-
-PRIORITY_LABELS: dict[str, str] = {
-    "LOW": "低",
-    "MEDIUM": "中",
-    "HIGH": "高",
-    "URGENT": "紧急",
+STATE_PRIORITY = {
+    "STARTED": 0,
+    "RECEIVED": 1,
+    "SCHEDULED": 2,
+    "RETRY": 3,
+    "FAILURE": 4,
+    "SUCCESS": 5,
+    "REVOKED": 6,
+    "PENDING": 7,
 }
 
 
-def build_task_monitor_overview(
-    db: Session,
-    *,
-    actor: User,
-    can_read_requirements: bool,
-    can_read_todos: bool,
-    can_manage_todos: bool,
-    risk_limit: int,
-    stale_hours: int,
-) -> TaskMonitorOverviewResponse:
+def build_task_monitor_overview(*, task_limit: int, history_limit: int) -> TaskMonitorOverviewResponse:
+    settings = get_settings()
     now = utcnow()
-    overview = TaskMonitorOverviewResponse(generated_at=now)
+    overview = TaskMonitorOverviewResponse(
+        generated_at=now,
+        broker_url=_mask_url(settings.resolved_celery_broker_url),
+        result_backend=_mask_url(settings.resolved_celery_result_backend),
+    )
 
-    if can_read_requirements:
-        _fill_requirement_metrics(
-            db,
-            overview=overview,
-            now=now,
-            risk_limit=risk_limit,
-            stale_hours=stale_hours,
-        )
+    inspector = celery_app.control.inspect(timeout=1.0)
+    stats = _safe_inspect_call(inspector.stats)
+    active = _safe_inspect_call(inspector.active)
+    reserved = _safe_inspect_call(inspector.reserved)
+    scheduled = _safe_inspect_call(inspector.scheduled)
+    active_queues = _safe_inspect_call(inspector.active_queues)
+    ping = _safe_inspect_call(inspector.ping)
 
-    if can_read_todos:
-        _fill_todo_metrics(
-            db,
-            overview=overview,
-            now=now,
-            actor=actor,
-            can_manage_todos=can_manage_todos,
-            risk_limit=risk_limit,
+    worker_names = sorted(set(stats) | set(active) | set(reserved) | set(scheduled) | set(active_queues) | set(ping))
+    overview.workers = [
+        _build_worker_item(
+            worker,
+            stats=stats.get(worker) or {},
+            active_tasks=active.get(worker) or [],
+            reserved_tasks=reserved.get(worker) or [],
+            scheduled_tasks=scheduled.get(worker) or [],
+            queues=active_queues.get(worker) or [],
+            online=worker in ping if ping else True,
         )
+        for worker in worker_names
+    ]
+    overview.workers_online = sum(1 for item in overview.workers if item.online)
+    overview.worker_concurrency_total = sum(item.max_concurrency for item in overview.workers)
+
+    runtime_tasks = [
+        *_build_task_items(active, state="STARTED", now=now),
+        *_build_task_items(reserved, state="RECEIVED", now=now),
+        *_build_task_items(scheduled, state="SCHEDULED", now=now),
+    ]
+    runtime_tasks_by_id = {item.task_id: item for item in runtime_tasks if item.task_id}
+
+    history_tasks = _load_history_task_items(settings.resolved_celery_result_backend, limit=history_limit)
+    for item in history_tasks:
+        if not item.task_id or item.task_id in runtime_tasks_by_id:
+            continue
+        runtime_tasks_by_id[item.task_id] = item
+
+    all_tasks = sorted(
+        runtime_tasks_by_id.values(),
+        key=lambda item: (
+            STATE_PRIORITY.get(item.state, 99),
+            -_task_sort_timestamp(item).timestamp(),
+            item.task_id,
+        ),
+    )
+    overview.tasks = all_tasks[:task_limit]
+    overview.task_state_buckets = _build_state_buckets(runtime_tasks_by_id.values())
+
+    queue_names = _collect_queue_names(active_queues, runtime_tasks_by_id.values())
+    queue_pending_counts = _load_queue_pending_counts(settings.resolved_celery_broker_url, queue_names)
+    overview.queues = _build_queue_items(
+        active_queues=active_queues,
+        tasks=runtime_tasks_by_id.values(),
+        pending_counts=queue_pending_counts,
+    )
+    overview.queue_pending_total = sum(item.pending_count for item in overview.queues)
 
     return overview
 
 
-def _fill_requirement_metrics(
-    db: Session,
+def _safe_inspect_call(call):
+    try:
+        result = call()
+    except Exception:
+        return {}
+    if not isinstance(result, dict):
+        return {}
+    return result
+
+
+def _build_worker_item(
+    worker: str,
     *,
-    overview: TaskMonitorOverviewResponse,
-    now: datetime,
-    risk_limit: int,
-    stale_hours: int,
-) -> None:
-    status_rows = db.execute(
-        select(Requirement.status, func.count(Requirement.id))
-        .group_by(Requirement.status)
-        .order_by(Requirement.status.asc())
-    ).all()
-
-    status_counts: dict[str, int] = {}
-    for raw_status, raw_count in status_rows:
-        status = _normalize_requirement_status(raw_status)
-        status_counts[status] = status_counts.get(status, 0) + int(raw_count or 0)
-
-    overview.requirement_status_buckets = _build_buckets(
-        status_counts,
-        label_map=REQUIREMENT_STATUS_LABELS,
+    stats: dict,
+    active_tasks: list[dict],
+    reserved_tasks: list[dict],
+    scheduled_tasks: list[dict],
+    queues: list[dict],
+    online: bool,
+) -> TaskMonitorWorkerItem:
+    pool = stats.get("pool") if isinstance(stats.get("pool"), dict) else {}
+    max_concurrency = _to_int(
+        pool.get("max-concurrency")
+        or pool.get("max_concurrency")
+        or len(pool.get("processes") or [])
     )
-    overview.requirement_total = sum(status_counts.values())
-    overview.requirement_completed = sum(
-        count for status, count in status_counts.items() if status in REQUIREMENT_DONE_STATUSES
+    total = stats.get("total") if isinstance(stats.get("total"), dict) else {}
+
+    return TaskMonitorWorkerItem(
+        worker=worker,
+        online=online,
+        queue_names=sorted({_queue_name_from_queue(item) for item in queues if _queue_name_from_queue(item)}),
+        max_concurrency=max_concurrency,
+        prefetch_count=_to_int(stats.get("prefetch_count")),
+        uptime_seconds=_to_int(stats.get("uptime")),
+        processed_total=sum(_to_int(value) for value in total.values()),
+        active_count=len(active_tasks),
+        reserved_count=len(reserved_tasks),
+        scheduled_count=len(scheduled_tasks),
     )
-    overview.requirement_active = max(0, overview.requirement_total - overview.requirement_completed)
-
-    priority_rows = db.execute(
-        select(Requirement.priority, func.count(Requirement.id))
-        .group_by(Requirement.priority)
-        .order_by(Requirement.priority.asc())
-    ).all()
-    priority_counts: dict[str, int] = {}
-    for raw_priority, raw_count in priority_rows:
-        priority = _normalize_priority(raw_priority)
-        priority_counts[priority] = priority_counts.get(priority, 0) + int(raw_count or 0)
-    overview.requirement_priority_buckets = _build_buckets(priority_counts, label_map=PRIORITY_LABELS)
-
-    high_priority_rows = db.execute(
-        select(Requirement)
-        .where(
-            Requirement.status.notin_(sorted(REQUIREMENT_DONE_STATUSES)),
-            Requirement.priority.in_(sorted(HIGH_PRIORITY_VALUES)),
-        )
-        .order_by(Requirement.update_date.asc(), Requirement.id.asc())
-        .limit(risk_limit)
-    ).scalars().all()
-    overview.high_priority_requirements = [
-        TaskMonitorRequirementRiskItem(
-            id=item.id,
-            title=item.title,
-            status=_normalize_requirement_status(item.status),
-            priority=_normalize_priority(item.priority),
-            updated_at=item.update_date,
-            stale_hours=_hours_between(now, item.update_date),
-        )
-        for item in high_priority_rows
-    ]
-
-    stale_before = now - timedelta(hours=stale_hours)
-    stale_rows = db.execute(
-        select(Requirement)
-        .where(
-            Requirement.status.notin_(sorted(REQUIREMENT_DONE_STATUSES)),
-            Requirement.update_date <= stale_before,
-        )
-        .order_by(Requirement.update_date.asc(), Requirement.id.asc())
-        .limit(risk_limit)
-    ).scalars().all()
-    overview.stale_requirements = [
-        TaskMonitorRequirementRiskItem(
-            id=item.id,
-            title=item.title,
-            status=_normalize_requirement_status(item.status),
-            priority=_normalize_priority(item.priority),
-            updated_at=item.update_date,
-            stale_hours=_hours_between(now, item.update_date),
-        )
-        for item in stale_rows
-    ]
 
 
-def _fill_todo_metrics(
-    db: Session,
+def _build_task_items(tasks_by_worker: dict, *, state: str, now: datetime) -> list[TaskMonitorTaskItem]:
+    items: list[TaskMonitorTaskItem] = []
+    for worker, raw_tasks in tasks_by_worker.items():
+        for raw_item in raw_tasks or []:
+            task = raw_item.get("request") if state == "SCHEDULED" else raw_item
+            if not isinstance(task, dict):
+                continue
+            task_id = str(task.get("id") or "").strip()
+            if not task_id:
+                continue
+
+            eta = _parse_datetime(raw_item.get("eta")) if state == "SCHEDULED" else _parse_datetime(task.get("eta"))
+            started_at = _timestamp_to_datetime(task.get("time_start"))
+            runtime_seconds = None
+            if started_at and state == "STARTED":
+                runtime_seconds = max(0.0, round((now - started_at).total_seconds(), 3))
+
+            items.append(
+                TaskMonitorTaskItem(
+                    task_id=task_id,
+                    name=str(task.get("name") or task.get("task") or "-"),
+                    state=state,
+                    queue_name=_queue_name_from_task(task),
+                    worker=str(worker),
+                    retries=_to_int(task.get("retries")),
+                    eta=eta,
+                    started_at=started_at,
+                    runtime_seconds=runtime_seconds,
+                )
+            )
+    return items
+
+
+def _build_queue_items(
     *,
-    overview: TaskMonitorOverviewResponse,
-    now: datetime,
-    actor: User,
-    can_manage_todos: bool,
-    risk_limit: int,
-) -> None:
-    filters = []
-    if not can_manage_todos:
-        filters.append(Todo.create_user == actor.username)
+    active_queues: dict,
+    tasks: Iterable[TaskMonitorTaskItem],
+    pending_counts: dict[str, int],
+) -> list[TaskMonitorQueueItem]:
+    queue_names: set[str] = set()
+    consumer_counts: dict[str, int] = {}
+    active_counts: dict[str, int] = {}
+    reserved_counts: dict[str, int] = {}
+    scheduled_counts: dict[str, int] = {}
 
-    status_rows = db.execute(
-        select(Todo.status, func.count(Todo.id))
-        .where(*filters)
-        .group_by(Todo.status)
-        .order_by(Todo.status.asc())
-    ).all()
-    status_counts: dict[str, int] = {}
-    for raw_status, raw_count in status_rows:
-        status = _normalize_todo_status(raw_status)
-        status_counts[status] = status_counts.get(status, 0) + int(raw_count or 0)
+    for queues in active_queues.values():
+        for queue in queues or []:
+            name = _queue_name_from_queue(queue)
+            if not name:
+                continue
+            queue_names.add(name)
+            consumer_counts[name] = consumer_counts.get(name, 0) + 1
 
-    overview.todo_status_buckets = _build_buckets(status_counts, label_map=TODO_STATUS_LABELS)
-    overview.todo_total = sum(status_counts.values())
-    overview.todo_completed = status_counts.get("COMPLETED", 0)
-    overview.todo_active = sum(count for status, count in status_counts.items() if status in TODO_ACTIVE_STATUSES)
+    for task in tasks:
+        if not task.queue_name:
+            continue
+        queue_names.add(task.queue_name)
+        if task.state == "STARTED":
+            active_counts[task.queue_name] = active_counts.get(task.queue_name, 0) + 1
+        elif task.state == "RECEIVED":
+            reserved_counts[task.queue_name] = reserved_counts.get(task.queue_name, 0) + 1
+        elif task.state == "SCHEDULED":
+            scheduled_counts[task.queue_name] = scheduled_counts.get(task.queue_name, 0) + 1
 
-    priority_rows = db.execute(
-        select(Todo.priority, func.count(Todo.id))
-        .where(*filters)
-        .group_by(Todo.priority)
-        .order_by(Todo.priority.asc())
-    ).all()
-    priority_counts: dict[str, int] = {}
-    for raw_priority, raw_count in priority_rows:
-        priority = _normalize_priority(raw_priority)
-        priority_counts[priority] = priority_counts.get(priority, 0) + int(raw_count or 0)
-    overview.todo_priority_buckets = _build_buckets(priority_counts, label_map=PRIORITY_LABELS)
-
-    overdue_filters = [
-        *filters,
-        Todo.status.in_(sorted(TODO_ACTIVE_STATUSES)),
-        _build_todo_overdue_clause(now),
-    ]
-    overview.todo_overdue = int(
-        db.scalar(
-            select(func.count(Todo.id)).where(*overdue_filters),
-        )
-        or 0
-    )
-
-    overdue_rows = db.execute(
-        select(Todo)
-        .where(*overdue_filters)
-        .order_by(func.coalesce(Todo.expire_time, Todo.due_date, Todo.update_date).asc(), Todo.id.asc())
-        .limit(risk_limit)
-    ).scalars().all()
-    overview.overdue_todos = [
-        TaskMonitorTodoRiskItem(
-            id=item.id,
-            title=item.title,
-            status=_normalize_todo_status(item.status),
-            priority=_normalize_priority(item.priority),
-            due_date=item.due_date,
-            expire_time=item.expire_time,
-            overdue_hours=_hours_between(now, _resolve_todo_deadline(item)),
-        )
-        for item in overdue_rows
-    ]
-
-
-def _build_todo_overdue_clause(now: datetime):
-    return or_(
-        and_(Todo.due_date.is_not(None), Todo.due_date <= now),
-        and_(Todo.expire_time.is_not(None), Todo.expire_time <= now),
+    return sorted(
+        [
+            TaskMonitorQueueItem(
+                name=name,
+                pending_count=max(0, _to_int(pending_counts.get(name))),
+                consumer_count=consumer_counts.get(name, 0),
+                active_count=active_counts.get(name, 0),
+                reserved_count=reserved_counts.get(name, 0),
+                scheduled_count=scheduled_counts.get(name, 0),
+            )
+            for name in queue_names
+        ],
+        key=lambda item: (-item.pending_count, item.name),
     )
 
 
-def _build_buckets(counts: dict[str, int], *, label_map: dict[str, str]) -> list[TaskMonitorBucketItem]:
+def _build_state_buckets(tasks: Iterable[TaskMonitorTaskItem]) -> list[TaskMonitorBucketItem]:
+    counts: dict[str, int] = {}
+    for task in tasks:
+        counts[task.state] = counts.get(task.state, 0) + 1
     return [
-        TaskMonitorBucketItem(
-            key=key,
-            label=label_map.get(key, key),
-            count=count,
-        )
-        for key, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+        TaskMonitorBucketItem(key=state, label=STATE_LABELS.get(state, state), count=count)
+        for state, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
     ]
 
 
-def _resolve_todo_deadline(todo: Todo) -> datetime:
-    candidates = [value for value in [todo.due_date, todo.expire_time] if value is not None]
-    if not candidates:
-        return todo.update_date
-    return min(candidates)
+def _collect_queue_names(active_queues: dict, tasks: Iterable[TaskMonitorTaskItem]) -> list[str]:
+    queue_names: set[str] = set()
+
+    for queues in active_queues.values():
+        for queue in queues or []:
+            name = _queue_name_from_queue(queue)
+            if name:
+                queue_names.add(name)
+
+    for task in tasks:
+        if task.queue_name:
+            queue_names.add(task.queue_name)
+
+    return sorted(queue_names)
 
 
-def _hours_between(now: datetime, then: datetime) -> int:
-    now_utc = _to_utc(now)
-    then_utc = _to_utc(then)
-    diff_seconds = max(0, (now_utc - then_utc).total_seconds())
-    return int(max(1, math.ceil(diff_seconds / 3600)))
+def _load_queue_pending_counts(broker_url: str, queue_names: list[str]) -> dict[str, int]:
+    if not queue_names or not _is_redis_url(broker_url):
+        return {name: 0 for name in queue_names}
+
+    client = _build_redis_client(broker_url)
+    if client is None:
+        return {name: 0 for name in queue_names}
+
+    counts: dict[str, int] = {}
+    try:
+        for queue_name in queue_names:
+            counts[queue_name] = _to_int(client.llen(queue_name))
+    except Exception:
+        return {name: 0 for name in queue_names}
+    return counts
 
 
-def _to_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
+def _load_history_task_items(result_backend_url: str, *, limit: int) -> list[TaskMonitorTaskItem]:
+    if limit <= 0 or not _is_redis_url(result_backend_url):
+        return []
+
+    client = _build_redis_client(result_backend_url)
+    if client is None:
+        return []
+
+    scan_max = max(200, limit * 20)
+    keys: list[str] = []
+    cursor = 0
+
+    try:
+        while True:
+            cursor, batch = client.scan(cursor=cursor, match="celery-task-meta-*", count=200)
+            keys.extend(str(key) for key in batch)
+            if cursor == 0 or len(keys) >= scan_max:
+                break
+    except Exception:
+        return []
+
+    items: list[TaskMonitorTaskItem] = []
+    for key in keys[:scan_max]:
+        try:
+            payload_raw = client.get(key)
+        except Exception:
+            continue
+        if not payload_raw:
+            continue
+
+        try:
+            payload = json.loads(payload_raw)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+
+        state = str(payload.get("status") or "").strip().upper()
+        if not state:
+            continue
+
+        task_id = str(payload.get("task_id") or key.removeprefix("celery-task-meta-")).strip()
+        if not task_id:
+            continue
+
+        done_at = _parse_datetime(payload.get("date_done"))
+        error = _build_error(payload.get("result"), payload.get("traceback")) if state in {"FAILURE", "RETRY", "REVOKED"} else None
+
+        items.append(
+            TaskMonitorTaskItem(
+                task_id=task_id,
+                name=str(payload.get("name") or "-"),
+                state=state,
+                done_at=done_at,
+                error=error,
+            )
+        )
+
+    items.sort(key=lambda item: -_task_sort_timestamp(item).timestamp())
+    return items[:limit]
 
 
-def _normalize_requirement_status(raw_status: str | None) -> str:
-    normalized = (raw_status or "").strip().upper()
-    if not normalized:
-        return "PENDING_ANALYSIS"
-    if normalized == "CANCELLED":
-        return "CANCELLED"
-    return normalized
+def _queue_name_from_queue(queue: dict) -> str:
+    if not isinstance(queue, dict):
+        return ""
+    return str(queue.get("name") or queue.get("routing_key") or "").strip()
 
 
-def _normalize_todo_status(raw_status: str | None) -> str:
-    normalized = (raw_status or "").strip().upper()
-    return normalized or "SCHEDULED"
+def _queue_name_from_task(task: dict) -> str | None:
+    delivery_info = task.get("delivery_info") if isinstance(task.get("delivery_info"), dict) else {}
+    queue_name = delivery_info.get("routing_key") or task.get("queue")
+    if not queue_name:
+        return None
+    return str(queue_name)
 
 
-def _normalize_priority(raw_priority: str | None) -> str:
-    normalized = (raw_priority or "").strip().upper()
-    if normalized == "URGENT":
-        return "URGENT"
-    if normalized in {"LOW", "MEDIUM", "HIGH"}:
-        return normalized
-    return "MEDIUM"
+def _is_redis_url(value: str) -> bool:
+    scheme = urlsplit(value).scheme
+    return scheme in {"redis", "rediss"}
+
+
+def _build_redis_client(redis_url: str):
+    if redis is None:
+        return None
+    try:
+        return redis.Redis.from_url(
+            redis_url,
+            decode_responses=True,
+            socket_connect_timeout=1,
+            socket_timeout=1,
+        )
+    except Exception:
+        return None
+
+
+def _parse_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    normalized = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _timestamp_to_datetime(value: object) -> datetime | None:
+    try:
+        timestamp = float(value)
+    except (TypeError, ValueError):
+        return None
+    if timestamp <= 0:
+        return None
+    try:
+        return datetime.fromtimestamp(timestamp, timezone.utc)
+    except (OSError, OverflowError, ValueError):
+        return None
+
+
+def _task_sort_timestamp(item: TaskMonitorTaskItem) -> datetime:
+    for candidate in [item.started_at, item.done_at, item.eta]:
+        if candidate is None:
+            continue
+        if candidate.tzinfo is None:
+            return candidate.replace(tzinfo=timezone.utc)
+        return candidate.astimezone(timezone.utc)
+    return datetime.fromtimestamp(0, timezone.utc)
+
+
+def _build_error(result, traceback_value) -> str | None:
+    result_text = None
+    if result is not None:
+        result_text = str(result).strip()
+
+    traceback_text = None
+    if isinstance(traceback_value, str):
+        traceback_text = traceback_value.strip()
+
+    for candidate in [result_text, traceback_text]:
+        if not candidate:
+            continue
+        if len(candidate) <= 400:
+            return candidate
+        return f"{candidate[:397]}..."
+    return None
+
+
+def _to_int(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _mask_url(value: str) -> str:
+    parsed = urlsplit(value)
+    if not parsed.password:
+        return value
+    username = parsed.username or ""
+    hostname = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port else ""
+    netloc = f"{username}:***@{hostname}{port}"
+    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))

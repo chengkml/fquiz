@@ -11,40 +11,50 @@ class TaskMonitorBucketItem(BaseModel):
     count: int
 
 
-class TaskMonitorRequirementRiskItem(BaseModel):
-    id: str
-    title: str
-    status: str
-    priority: str
-    updated_at: datetime
-    stale_hours: int
+class TaskMonitorWorkerItem(BaseModel):
+    worker: str
+    online: bool = True
+    queue_names: list[str] = Field(default_factory=list)
+    max_concurrency: int = 0
+    prefetch_count: int = 0
+    uptime_seconds: int = 0
+    processed_total: int = 0
+    active_count: int = 0
+    reserved_count: int = 0
+    scheduled_count: int = 0
 
 
-class TaskMonitorTodoRiskItem(BaseModel):
-    id: str
-    title: str
-    status: str
-    priority: str
-    due_date: datetime | None = None
-    expire_time: datetime | None = None
-    overdue_hours: int
+class TaskMonitorQueueItem(BaseModel):
+    name: str
+    pending_count: int = 0
+    consumer_count: int = 0
+    active_count: int = 0
+    reserved_count: int = 0
+    scheduled_count: int = 0
+
+
+class TaskMonitorTaskItem(BaseModel):
+    task_id: str
+    name: str
+    state: str
+    queue_name: str | None = None
+    worker: str | None = None
+    retries: int = 0
+    eta: datetime | None = None
+    started_at: datetime | None = None
+    done_at: datetime | None = None
+    runtime_seconds: float | None = None
+    error: str | None = None
 
 
 class TaskMonitorOverviewResponse(BaseModel):
     generated_at: datetime
-
-    requirement_total: int = 0
-    requirement_active: int = 0
-    requirement_completed: int = 0
-    requirement_status_buckets: list[TaskMonitorBucketItem] = Field(default_factory=list)
-    requirement_priority_buckets: list[TaskMonitorBucketItem] = Field(default_factory=list)
-    high_priority_requirements: list[TaskMonitorRequirementRiskItem] = Field(default_factory=list)
-    stale_requirements: list[TaskMonitorRequirementRiskItem] = Field(default_factory=list)
-
-    todo_total: int = 0
-    todo_active: int = 0
-    todo_completed: int = 0
-    todo_overdue: int = 0
-    todo_status_buckets: list[TaskMonitorBucketItem] = Field(default_factory=list)
-    todo_priority_buckets: list[TaskMonitorBucketItem] = Field(default_factory=list)
-    overdue_todos: list[TaskMonitorTodoRiskItem] = Field(default_factory=list)
+    broker_url: str = ""
+    result_backend: str = ""
+    workers_online: int = 0
+    worker_concurrency_total: int = 0
+    queue_pending_total: int = 0
+    task_state_buckets: list[TaskMonitorBucketItem] = Field(default_factory=list)
+    workers: list[TaskMonitorWorkerItem] = Field(default_factory=list)
+    queues: list[TaskMonitorQueueItem] = Field(default_factory=list)
+    tasks: list[TaskMonitorTaskItem] = Field(default_factory=list)

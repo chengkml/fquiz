@@ -32,7 +32,6 @@ import {
   MoreOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
@@ -43,7 +42,6 @@ import type {
   FileEntryItem,
   FileListResponse,
   FileOperationResponse,
-  FileStorageMount,
 } from "@/types/auth";
 
 function formatFileSize(size: number): string {
@@ -68,11 +66,8 @@ function formatDate(value: string | null): string {
   return new Date(value).toLocaleString();
 }
 
-function buildFilesApiPath(mountCode: string, path: string): string {
+function buildFilesApiPath(path: string): string {
   const params = new URLSearchParams();
-  if (mountCode) {
-    params.set("mount_code", mountCode);
-  }
   params.set("path", path || "/");
   return `/api/v1/admin/files?${params.toString()}`;
 }
@@ -82,15 +77,12 @@ export default function AdminFilesPage() {
   const [messageApi, messageContextHolder] = antdMessage.useMessage();
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
 
-  const pathname = usePathname();
-  const [mountCode, setMountCode] = useState("");
   const [currentPath, setCurrentPath] = useState("/");
   const [newDirectoryName, setNewDirectoryName] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
-  const isKnowledgeSetPage = pathname.startsWith("/admin/knowledge-set");
-  const pageDisplayName = isKnowledgeSetPage ? "知识集管理" : "文件管理";
+  const pageDisplayName = "文件管理";
 
   const [renameTarget, setRenameTarget] = useState<FileEntryItem | null>(null);
   const [renameName, setRenameName] = useState("");
@@ -102,7 +94,7 @@ export default function AdminFilesPage() {
   const canRead = hasPermission("file.read") || hasPermission("file.manage");
   const canManage = hasPermission("file.manage");
 
-  const filesPath = useMemo(() => buildFilesApiPath(mountCode, currentPath), [mountCode, currentPath]);
+  const filesPath = useMemo(() => buildFilesApiPath(currentPath), [currentPath]);
 
   const filesQuery = useQuery({
     queryKey: [filesPath],
@@ -116,7 +108,7 @@ export default function AdminFilesPage() {
     enabled: !!user && canRead,
   });
 
-  const activeMountCode = filesQuery.data?.current_mount.code ?? mountCode;
+  const activeMountCode = filesQuery.data?.current_mount.code ?? "";
 
   const refreshCurrentPath = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: [filesPath] });
@@ -170,7 +162,7 @@ export default function AdminFilesPage() {
   const createDirectoryMutation = useMutation({
     mutationFn: async () => {
       if (!activeMountCode) {
-        throw new Error("当前未选择可用挂载点");
+        throw new Error("当前无可用存储挂载");
       }
       const response = await fetchWithAuth("/api/v1/admin/files/directories", {
         method: "POST",
@@ -201,7 +193,7 @@ export default function AdminFilesPage() {
   const deleteMutation = useMutation({
     mutationFn: async (item: FileEntryItem) => {
       if (!activeMountCode) {
-        throw new Error("当前未选择可用挂载点");
+        throw new Error("当前无可用存储挂载");
       }
       const response = await fetchWithAuth("/api/v1/admin/files/delete", {
         method: "POST",
@@ -232,7 +224,7 @@ export default function AdminFilesPage() {
   const renameMutation = useMutation({
     mutationFn: async (item: FileEntryItem) => {
       if (!activeMountCode) {
-        throw new Error("当前未选择可用挂载点");
+        throw new Error("当前无可用存储挂载");
       }
       const response = await fetchWithAuth("/api/v1/admin/files/rename", {
         method: "POST",
@@ -263,7 +255,7 @@ export default function AdminFilesPage() {
   const moveMutation = useMutation({
     mutationFn: async (item: FileEntryItem) => {
       if (!activeMountCode) {
-        throw new Error("当前未选择可用挂载点");
+        throw new Error("当前无可用存储挂载");
       }
       const response = await fetchWithAuth("/api/v1/admin/files/move", {
         method: "POST",
@@ -295,7 +287,7 @@ export default function AdminFilesPage() {
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
       if (!activeMountCode) {
-        throw new Error("当前未选择可用挂载点");
+        throw new Error("当前无可用存储挂载");
       }
       const params = new URLSearchParams({
         mount_code: activeMountCode,
@@ -324,14 +316,6 @@ export default function AdminFilesPage() {
       messageApi.error(message);
     },
   });
-
-  const handleSelectMount = (mount: FileStorageMount) => {
-    setMountCode(mount.code);
-    setCurrentPath("/");
-    setSuccessMessage("");
-    setErrorMessage("");
-    resetActionPanels();
-  };
 
   const handleOpenDirectory = (item: FileEntryItem) => {
     if (!item.is_dir) {
@@ -409,7 +393,7 @@ export default function AdminFilesPage() {
 
   const handleDownloadFile = async (item: FileEntryItem) => {
     if (!activeMountCode) {
-      setErrorMessage("当前未选择可用挂载点");
+      setErrorMessage("当前无可用存储挂载");
       return;
     }
 
@@ -445,7 +429,7 @@ export default function AdminFilesPage() {
 
   const handleDownloadDirectory = async (item: FileEntryItem) => {
     if (!activeMountCode) {
-      setErrorMessage("当前未选择可用挂载点");
+      setErrorMessage("当前无可用存储挂载");
       return;
     }
 
@@ -481,7 +465,6 @@ export default function AdminFilesPage() {
 
   const listError = filesQuery.error instanceof Error ? filesQuery.error.message : "";
   const listData = filesQuery.data;
-  const mounts = listData?.mounts ?? [];
   const items = listData?.items ?? [];
   const operationBusy =
     createDirectoryMutation.isPending
@@ -512,8 +495,7 @@ export default function AdminFilesPage() {
     [listData?.breadcrumbs, resetActionPanels],
   );
 
-  const columns = useMemo<TableProps<FileEntryItem>["columns"]>(
-    () => [
+  const columns: TableProps<FileEntryItem>["columns"] = [
       {
         title: "名称",
         dataIndex: "name",
@@ -669,9 +651,7 @@ export default function AdminFilesPage() {
           );
         },
       },
-    ],
-    [canManage, deleteMutation.isPending, handleDelete, operationBusy],
-  );
+  ];
 
   if (initializing) {
     return (
@@ -725,38 +705,7 @@ export default function AdminFilesPage() {
         />
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <Card className="shadow-sm" title="挂载点" size="small">
-          <Typography.Paragraph type="secondary" className="!mt-0">
-            一期按挂载点浏览目录树，支持 VFS / S3。
-          </Typography.Paragraph>
-
-          <Space direction="vertical" size={8} className="w-full">
-            {mounts.map((mount) => {
-              const selected = mount.code === (listData?.current_mount.code ?? mountCode);
-              return (
-                <Button
-                  key={mount.id}
-                  type={selected ? "primary" : "default"}
-                  color={selected ? "indigo" : "gray"}
-                  variant={selected ? "solid" : "soft"}
-                  onClick={() => handleSelectMount(mount)}
-                  className="w-full !h-auto !justify-start px-3 py-2"
-                >
-                  <div className="text-left">
-                    <p className="font-medium">{mount.name}</p>
-                    <p className="text-xs opacity-80">
-                      {mount.backend.driver_type} · {mount.code}
-                    </p>
-                  </div>
-                </Button>
-              );
-            })}
-            {mounts.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可用挂载点" />}
-          </Space>
-        </Card>
-
-        <Card className="shadow-sm" size="small">
+      <Card className="shadow-sm" size="small">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <Typography.Title level={4} className="!mb-1">{pageDisplayName}列表</Typography.Title>
@@ -854,8 +803,7 @@ export default function AdminFilesPage() {
               }}
             />
           </div>
-        </Card>
-      </div>
+      </Card>
 
       <Modal
         title={renameTarget ? `重命名：${renameTarget.name}` : "重命名"}

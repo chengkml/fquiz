@@ -18,11 +18,14 @@ from ...schemas.lightning import (
     LightningDistributionReportResponse,
     LightningDistributionStatsResponse,
     LightningSyntheticCompareResponse,
+    LightningTowerTerrainComputeRequest,
+    LightningTowerTerrainComputeResponse,
     LightningTowerBufferStatsResponse,
 )
 from ...services.lightning_service import (
     build_lightning_distribution_report,
     compare_measured_and_synthetic_distribution,
+    compute_tower_terrain_metrics,
     delete_lightning_event,
     get_lightning_distribution_stats,
     get_lightning_event_by_id,
@@ -293,6 +296,27 @@ def get_lightning_tower_buffer_statistics(
         region_id=region_id,
         is_synthetic=is_synthetic,
         include_events_limit=include_events_limit,
+    )
+
+
+@router.post("/stats/tower-terrain", response_model=LightningTowerTerrainComputeResponse)
+def compute_lightning_tower_terrain(
+    payload: LightningTowerTerrainComputeRequest,
+    current_user: CurrentUser = Depends(
+        require_any_permission("lightning.read", "lightning.manage", "tower.read", "tower.manage")
+    ),
+    db: Session = Depends(get_db),
+) -> LightningTowerTerrainComputeResponse:
+    can_persist = (
+        "admin" in current_user.role_codes
+        or "lightning.manage" in current_user.permission_codes
+        or "tower.manage" in current_user.permission_codes
+    )
+    return compute_tower_terrain_metrics(
+        db,
+        payload=payload,
+        actor_user_id=current_user.user.id,
+        can_persist=can_persist,
     )
 
 

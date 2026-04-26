@@ -20,19 +20,8 @@ DEFAULT_PERMISSIONS: dict[str, str] = {
     "menu.manage": "Manage menus",
     "system_param.read": "Read system parameters",
     "system_param.manage": "Manage system parameters",
-    "model.read": "Read model registry and routing summary",
-    "model.manage": "Manage model registry, routes, keys, and health checks",
     "file.read": "Read file mounts and indexed entries",
     "file.manage": "Manage file operations and storage sync",
-    "chat.use": "Use AI chat feature",
-    "requirement.read": "Read requirements",
-    "requirement.create": "Create requirements",
-    "requirement.process": "Process requirements",
-    "requirement.manage": "Manage all requirements",
-    "todo.read": "Read todos",
-    "todo.create": "Create todos",
-    "todo.process": "Process todos",
-    "todo.manage": "Manage all todos",
     "question_bank.read": "Read question bank entries",
     "question_bank.manage": "Manage question bank entries",
     "vocabulary.read": "Read vocabulary words",
@@ -43,6 +32,11 @@ DEFAULT_PERMISSIONS: dict[str, str] = {
     "tower.manage": "Manage line towers",
     "lightning.read": "Read lightning current events and features",
     "lightning.manage": "Manage lightning current events and data imports",
+    "atp.read": "Read ATP models and versions",
+    "atp.manage": "Manage ATP models and version artifacts",
+    "atp.run": "Run ATP simulations",
+    "celery.read": "Read Celery workers, queues, and task statuses",
+    "celery.manage": "Manage Celery worker control operations",
     "wine.read": "Read Wine executor status",
     "wine.manage": "Run Windows executables through Wine",
 }
@@ -60,19 +54,8 @@ DEFAULT_ROLES: dict[str, dict[str, object]] = {
             "menu.manage",
             "system_param.read",
             "system_param.manage",
-            "model.read",
-            "model.manage",
             "file.read",
             "file.manage",
-            "chat.use",
-            "requirement.read",
-            "requirement.create",
-            "requirement.process",
-            "requirement.manage",
-            "todo.read",
-            "todo.create",
-            "todo.process",
-            "todo.manage",
             "question_bank.read",
             "question_bank.manage",
             "vocabulary.read",
@@ -83,6 +66,11 @@ DEFAULT_ROLES: dict[str, dict[str, object]] = {
             "tower.manage",
             "lightning.read",
             "lightning.manage",
+            "atp.read",
+            "atp.manage",
+            "atp.run",
+            "celery.read",
+            "celery.manage",
             "wine.read",
             "wine.manage",
         ],
@@ -160,71 +148,6 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "permission_code": "system_param.read",
     },
     {
-        "code": "admin.agent",
-        "name": "编排管理",
-        "path": "/admin/orchestration",
-        "icon": "Bot",
-        "parent_code": None,
-        "type": "menu",
-        "sort_order": 63,
-        "status": "enabled",
-        "visible": True,
-        "cacheable": False,
-        "permission_code": "model.read",
-    },
-    {
-        "code": "admin.mcp_server",
-        "name": "MCP管理",
-        "path": "/admin/mcp-server",
-        "icon": "Server",
-        "parent_code": None,
-        "type": "menu",
-        "sort_order": 63,
-        "status": "enabled",
-        "visible": True,
-        "cacheable": False,
-        "permission_code": "model.read",
-    },
-    {
-        "code": "admin.mermaid_mgr",
-        "name": "流程图",
-        "path": "/admin/mermaid-mgr",
-        "icon": "Workflow",
-        "parent_code": None,
-        "type": "menu",
-        "sort_order": 54,
-        "status": "enabled",
-        "visible": True,
-        "cacheable": False,
-        "permission_code": "question_bank.read",
-    },
-    {
-        "code": "admin.files",
-        "name": "知识集管理",
-        "path": "/admin/knowledge-set",
-        "icon": "FolderTree",
-        "parent_code": None,
-        "type": "menu",
-        "sort_order": 54,
-        "status": "enabled",
-        "visible": True,
-        "cacheable": False,
-        "permission_code": "file.read",
-    },
-    {
-        "code": "admin.requirements",
-        "name": "需求管理",
-        "path": "/admin/requirements",
-        "icon": "ClipboardList",
-        "parent_code": None,
-        "type": "menu",
-        "sort_order": 50,
-        "status": "enabled",
-        "visible": True,
-        "cacheable": False,
-        "permission_code": "requirement.read",
-    },
-    {
         "code": "admin.power_lines",
         "name": "线路管理",
         "path": "/admin/power-lines",
@@ -264,32 +187,6 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "permission_code": "lightning.read",
     },
     {
-        "code": "admin.mindmap",
-        "name": "思维导图",
-        "path": "/admin/mindmap",
-        "icon": "ChartBar",
-        "parent_code": None,
-        "type": "menu",
-        "sort_order": 51,
-        "status": "enabled",
-        "visible": True,
-        "cacheable": False,
-        "permission_code": "question_bank.read",
-    },
-    {
-        "code": "admin.schedule",
-        "name": "日程管理",
-        "path": "/admin/schedule",
-        "icon": "CalendarDays",
-        "parent_code": None,
-        "type": "menu",
-        "sort_order": 52,
-        "status": "enabled",
-        "visible": True,
-        "cacheable": False,
-        "permission_code": "todo.read",
-    },
-    {
         "code": "admin.task_monitor",
         "name": "任务监控",
         "path": "/admin/task-monitor",
@@ -300,7 +197,33 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "status": "enabled",
         "visible": True,
         "cacheable": False,
-        "permission_code": "requirement.read",
+        "permission_code": "celery.read",
+    },
+    {
+        "code": "admin.atp_models",
+        "name": "ATP模型管理",
+        "path": "/admin/power-lines/atp-viewer",
+        "icon": "Experiment",
+        "parent_code": None,
+        "type": "menu",
+        "sort_order": 54,
+        "status": "enabled",
+        "visible": True,
+        "cacheable": False,
+        "permission_code": "atp.read",
+    },
+    {
+        "code": "admin.files",
+        "name": "文件管理",
+        "path": "/admin/files",
+        "icon": "FolderTree",
+        "parent_code": None,
+        "type": "menu",
+        "sort_order": 55,
+        "status": "enabled",
+        "visible": True,
+        "cacheable": False,
+        "permission_code": "file.read",
     },
     {
         "code": "admin.syslog",
@@ -314,45 +237,6 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "visible": True,
         "cacheable": False,
         "permission_code": "menu.read",
-    },
-    {
-        "code": "admin.chat",
-        "name": "AI 聊天",
-        "path": "/admin/chat",
-        "icon": "MessagesSquare",
-        "parent_code": None,
-        "type": "menu",
-        "sort_order": 58,
-        "status": "enabled",
-        "visible": True,
-        "cacheable": False,
-        "permission_code": "chat.use",
-    },
-    {
-        "code": "admin.api_tester",
-        "name": "API测试",
-        "path": "/admin/api-tester",
-        "icon": "TestTube2",
-        "parent_code": None,
-        "type": "menu",
-        "sort_order": 63,
-        "status": "enabled",
-        "visible": True,
-        "cacheable": False,
-        "permission_code": "model.read",
-    },
-    {
-        "code": "admin.models",
-        "name": "模型管理",
-        "path": "/admin/models",
-        "icon": "Bot",
-        "parent_code": None,
-        "type": "menu",
-        "sort_order": 64,
-        "status": "enabled",
-        "visible": True,
-        "cacheable": False,
-        "permission_code": "model.read",
     },
     {
         "code": "admin.wine_runner",
@@ -370,9 +254,10 @@ DEFAULT_MENUS: list[dict[str, object]] = [
 ]
 
 ROLE_MENU_BINDINGS: dict[str, list[str]] = {
-    "admin": ["dashboard", "admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.agent", "admin.mcp_server", "admin.files", "admin.requirements", "admin.power_lines", "admin.lightning_currents", "admin.lightning_distribution", "admin.mindmap", "admin.schedule", "admin.task_monitor", "admin.mermaid_mgr", "admin.syslog", "admin.chat", "admin.api_tester", "admin.models", "admin.wine_runner"],
+    "admin": ["dashboard", "admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.power_lines", "admin.lightning_currents", "admin.lightning_distribution", "admin.task_monitor", "admin.atp_models", "admin.files", "admin.syslog", "admin.wine_runner"],
     "user": ["dashboard"],
 }
+
 
 def _default_file_storage_backends() -> list[dict[str, object]]:
     minio_enabled = bool(settings.minio_enabled)
@@ -504,31 +389,6 @@ def _seed_role_menus(db: Session, role_map: dict[str, Role], menu_map: dict[str,
     db.flush()
 
 
-def _seed_initial_admin(db: Session) -> None:
-    if not settings.initial_admin_email or not settings.initial_admin_password:
-        return
-
-    admin_role = db.scalar(select(Role).where(Role.code == "admin"))
-    if not admin_role:
-        return
-
-    admin_email = settings.initial_admin_email.lower()
-    user = db.scalar(select(User).where(User.email == admin_email))
-    if not user:
-        user = User(
-            email=admin_email,
-            username=settings.initial_admin_username,
-            password_hash=hash_password(settings.initial_admin_password),
-            status="ENABLED",
-        )
-        db.add(user)
-        db.flush()
-
-    role_codes = {role.code for role in user.roles}
-    if "admin" not in role_codes:
-        user.roles.append(admin_role)
-
-
 def _seed_file_storage(db: Session) -> None:
     backend_map: dict[str, FileStorageBackend] = {}
 
@@ -584,3 +444,28 @@ def _seed_file_storage(db: Session) -> None:
         mount.root_path = str(mount_info["root_path"])
         if mount_info.get("is_enabled") is not None:
             mount.is_enabled = bool(mount_info["is_enabled"])
+
+
+def _seed_initial_admin(db: Session) -> None:
+    if not settings.initial_admin_email or not settings.initial_admin_password:
+        return
+
+    admin_role = db.scalar(select(Role).where(Role.code == "admin"))
+    if not admin_role:
+        return
+
+    admin_email = settings.initial_admin_email.lower()
+    user = db.scalar(select(User).where(User.email == admin_email))
+    if not user:
+        user = User(
+            email=admin_email,
+            username=settings.initial_admin_username,
+            password_hash=hash_password(settings.initial_admin_password),
+            status="ENABLED",
+        )
+        db.add(user)
+        db.flush()
+
+    role_codes = {role.code for role in user.roles}
+    if "admin" not in role_codes:
+        user.roles.append(admin_role)

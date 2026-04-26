@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 LightningPolarity = Literal["positive", "negative", "mixed", "unknown"]
 
@@ -191,6 +191,26 @@ class LightningTowerBufferEventItem(LightningDistributionEventBrief):
     distance_km: float
 
 
+class LightningTowerTerrainMetrics(BaseModel):
+    slope_deg: float | None = None
+    aspect_deg: float | None = None
+    slope_mean_deg: float | None = None
+    slope_p95_deg: float | None = None
+    slope_max_deg: float | None = None
+    slope_along_line_deg: float | None = None
+    slope_cross_line_deg: float | None = None
+    relief_m_50: float | None = None
+    dem_source: str | None = None
+    dem_resolution_m: float | None = None
+    quality_score: float | None = None
+    quality_level: str | None = None
+    terrain_exposure_index: float | None = None
+    windward_factor: float | None = None
+    algorithm_version: str | None = None
+    computed_at: datetime | None = None
+    land_cover_type: str | None = None
+
+
 class LightningTowerBufferStatsResponse(BaseModel):
     tower_id: str | None = None
     tower_no: str | None = None
@@ -208,6 +228,43 @@ class LightningTowerBufferStatsResponse(BaseModel):
     risk_level: str
     recommended_action: str
     events: list[LightningTowerBufferEventItem] = Field(default_factory=list)
+    terrain_metrics: LightningTowerTerrainMetrics | None = None
+
+
+class LightningTowerTerrainComputeRequest(BaseModel):
+    tower_id: str | None = Field(default=None, min_length=1, max_length=64)
+    longitude: float | None = None
+    latitude: float | None = None
+    altitude_m: float | None = None
+    dem_grid_m: list[list[float]]
+    cell_size_m: float = Field(default=10.0, gt=0.1, le=500)
+    search_radius_m: float = Field(default=50.0, gt=1.0, le=5000)
+    dem_source: str | None = Field(default=None, max_length=128)
+    dem_resolution_m: float | None = Field(default=None, gt=0)
+    wind_direction_deg: float | None = Field(default=None, ge=0, lt=360)
+    land_cover_type: str | None = Field(default=None, max_length=64)
+    persist: bool = False
+
+    @field_validator("dem_grid_m")
+    @classmethod
+    def validate_dem_grid(cls, value: list[list[float]]) -> list[list[float]]:
+        if len(value) != 3:
+            raise ValueError("dem_grid_m 必须是 3x3 高程矩阵")
+        if any(len(row) != 3 for row in value):
+            raise ValueError("dem_grid_m 必须是 3x3 高程矩阵")
+        return value
+
+
+class LightningTowerTerrainComputeResponse(BaseModel):
+    tower_id: str | None = None
+    tower_no: str | None = None
+    line_id: str | None = None
+    center_longitude: float
+    center_latitude: float
+    method: str = "horn_3x3"
+    persisted: bool = False
+    terrain_metrics: LightningTowerTerrainMetrics
+    warnings: list[str] = Field(default_factory=list)
 
 
 class LightningSyntheticDatasetStats(BaseModel):

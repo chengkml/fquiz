@@ -333,222 +333,6 @@ export type FileOperationResponse = {
   target_path: string | null;
 };
 
-export type ModelStatus = "DRAFT" | "ENABLED" | "DISABLED" | "DEPRECATED";
-export type ModelRouteType = "GLOBAL" | "CAPABILITY" | "BUSINESS" | "AGENT";
-export type ModelHealthStatus = "HEALTHY" | "DEGRADED" | "UNHEALTHY";
-export type ModelTestStatus = "PASSED" | "FAILED";
-
-export type ModelUsageSummary = {
-  request_count: number;
-  success_count: number;
-  total_tokens: number;
-  total_cost_usd: number;
-  success_rate: number | null;
-};
-
-export type ModelTestSummary = {
-  total_runs: number;
-  passed_runs: number;
-  failed_runs: number;
-  pass_rate: number | null;
-};
-
-export type ModelRegistryItem = {
-  id: number;
-  code: string;
-  name: string;
-  provider: string;
-  provider_model: string;
-  status: ModelStatus;
-  capabilities: string[];
-  description: string;
-  base_url: string | null;
-  active_key_masked: string | null;
-  active_key_version: number | null;
-  active_key_fingerprint: string | null;
-  active_key_rotated_at: string | null;
-  latest_health_status: ModelHealthStatus | null;
-  latest_health_reason: string | null;
-  latest_health_at: string | null;
-  route_bindings_count: number;
-  usage_7d: ModelUsageSummary;
-  tests_7d: ModelTestSummary;
-  created_at: string;
-  updated_at: string;
-};
-
-export type ModelListResponse = {
-  items: ModelRegistryItem[];
-  total: number;
-};
-
-export type PasswordModelListResponse = ModelListResponse;
-
-export type ModelRouteRuleItem = {
-  id: number;
-  route_type: ModelRouteType;
-  route_key: string;
-  target_model_code: string;
-  priority: number;
-  enabled: boolean;
-  note: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type ModelRouteRuleListResponse = {
-  items: ModelRouteRuleItem[];
-  total: number;
-};
-
-export type ModelApiKeyItem = {
-  id: number;
-  model_id: number;
-  version: number;
-  secret_masked: string;
-  secret_fingerprint: string;
-  is_active: boolean;
-  rotation_note: string | null;
-  created_by_user_id: string | null;
-  created_at: string;
-};
-
-export type ModelApiKeyListResponse = {
-  items: ModelApiKeyItem[];
-  total: number;
-};
-
-export type ModelHealthCheckItem = {
-  id: number;
-  model_id: number;
-  status: ModelHealthStatus;
-  reason: string;
-  latency_ms: number | null;
-  detail_json: Record<string, unknown> | null;
-  created_at: string;
-};
-
-export type ModelHealthCheckListResponse = {
-  items: ModelHealthCheckItem[];
-  total: number;
-};
-
-export type ModelTestRunItem = {
-  id: number;
-  model_id: number;
-  model_code: string;
-  kind: string;
-  status: ModelTestStatus;
-  input_tokens: number;
-  output_tokens: number;
-  latency_ms: number | null;
-  error_message: string | null;
-  created_by_user_id: string | null;
-  created_at: string;
-};
-
-export type ModelTestRunListResponse = {
-  items: ModelTestRunItem[];
-  total: number;
-};
-
-export type ModelTestChatResponse = {
-  model_id: number;
-  model_code: string;
-  provider: string;
-  provider_model: string;
-  reply: string | null;
-  latency_ms: number | null;
-  prompt_tokens: number | null;
-  completion_tokens: number | null;
-  total_tokens: number | null;
-  test_status: ModelTestStatus;
-  error_message: string | null;
-};
-
-export type ModelSummaryResponse = {
-  total_models: number;
-  status_counts: Record<string, number>;
-  total_route_rules: number;
-  route_type_counts: Record<string, number>;
-  enabled_without_healthy_check: number;
-  usage_7d: ModelUsageSummary;
-  tests_7d: ModelTestSummary;
-};
-
-export type TokenUsageSummary = {
-  request_count: number;
-  success_count: number;
-  total_tokens: number;
-  total_cost_usd: number;
-  success_rate: number | null;
-};
-
-export type TokenUsageDailyItem = TokenUsageSummary & {
-  date: string;
-};
-
-export type TokenUsageModelItem = TokenUsageSummary & {
-  model_code: string;
-};
-
-export type TokenUsageOverviewResponse = {
-  days: number;
-  model_code: string | null;
-  start_date: string;
-  end_date: string;
-  summary: TokenUsageSummary;
-  trend: TokenUsageDailyItem[];
-  top_models: TokenUsageModelItem[];
-};
-
-export type ChatRole = "system" | "user" | "assistant";
-
-export type ChatSession = {
-  id: string;
-  owner_user_id: string;
-  title: string;
-  system_prompt: string;
-  model_code: string | null;
-  last_message_at: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type ChatSessionListResponse = {
-  items: ChatSession[];
-  total: number;
-};
-
-export type ChatMessage = {
-  id: number;
-  session_id: string;
-  author_user_id: string | null;
-  role: ChatRole;
-  content: string;
-  is_error: boolean;
-  model_code: string | null;
-  provider: string | null;
-  provider_model: string | null;
-  prompt_tokens: number | null;
-  completion_tokens: number | null;
-  total_tokens: number | null;
-  latency_ms: number | null;
-  error_message: string | null;
-  created_at: string;
-};
-
-export type ChatMessageListResponse = {
-  items: ChatMessage[];
-  total: number;
-};
-
-export type ChatSendResponse = {
-  session: ChatSession;
-  user_message: ChatMessage;
-  assistant_message: ChatMessage;
-};
-
 export type LifeCountdownProfile = {
   id?: string;
   deathDate?: string;
@@ -566,48 +350,6 @@ export type LifeCountdownWarning = {
   generatedAt?: string;
   modelName?: string;
   cached?: boolean;
-};
-
-export type RequirementStatus =
-  | "PENDING_ANALYSIS"
-  | "PENDING_REVIEW"
-  | "PENDING_REVISION"
-  | "OPEN"
-  | "IN_PROGRESS"
-  | "COMPLETED"
-  | "CLOSED"
-  | "CANCELLED";
-
-export type RequirementPriority = "low" | "medium" | "high" | "urgent";
-export type RequirementCommentKind = "comment" | "analysis" | "revision" | "system";
-
-export type TodoStatus =
-  | "SCHEDULED"
-  | "IN_PROGRESS"
-  | "COMPLETED"
-  | "CANCELLED"
-  | "EXPIRED";
-export type TodoPriority = "LOW" | "MEDIUM" | "HIGH";
-
-export type TodoSummary = {
-  id: string;
-  title: string;
-  descr: string | null;
-  status: TodoStatus;
-  priority: TodoPriority;
-  start_time: string | null;
-  due_date: string | null;
-  expire_time: string | null;
-  calendar_event_id: string | null;
-  create_date: string;
-  create_user: string | null;
-  update_date: string;
-  update_user: string | null;
-};
-
-export type TodoListResponse = {
-  items: TodoSummary[];
-  total: number;
 };
 
 export type DiaryMood = "HAPPY" | "CALM" | "SAD" | "ANGRY" | "TIRED" | "EXCITED";
@@ -631,117 +373,6 @@ export type DiaryListResponse = {
   total: number;
   page_num: number;
   page_size: number;
-};
-
-export type MindMapSummary = {
-  id: string;
-  map_name: string;
-  descr: string | null;
-  map_data: string | null;
-  create_date: string;
-  create_user: string | null;
-  update_date: string;
-  update_user: string | null;
-};
-
-export type MindMapListResponse = {
-  items: MindMapSummary[];
-  total: number;
-  page_num: number;
-  page_size: number;
-};
-
-export type MermaidGroupSummary = {
-  id: string;
-  name: string;
-  label: string;
-  type: string | null;
-  descr: string | null;
-};
-
-export type MermaidGroupListResponse = {
-  items: MermaidGroupSummary[];
-  total: number;
-};
-
-export type MermaidDiagramSummary = {
-  id: string;
-  diagram_name: string;
-  description: string | null;
-  diagram_data: string | null;
-  group_name: string | null;
-  group_label: string | null;
-  tag_names: string[];
-  tag_labels: string[];
-  create_date: string;
-  create_user: string | null;
-  update_date: string;
-  update_user: string | null;
-};
-
-export type MermaidDiagramPageResponse = {
-  items: MermaidDiagramSummary[];
-  total: number;
-  page_num: number;
-  page_size: number;
-};
-
-export type MermaidChatTurn = {
-  role: "user" | "assistant";
-  content: string;
-};
-
-export type RequirementSummary = {
-  id: string;
-  code: string;
-  title: string;
-  description: string;
-  status: RequirementStatus;
-  priority: RequirementPriority;
-  project_name: string | null;
-  module_name: string | null;
-  source: string | null;
-  creator_user_id: string | null;
-  assignee_user_id: string | null;
-  reviewer_user_id: string | null;
-  due_at: string | null;
-  closed_at: string | null;
-  created_at: string;
-  updated_at: string;
-  result_msg: string | null;
-  progress_percent: number;
-  git_url: string | null;
-  branch: string | null;
-  creator: UserPublic | null;
-  assignee: UserPublic | null;
-  reviewer: UserPublic | null;
-};
-
-export type RequirementListResponse = {
-  items: RequirementSummary[];
-  total: number;
-};
-
-export type RequirementComment = {
-  id: number;
-  requirement_id: string;
-  author_user_id: string | null;
-  content: string;
-  kind: RequirementCommentKind;
-  created_at: string;
-  author: UserPublic | null;
-};
-
-export type RequirementEvent = {
-  id: string;
-  requirement_id: string;
-  actor_user_id: string | null;
-  event_type: string;
-  from_status: string | null;
-  to_status: string | null;
-  payload_json: Record<string, unknown> | null;
-  created_at: string;
-  actor: UserPublic | null;
 };
 
 export type LineStatus = "enabled" | "disabled";
@@ -807,6 +438,107 @@ export type LineTowerImportResponse = {
   skipped_count: number;
   warning_count: number;
   warnings: string[];
+};
+
+export type AtpModelStatus = "enabled" | "disabled";
+export type AtpModelSourceType = "atpdraw" | "atp" | "manual";
+export type AtpModelVersionStatus = "draft" | "released" | "archived";
+export type AtpSimulationRunStatus = "pending" | "running" | "success" | "failed";
+export type AtpEngineMode = "wine" | "native";
+
+export type AtpModelSummary = {
+  id: string;
+  code: string;
+  name: string;
+  source_type: AtpModelSourceType;
+  description: string;
+  status: AtpModelStatus;
+  tags_json: string[];
+  latest_version_no: number;
+  active_version_no: number | null;
+  version_count: number;
+  run_count: number;
+  last_run_status: AtpSimulationRunStatus | null;
+  last_run_date: string | null;
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
+};
+
+export type AtpModelListResponse = {
+  items: AtpModelSummary[];
+  total: number;
+};
+
+export type AtpModelVersionSummary = {
+  id: string;
+  model_id: string;
+  version_no: number;
+  version_tag: string | null;
+  status: AtpModelVersionStatus;
+  entry_file: string | null;
+  change_note: string;
+  artifact_manifest_json: Record<string, unknown>;
+  content_hash: string;
+  atp_text_size: number;
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
+};
+
+export type AtpModelVersionDetail = AtpModelVersionSummary & {
+  atp_text: string;
+  graph_json: Record<string, unknown>;
+};
+
+export type AtpModelVersionListResponse = {
+  items: AtpModelVersionSummary[];
+  total: number;
+};
+
+export type AtpSimulationRunSummary = {
+  id: string;
+  model_id: string;
+  version_id: string | null;
+  version_no: number | null;
+  status: AtpSimulationRunStatus;
+  engine_mode: AtpEngineMode;
+  engine_command: string | null;
+  working_dir: string | null;
+  timeout_seconds: number;
+  exit_code: number | null;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number | null;
+  error_message: string | null;
+  stdout_size: number;
+  stderr_size: number;
+  create_date: string;
+  create_user: string | null;
+};
+
+export type AtpSimulationRunDetail = AtpSimulationRunSummary & {
+  stdout_text: string | null;
+  stderr_text: string | null;
+};
+
+export type AtpSimulationRunListResponse = {
+  items: AtpSimulationRunSummary[];
+  total: number;
+};
+
+export type AtpEngineStatusResponse = {
+  mode: AtpEngineMode;
+  available: boolean;
+  executable_path: string;
+  resolved_executable: string | null;
+  storage_root: string;
+  workdir: string;
+  default_timeout_seconds: number;
+  max_timeout_seconds: number;
+  error: string | null;
 };
 
 export type LightningPolarity = "positive" | "negative" | "mixed" | "unknown";
@@ -972,6 +704,26 @@ export type LightningTowerBufferEventItem = {
   distance_km: number;
 };
 
+export type LightningTowerTerrainMetrics = {
+  slope_deg: number | null;
+  aspect_deg: number | null;
+  slope_mean_deg: number | null;
+  slope_p95_deg: number | null;
+  slope_max_deg: number | null;
+  slope_along_line_deg: number | null;
+  slope_cross_line_deg: number | null;
+  relief_m_50: number | null;
+  dem_source: string | null;
+  dem_resolution_m: number | null;
+  quality_score: number | null;
+  quality_level: string | null;
+  terrain_exposure_index: number | null;
+  windward_factor: number | null;
+  algorithm_version: string | null;
+  computed_at: string | null;
+  land_cover_type: string | null;
+};
+
 export type LightningTowerBufferStatsResponse = {
   tower_id: string | null;
   tower_no: string | null;
@@ -989,6 +741,34 @@ export type LightningTowerBufferStatsResponse = {
   risk_level: string;
   recommended_action: string;
   events: LightningTowerBufferEventItem[];
+  terrain_metrics: LightningTowerTerrainMetrics | null;
+};
+
+export type LightningTowerTerrainComputeRequest = {
+  tower_id?: string | null;
+  longitude?: number | null;
+  latitude?: number | null;
+  altitude_m?: number | null;
+  dem_grid_m: number[][];
+  cell_size_m?: number;
+  search_radius_m?: number;
+  dem_source?: string | null;
+  dem_resolution_m?: number | null;
+  wind_direction_deg?: number | null;
+  land_cover_type?: string | null;
+  persist?: boolean;
+};
+
+export type LightningTowerTerrainComputeResponse = {
+  tower_id: string | null;
+  tower_no: string | null;
+  line_id: string | null;
+  center_longitude: number;
+  center_latitude: number;
+  method: string;
+  persisted: boolean;
+  terrain_metrics: LightningTowerTerrainMetrics;
+  warnings: string[];
 };
 
 export type LightningSyntheticDatasetStats = {

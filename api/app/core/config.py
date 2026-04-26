@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     wine_default_timeout_seconds: int = 300
     wine_max_timeout_seconds: int = 1800
 
+    atp_engine_mode: Literal["wine", "native"] = "wine"
+    atp_engine_executable: str = "atp/tpbig.exe"
+    atp_storage_root: str = "./data/wine/atp-models"
+    atp_engine_workdir: str = "runs"
+    atp_engine_default_timeout_seconds: int = 600
+    atp_engine_max_timeout_seconds: int = 3600
+
     initial_admin_email: str | None = None
     initial_admin_username: str = "admin"
     initial_admin_password: str | None = None
@@ -75,6 +82,8 @@ class Settings(BaseSettings):
         "scheduler_expire_interval_seconds",
         "wine_default_timeout_seconds",
         "wine_max_timeout_seconds",
+        "atp_engine_default_timeout_seconds",
+        "atp_engine_max_timeout_seconds",
     )
     @classmethod
     def validate_positive_numbers(cls, value: int) -> int:

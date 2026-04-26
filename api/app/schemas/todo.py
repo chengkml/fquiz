@@ -58,10 +58,3 @@ class TodoTransitionRequest(BaseModel):
     status: TodoStatus
     note: str | None = Field(default=None, max_length=2000)
     is_sync: bool = False
-
-
-class TodoMindMapInitResponse(BaseModel):
-    id: str
-    map_name: str
-    descr: str | None = None
-    map_data: str

@@ -139,6 +139,13 @@ function formatPolarity(polarity: LightningPolarity): string {
   return "未知";
 }
 
+function terrainQualityTagColor(level: string | null | undefined): string {
+  if (level === "HIGH") return "green";
+  if (level === "MEDIUM") return "orange";
+  if (level === "LOW") return "red";
+  return "default";
+}
+
 function heatCellStyle(count: number, maxCount: number): CSSProperties {
   if (maxCount <= 0 || count <= 0) {
     return {};
@@ -390,6 +397,7 @@ export default function AdminLightningCurrentsPage() {
   const distributionScatterPoints = distributionStats?.scatter_points ?? [];
   const distributionPCurve = distributionStats?.p_curve ?? [];
   const towerBufferStats = towerBufferQuery.data;
+  const towerTerrainMetrics = towerBufferStats?.terrain_metrics ?? null;
   const syntheticCompare = syntheticCompareQuery.data;
   const distributionReport = reportQuery.data;
   const selectedEvent = useMemo(
@@ -1002,6 +1010,20 @@ export default function AdminLightningCurrentsPage() {
                 <Descriptions.Item label="Imax(kA)">{formatNumber(towerBufferStats.max_abs_current_ka, 2)}</Descriptions.Item>
                 <Descriptions.Item label="Iavg(kA)">{formatNumber(towerBufferStats.avg_abs_current_ka, 2)}</Descriptions.Item>
                 <Descriptions.Item label="正极占比">{(towerBufferStats.positive_ratio * 100).toFixed(2)}%</Descriptions.Item>
+                <Descriptions.Item label="地面倾角(°)">{formatNumber(towerTerrainMetrics?.slope_deg, 2)}</Descriptions.Item>
+                <Descriptions.Item label="坡向(°)">{formatNumber(towerTerrainMetrics?.aspect_deg, 1)}</Descriptions.Item>
+                <Descriptions.Item label="地形暴露指数">{formatNumber(towerTerrainMetrics?.terrain_exposure_index, 3)}</Descriptions.Item>
+                <Descriptions.Item label="DEM分辨率(m)">{formatNumber(towerTerrainMetrics?.dem_resolution_m, 2)}</Descriptions.Item>
+                <Descriptions.Item label="纵坡/横坡(°)" span={2}>
+                  {`${formatNumber(towerTerrainMetrics?.slope_along_line_deg, 2)} / ${formatNumber(towerTerrainMetrics?.slope_cross_line_deg, 2)}`}
+                </Descriptions.Item>
+                <Descriptions.Item label="地形质量">
+                  {towerTerrainMetrics?.quality_level
+                    ? <Tag color={terrainQualityTagColor(towerTerrainMetrics.quality_level)}>{towerTerrainMetrics.quality_level}</Tag>
+                    : "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="质量评分">{formatNumber(towerTerrainMetrics?.quality_score, 1)}</Descriptions.Item>
+                <Descriptions.Item label="DEM来源">{formatNullable(towerTerrainMetrics?.dem_source)}</Descriptions.Item>
                 <Descriptions.Item label="风险等级">
                   <Tag color={towerBufferStats.risk_level === "HIGH" ? "red" : towerBufferStats.risk_level === "MEDIUM" ? "orange" : "green"}>
                     {towerBufferStats.risk_level}
