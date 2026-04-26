@@ -276,9 +276,11 @@ def delete_role(db: Session, role_id: str) -> bool:
         return False
 
     impacted_user_ids = _get_role_user_ids(db, role_id)
+    has_user_role_relation = _legacy_user_role_relation_exists(db)
     try:
         db.execute(text("DELETE FROM role_menu_rela WHERE role_id = :role_id"), {"role_id": role_id})
-        db.execute(text("DELETE FROM user_role_rela WHERE role_id = :role_id"), {"role_id": role_id})
+        if has_user_role_relation:
+            db.execute(text("DELETE FROM user_role_rela WHERE role_id = :role_id"), {"role_id": role_id})
         db.execute(text("DELETE FROM user_role WHERE id = :id"), {"id": role_id})
         db.commit()
     except SQLAlchemyError:
@@ -680,6 +682,14 @@ def _replace_role_menus_internal(db: Session, role_id: str, menu_ids: list[str])
                 "menu_id": menu_id,
             },
         )
+
+
+def _legacy_user_role_relation_exists(db: Session) -> bool:
+    try:
+        return bool(db.scalar(text("SELECT to_regclass('public.user_role_rela')")))
+    except SQLAlchemyError:
+        db.rollback()
+        return False
 
 
 def _get_role_user_ids(db: Session, role_id: str) -> list[str]:
