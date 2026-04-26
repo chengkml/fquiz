@@ -76,6 +76,8 @@
 - `web` 在 Docker/受限网络环境构建时，避免使用 `next/font/google`（编译期需访问 `fonts.googleapis.com`，网络受限会导致 `npm run build` 失败）。
 - 字体基线应优先采用本地可用字体或仓库内自托管字体（`next/font/local`），并通过 CSS 变量维持 `--font-heading` / `--font-body` / `--font-mono` 约定，减少样式层连锁改动。
 - `web/src/app/layout.tsx` 应保持无 `next/font/google` 依赖，仅通过 `web/src/app/globals.css` 的 `--font-*` 变量声明字体栈；若后续引入新字体，优先走自托管或运行时回退方案。
+- Next.js App Router 的 `web/src/app/**/page.tsx` 只能导出约定字段（`default`、`metadata` 等）；不要在页面文件里额外导出可复用组件。可复用页面主体应放在同目录独立文件（如 `*-content.tsx`），页面文件仅做无参默认导出包装，避免 `next build` TypeScript 阶段报 `invalid "default" export` / `OmitWithTag` 错误。
+- Cesium `1.140.0` 依赖链中的 `@spz-loader/core@0.3.1` 会把 WASM 二进制以内联模板字符串打进浏览器 chunk，并触发 `Octal escape sequences are not allowed in template strings`；当前项目不使用 SPZ/Gaussian splats，前端构建通过 `web/next.config.ts` 将 `@spz-loader/core` alias 到 `web/src/lib/spz-loader-core-shim.ts`，保留常规 Cesium Viewer/Entity 能力，禁用 SPZ 解码。
 
 ## 前端组件类型兼容口径（2026-04-13）
 
@@ -171,7 +173,8 @@
 - `admin.wxapp` 已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口，确保可见、可达且不被误删。
 - `单词统计` 菜单迁移采用最小改动策略：保留菜单编码 `admin.knowledge_mastery`（`/admin/vocabulary-proficiency`，权限 `vocabulary.read`），并由 `web/src/app/admin/vocabulary-proficiency/page.tsx` 承载词条总量、状态分布、缺失字段与最近更新趋势统计能力；已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
 - `队列管理` 菜单迁移采用最小改动策略：新增菜单编码 `admin.queue_mgr`（`/admin/jobqueue`，权限 `todo.read`），并由 `web/src/app/admin/jobqueue/page.tsx` 复用 `todos` 页面承载队列任务清单能力；已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
-- `提示词管理` 菜单迁移沿用系统消息能力：保留菜单编码 `admin.system_message` 与权限 `system_message.read/system_message.manage`，菜单文案统一为“提示词管理”，默认路由迁移为 `/admin/prompt`，并由 `web/src/app/admin/prompt/page.tsx` 复用 `system-message` 页面承载提示词内容、等级、有效期与发布状态维护能力。
+- `提示词管理` 菜单能力已于 2026-04-26 下线：`admin.system_message`、`system_message.read/system_message.manage`、`/admin/prompt`、`/admin/system-message` 与 `/api/v1/admin/system-messages*` 均不再作为有效功能入口；历史数据库表不主动删除。
+- `收件箱`、`代码评审`、`Git管理` 功能已于 2026-04-26 下线：`admin.inbox`、`admin.code_review`、`admin.git_desktop` 仅保留在 removed/disabled 过滤集合中，用于屏蔽存量菜单；前端路由 `/admin/inbox`、`/admin/code-review`、`/admin/git-desktop` 不再提供页面。
 - `历史答卷` 菜单迁移采用最小改动策略：保留菜单编码 `admin.history`（`/admin/history`，权限 `question_bank.read`），并由 `web/src/app/admin/history/page.tsx` 复用 `question-bank` 页面承载历史答卷查询与管理能力；已加入后端与前端受保护菜单集合与后台首页入口。
 - `脚本管理` 菜单迁移采用最小改动策略：保留菜单编码 `admin.cron_task_mgr`（`/admin/cron`，权限 `todo.read`），菜单文案统一为“脚本管理”，并继续由 `web/src/app/admin/cron/page.tsx` 复用 `todos` 页面承载脚本任务清单能力。
 - `百度网盘` 菜单迁移采用最小改动策略：新增菜单编码 `admin.baidu_pan`（`/admin/baidu-pan`，权限 `file.read`），并由 `web/src/app/admin/baidu-pan/page.tsx` 复用 `files` 页面承载目录浏览、上传、重命名、移动、删除与下载能力；已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
@@ -185,6 +188,24 @@
 - `web/src/app/admin/layout.tsx` 使用 Radix Themes 组件（`Card/Flex/Text/Heading/Button/Callout`）组织后台壳层，避免硬编码品牌色光斑与渐变块。
 - `web/src/app/**` 中 `Button` 视觉优先通过 `variant / color / size` 控制；不再使用长 Tailwind 颜色类拼接按钮主题。
 
+## 滚动条样式口径（2026-04-25）
+
+- 主页面与系统页面滚动条样式统一收敛到 `web/src/app/globals.css` 的全局基线：
+  - `*` 统一声明 `scrollbar-width` 与 `scrollbar-color`（覆盖 Firefox 等非 WebKit 浏览器的所有滚动容器）。
+  - `*::-webkit-scrollbar*` 统一声明轨道/滑块样式（覆盖 Chromium/WebKit）。
+- `.scrollbar-antd` 仅保留 `scrollbar-gutter: stable`，不再重复定义颜色与尺寸，避免局部样式与全局基线漂移。
+
+## Wine 执行器口径（2026-04-25）
+
+- Windows EXE 调用能力统一由后端 `/api/v1/wine/*` 承接，权限码为 `wine.read` / `wine.manage`。
+- Wine 运行参数通过环境变量控制：
+  - `WINE_BINARY_PATH`：Wine 可执行文件路径或命令名，默认 `wine`。
+  - `WINE_ALLOWED_ROOT`：允许执行/工作目录根路径，默认 `./data/wine`。
+  - `WINE_DEFAULT_TIMEOUT_SECONDS` / `WINE_MAX_TIMEOUT_SECONDS`：默认与最大执行超时。
+- 后端执行必须使用 `asyncio.create_subprocess_exec` 参数数组，不走 shell；EXE 路径与工作目录必须限制在 `WINE_ALLOWED_ROOT` 下。
+- 实时日志通过 `StreamingResponse` + SSE 事件输出；前端使用 `fetchWithAuth` 读取 `ReadableStream`，避免原生 `EventSource` 无法携带现有 Bearer Token 的鉴权问题。
+- Docker API 镜像默认不内置 Wine；部署时需在运行环境安装 Wine 或将 `WINE_BINARY_PATH` 指向可用二进制。
+
 ## 前端菜单交互口径（2026-04-19）
 
 - 后台壳层（`web/src/app/admin/layout.tsx`）已采用 `@radix-ui/themes` 的 `DropdownMenu` 承接菜单交互：
@@ -192,14 +213,30 @@
   - 顶部账号区“返回首页/退出登录”统一收口到“账号”下拉。
 - 后台表格行内“操作”入口推荐统一为下拉菜单形态，优先复用 `web/src/components/row-action-menu.tsx`，避免页面内重复堆叠小按钮并降低操作列宽度波动。
 - Phase B 样板页已落地：`/admin/users`、`/admin/requirements`、`/admin/menus`；后续页面迁移默认保持“业务逻辑不动，仅替换操作入口承载组件”的最小改动策略。
+- 后台左侧导航默认不展示“系统菜单”标题与底部“当前角色/账号状态”文案，避免重复信息占用导航空间（移动端抽屉同样不显示该标题）。
 
-## 数据库连接口径（2026-04-22）
+## 数据库连接口径（2026-04-23）
 
-- API 默认数据库连接改为外部 PostgreSQL：优先读取 `DATABASE_URL`；若未设置则由 `DB_HOST/DB_PORT/DB_NAME/DB_USERNAME/DB_PASSWORD` 组装。
+- API 默认数据库连接切换为本地 PostgreSQL：优先读取 `DATABASE_URL`；若未设置则由 `DB_HOST/DB_PORT/DB_NAME/DB_USERNAME/DB_PASSWORD` 组装。
+
+- 默认参数口径：
+  - Docker 内：`DB_HOST=db`、`DB_PORT=5432`、`DB_NAME=postgres`、`DB_USERNAME=fquiz`、`DB_PASSWORD=fquiz`。
+  - 本机直连（非 Docker）：`DB_HOST=127.0.0.1`、`DB_PORT=5433`、`DB_NAME=postgres`、`DB_USERNAME=fquiz`、`DB_PASSWORD=fquiz`。
+- `docker compose` 的 `db` 服务已取消 `local-db` profile，默认 `up` 即启动本地库；`api` 增加 `depends_on: db (healthy)`。
 - `DB_SCHEMA` 通过 PostgreSQL `search_path` 注入，语义等价 JDBC 的 `currentSchema`。
-- `docker compose` 中本地 `db` 服务改为 `local-db` profile（默认不启动）；仅在需要本地库时显式 `docker compose --profile local-db up -d`。
-- API 启动初始化口径：`seed_defaults` 仅对本地数据库目标执行（`db/localhost/127.0.0.1/::1` 或 `DATABASE_URL` 指向本地）；非本地目标跳过默认数据写入，避免对外部库做不兼容初始化。
+- API 启动初始化口径：`seed_defaults` 对本地目标执行；为兼容老表状态约束，初始管理员状态写入值统一为 `ENABLED`（不使用 `active`）。
 - 用户表兼容口径：用户主键列对齐旧库 `users.user_id`，与用户关联的外键统一引用 `users.user_id`（不再引用 `users.id`）。
+
+## 发布验收口径（2026-04-26）
+
+- 发布链路默认执行：
+  - `docker compose build`
+  - `docker compose up -d`
+- 最小运行态验收：
+  - `docker compose ps`（关键服务 `api/web/celery-worker/celery-beat/db/redis/minio` 为 Up，关键依赖健康）。
+  - `curl -fsS http://127.0.0.1:8000/health` 返回 API 健康 JSON。
+  - `curl -I -fsS http://127.0.0.1:3000/` 返回 `HTTP/1.1 200 OK`。
+  - 结合 `docker compose logs --tail` 抽样检查 `api/web/celery-worker/celery-beat` 启动日志是否正常。
 
 ## 前端组件栈口径（2026-04-22）
 
@@ -284,3 +321,621 @@
   - 读：`menu.read | menu.manage`
   - 写：`menu.manage`
   后续若需细粒度可拆分 `diary.read/diary.manage`。
+
+## 登录鉴权兼容口径（2026-04-23）
+
+- 登录请求口径对齐 quiz 老工程：`/api/v1/auth/login` 使用 `user_id + password`，不再使用 `email + password`。
+- 密码校验采用双栈兼容：
+  - 优先兼容老库 `BCrypt` 哈希；
+  - 继续兼容现有 `Argon2` 哈希。
+- 用户状态采用兼容归一：
+  - `ENABLED/ACTIVE/1/TRUE` 视为可登录（`active`）；
+  - `DISABLED/INACTIVE/0/FALSE` 视为禁用（`disabled`）。
+- 角色/权限读取优先走老表链路：
+  - `user_role_rela -> user_role` 计算 `role_codes`
+  - `role_menu_rela -> menu` 映射 `permission_codes`
+- 管理员角色兼容别名：
+  - 命中 `admin/sys_mgr/administrator` 或角色名含“管理员”时，统一附加 `admin` 角色码，用于现有 `require_permission` 放行逻辑。
+- 菜单树读取优先走老 `menu` 表构建（用于 `/api/v1/admin/me/menus`）；读取失败时回退现有实现。
+
+## 角色菜单管理兼容口径（2026-04-23）
+
+- 后台角色/菜单管理（`/api/v1/admin/roles*`、`/api/v1/admin/menus*`）已切换为老表链路：
+  - 角色主表：`user_role`
+  - 用户角色关系：`user_role_rela`
+  - 角色菜单关系：`role_menu_rela`
+  - 菜单主表：`menu`
+- 角色/菜单 ID 口径统一为字符串（含前后端契约）：
+  - 后端 `api/app/schemas/admin.py` 的 `RolePublic/MenuPublic` 及其请求体均使用字符串 ID；
+  - 前端 `web/src/types/auth.ts` 的 `RoleItem/MenuItem/MenuTreeItem` 同步使用字符串 ID。
+- 菜单树（`/api/v1/admin/me/menus`）ID 口径已对齐老表：
+  - 直接返回 `menu.menu_id/parent_id`，不再生成临时递增 ID。
+- 旧库无独立 `permissions` 表，`/api/v1/admin/permissions` 与角色权限展示继续采用“菜单编码 -> 权限码”兼容映射策略。
+
+## 前端构建类型口径（2026-04-23）
+
+- `web` 在 `strict` 配置下，`web/src/app/admin/**` 中事件/回调参数（如 `onChange/onClick/onFinish/showTotal/footer`）需显式标注类型，避免 `noImplicitAny` 在 `next build` 阶段阻断。
+- `antd` 的 `Card` 在当前仓库类型环境下不稳定，页面层默认优先使用 `@/components/ui-antd` 的 `Card` 兼容包装；兼容层内部通过显式类型收敛渲染 `AntCard`，避免 JSX 构造签名缺失报错。
+- 前端类型巡检推荐命令：`npm --workspace web exec tsc --noEmit --pretty false`；用于在完整 `next build` 前快速发现 `strict` 类型门禁问题。
+- `antd` 的 `Modal.footer` 自定义回调中，`extra.OkBtn/CancelBtn` 必须按组件类型标注为 `FC`（或由上下文推断），不要写成 `() => ReactElement`；否则在 `next build` 的 TS 阶段会出现签名不兼容报错（`Target signature provides too few arguments`）。
+
+## 后台菜单组件口径（2026-04-23）
+
+- 后台壳层菜单（`web/src/app/admin/layout.tsx`）统一使用 Ant Design `Menu`（`mode="inline"`）承载菜单树，不再使用递归 `Button + Link` 手工渲染。
+- 菜单数据仍来自 `/api/v1/admin/me/menus`，并通过 `pathname` 计算 `selectedKeys`，保证当前路由高亮。
+- 菜单默认全展开（`openKeys` 覆盖全部带子节点菜单），与历史交互保持一致，避免层级菜单在首次进入时不可见。
+- 顶部账号操作入口继续使用 `DropdownMenu` 兼容层，不在本口径范围内。
+- 后台导航布局基线为“左侧导航”：
+  - 桌面端（`md` 及以上）在左侧栏显示 `Menu`；
+  - 移动端通过左侧 `Drawer` 展示同一套菜单树；
+  - 不再使用顶部横向 `Menu` 作为主导航承载。
+
+## 后端运行时口径（2026-04-23）
+
+- 登录兼容新增了 `bcrypt` 校验分支后，`api/requirements.txt` 必须包含 `bcrypt`；否则 Docker 重建后 `api` 会在启动阶段报 `ModuleNotFoundError: No module named 'bcrypt'`。
+- 老菜单树构建（`build_legacy_menu_tree`）在字符串 ID 口径下，节点字典键必须使用 `legacy_id`（即 `menu_id`）；避免残留旧变量名导致 `/api/v1/admin/me/menus` 500。
+
+## 后台壳层布局口径（2026-04-23）
+
+- `web/src/app/admin/layout.tsx` 当前基线为“顶部固定头 + 左侧内嵌菜单 + 主内容区”：
+  - 右上角提供菜单按钮，支持左侧菜单隐藏/显示；
+  - 左侧菜单承载组件统一为 `AntMenu (inline)`，不再使用 `Drawer` 作为主菜单容器。
+- 后台菜单数据口径不变：继续读取 `/api/v1/admin/me/menus`，按 `pathname` 计算选中项和展开项。
+- 后续后台页面改造默认遵循“左侧内嵌菜单可折叠（显隐）”交互，除非有明确业务理由变更。
+
+## 本地数据库初始化口径（2026-04-23）
+
+- 当需要把 84 库老工程鉴权链路数据落到本地时，目标应优先选本地 `fquiz-db` 的 `postgres` 数据库（非 `fquiz`），避免覆盖新结构表。
+- 本地初始化范围（本轮基线）：
+  - `public.users`
+  - `public.user_role`
+  - `public.menu`
+  - `public.role_menu_rela`
+- 标准流程：
+  1. 从 `223.109.142.84:5432/postgres` 导出上述表 `schema + data`；
+  2. 本地 `postgres` 库执行 `DROP ... CASCADE` 后回放；
+  3. 导入数据阶段用同一会话临时 `SET session_replication_role=replica`，规避 `menu.parent_id` 自关联外键顺序问题；
+  4. 用 `count + md5(signature)` 对比远端与本地一致性。
+
+## 登录页双角色视觉口径（2026-04-23）
+
+- 登录页主视觉已从单怪兽升级为“双角色怪兽”（毛怪 + 大眼仔）构图，实现在 `web/src/app/page.tsx`。
+- 交互基线保持：眼睛跟随鼠标；密码输入时执行避视动作（毛怪转头，大眼仔轻微眯眼）。
+- 视觉实现采用纯前端结构与 CSS 动效，不引入外部图片资源，不影响登录/注册链路。
+
+## 前端配色口径（2026-04-23）
+
+- 前端主题基线统一以 AntD token 为主，不再依赖历史 Radix 变量作为真实配色来源。
+- `web/src/components/ui-antd.tsx` 的 `Theme` 内置 `ThemeCssVarsScope`：
+  - 使用 `antdTheme.useToken()` 将历史变量（`--gray-*`、`--accent-*`、`--red-*`、`--green-*`、`--orange-*`、`--indigo-*`、`--color-panel-solid`、`--border`）映射到 AntD token。
+  - 同步注入 `--ant-color-primary/bg-layout/border-secondary/text-secondary/text`，供页面直接使用。
+- `web/src/app/globals.css` 保留上述变量的静态 fallback；运行时以 `ThemeCssVarsScope` 注入值为准。
+- 后续页面改造优先级：
+  1. 新页面优先直接使用 AntD 组件与 token（含 `--ant-color-*`）；
+  2. 存量页面可保留历史变量写法，由映射层兜底，不做一次性大迁移。
+- 主题色切换口径：
+  - 全局主题色由 `ThemeAppearanceContext` 管理；
+  - 通过 `useThemeAppearance()` 读写当前 `accentColor`；
+  - 已在后台顶栏提供选择入口（`web/src/app/admin/layout.tsx`）；
+  - 用户选择持久化到 `localStorage` 键 `fquiz:theme:accent-color`，刷新后保持。
+
+## 前端路由展示口径（2026-04-23）
+
+- 用户可见后台地址默认不再带 `/admin` 前缀（例如 `/users`、`/requirements`、`/dashboard`）。
+- 兼容策略：
+  - 无前缀地址通过前端中间层 rewrite 到现有 `app/admin/**` 页面实现；
+  - 历史 `/admin/**` 地址继续可访问，并自动重定向到无前缀地址。
+- 后台首页映射口径：`/admin` 对外统一为 `/dashboard`。
+- 菜单路径展示口径：前端渲染菜单时将后端返回的 `/admin/**` 路径规范化为无前缀地址，避免导航条继续暴露 `/admin`。
+
+## 后台功能下线口径（2026-04-23）
+
+- 已下线菜单编码：
+  - `admin.life_countdown`
+  - `admin.password`
+  - `admin.token_usage`
+  - `admin.history`
+  - `admin.vocabulary`
+  - `admin.diary`
+  - `admin.homework`
+  - `admin.question_bank`
+- 下线策略：
+  - 种子菜单与 admin 默认菜单绑定中移除上述编码；
+  - 旧库授权链路通过 `legacy_authz_service.DISABLED_MENU_CODES` 过滤，确保历史菜单记录不再出现在 `/api/v1/admin/me/menus`；
+  - 前端删除对应路由页面与首页卡片入口，直链不可达。
+- 保留能力说明：
+  - `admin.job_mgr`（作业监控）继续复用 `question_bank` API；
+  - `question_bank` 与 `vocabulary` 相关底层 API 保留，用于已保留模块（如分组管理/知识点管理/单词统计）。
+
+## 功能下线口径（2026-04-23）
+
+- 后台以下功能已统一下线：
+  - 微信小程序（`admin.wxapp`）
+  - MD解析（`admin.mdresolve`）
+  - 数据查询（`admin.data_query`）
+  - 热搜（`admin.hot_search`）
+  - 文件识别（`admin.filedetector`）
+  - 百度网盘（`admin.baidu_pan`）
+  - 分组管理（`admin.tag`）
+  - 知识点管理（`admin.knowledge_point_mgr`）
+- 下线语义为“三重约束”：
+  1) 前端页面路由删除；
+  2) 后端菜单树与权限推导过滤上述菜单码；
+  3) 种子菜单与默认角色绑定中移除上述菜单码。
+- 兼容口径：即使旧数据库仍有历史菜单记录，也会被后端过滤，不再下发到 `/api/v1/admin/me/menus`。
+- 补充口径：历史别名页面 `/admin/tag` 已一并删除，避免“分组管理”通过旧路由绕过下线策略。
+
+## 功能下线口径补充（2026-04-23）
+
+- 以下后台功能已进一步下线：
+  - 脚本管理（`admin.cron_task_mgr`）
+  - 待办管理（`admin.todos`）
+  - 作业监控（`admin.job_mgr`）
+  - JWT 生成器（`admin.jwt_generator`）
+- 下线语义：
+  1) 前端页面路由删除（`/admin/cron`、`/admin/todos`、`/admin/job`、`/admin/jwt-generator`）；
+  2) 后端菜单树和权限推导过滤上述菜单码；
+  3) 种子菜单与 admin 默认菜单绑定移除上述菜单码；
+  4) JWT 生成器路由从 `api_router` 取消挂载。
+- 兼容口径：待办底层 API 继续保留给其他模块复用；菜单/页面是否暴露以后续下线口径为准。
+
+## 功能下线口径补充（2026-04-24）
+
+- 以下后台功能已进一步下线：
+  - 单词统计（`admin.knowledge_mastery`）
+  - 队列管理（`admin.queue_mgr`）
+- 下线语义：
+  1) 前端页面路由删除（`/admin/vocabulary-proficiency`、`/admin/knowledge-mastery`、`/admin/jobqueue`）；
+  2) 后台首页入口卡片移除；
+  3) 后端菜单种子与 admin 默认菜单绑定移除上述菜单码；
+  4) 旧库菜单下发过滤集合新增上述菜单码，确保历史菜单残留不再透出。
+
+## 管理员权限口径（2026-04-23）
+
+- 默认将 `admin` 角色视为“全权限角色”。
+- 后端口径：
+  - `api/app/core/dependencies.py` 的 `require_permission/require_any_permission` 对 `admin` 角色直接放行。
+- 前端口径：
+  - `web/src/components/auth-provider.tsx` 的 `hasPermission` 对 `admin` 角色直接返回 `true`，避免因 `permission_codes` 枚举不全导致入口误隐藏。
+- 安全边界：
+  - 前端仅负责显隐与交互；最终权限判定以后端依赖校验为准。
+
+## 首页与登录口径（2026-04-23）
+
+- `/` 默认作为登录入口页，不再承载“已登录后停留的首页面板”。
+- 登录态（含刷新会话恢复）进入 `/` 时，前端立即跳转 `/dashboard`，实现“登录后直达后台”。
+- 后台壳层文案对齐：
+  - 未登录访问后台时提示“前往登录”（`/`）；
+  - 账号菜单提供“后台首页”（`/dashboard`），不再出现“返回首页”歧义入口。
+- 退出登录口径：统一跳转到登录页 `/`（不保留在当前后台路由）。
+
+## 站点标题口径（2026-04-24）
+
+- 全局浏览器 Tab 标题统一为“需求管理”。
+- 入口配置位于 `web/src/app/layout.tsx` 的 `metadata.title`。
+
+## 登录页视觉口径（2026-04-24）
+
+- 登录页采用“双栏工作台”视觉基线：
+  - 左侧为品牌与机器人主题视觉区；
+  - 右侧为白色登录卡片（品牌头、表单、主操作按钮、辅助链接）。
+- 交互口径保持：
+  - 登录态进入 `/` 仍自动跳转 `/dashboard`；
+  - 登录/注册逻辑不变，视觉改造不改变鉴权接口契约。
+
+## 后台账号入口口径（2026-04-23）
+
+- 后台右上角账号入口采用 AntD `Avatar` 作为下拉触发器，不再使用“账号”文字按钮。
+- Avatar 文案默认使用用户名首字母（大写），空值兜底 `U`。
+- 下拉内容口径保持不变：账号信息 + 后台首页 + 退出登录。
+
+## 后台左侧导航口径（2026-04-24）
+
+- 后台壳层左侧导航采用“AntD 文档站点式”固定侧栏布局（参考 `https://ant.design/components/avatar-cn`）：
+  - 桌面端（`md` 及以上）常驻显示；
+  - 位于顶部栏下方（`top: 64px`），高度 `calc(100vh - 64px)`；
+  - 菜单区可独立滚动，侧栏与主内容通过右边框分隔。
+- 右上角不再提供“隐藏菜单”按钮；主布局不再依赖菜单显隐状态切换。
+
+## 授权兼容口径（2026-04-24）
+
+- `legacy_authz_service` 在读取 legacy 关系表失败时，必须对会话做安全回滚，再执行 modern 兜底查询，避免事务错误污染导致角色/权限误判为空。
+- `legacy_authz_service._load_modern_roles` 需显式预热 `Role` mapper 后再解析 `User.roles`，避免首轮 mapper 解析异常被吞掉后出现“空权限”。
+- 对 `user_id in {admin, administrator, root, sysadmin}` 且无角色映射的账号，授权链路提供内置 `admin` 兜底，确保本地/迁移期管理员账户可用。
+- 当本地兼容库缺少 `user_role_rela` 且用户无显式角色映射时，授权链路可回退到 `user` 角色（前提是 `user` 角色存在），防止 `/api/v1/admin/me/menus` 返回空数组导致后台左侧菜单空白。
+
+## 后台主题切换口径（2026-04-24）
+
+- 后台右上角主题入口统一采用 Ant Design 文档站（`avatar-cn`）的“主题图标 + Dropdown 菜单”交互，不再使用简单 Select 模式切换。
+- 主题文案口径固定为：`跟随系统 / 浅色主题 / 暗黑主题 / 紧凑主题 / 快乐工作特效 / AI 生成主题 / 主题编辑器`。
+- 主题状态模型固定为“主模式 + 开关项”：
+  - 主模式：`auto/light/dark`（互斥）
+  - 开关项：`compact`、`happy-work`（独立开关）
+- 持久化键口径：
+  - `fquiz:theme:primary-mode`
+  - `fquiz:theme:compact`
+  - `fquiz:theme:happy-work`
+  - 兼容保留：`fquiz:theme:mode`（legacy 四态映射）
+- `AI 生成主题` 当前为交互与文案对齐态，未内置站内 AI 主题生成流程；“主题编辑器”默认跳转官方编辑器页。
+
+## 登录页文案口径（2026-04-24）
+
+- 登录页（`web/src/app/page.tsx`）默认展示文案统一为中文，不再保留英文提示文案。
+
+## 前端编译口径（2026-04-24）
+
+- 在当前栈（Next.js 16 + React 19 + Ant Design 5）下，页面层直接使用 `antd` 的 `Card` / `Image` 容易触发 JSX 类型不兼容报错（`TS2604/TS2786`）。
+- 项目口径：页面层优先使用 `@/components/ui-antd` 提供的 `Card` 封装；Mermaid 预览改用原生 `<img>`。
+- 当前 `web/tsconfig.json` 已显式设置 `noImplicitAny=false` 以保证存量页面可编译；若后续要恢复更严格类型检查，需要分批补齐事件/回调参数类型。
+
+## 菜单删除兼容口径（2026-04-24）
+
+- `legacy_admin_rbac_service` 中涉及 legacy 关系表 `user_role_rela` 的查询（如 `_get_users_with_menu_access`、`_get_role_user_ids`）必须按“缺表可降级”策略实现：
+  - 捕获 `SQLAlchemyError`；
+  - 执行 `db.rollback()` 清理失败事务；
+  - 返回空集合兜底，避免向上冒泡为 500。
+- 背景约束：当前本地兼容库可能不存在 `user_role_rela`（仅保留 `user_role` / `role_menu_rela`），菜单删除链路需在该条件下可用。
+
+## 认证时效口径（2026-04-24）
+
+- API `access token` 默认有效期已调整为 `8 小时`（`ACCESS_TOKEN_EXPIRE_MINUTES=480`）。
+- `refresh token`（Refresh Session）默认有效期保持 `30 天`（`REFRESH_TOKEN_EXPIRE_DAYS=30`）不变。
+
+## 发布执行口径（2026-04-25）
+
+- 本项目本地发布更新容器的标准链路保持为：
+  - `docker compose build`
+  - `docker compose up -d`
+- 发布后至少执行以下验收：
+  - `docker compose ps`（容器状态/健康）
+  - `curl -fsS http://127.0.0.1:8000/health`（API 健康）
+  - `curl -I -fsS http://127.0.0.1:3000/`（前端可达）
+- 2026-04-25 二次重发验证通过：按上述链路重跑后，`api/web/db` 均可正常拉起并通过健康检查。
+
+## 前端 API 基址解析口径（2026-04-25）
+
+- 当 `NEXT_PUBLIC_API_BASE_URL` 指向 loopback（`localhost/127.0.0.1/::1`）时，前端运行时应保证 API host 与当前页面 host 对齐。
+- 只要“配置 host 是 loopback 且与 `window.location.hostname` 不一致”，就自动重写为当前页面 host，并保留配置端口（默认 `8000`）。
+- 目的：避免 `localhost` 与 `127.0.0.1` 混用导致 refresh cookie 跨站语义，从而在 `/dashboard` 硬刷新时误判未登录。
+
+## 后台顶部滚动口径（2026-04-25）
+
+- 固定对象是“最顶部导航栏”（包含主题切换与用户 Avatar 下拉），而非主内容区标题栏。
+- 实现基线（`web/src/app/admin/layout.tsx`）：
+  - 顶部导航栏使用 `sticky top-0 z-50`，随页面滚动始终保持可见；
+  - 主内容区“后台管理标题 + 用户邮箱”保持普通流布局，不做 sticky 固定。
+
+## 后台外层边距口径（2026-04-25）
+
+- 左侧导航需贴近页面左边界；后台主栅格外层容器在 `md` 及以上不保留左侧 padding（`pl-0`）。
+- 右侧留白继续保持响应式（`pr-3 sm:pr-4 xl:pr-6`），避免内容区贴右边导致拥挤。
+
+## 后台页面头信息口径（2026-04-25）
+
+- `web/src/app/admin/layout.tsx` 不再渲染主内容区通用头块（“后台管理”标题 + 当前用户名/邮箱）。
+- 用户信息与主题切换仅保留在最顶部导航栏（Avatar 下拉 + 主题按钮），避免每个页面重复展示相同信息。
+
+## 前端鉴权刷新并发口径（2026-04-25）
+
+- `web/src/components/auth-provider.tsx` 中 `refreshAccessToken()` 必须做并发去重（single-flight）；同一时刻只能存在一个 `/api/v1/auth/refresh` 请求。
+- 原因：后端 refresh 采用“旋转 refresh token”策略，并发刷新会导致后发请求命中旧 token 并把前面成功状态覆盖为未登录，表现为“刷新页面后被踢回登录提示”。
+- 约束：后续任何调用链（bootstrap、`fetchWithAuth` 401 重试、页面并发请求）都必须复用同一个 in-flight refresh Promise，避免重复发起 refresh。
+
+## 线路与杆塔管理口径（2026-04-25）
+
+- 输电线路管理模块采用两张主表：
+  - `power_line`（线路）
+  - `power_line_tower`（杆塔，`line_id` 外键关联线路）
+- 关系口径：`Line 1:N LineTower`，并约束：
+  - `uq_power_line_tower_line_seq`（同线路内序号唯一）
+  - `uq_power_line_tower_line_tower_no`（同线路内塔号唯一）
+- 导入口径：
+  - 使用 `POST /api/v1/lines/{line_id}/towers/import` 导入 CSV；
+  - 兼容 UTF-8/UTF-8-SIG/GBK；
+  - 对源数据 `-1` 作为无效值归一化为 `NULL`；
+  - 超出表头的额外列写入 `raw_extra_json`，避免导入因列漂移失败。
+- 导出口径：
+  - 使用 `GET /api/v1/lines/{line_id}/towers/export` 导出 CSV；
+  - 导出包含线路基础信息、杆塔核心字段与 JSON 扩展字段。
+- 权限口径：
+  - 新增 `line.read` / `line.manage` / `tower.read` / `tower.manage`；
+  - admin 默认授予上述权限。
+- 菜单口径：
+  - 新增菜单 `admin.power_lines`，路由 `/admin/power-lines`；
+  - 页面由 `web/src/app/admin/power-lines/page.tsx` 承载线路与杆塔管理闭环。
+
+## 线路地图展示口径（2026-04-25）
+
+- 线路地图（含 Cesium）可直接复用现有杆塔数据底座：
+  - `power_line_tower` 的 `longitude/latitude/altitude_m` + `seq_no` 作为线路几何主数据；
+  - 几何拼接顺序与展示顺序统一按 `seq_no ASC`。
+- 若线路杆塔数量可能超过 500，前端地图加载不得复用当前页面固定 `limit=500` 的请求口径；需要补全分页拉取或增加专用几何接口。
+- 坐标系必须显式约定并在导入/展示链路保持一致（建议默认 WGS84）；未标注坐标系的数据源不应直接进入生产地图渲染。
+
+## 线路 Cesium MVP 口径（2026-04-25）
+
+- 前端线路管理页（`/admin/power-lines`）已支持“表格/地图”双视图切换，地图视图使用 Cesium 渲染：
+  - 杆塔点位：`longitude/latitude/altitude_m`
+  - 线路折线：按 `seq_no ASC` 连线
+- Cesium 静态资源采用构建前同步策略：
+  - `web/scripts/sync-cesium-assets.mjs` 在 `postinstall` 与 `prebuild` 执行；
+  - 同步目录固定为 `web/public/cesium/{Assets,ThirdParty,Workers,Widgets}`。
+- 工程约束：
+  - `web/public/cesium` 属于构建生成资产，不纳入 Git 版本管理（由 `.gitignore` 忽略）。
+
+## 线路走向图专题口径（2026-04-26）
+
+- `线路管理` 页面地图视图已升级为“走向图”专题视图（保留表格/走向图双视图切换）。
+- 走向图默认关闭通用底图能力（Cesium `baseLayer: false`），仅突出线路业务语义：
+  - 按杆塔 `seq_no` 连线展示线路走向；
+  - 展示杆塔点位、起点/终点标识；
+  - 支持按风险着色、塔号显隐、居中重置。
+- 走向图统计信息固定包含：有效坐标、缺失坐标、断点段数、线路估算长度（Haversine）。
+- 对序号断档采用分段折线渲染，避免缺失坐标导致的跨段误连线。
+
+## 雷电流数据管理口径（2026-04-25）
+
+- 雷电流模块一期后端入口统一在 `/api/v1/lightning-currents`，权限码为：
+  - `lightning.read`：查看事件、采样与统计。
+  - `lightning.manage`：导入、更新、删除事件。
+- 一期数据模型采用“双表”结构：
+  - `lightning_current_event`：事件元数据 + 特征参数（峰值、T1/T2、陡度、I²t、波形分类、极性、多回击统计）。
+  - `lightning_current_sample`：采样时序点（`seq_no/time_us/current_ka`）。
+- 原始序列导入支持单列电流或双列 `time,current`，并在导入时自动提取特征。
+- 峰值超越概率（P 曲线）通过 `/api/v1/lightning-currents/stats/exceedance` 提供，便于地区雷电流分布统计。
+- 前端后台入口固定为 `/admin/lightning-currents`，菜单编码 `admin.lightning_currents`。
+- 雷电流后台模块对外展示名称已调整为“雷电幅值统计”；保留现有路由 `/admin/lightning-currents` 与菜单编码 `admin.lightning_currents` 不变（2026-04-25）。
+
+## 文件管理下线口径（2026-04-25）
+
+- 文件管理能力已下线：
+  - 前端不再提供 `/admin/files` 与 `/admin/knowledge-set` 页面；
+  - 后端不再暴露 `/api/v1/admin/files*` 相关接口；
+  - 默认权限中不再包含 `file.read` / `file.manage`；
+  - 默认菜单与 admin 角色菜单绑定中不再包含 `admin.files`。
+- 为避免对存量数据库做破坏性变更，本次仅下线功能入口与执行链路，不主动删除既有 `file_storage_*` 表结构。
+
+## 文件管理迁移口径（2026-04-25）
+
+- 口径更新：同日已按“参考 `modo-next` 文件管理能力”重新迁移并恢复本项目文件管理功能，当前状态以本节为准。
+- 后端入口：
+  - 文件管理 API 恢复到 `/api/v1/admin/files*`；
+  - 保留 VFS/S3 存储抽象（`storage_driver`）与挂载点机制（`file_storage_backends` / `file_storage_mounts` / `file_index_entries`）。
+- 权限与菜单：
+  - 默认权限恢复 `file.read` / `file.manage`；
+  - 默认菜单与 admin 绑定恢复 `admin.files`（`/admin/knowledge-set`）。
+- 迁移增强：
+  - 新增目录打包下载接口 `GET /api/v1/admin/files/download-zip`，支持按目录递归生成 zip 下载。
+
+## 前端 chunk 失配容错口径（2026-04-25）
+
+- Next.js 前端需内置 `chunk load` 失配恢复能力：当出现 `Loading chunk ... failed` / `ChunkLoadError` / 动态 import 失败时，自动执行“一次性刷新”尝试恢复。
+- 实现基线：
+  - `web/src/lib/chunk-error.ts`：统一错误识别与单次刷新标记。
+  - `web/src/components/chunk-load-recovery.tsx`：全局监听 `window error` 与 `unhandledrejection`。
+  - `web/src/app/error.tsx` 与 `web/src/app/global-error.tsx`：提供可见兜底与手动恢复入口。
+- 组件级异步加载（例如 `import("cesium")`）若在局部 `try/catch` 中吞掉异常，需在 `catch` 内显式调用 `reloadOnceOnChunkError(error)`，否则全局监听无法感知并触发恢复。
+- 刷新标记口径：
+  - 不在应用挂载时主动清理标记；
+  - 采用带时间戳的冷却窗口（当前 2 分钟）限制自动刷新频率，避免 chunk 持续不可用时陷入无限刷新。
+- 目标：降低发布后或本地重编译后因旧缓存 chunk 引发的白屏概率，避免用户停留在不可恢复状态。
+
+## Modal 定位口径（2026-04-25）
+
+- 不要在 `body`（或其祖先）上使用 `filter/transform/perspective` 做全局动效；这会改变 `position: fixed` 的定位参照，导致 AntD `Modal` 在页面滚动后出现顶部遮挡或错位。
+- `快乐工作特效` 已调整为背景色轻微脉冲（`background-color` 动画），避免影响弹窗定位。
+
+## 雷电分布统计口径（2026-04-25）
+
+- 雷电分布数据导入入口：
+  - `POST /api/v1/lightning-currents/import-distribution`
+  - 输入：TXT/CSV（纬度、经度、电流幅值）
+  - 清洗规则：非法行/非法坐标跳过；按批次写入 `lightning_current_event`。
+
+- 空间统计主接口：
+  - `GET /api/v1/lightning-currents/stats/distribution`
+  - 输出：
+    - 网格化地闪密度 `Ng`（次/km²·年）
+    - 网格 `Imax/Iavg`
+    - 极性占比
+    - 散点数据（地图展示）
+    - P 曲线阈值超越点
+
+- 资产关联接口：
+  - `GET /api/v1/lightning-currents/stats/tower-buffer`
+  - 输入：`tower_id` 或中心坐标 + `radius_km` + `design_current_ka`
+  - 输出：缓冲区雷击统计、超设计阈值次数、风险等级（`LOW/MEDIUM/HIGH`）与建议文本。
+
+- 合成对比接口：
+  - `GET /api/v1/lightning-currents/stats/compare-synthetic`
+  - 输出：实测/合成统计与网格余弦相似度（用于验证合成分布接近度）。
+
+- 周期报表接口：
+  - `GET /api/v1/lightning-currents/reports/distribution?period=week|month`
+  - 输出：近 7/30 天雷击次数、Imax/Iavg、Ng、最严重事件。
+
+- 前端页面口径：
+  - 独立菜单入口为 `admin.lightning_distribution` -> `/admin/lightning-distribution`，对外展示名“雷电分布统计”。
+  - `/admin/lightning-distribution` 复用雷电工作台底座，但只展示分布统计相关能力：筛选、导入、网格热力、散点地图、杆塔缓冲区、实测/合成对比与周/月报。
+  - `/admin/lightning-currents` 保留为“雷电幅值统计”，用于原始雷电流序列导入、事件列表、特征参数与采样预览。
+  - 地图组件：`web/src/components/lightning-distribution-map.tsx`（Cesium）。
+
+## 文件管理 MinIO 接入口径（2026-04-25）
+
+- `docker-compose.yml` 新增 `minio` 与 `minio-init` 服务：
+  - `minio` 提供 S3 兼容对象存储（`9000` API，`9001` Console）。
+  - `minio-init` 使用 `minio/mc` 自动创建 `MINIO_BUCKET`，避免首用报 `NoSuchBucket`。
+- `api` 服务通过环境变量接入 MinIO：
+  - `MINIO_ENABLED`
+  - `MINIO_ENDPOINT`
+  - `MINIO_ACCESS_KEY`
+  - `MINIO_SECRET_KEY`
+  - `MINIO_BUCKET`
+  - `MINIO_REGION`
+- 文件存储 seed 口径更新：
+  - `MINIO_ENABLED=true` 时，默认后端切换到 `files.s3.default`，并将 `main` 挂载绑定到 S3。
+  - `MINIO_ENABLED=false` 时，默认回退到 `files.vfs.default`。
+  - 对已存在的默认后端记录执行幂等更新（`status/is_default/config_json`），确保切换配置重启即可生效。
+
+## 用户管理新增表单交互口径（2026-04-25）
+
+- `web/src/app/admin/users/page.tsx` 的“新增用户”交互基线为 **Modal 弹窗表单**，不再采用页面内联大表单。
+- 表单字段与校验规则保持不变（`user_id/email/username/password`），仅变更承载方式。
+- 创建成功后默认行为：
+  - 关闭新增用户弹窗；
+  - 重置表单；
+  - 刷新用户/角色列表。
+
+## 后台 Ant Design 规范化口径（2026-04-25）
+
+- 后台 UI 以 Ant Design 规范为优先口径，不再追求“贴边/全直角”的扁平化视觉。
+- 根主题基线：
+  - `web/src/components/ui-antd.tsx` 的 `Theme` 使用 `ConfigProvider + App`，并接入 `zh_CN` locale。
+  - 默认强调色为 AntD 蓝色体系（`blue/#1677ff`）。
+  - 默认圆角采用 AntD 常规 token：`medium=6`、`large=8`。
+  - 主题样式优先走 AntD global token / component token，再通过项目自有 CSS 变量桥接给历史页面；禁止新增宽泛 `.ant-*` 全局覆盖。
+- 后台布局基线：
+  - `web/src/app/admin/layout.tsx` 使用 AntD `Layout/Header/Sider/Content`。
+  - Header 高度固定 64px；桌面端使用可折叠 Sider；移动端使用 Drawer 菜单。
+  - 内容区恢复 AntD 工作台留白：桌面 24px，移动 16px。
+  - 页面顶部统一展示 Breadcrumb + 页面标题 + 描述，作为后台页面信息架构入口。
+- 核心页面交互基线：
+  - 工作台使用 AntD `Statistic + Row/Col/Card/Tag/Avatar` 的模块入口模式。
+  - 角色管理使用 AntD `Card/Table/Form/Modal/Select/Input`，权限点和菜单绑定使用 `Select mode="multiple"`。
+  - 行内操作优先使用 `web/src/components/row-action-menu.tsx`，内部已切换为 AntD `Dropdown + Button`。
+- 验证口径：
+  - UI 改造至少跑 `npm --workspace web exec tsc --noEmit --pretty false` 与 `npm run build:web`。
+  - 全量 `npm --workspace web run lint` 当前会被 `web/public/cesium` 生成资产和历史页面问题阻断；改动文件需至少跑 targeted eslint。
+
+## 角色管理搜索口径（2026-04-25）
+
+- `web/src/app/admin/roles/page.tsx` 已支持前端本地搜索，匹配字段为：角色编码、角色名称、权限编码、菜单名称/编码。
+- 当前实现不依赖后端关键词参数；若后续角色规模显著增长，再评估升级为接口级搜索。
+
+## 后端 Celery 调度口径（2026-04-25）
+
+- 后端调度基线采用 `Redis + Celery worker + Celery Beat`：
+  - Redis broker：默认 `redis://redis:6379/0`。
+  - Redis result backend：默认 `redis://redis:6379/1`。
+  - Worker 服务：`celery-worker`。
+  - Beat 服务：`celery-beat`。
+- Celery 应保持独立进程运行，FastAPI `api` 进程只承载 HTTP/WebSocket，不在 lifespan 内启动调度循环。
+- 当前首个周期任务为 `app.tasks.schedule_tasks.expire_overdue_schedule_items`，由 Beat 按 `SCHEDULER_EXPIRE_INTERVAL_SECONDS`（默认 60 秒）投递，用于过期 `calendar_event` 与 `todo`。
+- 新增周期任务优先放在 `api/app/tasks/`，业务逻辑继续沉淀到 `api/app/services/`，避免 Celery task 直接堆业务细节。
+
+## 任务监控口径（2026-04-25）
+
+- 任务监控统一入口：`/admin/task-monitor`（菜单码：`admin.task_monitor`）。
+- 后端聚合接口：`GET /api/v1/admin/task-monitor/overview`（`/api/v1/admin/task-monitor` 前缀）。
+- 监控口径：
+  - 需求：统计状态/优先级分布，输出高优先级与滞留需求（按 `update_date` + 阈值小时判定）。
+  - 待办：统计状态/优先级分布，输出超期待办（`due_date/expire_time` 触发）。
+- 权限分层：接口按 `requirement.*` 与 `todo.*` 权限分别返回对应数据块，避免越权暴露。
+- 菜单保护：`admin.task_monitor` 已纳入前后端受保护菜单集合，避免在菜单管理中误删。
+
+## 文件管理单挂载 UI 口径（2026-04-26）
+
+- `web/src/app/admin/files/page.tsx` 默认按“单挂载”交互：不再展示左侧挂载点列表，不提供前端挂载点切换。
+- 当前挂载上下文统一以接口返回的 `current_mount` 为准；文件操作仍透传 `mount_code`，保持与后端接口契约一致。
+- 后端仍保留多挂载点模型能力（`file_storage_mounts`），本次仅收敛前端交互层。
+
+## 任务监控口径更新（2026-04-26）
+
+- `/admin/task-monitor` 与 `GET /api/v1/admin/task-monitor/overview` 已收口为 **Celery 运行态监控**，不再承载需求/待办风险聚合。
+- 接口查询参数：
+  - `task_limit`：返回任务明细上限。
+  - `history_limit`：历史任务扫描上限（Redis result backend）。
+- 数据来源口径：
+  - 队列积压（`pending_count`）在 Redis broker 下按队列 `LLEN` 读取，非 Redis broker 回退为 `0`。
+  - 历史任务状态（`SUCCESS/FAILURE/RETRY/REVOKED`）在 Redis result backend 下通过 `SCAN celery-task-meta-*` 采样聚合。
+- 接口与页面权限统一为：`celery.read` 或 `celery.manage`。
+- 前端展示结构固定为三块：
+  - Worker 概览（在线状态、并发、预取、活跃/预留/定时任务数）
+  - Queue 概览（pending、consumer、active/reserved/scheduled）
+  - Task 明细（状态、队列、worker、ETA/开始/完成、错误摘要）
+
+## 后台页面顶部信息口径（2026-04-26）
+
+- 后台壳层 `web/src/app/admin/layout.tsx` 不再渲染内容区顶部公共信息块（Breadcrumb + 页面标题 + 页面描述）。
+- 后台页面默认直接进入业务内容区，避免在每个页面重复展示“模块标题 + 描述文案”。
+
+## ATP 模型管理口径（2026-04-26）
+
+- ATP 功能一期定位为“ATPDraw 产物版本管理 + ATP 引擎调用”：
+  - 模型台账：`atp_model`
+  - 版本管理：`atp_model_version`
+  - 运行记录：`atp_simulation_run`
+- 后端 API 统一前缀：`/api/v1/atp/models`，包含：
+  - 引擎状态：`GET /engine/status`
+  - 模型 CRUD：`GET/POST/PATCH/DELETE /`
+  - 版本管理：`GET/POST/PATCH /{model_id}/versions*` + `POST /activate`
+  - 运行管理：`GET/POST /{model_id}/runs*`
+- 权限口径：
+  - `atp.read`：查看模型/版本/运行
+  - `atp.manage`：维护模型与版本、激活版本
+  - `atp.run`：执行仿真
+- 菜单口径：
+  - 新增 `admin.atp_models`，路由 `/admin/power-lines/atp-viewer`，默认绑定 admin 角色。
+- 推送订阅口径：
+  - 主题 `admin.atp-models`（权限 `atp.read/atp.run/atp.manage`）。
+- 配置口径：
+  - `atp_engine_mode`：`wine|native`
+  - `atp_engine_executable`
+  - `atp_storage_root`
+  - `atp_engine_workdir`
+  - `atp_engine_default_timeout_seconds`
+  - `atp_engine_max_timeout_seconds`
+
+## 功能下线口径（2026-04-26）
+
+- 以下后台功能已下线，不再作为有效入口、默认菜单、默认权限或公开 API 提供：
+  - AI 聊天：`/admin/chat`、`/api/v1/chat*`、`chat.use`
+  - 编排管理：`/admin/orchestration`
+  - MCP管理：`/admin/mcp-server`
+  - 模型管理/API测试：`/admin/models`、`/admin/api-tester`、`/api/v1/admin/models*`、`/api/v1/admin/model-routes*`、`model.read/model.manage`
+  - 知识集/文件管理：`/admin/knowledge-set`、`/admin/files`、`/api/v1/admin/files*`、`file.read/file.manage`
+  - 流程图：`/admin/mermaid-mgr`、`/api/v1/mermaids*`、legacy `/api/mermaids*`
+  - 思维导图：`/admin/mindmap`、`/api/v1/mindmap*`
+  - 需求管理：`/admin/requirements`、`/api/v1/requirements*`、`/api/project/requirement*`、`requirement.*`
+  - 日程管理：`/admin/schedule`、`/api/v1/calendar*`、`/api/v1/todos*`、`todo.*`
+- `admin.agent/admin.mcp_server/admin.files/admin.requirements/admin.schedule/admin.mindmap/admin.mermaid_mgr/admin.chat/admin.api_tester/admin.models/admin.orchestration` 仅保留在 removed/disabled 过滤集合中，用于屏蔽历史菜单数据。
+- 本次不执行数据库 drop；历史表若已存在，作为历史数据保留。模型注册表/路由表仍保留给内部 LLM 网关和寿命倒计时等内部能力使用，但无后台管理页面/API。
+- `/admin/task-monitor` 已独立为 Celery Worker/Queue/Task 监控，不再读取需求/待办数据。
+
+## 文件管理恢复口径（2026-04-26）
+
+- 文件管理模块恢复路径：
+  - 前端页面：`/admin/files`（后台首页卡片入口 `/files`）。
+  - 后端接口：`/api/v1/admin/files` 及其 `directories/delete/rename/move/upload/download/download-zip` 子接口。
+- 权限口径：`file.read`（读）与 `file.manage`（写操作）。
+- 订阅口径：`admin.files` topic 已恢复，文件操作后触发前端刷新。
+- 模型与 seed：`file_storage_backends` / `file_storage_mounts` / `file_index_entries` 已恢复注册；默认 seed 会创建 `files.vfs.default`、`files.s3.default` 与 `main` 挂载。
+- 交互口径：页面保持“单挂载点”模式，不展示左侧挂载点切换面板。
+
+## ATP 查看器口径（2026-04-26）
+
+- ATP 文本查看能力已落地在线路模块子路由：`/power-lines/atp-viewer`（内部路由 `web/src/app/admin/power-lines/atp-viewer/page.tsx`）。
+- 技术栈固定为“前端本地解析 + 前端只读渲染”：
+  - 解析：`web/src/lib/atp/parse-atp-text.ts`
+  - 渲染：`@maxgraph/core` + `web/src/components/atp-maxgraph-viewer.tsx`
+- 当前目标是“查看保真优先”，明确不包含仿真内核调用。
+- 解析覆盖常见元件行格式，复杂 ATP 控制卡/模型卡默认容错跳过并输出 warnings，不阻断基础图形查看。
+
+## 雷电地形倾角口径（2026-04-26）
+
+- 地面倾角计算接口固定为：
+  - `POST /api/v1/lightning-currents/stats/tower-terrain`
+- 入参口径：
+  - `dem_grid_m` 必须为 3x3 高程矩阵（中心点 + 邻域 8 点）。
+  - `cell_size_m` 为 DEM 栅格间距（米）。
+  - `dem_resolution_m` 可单独传入用于质量评分（不传时默认等于 `cell_size_m`）。
+- 算法口径：
+  - 梯度：Horn 3x3（`algorithm_version=horn_3x3.v1`）。
+  - 输出：`slope_deg`、`aspect_deg`、`slope_mean/p95/max`、`slope_along/cross_line_deg`、`relief_m_50`、`terrain_exposure_index`、`quality_score/level`。
+  - 坡向定义为“顺坡向（下坡方向）方位角”，0-360°，顺时针（0=北，90=东）。
+- 持久化口径：
+  - `persist=true` 时要求 `tower_id`，且调用方需具备 `tower.manage` 或 `lightning.manage`（admin 放行）。
+  - 持久化位置：`power_line_tower.raw_extra_json.terrain_metrics`，并同步更新 `slope_1/slope_2`（纵坡/横坡绝对值）。
+- 缓冲区分析联动：
+  - `GET /api/v1/lightning-currents/stats/tower-buffer` 返回 `terrain_metrics`（若杆塔已有地形指标）。
+  - 风险分级引入地形暴露权重：`ng_for_risk = ng * (1 + 0.25 * exposure)`，但原始返回字段 `ng_per_km2_year` 保持未加权值。

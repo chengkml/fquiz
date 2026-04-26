@@ -1,9 +1,9 @@
 "use client";
 
-import type { ComponentProps } from "react";
-import { Button, DropdownMenu } from "@/components/ui-antd";
+import { DownOutlined } from "@ant-design/icons";
+import { Button, Dropdown, Typography, type MenuProps } from "antd";
 
-type RowActionMenuColor = ComponentProps<typeof DropdownMenu.Item>["color"];
+type RowActionMenuColor = "gray" | "red" | "indigo" | string;
 
 export type RowActionMenuItem = {
   key: string;
@@ -25,32 +25,34 @@ export function RowActionMenu({
   align = "end",
 }: RowActionMenuProps) {
   if (items.length === 0) {
-    return <span className="text-xs text-[var(--gray-11)]">-</span>;
+    return <Typography.Text type="secondary">-</Typography.Text>;
   }
 
+  const menuItems: MenuProps["items"] = items.map((item) => ({
+    key: item.key,
+    label: item.label,
+    disabled: item.disabled,
+    danger: item.color === "red",
+    onClick: () => {
+      if (!item.disabled) {
+        item.onSelect();
+      }
+    },
+  }));
+
+  const placement =
+    align === "start"
+      ? "bottomLeft"
+      : align === "center"
+        ? "bottom"
+        : "bottomRight";
+
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger>
-        <Button type="button" color="gray" size="1" variant="soft">
-          {triggerLabel}
-        </Button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Content align={align} size="2" variant="soft">
-        {items.map((item) => (
-          <DropdownMenu.Item
-            key={item.key}
-            color={item.color ?? "gray"}
-            disabled={item.disabled}
-            onSelect={() => {
-              if (!item.disabled) {
-                item.onSelect();
-              }
-            }}
-          >
-            {item.label}
-          </DropdownMenu.Item>
-        ))}
-      </DropdownMenu.Content>
-    </DropdownMenu.Root>
+    <Dropdown menu={{ items: menuItems }} placement={placement} trigger={["click"]}>
+      <Button size="small">
+        {triggerLabel}
+        <DownOutlined />
+      </Button>
+    </Dropdown>
   );
 }

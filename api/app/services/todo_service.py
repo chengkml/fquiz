@@ -6,21 +6,19 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
 from ..models.base import utcnow
-from ..models.mind_map import MindMap
 from ..models.todo import Todo
 from ..models.user import User
 from ..schemas.todo import (
     TodoCreateRequest,
     TodoListResponse,
-    TodoMindMapInitResponse,
     TodoSummary,
     TodoTransitionRequest,
     TodoUpdateRequest,
 )
-from .mind_map_service import build_initial_mind_map_data
 from .push_service import publish_topic
 
 TOPIC_NAME = "todos"
+TODO_ACTIVE_STATUSES = {"SCHEDULED", "IN_PROGRESS"}
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "SCHEDULED": {"IN_PROGRESS", "COMPLETED", "CANCELLED", "EXPIRED"},
     "IN_PROGRESS": {"SCHEDULED", "COMPLETED", "CANCELLED", "EXPIRED"},
@@ -218,42 +216,26 @@ def complete_todo(
     return serialize_todo(saved)
 
 
-def init_todo_mindmap(
-    db: Session,
-    todo_id: str,
-    *,
-    actor: User,
-) -> TodoMindMapInitResponse:
-    todo = get_todo_by_id(db, todo_id, actor=actor)
-    if not todo:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Todo not found")
-
-    mind_map = db.execute(select(MindMap).where(MindMap.id == todo_id)).scalar_one_or_none()
-    if mind_map:
-        if mind_map.create_user != actor.username:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No permission to access mind map")
-    else:
-        now = utcnow()
-        mind_map = MindMap(
-            id=todo_id,
-            map_name=todo.title,
-            descr=todo.descr or "",
-            map_data=build_initial_mind_map_data(todo.title),
-            create_user=actor.username,
-            update_user=actor.username,
-            create_date=now,
-            update_date=now,
+def expire_overdue_todos(db: Session) -> int:
+    now = utcnow()
+    todos = db.execute(
+        select(Todo).where(
+            Todo.expire_time.is_not(None),
+            Todo.expire_time <= now,
+            Todo.status.in_(sorted(TODO_ACTIVE_STATUSES)),
         )
-        db.add(mind_map)
-        db.commit()
-        db.refresh(mind_map)
+    ).scalars().all()
 
-    return TodoMindMapInitResponse(
-        id=mind_map.id,
-        map_name=mind_map.map_name,
-        descr=mind_map.descr,
-        map_data=mind_map.map_data or "",
-    )
+    if not todos:
+        return 0
+
+    for todo in todos:
+        todo.status = "EXPIRED"
+        todo.update_user = "system"
+        todo.update_date = now
+
+    db.commit()
+    return len(todos)
 
 
 def delete_todo(db: Session, todo_id: str, *, actor: User, syncing: bool = False) -> dict[str, bool]:
@@ -275,7 +257,7 @@ def delete_todo(db: Session, todo_id: str, *, actor: User, syncing: bool = False
             TOPIC_NAME,
             name="todos.deleted",
             payload={"action": "deleted", "todo_id": deleted_id, "actor_user": actor.username},
-            requires_refetch=["/api/v1/todos"],
+            requires_refetch=[],
             dedupe_key=f"todos:deleted:{deleted_id}",
         )
     )
@@ -312,7 +294,7 @@ def _publish_todo_change(event_name: str, todo: Todo, *, action: str) -> None:
             TOPIC_NAME,
             name=event_name,
             payload=payload,
-            requires_refetch=["/api/v1/todos"],
+            requires_refetch=[],
             dedupe_key=f"todos:{action}:{todo.id}",
         )
     )

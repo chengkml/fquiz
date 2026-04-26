@@ -4,6 +4,7 @@ FROM ${NODE_BASE_IMAGE} AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+COPY scripts ./scripts
 RUN npm config set registry https://mirrors.cloud.tencent.com/npm/
 RUN npm ci
 

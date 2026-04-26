@@ -1,5 +1,209 @@
 @import "tailwindcss";
 
+:root {
+  /* AntD base fallbacks */
+  --ant-color-primary: #1677ff;
+  --ant-color-text: rgba(0, 0, 0, 0.88);
+  --ant-color-text-secondary: rgba(0, 0, 0, 0.65);
+  --ant-color-bg-layout: #f5f5f5;
+  --ant-color-bg-container: #ffffff;
+  --ant-color-fill-alter: #fafafa;
+  --ant-color-border-secondary: #d9d9d9;
+  --ant-border-radius: 6px;
+  --ant-border-radius-lg: 8px;
+  --ant-padding: 16px;
+  --ant-padding-lg: 24px;
+  --ant-margin-lg: 24px;
+  --ant-box-shadow-tertiary: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+
+  /* Legacy semantic vars (overridden by Theme token bridge at runtime) */
+  --color-panel-solid: #ffffff;
+  --border: #d9d9d9;
+
+  --gray-1: #ffffff;
+  --gray-2: #fafafa;
+  --gray-6: #d9d9d9;
+  --gray-10: rgba(0, 0, 0, 0.45);
+  --gray-11: rgba(0, 0, 0, 0.65);
+  --gray-12: rgba(0, 0, 0, 0.88);
+  --gray-a2: rgba(0, 0, 0, 0.02);
+  --gray-a3: rgba(0, 0, 0, 0.06);
+
+  --accent-6: #91caff;
+  --accent-7: #69b1ff;
+  --accent-9: #1677ff;
+  --accent-10: #0958d9;
+  --accent-11: #0958d9;
+  --accent-12: #003eb3;
+  --accent-a2: rgba(22, 119, 255, 0.1);
+  --accent-a3: rgba(22, 119, 255, 0.16);
+  --accent-contrast: #ffffff;
+
+  --indigo-2: #eef2ff;
+  --indigo-11: #3730a3;
+  --indigo-a2: rgba(79, 70, 229, 0.12);
+
+  --green-6: #95de64;
+  --green-9: #52c41a;
+  --green-11: #237804;
+  --green-a2: rgba(82, 196, 26, 0.14);
+  --green-a3: rgba(82, 196, 26, 0.2);
+
+  --red-2: #fff1f0;
+  --red-6: #ff7875;
+  --red-7: #ff4d4f;
+  --red-11: #cf1322;
+  --red-a2: rgba(255, 77, 79, 0.14);
+  --red-a3: rgba(255, 77, 79, 0.22);
+
+  --orange-9: #faad14;
+  --orange-11: #ad6800;
+  --orange-a3: rgba(250, 173, 20, 0.24);
+  --amber-11: #ad6800;
+
+  --fquiz-scrollbar-thumb: var(--ant-color-fill-secondary, rgba(0, 0, 0, 0.15));
+  --fquiz-scrollbar-thumb-hover: var(--ant-color-fill, rgba(0, 0, 0, 0.25));
+}
+
 body {
   min-height: 100vh;
+  background: var(--ant-color-bg-layout);
+  color: var(--ant-color-text);
+}
+
+.admin-design-shell {
+  min-height: 100vh;
+  background: var(--ant-color-bg-layout);
+}
+
+.admin-design-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+  box-shadow: var(--ant-box-shadow-tertiary);
+}
+
+.admin-design-brand {
+  display: inline-flex;
+  min-width: 180px;
+  align-items: center;
+  gap: 10px;
+  color: var(--ant-color-text);
+}
+
+.admin-design-logo {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: var(--ant-border-radius);
+  background: var(--ant-color-primary);
+  color: #fff;
+  font-weight: 700;
+}
+
+.admin-design-sider {
+  position: sticky;
+  top: 64px;
+  height: calc(100vh - 64px);
+  overflow: auto;
+  border-right: 1px solid var(--ant-color-border-secondary);
+}
+
+.admin-design-sider-inner {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 12px;
+}
+
+.admin-design-main {
+  min-width: 0;
+}
+
+.admin-design-content {
+  min-height: calc(100vh - 64px);
+  padding: 24px;
+}
+
+.admin-design-page-header {
+  margin-bottom: 24px;
+}
+
+.admin-design-page-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.admin-design-page-body {
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .admin-design-header {
+    padding-inline: 16px !important;
+  }
+
+  .admin-design-brand {
+    min-width: 0;
+  }
+
+  .admin-design-content {
+    padding: 16px;
+  }
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--fquiz-scrollbar-thumb) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--fquiz-scrollbar-thumb);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--fquiz-scrollbar-thumb-hover);
+}
+
+.scrollbar-antd {
+  scrollbar-gutter: stable;
+}
+
+:root.fquiz-happy-work body {
+  animation: fquiz-happy-work-glow 12s ease-in-out infinite;
+}
+
+@keyframes fquiz-happy-work-glow {
+  0%,
+  100% {
+    background-color: var(--ant-color-bg-layout);
+  }
+  50% {
+    background-color: color-mix(in srgb, var(--ant-color-bg-layout) 94%, var(--ant-color-primary) 6%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root.fquiz-happy-work body {
+    animation: none;
+  }
 }

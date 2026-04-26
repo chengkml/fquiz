@@ -1,52 +1,86 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { usePathname } from "next/navigation";
+import Icon, {
+  BgColorsOutlined,
+  CompressOutlined,
+  HomeOutlined,
+  LinkOutlined,
+  LogoutOutlined,
+  MenuFoldOutlined,
+  MenuOutlined,
+  MenuUnfoldOutlined,
+  MoonOutlined,
+  ShopOutlined,
+  SmileOutlined,
+  SunOutlined,
+  SyncOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
+import {
+  Alert,
+  Avatar,
+  Badge,
+  Button,
+  Drawer,
+  Dropdown,
+  Grid,
+  Layout as AntLayout,
+  Menu as AntMenu,
+  Result,
+  Space,
+  Spin,
+  Tooltip,
+  Typography,
+  type MenuProps,
+  type ResultProps,
+} from "antd";
 
 import { useAuth } from "@/components/auth-provider";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { MenuTreeItem } from "@/types/auth";
-import { Button, Callout, Card, DropdownMenu, Flex, Heading, Text } from "@/components/ui-antd";
+import { useThemeAppearance } from "@/components/ui-antd";
 
-function flattenMenuTree(tree: MenuTreeItem[]): MenuTreeItem[] {
-  const result: MenuTreeItem[] = [];
-  const walk = (items: MenuTreeItem[]) => {
-    for (const item of items) {
-      result.push(item);
-      if (item.children.length > 0) {
-        walk(item.children);
-      }
-    }
-  };
-  walk(tree);
-  return result;
+const { Header, Sider, Content } = AntLayout;
+const AntResult = Result as unknown as ComponentType<ResultProps>;
+
+const ThemeSvgIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg width={20} height={20} viewBox="0 0 24 24" fill="currentColor" {...props}>
+    <title>Theme icon</title>
+    <g fillRule="evenodd">
+      <g fillRule="nonzero">
+        <path d="M7.02 3.635l12.518 12.518a1.863 1.863 0 010 2.635l-1.317 1.318a1.863 1.863 0 01-2.635 0L3.068 7.588A2.795 2.795 0 117.02 3.635zm2.09 14.428a.932.932 0 110 1.864.932.932 0 010-1.864zm-.043-9.747L7.75 9.635l9.154 9.153 1.318-1.317-9.154-9.155zM3.52 12.473c.514 0 .931.417.931.931v.932h.932a.932.932 0 110 1.864h-.932v.931a.932.932 0 01-1.863 0l-.001-.931h-.93a.932.932 0 010-1.864h.93v-.932c0-.514.418-.931.933-.931zm15.374-3.727a1.398 1.398 0 110 2.795 1.398 1.398 0 010-2.795zM4.385 4.953a.932.932 0 000 1.317l2.046 2.047L7.75 7 5.703 4.953a.932.932 0 00-1.318 0zM14.701.36a.932.932 0 01.931.932v.931h.932a.932.932 0 010 1.864h-.933l.001.932a.932.932 0 11-1.863 0l-.001-.932h-.93a.932.932 0 110-1.864h.93v-.931a.932.932 0 01.933-.932z" />
+      </g>
+    </g>
+  </svg>
+);
+
+function ThemeIcon() {
+  return <Icon component={ThemeSvgIcon} />;
 }
 
-type MenuPathItem = {
-  id: number;
-  name: string;
-  path: string;
-  depth: number;
-};
-
-function flattenMenuPaths(tree: MenuTreeItem[], depth = 0): MenuPathItem[] {
-  const result: MenuPathItem[] = [];
-  for (const item of tree) {
-    if (item.path) {
-      result.push({
-        id: item.id,
-        name: item.name,
-        path: item.path,
-        depth,
-      });
-    }
-    if (item.children.length > 0) {
-      result.push(...flattenMenuPaths(item.children, depth + 1));
-    }
+function normalizeAdminPath(path: string | null): string | null {
+  if (!path) {
+    return path;
   }
-  return result;
+  if (path === "/admin" || path === "/admin/") {
+    return "/dashboard";
+  }
+  if (path.startsWith("/admin/")) {
+    return path.slice("/admin".length);
+  }
+  return path;
+}
+
+function normalizeMenuTreePaths(items: MenuTreeItem[]): MenuTreeItem[] {
+  return items.map((item) => ({
+    ...item,
+    path: normalizeAdminPath(item.path),
+    children: normalizeMenuTreePaths(item.children),
+  }));
 }
 
 function isActivePath(pathname: string, menuPath: string | null): boolean {
@@ -56,57 +90,117 @@ function isActivePath(pathname: string, menuPath: string | null): boolean {
   return pathname === menuPath || pathname.startsWith(`${menuPath}/`);
 }
 
-function renderMenuNodes(items: MenuTreeItem[], pathname: string): React.ReactNode {
+type AntdMenuItems = NonNullable<MenuProps["items"]>;
+
+function buildMenuItems(items: MenuTreeItem[]): AntdMenuItems {
   return items.map((item) => {
-    const active = isActivePath(pathname, item.path);
+    const children = buildMenuItems(item.children);
+    const label = item.path ? <Link href={item.path}>{item.name}</Link> : item.name;
 
-    return (
-      <div key={item.id} className="space-y-1">
-        {item.path ? (
-          <Button asChild className="w-full justify-start" color={active ? "indigo" : "gray"} size="2" variant={active ? "soft" : "ghost"}>
-            <Link href={item.path}>{item.name}</Link>
-          </Button>
-        ) : (
-          <Text className="px-2 py-1" color="gray" size="2" weight="medium">{item.name}</Text>
-        )}
+    if (children.length > 0) {
+      return {
+        key: item.id,
+        label,
+        children,
+      };
+    }
 
-        {item.children.length > 0 && (
-          <div className="ml-3 space-y-1 border-l border-[var(--gray-6)] pl-3">
-            {renderMenuNodes(item.children, pathname)}
-          </div>
-        )}
-      </div>
-    );
+    return {
+      key: item.id,
+      label,
+      disabled: !item.path,
+    };
   });
 }
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+type ActiveMenuState = {
+  selectedKeys: string[];
+  openKeys: string[];
+};
+
+function findActiveMenuState(
+  items: MenuTreeItem[],
+  pathname: string,
+  parentKeys: string[] = [],
+): ActiveMenuState {
+  for (const item of items) {
+    const nextParents = [...parentKeys, item.id];
+    if (isActivePath(pathname, item.path)) {
+      return {
+        selectedKeys: [item.id],
+        openKeys: parentKeys,
+      };
+    }
+
+    if (item.children.length > 0) {
+      const childMatch = findActiveMenuState(item.children, pathname, nextParents);
+      if (childMatch.selectedKeys.length > 0) {
+        return childMatch;
+      }
+    }
+  }
+
+  return {
+    selectedKeys: [],
+    openKeys: [],
+  };
+}
+
+function AdminCenteredState({ children }: { children: ReactNode }) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[var(--ant-color-bg-layout)] px-6 py-20">
+      {children}
+    </main>
+  );
+}
+
+export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const screens = Grid.useBreakpoint();
+  const isDesktop = screens.md === true;
   const { user, initializing, fetchWithAuth, logout } = useAuth();
+  const {
+    themePrimaryMode,
+    setThemePrimaryMode,
+    compactMode,
+    setCompactMode,
+    happyWorkMode,
+    setHappyWorkMode,
+  } = useThemeAppearance();
   const [menuTree, setMenuTree] = useState<MenuTreeItem[]>([]);
   const [loadingMenus, setLoadingMenus] = useState(true);
   const [menuError, setMenuError] = useState("");
+  const [menuOpenKeys, setMenuOpenKeys] = useState<string[]>([]);
+  const [siderCollapsed, setSiderCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [aiThemeEnabled, setAiThemeEnabled] = useState(false);
 
   const loadMenus = useCallback(async () => {
     if (!user) {
       setMenuTree([]);
+      setMenuError("");
       setLoadingMenus(false);
       return;
     }
 
     setLoadingMenus(true);
     setMenuError("");
+    try {
+      const response = await fetchWithAuth("/api/v1/admin/me/menus");
+      if (!response.ok) {
+        setMenuTree([]);
+        setMenuError(await readApiError(response));
+        return;
+      }
 
-    const response = await fetchWithAuth("/api/v1/admin/me/menus");
-    if (!response.ok) {
-      setMenuError(await readApiError(response));
+      const payload = (await response.json()) as MenuTreeItem[];
+      setMenuTree(normalizeMenuTreePaths(payload));
+    } catch (error) {
+      setMenuTree([]);
+      setMenuError(error instanceof Error ? error.message : "菜单加载失败，请检查网络连接或后端服务。");
+    } finally {
       setLoadingMenus(false);
-      return;
     }
-
-    const payload = (await response.json()) as MenuTreeItem[];
-    setMenuTree(payload);
-    setLoadingMenus(false);
   }, [fetchWithAuth, user]);
 
   useEffect(() => {
@@ -123,130 +217,296 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     void loadMenus();
   }, [loadMenus]));
 
-  const flatMenus = useMemo(() => flattenMenuTree(menuTree), [menuTree]);
-  const mobileMenuItems = useMemo(() => flattenMenuPaths(menuTree), [menuTree]);
-  const currentTitle = useMemo(() => {
-    const current = flatMenus.find((item) => isActivePath(pathname, item.path));
-    return current?.name ?? "后台管理";
-  }, [flatMenus, pathname]);
+  const menuItems = useMemo(() => buildMenuItems(menuTree), [menuTree]);
+  const activeMenuState = useMemo(() => findActiveMenuState(menuTree, pathname), [menuTree, pathname]);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      setMenuOpenKeys(activeMenuState.openKeys);
+    });
+  }, [activeMenuState.openKeys]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) {
+        return;
+      }
+      const persisted = window.localStorage.getItem("fquiz:theme:ai-market");
+      setAiThemeEnabled(persisted === "1");
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const themeBadge = useMemo(() => <Badge color="blue" style={{ marginTop: -1 }} />, []);
+  const themeMenuItems = useMemo<NonNullable<MenuProps["items"]>>(
+    () => [
+      {
+        key: "auto",
+        icon: <SyncOutlined />,
+        label: "跟随系统",
+        extra: themePrimaryMode === "auto" ? themeBadge : null,
+      },
+      {
+        key: "light",
+        icon: <SunOutlined />,
+        label: "浅色主题",
+        extra: themePrimaryMode === "light" ? themeBadge : null,
+      },
+      {
+        key: "dark",
+        icon: <MoonOutlined />,
+        label: "暗黑主题",
+        extra: themePrimaryMode === "dark" ? themeBadge : null,
+      },
+      { type: "divider" },
+      {
+        key: "compact",
+        icon: <CompressOutlined />,
+        label: "紧凑主题",
+        extra: compactMode ? themeBadge : null,
+      },
+      { type: "divider" },
+      {
+        key: "happy-work",
+        icon: <SmileOutlined />,
+        label: "快乐工作特效",
+        extra: happyWorkMode ? themeBadge : null,
+      },
+      { type: "divider" },
+      {
+        key: "market",
+        icon: <ShopOutlined />,
+        label: "AI 生成主题",
+        extra: aiThemeEnabled ? themeBadge : null,
+      },
+      {
+        key: "theme-editor",
+        icon: <BgColorsOutlined />,
+        label: (
+          <a href="https://ant.design/theme-editor-cn" rel="noreferrer" target="_blank">
+            主题编辑器
+          </a>
+        ),
+        extra: <LinkOutlined />,
+      },
+    ],
+    [aiThemeEnabled, compactMode, happyWorkMode, themeBadge, themePrimaryMode],
+  );
+
+  const accountMenuItems = useMemo<NonNullable<MenuProps["items"]>>(
+    () => [
+      {
+        key: "account",
+        icon: <UserOutlined />,
+        disabled: true,
+        label: (
+          <Space direction="vertical" size={0}>
+            <Typography.Text strong>{user?.username}</Typography.Text>
+            <Typography.Text type="secondary">角色：{user?.role_codes.join(", ") || "-"}</Typography.Text>
+            <Typography.Text type="secondary">状态：{user?.status || "-"}</Typography.Text>
+          </Space>
+        ),
+      },
+      { type: "divider" },
+      {
+        key: "home",
+        icon: <HomeOutlined />,
+        label: <Link href="/dashboard">后台首页</Link>,
+      },
+      {
+        key: "logout",
+        danger: true,
+        icon: <LogoutOutlined />,
+        label: "退出登录",
+      },
+    ],
+    [user?.role_codes, user?.status, user?.username],
+  );
+
+  const onThemeMenuClick = useCallback(
+    ({ key }: Parameters<NonNullable<MenuProps["onClick"]>>[0]) => {
+      if (key === "auto" || key === "light" || key === "dark") {
+        setThemePrimaryMode(key);
+        return;
+      }
+      if (key === "compact") {
+        setCompactMode(!compactMode);
+        return;
+      }
+      if (key === "happy-work") {
+        setHappyWorkMode(!happyWorkMode);
+        return;
+      }
+      if (key === "market") {
+        setAiThemeEnabled((prev) => {
+          const next = !prev;
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem("fquiz:theme:ai-market", next ? "1" : "0");
+            if (next) {
+              window.open("https://ant.design/theme-editor-cn", "_blank", "noopener,noreferrer");
+            }
+          }
+          return next;
+        });
+      }
+    },
+    [compactMode, happyWorkMode, setCompactMode, setHappyWorkMode, setThemePrimaryMode],
+  );
+
+  const onAccountMenuClick = useCallback(
+    ({ key }: Parameters<NonNullable<MenuProps["onClick"]>>[0]) => {
+      if (key === "logout") {
+        void logout();
+      }
+    },
+    [logout],
+  );
+
+  const navigationMenu = (
+    <AntMenu
+      mode="inline"
+      items={menuItems}
+      openKeys={siderCollapsed && isDesktop ? [] : menuOpenKeys}
+      selectedKeys={activeMenuState.selectedKeys}
+      style={{ borderInlineEnd: "none", background: "transparent" }}
+      onClick={() => setMobileMenuOpen(false)}
+      onOpenChange={(keys: string[]) => setMenuOpenKeys(keys)}
+    />
+  );
 
   if (initializing || loadingMenus) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">Loading admin workspace...</p>
-      </main>
+      <AdminCenteredState>
+        <Space align="center" direction="vertical" size={12}>
+          <Spin size="large" />
+          <Typography.Text type="secondary">正在加载后台工作台...</Typography.Text>
+        </Space>
+      </AdminCenteredState>
     );
   }
 
   if (!user) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <Text color="gray" size="2">请先登录后再访问后台。</Text>
-        <Button asChild className="w-fit" color="gray" variant="soft">
-          <Link href="/">返回首页</Link>
-        </Button>
-      </main>
+      <AdminCenteredState>
+        <AntResult
+          status="403"
+          title="请先登录"
+          subTitle="登录后才能访问后台工作台。"
+          extra={(
+            <Button type="primary">
+              <Link href="/">前往登录</Link>
+            </Button>
+          )}
+        />
+      </AdminCenteredState>
     );
   }
 
   return (
-    <div className="mx-auto grid min-h-screen w-full max-w-[1760px] grid-cols-1 px-3 sm:px-4 xl:px-6 md:grid-cols-[280px_minmax(0,1fr)]">
-      <aside className="hidden border-r border-[var(--gray-6)] p-4 md:sticky md:top-0 md:block md:h-screen md:overflow-y-auto md:p-6">
-        <Card size="2">
-          <Flex direction="column" gap="4">
-            <div>
-              <Heading as="h1" size="5">fquiz admin</Heading>
-              <Text className="mt-1" color="gray" size="2">系统菜单</Text>
+    <AntLayout className="admin-design-shell">
+      <Header className="admin-design-header">
+        <Space size={8}>
+          {!isDesktop && (
+            <Button
+              aria-label="打开菜单"
+              icon={<MenuOutlined />}
+              type="text"
+              onClick={() => setMobileMenuOpen(true)}
+            />
+          )}
+          {isDesktop && (
+            <Button
+              aria-label={siderCollapsed ? "展开菜单" : "收起菜单"}
+              icon={siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              type="text"
+              onClick={() => setSiderCollapsed((previous) => !previous)}
+            />
+          )}
+          <Link className="admin-design-brand" href="/dashboard">
+            <span className="admin-design-logo">Q</span>
+            <Typography.Text strong>fquiz</Typography.Text>
+          </Link>
+        </Space>
+
+        <Space style={{ marginLeft: "auto" }}>
+          <Dropdown
+            menu={{ items: themeMenuItems, onClick: onThemeMenuClick }}
+            arrow={{ pointAtCenter: true }}
+            placement="bottomRight"
+            trigger={["click"]}
+          >
+            <Tooltip title="主题">
+              <Button icon={<ThemeIcon />} type="text" />
+            </Tooltip>
+          </Dropdown>
+
+          <Dropdown
+            menu={{ items: accountMenuItems, onClick: onAccountMenuClick }}
+            arrow={{ pointAtCenter: true }}
+            placement="bottomRight"
+            trigger={["click"]}
+          >
+            <Button type="text">
+              <Space size={8}>
+                <Avatar size="small" style={{ backgroundColor: "var(--ant-color-primary)" }}>
+                  {user.username.trim().charAt(0).toUpperCase() || "U"}
+                </Avatar>
+                <Typography.Text className="hidden sm:inline">{user.username}</Typography.Text>
+              </Space>
+            </Button>
+          </Dropdown>
+        </Space>
+      </Header>
+
+      <AntLayout>
+        {isDesktop && (
+          <Sider
+            className="admin-design-sider"
+            collapsed={siderCollapsed}
+            collapsedWidth={72}
+            theme="light"
+            trigger={null}
+            width={256}
+          >
+            <div className="admin-design-sider-inner">
+              {navigationMenu}
             </div>
-
-            <nav className="space-y-2">
-              {renderMenuNodes(menuTree, pathname)}
-            </nav>
-
-            <div className="space-y-2 border-t border-[var(--gray-6)] pt-4">
-              <Text color="gray" size="1">当前角色：{user.role_codes.join(", ") || "-"}</Text>
-              <Text color="gray" size="1">账号状态：{user.status || "-"}</Text>
-            </div>
-          </Flex>
-        </Card>
-      </aside>
-
-      <main className="p-4 md:p-6">
-        <Card className="mb-4 md:hidden" size="2">
-          <Flex align="center" justify="between" gap="3">
-            <div>
-              <Text color="gray" size="1">当前页面</Text>
-              <Text size="2" weight="medium">{currentTitle}</Text>
-            </div>
-
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger>
-                <Button color="gray" size="1" type="button" variant="soft">
-                  菜单
-                </Button>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Content align="end" size="2" variant="soft">
-                {mobileMenuItems.length === 0 ? (
-                  <DropdownMenu.Item disabled>暂无可访问菜单</DropdownMenu.Item>
-                ) : (
-                  mobileMenuItems.map((item) => (
-                    <DropdownMenu.Item
-                      key={item.id}
-                      asChild
-                      color={isActivePath(pathname, item.path) ? "indigo" : "gray"}
-                    >
-                      <Link href={item.path}>
-                        {item.depth > 0 ? `${"> ".repeat(item.depth)}${item.name}` : item.name}
-                      </Link>
-                    </DropdownMenu.Item>
-                  ))
-                )}
-              </DropdownMenu.Content>
-            </DropdownMenu.Root>
-          </Flex>
-        </Card>
-
-        <Card className="mb-6" size="3">
-          <Flex align="start" gap="4" justify="between" wrap="wrap">
-            <div>
-              <Text color="gray" size="2">后台管理</Text>
-              <Heading as="h2" size="6">{currentTitle}</Heading>
-            </div>
-
-            <Flex align="center" gap="2" justify="end" wrap="wrap">
-              <div className="min-w-[160px] text-right">
-                <Text size="2" weight="medium">{user.username}</Text>
-                <Text color="gray" size="1">{user.email}</Text>
-              </div>
-              <DropdownMenu.Root>
-                <DropdownMenu.Trigger>
-                  <Button color="gray" size="1" type="button" variant="soft">
-                    账号
-                  </Button>
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Content align="end" size="2" variant="soft">
-                  <DropdownMenu.Label>{user.username}</DropdownMenu.Label>
-                  <DropdownMenu.Separator />
-                  <DropdownMenu.Item asChild>
-                    <Link href="/">返回首页</Link>
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Item color="red" onSelect={() => void logout()}>
-                    退出登录
-                  </DropdownMenu.Item>
-                </DropdownMenu.Content>
-              </DropdownMenu.Root>
-            </Flex>
-          </Flex>
-        </Card>
-
-        {menuError && (
-          <Callout.Root className="mb-6" color="red">
-            <Callout.Text>{menuError}</Callout.Text>
-          </Callout.Root>
+          </Sider>
         )}
 
-        {children}
-      </main>
-    </div>
+        <Drawer
+          title={null}
+          placement="left"
+          open={!isDesktop && mobileMenuOpen}
+          width={288}
+          onClose={() => setMobileMenuOpen(false)}
+        >
+          {navigationMenu}
+        </Drawer>
+
+        <AntLayout className="admin-design-main">
+          <Content className="admin-design-content">
+            <div className="admin-design-page-body">
+              {menuError && (
+                <Alert
+                  showIcon
+                  type="error"
+                  message="菜单加载失败"
+                  description={menuError}
+                  style={{ marginBottom: 24 }}
+                />
+              )}
+              {children}
+            </div>
+          </Content>
+        </AntLayout>
+      </AntLayout>
+    </AntLayout>
   );
 }

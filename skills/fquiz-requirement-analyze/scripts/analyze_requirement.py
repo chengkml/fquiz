@@ -45,6 +45,18 @@ def normalize_base_url(raw: str) -> str:
     return value.rstrip("/")
 
 
+def read_text_file(path: str, *, field_name: str) -> str:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            text = f.read()
+    except OSError as e:
+        raise ValueError(f"{field_name} 读取失败: {e}") from e
+
+    if not normalize_text(text):
+        raise ValueError(f"{field_name} 内容不能为空")
+    return text
+
+
 def validate_progress(progress_percent: Optional[int]) -> None:
     if progress_percent is None:
         return
@@ -390,8 +402,13 @@ def parse_batch_items(args: argparse.Namespace) -> List[Dict[str, Any]]:
 
     raw: Any
     if args.batch_file:
-        with open(args.batch_file, "r", encoding="utf-8") as f:
-            raw = json.load(f)
+        try:
+            with open(args.batch_file, "r", encoding=args.batch_file_encoding or "utf-8") as f:
+                raw = json.load(f)
+        except OSError as e:
+            raise ValueError(f"batch-file 读取失败: {e}") from e
+        except json.JSONDecodeError as e:
+            raise ValueError(f"batch-file JSON 解析失败: {e}") from e
     else:
         raw = json.loads(args.batch_json)
 
@@ -457,11 +474,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     # analyze 参数
     parser.add_argument("--descr", help="回写分析描述（analyze 必填）")
+    parser.add_argument("--descr-file", help="回写分析描述文件路径（UTF-8 文本，analyze 可用，和 --descr 二选一）")
     parser.add_argument("--progress-percent", type=int, default=None, help="进度百分比（0-100，可选）")
 
     # batch-analyze 参数
     parser.add_argument("--batch-file", help="批量回写输入文件（JSON 数组）")
     parser.add_argument("--batch-json", help="批量回写输入 JSON 字符串（JSON 数组）")
+    parser.add_argument("--batch-file-encoding", default="utf-8", help="batch-file 文件编码，默认 utf-8")
 
     parser.add_argument("--dry-run", action="store_true", help="仅参数校验并输出执行计划，不发起真实请求")
     return parser
@@ -475,6 +494,11 @@ def validate_args(args: argparse.Namespace) -> Dict[str, Any]:
         user_pwd = args.user_pwd or ""
         requirement_id = normalize_text(args.requirement_id)
         descr = normalize_text(args.descr)
+        descr_file = normalize_text(args.descr_file)
+        if descr and descr_file:
+            raise ValueError("analyze 模式下 descr 与 descr-file 只能二选一")
+        if descr_file:
+            descr = read_text_file(descr_file, field_name="descr-file")
         project_name = normalize_text(args.project_name) or DEFAULT_PROJECT_NAME
         statuses = parse_statuses(args.status)
 

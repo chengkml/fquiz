@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from ...core.database import get_db
 from ...core.dependencies import CurrentUser, get_current_user
+from ...services.legacy_authz_service import get_user_authorization, is_user_enabled
 from ...services.topic_registry import get_auto_topics, validate_topic_subscription
 from ...services.user_service import get_user_by_id
 from ...services.ws_manager import ws_connection_manager
@@ -31,12 +32,13 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
         return
 
     user = get_user_by_id(db, user_id)
-    if not user or user.status != "active":
+    if not user or not is_user_enabled(user.status):
         await websocket.close(code=4403, reason="user_not_allowed")
         return
 
-    role_codes = {role.code for role in user.roles}
-    permission_codes = {permission.code for role in user.roles for permission in role.permissions}
+    authz = get_user_authorization(db, user.id)
+    role_codes = authz.role_codes
+    permission_codes = authz.permission_codes
 
     await websocket.accept()
     connection = await ws_connection_manager.register(

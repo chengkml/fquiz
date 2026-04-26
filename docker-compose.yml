@@ -1,7 +1,5 @@
 services:
   db:
-    profiles:
-      - local-db
     image: ${POSTGRES_IMAGE:-docker.m.daocloud.io/pgvector/pgvector:pg16}
     container_name: fquiz-db
     environment:
@@ -24,6 +22,57 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  redis:
+    image: ${REDIS_IMAGE:-docker.m.daocloud.io/library/redis:7-alpine}
+    container_name: fquiz-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - fquiz_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:latest}
+    container_name: fquiz-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - fquiz_minio_data:/data
+    restart: unless-stopped
+
+  minio-init:
+    image: ${MINIO_MC_IMAGE:-minio/mc:latest}
+    container_name: fquiz-minio-init
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-fquiz-files}
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - >
+        until mc alias set local "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"; do
+          sleep 1;
+        done;
+        mc mb -p "local/$MINIO_BUCKET" || true;
+    restart: "no"
+
   api:
     build:
       context: ./api
@@ -34,20 +83,34 @@ services:
         PIP_DEFAULT_TIMEOUT: ${PIP_DEFAULT_TIMEOUT:-300}
         PIP_RETRIES: ${PIP_RETRIES:-20}
     container_name: fquiz-api
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
     environment:
       API_HOST: ${API_HOST:-0.0.0.0}
       API_PORT: ${API_PORT:-8000}
       API_CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       API_CORS_ORIGIN_REGEX: ${API_CORS_ORIGIN_REGEX:-}
       DATABASE_URL: ${DATABASE_URL:-}
-      DB_HOST: ${DB_HOST:-223.109.142.84}
+      DB_HOST: ${DB_HOST:-db}
       DB_PORT: ${DB_PORT:-5432}
       DB_NAME: ${DB_NAME:-postgres}
       DB_SCHEMA: ${DB_SCHEMA:-public}
-      DB_USERNAME: ${DB_USERNAME:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-1qazZAQ!}
+      DB_USERNAME: ${DB_USERNAME:-fquiz}
+      DB_PASSWORD: ${DB_PASSWORD:-fquiz}
+      FILE_VFS_ROOT: ${FILE_VFS_ROOT:-./data/vfs}
+      MINIO_ENABLED: ${MINIO_ENABLED:-true}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-fquiz-files}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-this-in-production}
-      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-30}
       REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
       REFRESH_COOKIE_SAMESITE: ${REFRESH_COOKIE_SAMESITE:-lax}
@@ -55,6 +118,14 @@ services:
       LLM_REQUEST_TIMEOUT_SECONDS: ${LLM_REQUEST_TIMEOUT_SECONDS:-60}
       CHAT_CONTEXT_MESSAGE_LIMIT: ${CHAT_CONTEXT_MESSAGE_LIMIT:-12}
       CHAT_DEFAULT_SYSTEM_PROMPT: ${CHAT_DEFAULT_SYSTEM_PROMPT:-You are a helpful assistant.}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+      CELERY_TIMEZONE: ${CELERY_TIMEZONE:-Asia/Shanghai}
+      SCHEDULER_EXPIRE_INTERVAL_SECONDS: ${SCHEDULER_EXPIRE_INTERVAL_SECONDS:-60}
+      WINE_BINARY_PATH: ${WINE_BINARY_PATH:-wine}
+      WINE_ALLOWED_ROOT: ${WINE_ALLOWED_ROOT:-./data/wine}
+      WINE_DEFAULT_TIMEOUT_SECONDS: ${WINE_DEFAULT_TIMEOUT_SECONDS:-300}
+      WINE_MAX_TIMEOUT_SECONDS: ${WINE_MAX_TIMEOUT_SECONDS:-1800}
       INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-admin@example.com}
       INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-change-me-strong-password}
@@ -72,6 +143,78 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
+    restart: unless-stopped
+
+  celery-worker:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-docker.m.daocloud.io/library/python:3.11-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+        PIP_DEFAULT_TIMEOUT: ${PIP_DEFAULT_TIMEOUT:-300}
+        PIP_RETRIES: ${PIP_RETRIES:-20}
+    container_name: fquiz-celery-worker
+    command:
+      - celery
+      - -A
+      - app.core.celery_app.celery_app
+      - worker
+      - --loglevel=${CELERY_LOG_LEVEL:-INFO}
+      - --concurrency=${CELERY_WORKER_CONCURRENCY:-2}
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-postgres}
+      DB_SCHEMA: ${DB_SCHEMA:-public}
+      DB_USERNAME: ${DB_USERNAME:-fquiz}
+      DB_PASSWORD: ${DB_PASSWORD:-fquiz}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+      CELERY_TIMEZONE: ${CELERY_TIMEZONE:-Asia/Shanghai}
+      SCHEDULER_EXPIRE_INTERVAL_SECONDS: ${SCHEDULER_EXPIRE_INTERVAL_SECONDS:-60}
+    restart: unless-stopped
+
+  celery-beat:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-docker.m.daocloud.io/library/python:3.11-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+        PIP_DEFAULT_TIMEOUT: ${PIP_DEFAULT_TIMEOUT:-300}
+        PIP_RETRIES: ${PIP_RETRIES:-20}
+    container_name: fquiz-celery-beat
+    command:
+      - celery
+      - -A
+      - app.core.celery_app.celery_app
+      - beat
+      - --loglevel=${CELERY_LOG_LEVEL:-INFO}
+      - --schedule=/tmp/celerybeat-schedule
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-postgres}
+      DB_SCHEMA: ${DB_SCHEMA:-public}
+      DB_USERNAME: ${DB_USERNAME:-fquiz}
+      DB_PASSWORD: ${DB_PASSWORD:-fquiz}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+      CELERY_TIMEZONE: ${CELERY_TIMEZONE:-Asia/Shanghai}
+      SCHEDULER_EXPIRE_INTERVAL_SECONDS: ${SCHEDULER_EXPIRE_INTERVAL_SECONDS:-60}
     restart: unless-stopped
 
   web:
@@ -94,3 +237,5 @@ services:
 
 volumes:
   fquiz_db_data:
+  fquiz_redis_data:
+  fquiz_minio_data:

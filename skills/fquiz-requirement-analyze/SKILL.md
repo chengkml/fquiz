@@ -63,7 +63,20 @@ python3 skills/fquiz-requirement-analyze/scripts/analyze_requirement.py \
 
 ### D. 生成并回写分析（脚本仅回写）
 
-把大模型生成的分析文本作为 `descr` 回写：
+把大模型生成的分析文本作为 `descr` 回写。
+
+> 推荐优先使用 `--descr-file`（避免超长命令/复杂 here-doc 被执行器 preflight 拦截）。
+
+方式 1（推荐，文件入参）：
+
+```bash
+python3 skills/fquiz-requirement-analyze/scripts/analyze_requirement.py \
+  --action analyze \
+  --requirement-id <REQ_ID> \
+  --descr-file /tmp/requirement-analyze-descr.txt
+```
+
+方式 2（短文本可用，直接传参）：
 
 ```bash
 python3 skills/fquiz-requirement-analyze/scripts/analyze_requirement.py \
@@ -129,11 +142,12 @@ python3 skills/fquiz-requirement-analyze/scripts/analyze_requirement.py \
 
 ### analyze
 - `--requirement-id`（必填）
-- `--descr`（必填，来自模型分析）
+- `--descr` 或 `--descr-file`（二选一，必填其一；推荐 `--descr-file`）
 - `--progress-percent`（可选）
 
 ### batch-analyze
 - `--batch-file` 或 `--batch-json`（二选一，JSON 数组）
+- `--batch-file-encoding`（可选，默认 `utf-8`）
 
 ---
 

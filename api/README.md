@@ -4,7 +4,7 @@ FastAPI 后端服务，包含用户认证和 RBAC 权限控制。
 
 ## 核心能力
 
-- JWT Access Token（默认 15 分钟）
+- JWT Access Token（默认 8 小时）
 - Refresh Session（HttpOnly Cookie，默认 30 天，刷新轮换）
 - RBAC（用户-角色-权限）
 - 用户管理接口（需 `user.manage`）

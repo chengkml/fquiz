@@ -23,12 +23,12 @@ class User(Base):
         "user_id",
         String(36),
         primary_key=True,
-        default=lambda: str(uuid4()),
+        default=lambda: uuid4().hex,
     )
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     username: Mapped[str] = mapped_column("user_name", String(64), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column("password", String(255))
-    status: Mapped[str] = mapped_column("state", String(32), default="active", index=True)
+    status: Mapped[str] = mapped_column("state", String(32), default="ENABLED", index=True)
     created_at: Mapped[datetime] = mapped_column(
         "create_date",
         DateTime(timezone=False),

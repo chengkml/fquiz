@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-04-18T20:24:34.523Z",
+  "updatedAt": "2026-04-23T17:41:10.445Z",
   "entries": {
     "memory:memory/2026-04-13.md:5:5": {
       "key": "memory:memory/2026-04-13.md:5:5",
@@ -11241,13 +11241,13 @@
       "endLine": 318,
       "source": "memory",
       "snippet": "- 典型页面已落地：`requirements`、`chat`、`files`、`menus`、`models`、`roles`、`users`、`todos`、`system-message`、`system-params`、`password`、`mindmap`。 - 验证： - `npm run lint:web`：仍存在仓库既有问题（`admin/life-countdown` 的 `react-hooks/set-state-in-effect` error，`admin/password` 1 条 hooks warning），与本次主题改造无直接关联。 - 目标文件校验：`cd web && npx eslint src/app/layout.tsx src/app/admin/layout.tsx src/app/admin/page.tsx src/app/admin/chat/page.tsx src/app/admin/files/page.tsx src/app/admin/menus/page.tsx src/app/admin/models/page.tsx src/app/admin/requirements/[id]/page.tsx src/app/admin/requirements/new/page.tsx src/app/admin/requirements/page.tsx src/app/admin/roles/page.tsx src/app/admin/todos/page.tsx src/app/admin/u",
-      "recallCount": 8,
+      "recallCount": 9,
       "dailyCount": 0,
       "groundedCount": 0,
-      "totalScore": 3.0506462365388867,
+      "totalScore": 3.465883961319923,
       "maxScore": 0.4379477739334106,
       "firstRecalledAt": "2026-04-18T17:42:47.826Z",
-      "lastRecalledAt": "2026-04-18T20:24:34.523Z",
+      "lastRecalledAt": "2026-04-23T17:41:10.445Z",
       "queryHashes": [
         "230e93b580c9",
         "084771eb9b3d",
@@ -11255,10 +11255,12 @@
         "822340b70cb0",
         "2666eec39454",
         "c2ca05342f3d",
-        "b3b5ef0008f4"
+        "b3b5ef0008f4",
+        "1ee26a2e2cdc"
       ],
       "recallDays": [
-        "2026-04-19"
+        "2026-04-19",
+        "2026-04-24"
       ],
       "conceptTags": [
         "system-message",
@@ -12507,18 +12509,20 @@
       "endLine": 1119,
       "source": "memory",
       "snippet": "- `web/src/app/admin/models/page.tsx` 已承载模型管理完整能力：模型列表/检索、创建编辑、状态流转、路由规则、密钥轮换、健康检查、冒烟测试与对话测试。 - 记忆口径补充： - `MEMORY.md` 的“菜单迁移口径（2026-04-18）”新增“模型管理”条目，明确沿用 `admin.models` 与 `models` 页面既有能力，不做额外扩改。 - 需求状态流转（脚本）： - 命令： - `python3 skills/fquiz-requirement-develop/scripts/develop_requirement.py --requirement-id 304415118593098117 --action full --skip-build-gate --allow-dirty-worktree --allow-broad-change-detection` - 轨迹：`OPEN -> IN_PROGRESS(0/30/60/90) -> COMPLETED(100)`（HTTP 200）。 - 远端状态确认： - `/api/project/requirement/get/304415118593098117` 返回： - `status=COMPLETED` - `progressPercent=100` - `resultMsg=开发完成：状态置为 COMPLETED` - 说明： - 本次按任务约束未执行构建/编译与额外回归测试。 - 当前仓",
-      "recallCount": 1,
+      "recallCount": 2,
       "dailyCount": 0,
       "groundedCount": 0,
-      "totalScore": 0.2454825460910797,
-      "maxScore": 0.2454825460910797,
+      "totalScore": 0.6608205527067184,
+      "maxScore": 0.4153380066156387,
       "firstRecalledAt": "2026-04-18T20:05:38.168Z",
-      "lastRecalledAt": "2026-04-18T20:05:38.168Z",
+      "lastRecalledAt": "2026-04-23T17:41:10.445Z",
       "queryHashes": [
-        "0c6cba4785cb"
+        "0c6cba4785cb",
+        "1ee26a2e2cdc"
       ],
       "recallDays": [
-        "2026-04-19"
+        "2026-04-19",
+        "2026-04-24"
       ],
       "conceptTags": [
         "模型列表/检索",
@@ -12746,6 +12750,68 @@
         "allow-broad-change-detection",
         "api/app/services/seed-service.py",
         "admin.cron-task-mgr"
+      ]
+    },
+    "memory:memory/2026-04-24.md:220:250": {
+      "key": "memory:memory/2026-04-24.md:220:250",
+      "path": "memory/2026-04-24.md",
+      "startLine": 220,
+      "endLine": 250,
+      "source": "memory",
+      "snippet": "- 保留旧 `themeMode` 写法兼容（内部映射），并继续写回 legacy key `fquiz:theme:mode`。 - 新增持久化键： - `fquiz:theme:primary-mode` - `fquiz:theme:compact` - `fquiz:theme:happy-work` - 新增快乐工作特效开关对根节点 class 的联动（`fquiz-happy-work`）。 - `web/src/app/admin/layout.tsx` - 右上角主题入口改为与 AntD 文档一致的“主题图标 + Dropdown 菜单”交互（替换原 Select 下拉）。 - 菜单结构、分隔与文案按官方顺序对齐： - 跟随系统 / 浅色主题 / 暗黑主题 - 分隔 - 紧凑主题 - 分隔 - 快乐工作特效 - 分隔 - AI 生成主题 - 主题编辑器 - 激活态改为蓝色徽点（Badge）标识，行为与官方一致： - `auto/light/dark` 互斥 - `compact/happy-work` 开关式 - `AI 生成主题` 当前做最小可交付适配：记录启用状态并跳转官方主题编辑器页。 - `web/src/app/globals.css` - 新增 `fquiz-happy-work` 视觉动效（轻微饱和度/色相变化）与 `p",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.42001238763332366,
+      "maxScore": 0.42001238763332366,
+      "firstRecalledAt": "2026-04-23T17:41:10.445Z",
+      "lastRecalledAt": "2026-04-23T17:41:10.445Z",
+      "queryHashes": [
+        "1ee26a2e2cdc"
+      ],
+      "recallDays": [
+        "2026-04-24"
+      ],
+      "conceptTags": [
+        "primary-mode",
+        "happy-work",
+        "fquiz-happy-work",
+        "web/src/app/admin/layout.tsx",
+        "auto/light/dark",
+        "compact/happy-work",
+        "web/src/app/globals.css",
+        "轻微饱和度/色相变化"
+      ]
+    },
+    "memory:memory/2026-04-23.md:164:184": {
+      "key": "memory:memory/2026-04-23.md:164:184",
+      "path": "memory/2026-04-23.md",
+      "startLine": 164,
+      "endLine": 184,
+      "source": "memory",
+      "snippet": "- `python3 -m compileall api/app` -> 通过。 - 前端构建： - `npm run build:web` -> 失败，仍为既有问题： - `web/src/app/admin/layout.tsx:155`，`Card` 组件 `children` 类型不匹配（`ui-antd` 兼容层类型定义问题，非本轮新增）。 - 风险与影响： - 老表 `menu` 字段语义与当前前端展示字段并非一一对应（如 `component/cacheable`），当前仍为兼容映射；如需完全对齐 quiz UI 语义，后续需补充映射规则。 - `permissions` 仍是基于菜单编码映射的兼容推导；若线上老表菜单编码偏差，权限显示与鉴权可能出现边缘不一致，需要联调验证。 ## Work Log - 第三轮：前端构建门禁打通（2026-04-23） - 背景：第二轮后 `npm run build:web` 仍被前端类型问题阻断，影响发布门禁。 - 本次改动（最小闭环）： - `antd Card` 类型兼容修复： - `web/src/components/ui-antd.tsx` - `Card` 包装器改用 `antd` 官方 `CardProps` 类型，不再依赖 `ComponentProps<typeof AntCard>` 推导。 - 对 `AntCard` 做显式可渲染组件收敛（`AntCardComponent`），避免 `JSX element type '",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.41664749085903163,
+      "maxScore": 0.41664749085903163,
+      "firstRecalledAt": "2026-04-23T17:41:10.445Z",
+      "lastRecalledAt": "2026-04-23T17:41:10.445Z",
+      "queryHashes": [
+        "1ee26a2e2cdc"
+      ],
+      "recallDays": [
+        "2026-04-24"
+      ],
+      "conceptTags": [
+        "api/app",
+        "web/src/app/admin/layout.tsx",
+        "ui-antd",
+        "component/cacheable",
+        "web/src/components/ui-antd.tsx",
+        "python3",
+        "compileall",
+        "api"
       ]
     }
   }

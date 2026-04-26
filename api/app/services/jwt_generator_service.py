@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from ..core.database import SessionLocal
 from ..core.security import create_access_token
 from ..models.user import User
+from .legacy_authz_service import get_user_authorization, is_user_enabled, normalize_user_status
 from ..schemas.jwt_generator import (
     JwtGenerateRequest,
     JwtGenerateResponse,
@@ -39,7 +40,10 @@ def list_jwt_generator_users(
                 )
 
         if status_filter in {"active", "disabled"}:
-            stmt = stmt.where(User.status == status_filter)
+            if status_filter == "active":
+                stmt = stmt.where(User.status.in_(["active", "ACTIVE", "ENABLED"]))
+            else:
+                stmt = stmt.where(User.status.in_(["disabled", "DISABLED", "INACTIVE"]))
 
         total_stmt = select(func.count()).select_from(User)
         if keyword:
@@ -52,7 +56,10 @@ def list_jwt_generator_users(
                     | User.username.ilike(like)
                 )
         if status_filter in {"active", "disabled"}:
-            total_stmt = total_stmt.where(User.status == status_filter)
+            if status_filter == "active":
+                total_stmt = total_stmt.where(User.status.in_(["active", "ACTIVE", "ENABLED"]))
+            else:
+                total_stmt = total_stmt.where(User.status.in_(["disabled", "DISABLED", "INACTIVE"]))
 
         total = db.scalar(total_stmt) or 0
         users = (
@@ -66,16 +73,18 @@ def list_jwt_generator_users(
             .all()
         )
 
-        items = [
-            JwtGeneratorUserItem(
-                id=user.id,
-                email=user.email,
-                username=user.username,
-                status=user.status,
-                role_codes=sorted({role.code for role in user.roles}),
+        items = []
+        for user in users:
+            authz = get_user_authorization(db, user.id)
+            items.append(
+                JwtGeneratorUserItem(
+                    id=user.id,
+                    email=user.email or "",
+                    username=user.username,
+                    status=normalize_user_status(user.status),
+                    role_codes=sorted(authz.role_codes),
+                )
             )
-            for user in users
-        ]
 
     return JwtGeneratorUserListResponse(items=items, total=total, limit=limit, offset=offset)
 
@@ -87,13 +96,12 @@ def generate_jwt_for_user(payload: JwtGenerateRequest) -> JwtGenerateResponse:
         user = get_user_by_id(db, normalized_user_id)
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-        if user.status != "active":
+        if not is_user_enabled(user.status):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is disabled")
 
-        role_codes = sorted({role.code for role in user.roles})
-        permission_codes = sorted(
-            {permission.code for role in user.roles for permission in role.permissions}
-        )
+        authz = get_user_authorization(db, user.id)
+        role_codes = sorted(authz.role_codes)
+        permission_codes = sorted(authz.permission_codes)
 
     access_token, expires_in = create_access_token(
         user_id=normalized_user_id,

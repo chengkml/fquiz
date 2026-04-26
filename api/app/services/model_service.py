@@ -55,7 +55,7 @@ from ..schemas.token_usage import (
 from .llm_gateway import create_reply_with_model
 from .push_service import publish_topic
 
-MODEL_TOPIC = "admin.models"
+MODEL_TOPIC = "model.registry"
 GLOBAL_ROUTE_KEY = "__global__"
 VALID_STATUSES = ("DRAFT", "ENABLED", "DISABLED", "DEPRECATED")
 VALID_ROUTE_TYPES = ("GLOBAL", "CAPABILITY", "BUSINESS", "AGENT")
@@ -293,7 +293,7 @@ def delete_model(db: Session, model_id: int) -> None:
             MODEL_TOPIC,
             name="models.changed",
             payload={"action": "deleted", "model_id": deleted_model_id, "model_code": deleted_model_code},
-            requires_refetch=["/api/v1/admin/models", "/api/v1/admin/models/summary", "/api/v1/admin/model-routes"],
+            requires_refetch=[],
             dedupe_key=f"models:deleted:{deleted_model_id}",
         )
     )
@@ -606,7 +606,7 @@ def ingest_model_usage(db: Session, payload: ModelUsageIngestRequest) -> dict[st
             MODEL_TOPIC,
             name="models.usage_ingested",
             payload={"model_code": model_code, "request_count": payload.request_count},
-            requires_refetch=["/api/v1/admin/models", "/api/v1/admin/models/summary"],
+            requires_refetch=[],
             dedupe_key=f"models:usage:{model_code}",
         )
     )
@@ -721,7 +721,7 @@ def delete_route_rule(db: Session, route_rule_id: int) -> dict[str, bool]:
                 "route_type": deleted_route_type,
                 "route_key": deleted_route_key,
             },
-            requires_refetch=["/api/v1/admin/model-routes", "/api/v1/admin/models", "/api/v1/admin/models/summary"],
+            requires_refetch=[],
             dedupe_key=f"model_routes:deleted:{deleted_rule_id}",
         )
     )
@@ -1328,7 +1328,7 @@ def _publish_model_changed(action: str, *, model: ModelRegistry, extra_payload: 
             MODEL_TOPIC,
             name="models.changed",
             payload=payload,
-            requires_refetch=["/api/v1/admin/models", "/api/v1/admin/models/summary", "/api/v1/admin/model-routes"],
+            requires_refetch=[],
             dedupe_key=f"models:{action}:{model.id}",
         )
     )
@@ -1346,7 +1346,7 @@ def _publish_route_changed(action: str, *, rule: ModelRouteRule) -> None:
                 "route_key": rule.route_key,
                 "target_model_code": rule.target_model_code,
             },
-            requires_refetch=["/api/v1/admin/model-routes", "/api/v1/admin/models", "/api/v1/admin/models/summary"],
+            requires_refetch=[],
             dedupe_key=f"model_routes:{action}:{rule.id}",
         )
     )

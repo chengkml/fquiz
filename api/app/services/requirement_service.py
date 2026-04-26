@@ -303,10 +303,7 @@ def delete_requirement(db: Session, requirement_id: str, *, actor: User) -> bool
                 "code": deleted_id,
                 "actor_user_id": actor.id,
             },
-            requires_refetch=[
-                "/api/v1/requirements",
-                f"/api/v1/requirements/{deleted_id}",
-            ],
+            requires_refetch=[],
             dedupe_key=f"requirements:deleted:{deleted_id}",
         )
     )
@@ -502,12 +499,7 @@ def _publish_requirement_change(
             TOPIC_NAME,
             name=event_name,
             payload=payload,
-            requires_refetch=[
-                "/api/v1/requirements",
-                f"/api/v1/requirements/{requirement.id}",
-                f"/api/v1/requirements/{requirement.id}/comments",
-                f"/api/v1/requirements/{requirement.id}/events",
-            ],
+            requires_refetch=[],
             dedupe_key=f"requirements:{action}:{requirement.id}",
         )
     )
