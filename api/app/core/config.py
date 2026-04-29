@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     database_url: str | None = None
     db_host: str = "127.0.0.1"
-    db_port: int = 5433
+    db_port: int = 5434
     db_name: str = "postgres"
     db_schema: str = "public"
     db_username: str = "fquiz"

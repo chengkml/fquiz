@@ -47,7 +47,7 @@
 - SQLAlchemy 关联加载选项（`selectinload/joinedload`）避免在模块导入期以全局常量初始化，优先在函数内惰性构建，防止导入顺序导致 mapper 提前配置失败。
 - `app.models` 包初始化需预加载全部模型模块，确保字符串关系（如 `"AuditLog"`）在启动阶段可解析。
 - 部署 compose 中 DB 镜像应通过 `POSTGRES_IMAGE` 可配置，默认使用镜像站的 pgvector 镜像（`docker.m.daocloud.io/pgvector/pgvector:pg16`）。
-- 宿主机 DB 暴露端口统一走 `POSTGRES_PORT`（默认 `5433`），用于规避与宿主机已有 PostgreSQL（常见 `5432`）冲突；容器内连接仍保持 `db:5432`。
+- 宿主机 DB 暴露端口统一走 `POSTGRES_PORT`（默认 `5434`），用于规避与宿主机已有 PostgreSQL（常见 `5432`）冲突；容器内连接仍保持 `db:5432`。
 - CORS 来源控制采用“双轨配置”：`API_CORS_ORIGINS`（精确列表）+ `API_CORS_ORIGIN_REGEX`（正则，可选）；`API_CORS_ORIGINS` 支持 `*` 和通配符域名并在后端转换为 `allow_origin_regex`。
 - GitHub Actions 使用 `appleboy/ssh-action` 部署时，慢网环境需显式设置 `command_timeout`（建议 `45m`）并为 `docker compose pull` 增加重试，避免出现 `Run Command Timeout` 直接中断发布。
 - GitHub Actions 的部署编排需与仓库 `docker-compose.yml` 服务拓扑保持一致，至少包含 `db/api/web/redis/minio/minio-init/celery-worker/celery-beat`；避免在 workflow 内维护“精简版 compose”导致运行时能力缺失（如 Celery/MinIO）。
@@ -224,7 +224,7 @@
 
 - 默认参数口径：
   - Docker 内：`DB_HOST=db`、`DB_PORT=5432`、`DB_NAME=postgres`、`DB_USERNAME=fquiz`、`DB_PASSWORD=fquiz`。
-  - 本机直连（非 Docker）：`DB_HOST=127.0.0.1`、`DB_PORT=5433`、`DB_NAME=postgres`、`DB_USERNAME=fquiz`、`DB_PASSWORD=fquiz`。
+  - 本机直连（非 Docker）：`DB_HOST=127.0.0.1`、`DB_PORT=5434`、`DB_NAME=postgres`、`DB_USERNAME=fquiz`、`DB_PASSWORD=fquiz`。
 - `docker compose` 的 `db` 服务已取消 `local-db` profile，默认 `up` 即启动本地库；`api` 增加 `depends_on: db (healthy)`。
 - `DB_SCHEMA` 通过 PostgreSQL `search_path` 注入，语义等价 JDBC 的 `currentSchema`。
 - API 启动初始化口径：`seed_defaults` 对本地目标执行；为兼容老表状态约束，初始管理员状态写入值统一为 `ENABLED`（不使用 `active`）。
