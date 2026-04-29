@@ -50,6 +50,7 @@
 - 宿主机 DB 暴露端口统一走 `POSTGRES_PORT`（默认 `5433`），用于规避与宿主机已有 PostgreSQL（常见 `5432`）冲突；容器内连接仍保持 `db:5432`。
 - CORS 来源控制采用“双轨配置”：`API_CORS_ORIGINS`（精确列表）+ `API_CORS_ORIGIN_REGEX`（正则，可选）；`API_CORS_ORIGINS` 支持 `*` 和通配符域名并在后端转换为 `allow_origin_regex`。
 - GitHub Actions 使用 `appleboy/ssh-action` 部署时，慢网环境需显式设置 `command_timeout`（建议 `45m`）并为 `docker compose pull` 增加重试，避免出现 `Run Command Timeout` 直接中断发布。
+- GitHub Actions 的部署编排需与仓库 `docker-compose.yml` 服务拓扑保持一致，至少包含 `db/api/web/redis/minio/minio-init/celery-worker/celery-beat`；避免在 workflow 内维护“精简版 compose”导致运行时能力缺失（如 Celery/MinIO）。
 - `docker compose up -d` 不会重建 `build` 类型服务镜像；本项目 `web` 无源码挂载且运行 Next.js 生产构建产物，前端代码变更后需执行 `docker compose up --build -d web`（必要时先 `docker compose build --no-cache web`）。
 - `api` 构建若在拉取 `docker.m.daocloud.io/library/python:3.11-slim` 时出现 manifest `EOF`，优先重试 `docker compose build api`；若持续失败，可在 `.env` 覆盖 `PYTHON_BASE_IMAGE=python:3.11-slim` 走 Docker Hub 兜底。
 
@@ -214,6 +215,8 @@
 - 后台表格行内“操作”入口推荐统一为下拉菜单形态，优先复用 `web/src/components/row-action-menu.tsx`，避免页面内重复堆叠小按钮并降低操作列宽度波动。
 - Phase B 样板页已落地：`/admin/users`、`/admin/requirements`、`/admin/menus`；后续页面迁移默认保持“业务逻辑不动，仅替换操作入口承载组件”的最小改动策略。
 - 后台左侧导航默认不展示“系统菜单”标题与底部“当前角色/账号状态”文案，避免重复信息占用导航空间（移动端抽屉同样不显示该标题）。
+- 后台左侧导航收缩按钮固定在侧栏左下角（桌面端），不再放在顶部 Header；移动端仍保留顶部“打开菜单”按钮。
+- 后台菜单项图标渲染口径：优先使用后端返回 `menu.icon` 映射，其次按 `menu.path` 回退，最终使用目录/叶子通用图标兜底，确保菜单无空图标。
 
 ## 数据库连接口径（2026-04-23）
 
@@ -249,6 +252,7 @@
   - 新增页面如需 AntD 高级能力，可直接引入 `antd`，但需保持与现有主题和交互风格一致。
 - 兼容说明：`web/src/types/antd.d.ts` 仅保留 `antd/dist/reset.css` 声明，禁止再写 `declare module "antd"`；否则会覆盖官方类型并导致 `Form.useForm<T>` 等泛型调用在 `next build` 的 TypeScript 阶段失败。
 - `web/src/components/ui-antd.tsx` 作为兼容层时，若自定义 `type/variant/size/checked` 等语义，必须先 `Omit` 掉对应 AntD 原生同名字段再重定义，否则会触发联合类型冲突并阻断 Docker 构建。
+- `web/src/app/admin/page.tsx`（后台首页）已采用 AntD 标准化信息布局：统计卡片 + `Segmented` 分组筛选 + `Card.Meta` 模块卡片；权限判断与路由不变，筛选默认值固定 `all` 并在权限变化后自动回落。
 
 ## 需求管理兼容口径（2026-04-22）
 
@@ -858,6 +862,19 @@
 
 - 后台壳层 `web/src/app/admin/layout.tsx` 不再渲染内容区顶部公共信息块（Breadcrumb + 页面标题 + 页面描述）。
 - 后台页面默认直接进入业务内容区，避免在每个页面重复展示“模块标题 + 描述文案”。
+
+## WebSocket STOMP 口径（2026-04-26）
+
+- 实时推送链路已升级为“双协议并存”：
+  - 旧协议：`/api/v1/ws`（JSON 消息）。
+  - 新协议：`/api/v1/ws/stomp`（STOMP over WebSocket）。
+- 鉴权口径不变：两条链路均通过 `POST /api/v1/ws/ticket` 获取一次性 ticket，连接时携带 `?ticket=...`。
+- 前端默认连接已切换到 STOMP：
+  - `web/src/components/ws-provider.tsx` 走 STOMP 握手与 `SUBSCRIBE/UNSUBSCRIBE`。
+  - 业务侧 `useTopicSubscription` API 不变。
+- 后端推送入口口径不变：
+  - 继续通过 `api/app/services/push_service.py` -> `ws_connection_manager.publish*` 广播事件；
+  - 管理器内部按连接协议分别编码为 JSON 或 STOMP `MESSAGE` 帧。
 
 ## ATP 模型管理口径（2026-04-26）
 

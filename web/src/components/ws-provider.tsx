@@ -13,7 +13,8 @@ import {
 
 import { useAuth } from "@/components/auth-provider";
 import { getApiBaseUrl } from "@/lib/api";
-import type { WsEventEnvelope, WsServerMessage, WsTicketResponse } from "@/types/ws";
+import { buildStompFrame, parseStompFrames, topicToDestination } from "@/lib/stomp";
+import type { WsEventEnvelope, WsTicketResponse } from "@/types/ws";
 
 type TopicHandler = (event: WsEventEnvelope) => void;
 
@@ -36,6 +37,7 @@ export function WSProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const { user, fetchWithAuth, logout, refreshAccessToken } = useAuth();
   const socketRef = useRef<WebSocket | null>(null);
+  const stompConnectedRef = useRef(false);
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);
   const desiredTopicsRef = useRef<Set<string>>(new Set());
@@ -65,6 +67,80 @@ export function WSProvider({ children }: { children: React.ReactNode }) {
 
   const hasSeenEvent = (eventId: string) => seenEventIdsRef.current.includes(eventId);
 
+  const subscriptionIdForTopic = (topic: string) => `topic:${topic}`;
+
+  const sendSubscribeFrame = useCallback((topic: string) => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN || !stompConnectedRef.current) {
+      return;
+    }
+    socket.send(
+      buildStompFrame({
+        command: "SUBSCRIBE",
+        headers: {
+          id: subscriptionIdForTopic(topic),
+          destination: topicToDestination(topic),
+        },
+      }),
+    );
+  }, []);
+
+  const sendUnsubscribeFrame = useCallback((topic: string) => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN || !stompConnectedRef.current) {
+      return;
+    }
+    socket.send(
+      buildStompFrame({
+        command: "UNSUBSCRIBE",
+        headers: { id: subscriptionIdForTopic(topic) },
+      }),
+    );
+  }, []);
+
+  const handleIncomingEvent = useCallback((event: WsEventEnvelope) => {
+    if (!event || typeof event.id !== "string" || typeof event.topic !== "string") {
+      return;
+    }
+    if (hasSeenEvent(event.id)) {
+      return;
+    }
+    rememberEventId(event.id);
+
+    if (event.topic === "auth") {
+      if (event.name === "auth.permission_changed") {
+        void refreshAccessToken();
+      }
+      if (event.name === "auth.profile_changed") {
+        const status = typeof event.payload.status === "string" ? event.payload.status : null;
+        if (status && status !== "active") {
+          void logout();
+          return;
+        }
+        void refreshAccessToken();
+      }
+    }
+
+    if (event.meta?.requires_refetch) {
+      for (const key of event.meta.requires_refetch) {
+        void queryClient.invalidateQueries({
+          predicate: (query) => {
+            const first = query.queryKey[0];
+            return typeof first === "string" && (first === key || first.startsWith(`${key}?`));
+          },
+        });
+      }
+    }
+
+    const handlers = handlersRef.current.get(event.topic);
+    if (!handlers) {
+      return;
+    }
+    for (const handler of handlers) {
+      handler(event);
+    }
+  }, [logout, queryClient, refreshAccessToken]);
+
   const connect = useCallback(async () => {
     if (!userIdRef.current) {
       return;
@@ -83,78 +159,64 @@ export function WSProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     const ticketPayload = (await ticketRes.json()) as WsTicketResponse;
-    const socket = new WebSocket(`${toWebSocketUrl("/api/v1/ws")}?ticket=${encodeURIComponent(ticketPayload.ticket)}`);
+    const socket = new WebSocket(
+      `${toWebSocketUrl("/api/v1/ws/stomp")}?ticket=${encodeURIComponent(ticketPayload.ticket)}`,
+      ["v12.stomp", "v11.stomp", "v10.stomp"],
+    );
     socketRef.current = socket;
+    stompConnectedRef.current = false;
 
     socket.onopen = () => {
-      setConnected(true);
-      reconnectAttemptRef.current = 0;
-      const topics = Array.from(desiredTopicsRef.current);
-      if (topics.length > 0) {
-        socket.send(JSON.stringify({ type: "subscribe", topics }));
-      }
+      socket.send(
+        buildStompFrame({
+          command: "CONNECT",
+          headers: {
+            "accept-version": "1.2,1.1,1.0",
+            "heart-beat": "10000,10000",
+          },
+        }),
+      );
     };
 
     socket.onmessage = (message) => {
-      let parsed: WsServerMessage;
+      if (typeof message.data !== "string") {
+        return;
+      }
+
+      let frames;
       try {
-        parsed = JSON.parse(message.data) as WsServerMessage;
+        frames = parseStompFrames(message.data);
       } catch {
         return;
       }
 
-      if (parsed.type === "ready") {
-        const topics = Array.from(desiredTopicsRef.current);
-        if (topics.length > 0) {
-          socket.send(JSON.stringify({ type: "subscribe", topics }));
-        }
-        return;
-      }
-
-      if (parsed.type === "unsubscribed") {
-        for (const topic of parsed.topics) {
-          desiredTopicsRef.current.delete(topic);
-          handlersRef.current.delete(topic);
-        }
-        return;
-      }
-
-      if (parsed.type === "event") {
-        const event = parsed.event;
-        if (hasSeenEvent(event.id)) {
-          return;
-        }
-        rememberEventId(event.id);
-
-        if (event.topic === "auth") {
-          if (event.name === "auth.permission_changed") {
-            void refreshAccessToken();
+      for (const frame of frames) {
+        if (frame.command === "CONNECTED") {
+          stompConnectedRef.current = true;
+          setConnected(true);
+          reconnectAttemptRef.current = 0;
+          for (const topic of desiredTopicsRef.current) {
+            sendSubscribeFrame(topic);
           }
-          if (event.name === "auth.profile_changed") {
-            const status = typeof event.payload.status === "string" ? event.payload.status : null;
-            if (status && status !== "active") {
-              void logout();
-              return;
-            }
-            void refreshAccessToken();
-          }
+          continue;
         }
 
-        if (event.meta?.requires_refetch) {
-          for (const key of event.meta.requires_refetch) {
-            void queryClient.invalidateQueries({
-              predicate: (query) => {
-                const first = query.queryKey[0];
-                return typeof first === "string" && (first === key || first.startsWith(`${key}?`));
-              },
-            });
+        if (frame.command === "MESSAGE") {
+          if (!frame.body) {
+            continue;
           }
+          try {
+            const event = JSON.parse(frame.body) as WsEventEnvelope;
+            handleIncomingEvent(event);
+          } catch {
+            continue;
+          }
+          continue;
         }
 
-        const handlers = handlersRef.current.get(event.topic);
-        if (handlers) {
-          for (const handler of handlers) {
-            handler(event);
+        if (frame.command === "ERROR") {
+          if (frame.body?.includes("user_not_allowed")) {
+            void logout();
           }
         }
       }
@@ -162,6 +224,7 @@ export function WSProvider({ children }: { children: React.ReactNode }) {
 
     socket.onclose = async (event) => {
       setConnected(false);
+      stompConnectedRef.current = false;
       if (socketRef.current === socket) {
         socketRef.current = null;
       }
@@ -180,7 +243,7 @@ export function WSProvider({ children }: { children: React.ReactNode }) {
         void connectRef.current?.();
       }, delay);
     };
-  }, [clearReconnectTimer, fetchWithAuth, logout, queryClient, refreshAccessToken]);
+  }, [clearReconnectTimer, fetchWithAuth, handleIncomingEvent, logout, sendSubscribeFrame]);
 
   useEffect(() => {
     connectRef.current = connect;
@@ -191,6 +254,7 @@ export function WSProvider({ children }: { children: React.ReactNode }) {
       clearReconnectTimer();
       socketRef.current?.close();
       socketRef.current = null;
+      stompConnectedRef.current = false;
       desiredTopicsRef.current.clear();
       handlersRef.current.clear();
       if (connected) {
@@ -214,8 +278,8 @@ export function WSProvider({ children }: { children: React.ReactNode }) {
 
     const isNewTopic = !desiredTopicsRef.current.has(topic);
     desiredTopicsRef.current.add(topic);
-    if (isNewTopic && socketRef.current?.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: "subscribe", topics: [topic] }));
+    if (isNewTopic) {
+      sendSubscribeFrame(topic);
     }
 
     return () => {
@@ -229,15 +293,13 @@ export function WSProvider({ children }: { children: React.ReactNode }) {
       }
       handlersRef.current.delete(topic);
       desiredTopicsRef.current.delete(topic);
-      if (socketRef.current?.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify({ type: "unsubscribe", topics: [topic] }));
-      }
+      sendUnsubscribeFrame(topic);
     };
-  }, []);
+  }, [sendSubscribeFrame, sendUnsubscribeFrame]);
 
   const sendPing = useCallback(() => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: "ping", ts: Date.now() }));
+      socketRef.current.send("\n");
     }
   }, []);
 

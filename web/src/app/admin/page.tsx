@@ -14,12 +14,15 @@ import {
   SettingOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
-import { Avatar, Card, Col, Empty, Row, Space, Statistic, Tag, Typography, type CardProps } from "antd";
-import type { ComponentType, ReactNode } from "react";
+import { Avatar, Card, Col, Empty, Row, Segmented, Space, Statistic, Tag, Typography, type CardProps } from "antd";
+import type { ComponentType } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 
-const AntCard = Card as unknown as ComponentType<CardProps>;
+const AntCard = Card as unknown as ComponentType<CardProps> & {
+  Meta: typeof Card.Meta;
+};
 
 type DashboardCard = {
   href: string;
@@ -28,6 +31,15 @@ type DashboardCard = {
   category: string;
   icon: ReactNode;
   visible: (hasPermission: (code: string) => boolean) => boolean;
+};
+
+const CATEGORY_COLORS: Record<string, string> = {
+  权限: "blue",
+  系统: "geekblue",
+  内容: "cyan",
+  协作: "purple",
+  电力: "gold",
+  研发: "magenta",
 };
 
 const CARDS: DashboardCard[] = [
@@ -133,8 +145,40 @@ const CARDS: DashboardCard[] = [
 
 export default function AdminHomePage() {
   const { hasPermission, user } = useAuth();
-  const visibleCards = CARDS.filter((item) => item.visible(hasPermission));
-  const categoryCount = new Set(visibleCards.map((item) => item.category)).size;
+  const [activeCategory, setActiveCategory] = useState<string>("all");
+  const visibleCards = useMemo(() => CARDS.filter((item) => item.visible(hasPermission)), [hasPermission]);
+
+  const categoryStats = useMemo(() => {
+    const stats = new Map<string, number>();
+    for (const item of visibleCards) {
+      stats.set(item.category, (stats.get(item.category) ?? 0) + 1);
+    }
+    return stats;
+  }, [visibleCards]);
+
+  useEffect(() => {
+    if (activeCategory !== "all" && !categoryStats.has(activeCategory)) {
+      setActiveCategory("all");
+    }
+  }, [activeCategory, categoryStats]);
+
+  const categoryOptions = useMemo(
+    () => [
+      { label: `全部 (${visibleCards.length})`, value: "all" },
+      ...Array.from(categoryStats.entries()).map(([category, count]) => ({
+        label: `${category} (${count})`,
+        value: category,
+      })),
+    ],
+    [categoryStats, visibleCards.length],
+  );
+
+  const filteredCards = useMemo(() => {
+    if (activeCategory === "all") {
+      return visibleCards;
+    }
+    return visibleCards.filter((item) => item.category === activeCategory);
+  }, [activeCategory, visibleCards]);
 
   if (visibleCards.length === 0) {
     return (
@@ -147,49 +191,77 @@ export default function AdminHomePage() {
   return (
     <Space direction="vertical" size={24} style={{ width: "100%" }}>
       <Row gutter={[16, 16]}>
-        <Col xs={24} md={8}>
-          <AntCard>
+        <Col xs={24} sm={12} lg={6}>
+          <AntCard size="small">
             <Statistic title="可访问模块" value={visibleCards.length} suffix="个" />
           </AntCard>
         </Col>
-        <Col xs={24} md={8}>
-          <AntCard>
-            <Statistic title="业务分组" value={categoryCount} suffix="类" />
+        <Col xs={24} sm={12} lg={6}>
+          <AntCard size="small">
+            <Statistic title="业务分组" value={categoryStats.size} suffix="类" />
           </AntCard>
         </Col>
-        <Col xs={24} md={8}>
-          <AntCard>
+        <Col xs={24} sm={12} lg={6}>
+          <AntCard size="small">
+            <Statistic title="筛选结果" value={filteredCards.length} suffix="个" />
+          </AntCard>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <AntCard size="small">
             <Statistic title="当前角色" value={user?.role_codes.length ?? 0} suffix="个" />
           </AntCard>
         </Col>
       </Row>
 
       <div>
-        <Space align="baseline" style={{ marginBottom: 16 }}>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            模块导航
-          </Typography.Title>
-          <Typography.Text type="secondary">按权限展示，入口遵循 Ant Design 卡片列表模式。</Typography.Text>
+        <Space direction="vertical" size={12} style={{ width: "100%", marginBottom: 16 }}>
+          <Space align="baseline">
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              模块导航
+            </Typography.Title>
+            <Typography.Text type="secondary">按权限和业务分组快速定位后台模块。</Typography.Text>
+          </Space>
+          <Segmented
+            block
+            options={categoryOptions}
+            value={activeCategory}
+            onChange={(value) => setActiveCategory(String(value))}
+          />
         </Space>
 
         <Row gutter={[16, 16]}>
-          {visibleCards.map((item) => (
+          {filteredCards.map((item) => (
             <Col key={item.href} xs={24} sm={12} xl={8} xxl={6}>
               <Link href={item.href} style={{ display: "block", height: "100%" }}>
-                <AntCard hoverable style={{ height: "100%" }}>
-                  <Space align="start" size={12}>
-                    <Avatar
-                      icon={item.icon}
-                      shape="square"
-                      style={{ backgroundColor: "var(--ant-color-primary)" }}
+                <AntCard
+                  hoverable
+                  size="small"
+                  style={{ height: "100%" }}
+                  styles={{ body: { height: "100%" } }}
+                >
+                  <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                    <AntCard.Meta
+                      avatar={
+                        <Avatar
+                          icon={item.icon}
+                          shape="square"
+                          style={{ backgroundColor: "var(--ant-color-primary)" }}
+                        />
+                      }
+                      title={item.title}
+                      description={
+                        <Typography.Paragraph
+                          ellipsis={{ rows: 2, tooltip: item.description }}
+                          style={{ marginBottom: 0 }}
+                          type="secondary"
+                        >
+                          {item.description}
+                        </Typography.Paragraph>
+                      }
                     />
-                    <Space direction="vertical" size={4}>
-                      <Space size={8} wrap>
-                        <Typography.Text strong>{item.title}</Typography.Text>
-                        <Tag color="blue">{item.category}</Tag>
-                      </Space>
-                      <Typography.Text type="secondary">{item.description}</Typography.Text>
-                    </Space>
+                    <Tag color={CATEGORY_COLORS[item.category] ?? "blue"} style={{ width: "fit-content" }}>
+                      {item.category}
+                    </Tag>
                   </Space>
                 </AntCard>
               </Link>

@@ -4,8 +4,18 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { usePathname } from "next/navigation";
 import Icon, {
+  AppstoreOutlined,
   BgColorsOutlined,
+  CodeOutlined,
   CompressOutlined,
+  DashboardOutlined,
+  DeploymentUnitOutlined,
+  ExperimentOutlined,
+  FileOutlined,
+  FileSearchOutlined,
+  FolderOpenOutlined,
+  FolderOutlined,
+  GlobalOutlined,
   HomeOutlined,
   LinkOutlined,
   LogoutOutlined,
@@ -13,10 +23,15 @@ import Icon, {
   MenuOutlined,
   MenuUnfoldOutlined,
   MoonOutlined,
+  RadarChartOutlined,
+  SafetyCertificateOutlined,
+  SettingOutlined,
   ShopOutlined,
   SmileOutlined,
   SunOutlined,
   SyncOutlined,
+  TeamOutlined,
+  ThunderboltOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import {
@@ -92,14 +107,66 @@ function isActivePath(pathname: string, menuPath: string | null): boolean {
 
 type AntdMenuItems = NonNullable<MenuProps["items"]>;
 
+const MENU_ICON_BY_NAME: Record<string, ReactNode> = {
+  LayoutDashboard: <DashboardOutlined />,
+  Users: <TeamOutlined />,
+  ShieldCheck: <SafetyCertificateOutlined />,
+  MenuSquare: <AppstoreOutlined />,
+  Settings2: <SettingOutlined />,
+  Network: <DeploymentUnitOutlined />,
+  Zap: <ThunderboltOutlined />,
+  Map: <GlobalOutlined />,
+  RadarChart: <RadarChartOutlined />,
+  Experiment: <ExperimentOutlined />,
+  FolderTree: <FolderOpenOutlined />,
+  FileText: <FileSearchOutlined />,
+  Terminal: <CodeOutlined />,
+};
+
+const MENU_ICON_BY_PATH: Record<string, ReactNode> = {
+  "/dashboard": <DashboardOutlined />,
+  "/users": <TeamOutlined />,
+  "/roles": <SafetyCertificateOutlined />,
+  "/menus": <AppstoreOutlined />,
+  "/system-params": <SettingOutlined />,
+  "/power-lines": <DeploymentUnitOutlined />,
+  "/power-lines/atp-viewer": <ExperimentOutlined />,
+  "/lightning-currents": <ThunderboltOutlined />,
+  "/lightning-distribution": <GlobalOutlined />,
+  "/task-monitor": <RadarChartOutlined />,
+  "/files": <FolderOpenOutlined />,
+  "/syslog": <FileSearchOutlined />,
+  "/wine-runner": <CodeOutlined />,
+};
+
+function resolveMenuIcon(iconName: string | null, menuPath: string | null, hasChildren: boolean): ReactNode {
+  if (iconName) {
+    const namedIcon = MENU_ICON_BY_NAME[iconName.trim()];
+    if (namedIcon) {
+      return namedIcon;
+    }
+  }
+
+  if (menuPath) {
+    const pathIcon = MENU_ICON_BY_PATH[menuPath];
+    if (pathIcon) {
+      return pathIcon;
+    }
+  }
+
+  return hasChildren ? <FolderOutlined /> : <FileOutlined />;
+}
+
 function buildMenuItems(items: MenuTreeItem[]): AntdMenuItems {
   return items.map((item) => {
     const children = buildMenuItems(item.children);
     const label = item.path ? <Link href={item.path}>{item.name}</Link> : item.name;
+    const icon = resolveMenuIcon(item.icon, item.path, children.length > 0);
 
     if (children.length > 0) {
       return {
         key: item.id,
+        icon,
         label,
         children,
       };
@@ -107,6 +174,7 @@ function buildMenuItems(items: MenuTreeItem[]): AntdMenuItems {
 
     return {
       key: item.id,
+      icon,
       label,
       disabled: !item.path,
     };
@@ -420,14 +488,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               onClick={() => setMobileMenuOpen(true)}
             />
           )}
-          {isDesktop && (
-            <Button
-              aria-label={siderCollapsed ? "展开菜单" : "收起菜单"}
-              icon={siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-              type="text"
-              onClick={() => setSiderCollapsed((previous) => !previous)}
-            />
-          )}
           <Link className="admin-design-brand" href="/dashboard">
             <span className="admin-design-logo">Q</span>
             <Typography.Text strong>fquiz</Typography.Text>
@@ -475,7 +535,16 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             width={256}
           >
             <div className="admin-design-sider-inner">
-              {navigationMenu}
+              <div className="admin-design-sider-menu">{navigationMenu}</div>
+              <Button
+                className="admin-design-sider-toggle"
+                aria-label={siderCollapsed ? "展开菜单" : "收起菜单"}
+                icon={siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                type="text"
+                onClick={() => setSiderCollapsed((previous) => !previous)}
+              >
+                {!siderCollapsed ? "收起菜单" : null}
+              </Button>
             </div>
           </Sider>
         )}
