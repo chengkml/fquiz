@@ -238,6 +238,11 @@
 - 最小运行态验收：
   - `docker compose ps`（关键服务 `api/web/celery-worker/celery-beat/db/redis/minio` 为 Up，关键依赖健康）。
   - `curl -fsS http://127.0.0.1:8000/health` 返回 API 健康 JSON。
+
+## Compose 变量转义口径（2026-04-30）
+
+- 在 `docker-compose*.yml` 的 `command`/`entrypoint`（尤其是 `sh -c`）中，若变量需要在容器内 shell 阶段展开，必须写成 `$$VAR`，避免被 Compose 在渲染阶段提前插值为空或错误值。
+- `minio-init` 场景基线：`mc alias set` 与 `mc mb` 命令中的 `MINIO_*` 一律使用 `$$MINIO_*`。
   - `curl -I -fsS http://127.0.0.1:3000/` 返回 `HTTP/1.1 200 OK`。
   - 结合 `docker compose logs --tail` 抽样检查 `api/web/celery-worker/celery-beat` 启动日志是否正常。
 

@@ -67,10 +67,10 @@ services:
     command:
       - -c
       - >
-        until mc alias set local "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"; do
+        until mc alias set local "$$MINIO_ENDPOINT" "$$MINIO_ACCESS_KEY" "$$MINIO_SECRET_KEY"; do
           sleep 1;
         done;
-        mc mb -p "local/$MINIO_BUCKET" || true;
+        mc mb -p "local/$$MINIO_BUCKET" || true;
     restart: "no"
 
   api:
