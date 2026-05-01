@@ -79,6 +79,9 @@ const TOWER_TYPE_OPTIONS = [
   { value: "耐张", label: "耐张" },
 ] as const;
 
+const TOWER_TABLE_DEFAULT_PAGE_SIZE = 20;
+const TOWER_MAP_QUERY_LIMIT = 500;
+
 const EMPTY_LINE_FORM: LineFormValues = {
   code: "",
   name: "",
@@ -125,6 +128,7 @@ export default function AdminPowerLinesPage() {
   const [towerKeyword, setTowerKeyword] = useState("");
   const [towerTypeFilter, setTowerTypeFilter] = useState("");
   const [towerRiskFilter, setTowerRiskFilter] = useState("");
+  const [towerPagination, setTowerPagination] = useState({ current: 1, pageSize: TOWER_TABLE_DEFAULT_PAGE_SIZE });
   const [lineModalOpen, setLineModalOpen] = useState(false);
   const [towerModalOpen, setTowerModalOpen] = useState(false);
   const [editingLine, setEditingLine] = useState<LineSummary | null>(null);
@@ -164,11 +168,24 @@ export default function AdminPowerLinesPage() {
     if (towerRiskFilter.trim()) {
       params.set("risk_level", towerRiskFilter.trim());
     }
-    params.set("limit", "500");
-    params.set("offset", "0");
+    if (towerViewMode === "table") {
+      params.set("limit", String(towerPagination.pageSize));
+      params.set("offset", String((towerPagination.current - 1) * towerPagination.pageSize));
+    } else {
+      params.set("limit", String(TOWER_MAP_QUERY_LIMIT));
+      params.set("offset", "0");
+    }
     const query = params.toString();
     return `/api/v1/lines/${selectedLineId}/towers?${query}`;
-  }, [selectedLineId, towerKeyword, towerTypeFilter, towerRiskFilter]);
+  }, [
+    selectedLineId,
+    towerKeyword,
+    towerTypeFilter,
+    towerRiskFilter,
+    towerViewMode,
+    towerPagination.current,
+    towerPagination.pageSize,
+  ]);
 
   const linesQuery = useQuery({
     queryKey: [lineListPath],
@@ -236,6 +253,15 @@ export default function AdminPowerLinesPage() {
       setSelectedLineId(lines.length > 0 ? lines[0].id : null);
     }
   }, [lines, selectedLineId]);
+
+  useEffect(() => {
+    setTowerPagination((prev) => {
+      if (prev.current === 1) {
+        return prev;
+      }
+      return { ...prev, current: 1 };
+    });
+  }, [selectedLineId, towerKeyword, towerTypeFilter, towerRiskFilter]);
 
   const saveLineMutation = useMutation({
     mutationFn: async (values: LineFormValues) => {
@@ -817,7 +843,16 @@ export default function AdminPowerLinesPage() {
                     columns={towerColumns}
                     dataSource={towers}
                     loading={towersQuery.isFetching}
-                    pagination={false}
+                    pagination={{
+                      current: towerPagination.current,
+                      pageSize: towerPagination.pageSize,
+                      total: towersQuery.data?.total ?? 0,
+                      showSizeChanger: true,
+                      showTotal: (total) => `共 ${total} 条`,
+                      onChange: (page, pageSize) => {
+                        setTowerPagination({ current: page, pageSize });
+                      },
+                    }}
                     scroll={{ x: 1520 }}
                   />
                 </div>
