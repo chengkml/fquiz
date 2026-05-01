@@ -56,17 +56,6 @@ class User(Base):
         default=utcnow,
         onupdate=utcnow,
     )
-    create_user: Mapped[str | None] = mapped_column(
-        "created_by",
-        String(64),
-        nullable=True,
-    )
-    update_user: Mapped[str | None] = mapped_column(
-        "updated_by",
-        String(64),
-        nullable=True,
-    )
-
     @property
     def last_login_at(self) -> datetime | None:
         return self.updated_at
