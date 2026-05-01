@@ -134,7 +134,7 @@ jobs:
                   POSTGRES_USER: ${POSTGRES_USER:-fquiz}
                   POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fquiz}
                 ports:
-                  - "${POSTGRES_PORT:-5433}:5432"
+                  - "${POSTGRES_PORT:-5434}:5432"
                 volumes:
                   - fquiz_db_data:/var/lib/postgresql/data
                 healthcheck:
@@ -219,7 +219,7 @@ jobs:
             POSTGRES_DB=fquiz
             POSTGRES_USER=fquiz
             POSTGRES_PASSWORD=fquiz
-            POSTGRES_PORT=5433
+            POSTGRES_PORT=5434
             POSTGRES_IMAGE=docker.m.daocloud.io/pgvector/pgvector:pg16
             ENV
               echo "[warn] .env 不存在，已写入默认模板，请尽快改成生产配置。"
