@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     user_password_column: Literal["password", "password_hash"] = "password_hash"
     user_status_column: Literal["status", "state"] = "status"
     file_vfs_root: str = "./data/vfs"
-    minio_enabled: bool = False
+    minio_enabled: bool = True
     minio_endpoint: str = "http://minio:9000"
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "minioadmin"
