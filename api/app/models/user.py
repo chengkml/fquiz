@@ -39,7 +39,12 @@ class User(Base):
         settings.user_password_column,
         String(255),
     )
-    status: Mapped[str] = mapped_column("state", String(32), default="ENABLED", index=True)
+    status: Mapped[str] = mapped_column(
+        settings.user_status_column,
+        String(32),
+        default="ENABLED",
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         "create_date",
         DateTime(timezone=False),
