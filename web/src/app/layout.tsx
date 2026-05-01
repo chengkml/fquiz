@@ -11,7 +11,7 @@ import "cesium/Build/Cesium/Widgets/widgets.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "需求管理",
+  title: "防雷计算",
   description: "Quiz admin workspace",
 };
 
