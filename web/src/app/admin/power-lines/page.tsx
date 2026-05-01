@@ -766,7 +766,7 @@ export default function AdminPowerLinesPage() {
           ) : (
             <Space direction="vertical" size={12} className="w-full">
               <Typography.Text type="secondary">
-                当前线路编码：{selectedLine.code}，杆塔总数：{selectedLine.tower_count}，当前视图：{towerViewMode === "table" ? "塔杆列表" : "分布图"}
+                当前线路编码：{selectedLine?.code ?? "-"}，杆塔总数：{selectedLine?.tower_count ?? 0}，当前视图：{towerViewMode === "table" ? "塔杆列表" : "分布图"}
               </Typography.Text>
               <div className="grid gap-3 md:grid-cols-3">
                 <Input
