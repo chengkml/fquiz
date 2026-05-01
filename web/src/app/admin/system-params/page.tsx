@@ -61,6 +61,7 @@ export default function AdminSystemParamsPage() {
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -113,6 +114,7 @@ export default function AdminSystemParamsPage() {
     setError("");
     setSuccess("");
     resetForm();
+    setEditorOpen(true);
   }, [resetForm]);
 
   const startEdit = useCallback((item: SystemParamSummary) => {
@@ -126,7 +128,13 @@ export default function AdminSystemParamsPage() {
       description: item.description ?? "",
       status: item.status,
     });
+    setEditorOpen(true);
   }, [formApi]);
+
+  const closeEditor = useCallback(() => {
+    setEditorOpen(false);
+    resetForm();
+  }, [resetForm]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -175,6 +183,7 @@ export default function AdminSystemParamsPage() {
     onSuccess: async (mode) => {
       setError("");
       setSuccess(mode === "created" ? "系统参数已创建" : "系统参数已更新");
+      setEditorOpen(false);
       resetForm();
       await refreshList();
     },
@@ -196,6 +205,7 @@ export default function AdminSystemParamsPage() {
     },
     onSuccess: async (deletedId) => {
       if (editingId === deletedId) {
+        setEditorOpen(false);
         resetForm();
       }
       setError("");
@@ -372,50 +382,55 @@ export default function AdminSystemParamsPage() {
       </Card>
 
       {canManage && (
-        <Card title={editingId === null ? "新建系统参数" : "编辑系统参数"}>
-          <Space direction="vertical" size={12} className="w-full">
-            <Form<FormState> form={formApi} layout="vertical" initialValues={EMPTY_FORM}>
-              <div className="grid gap-4 md:grid-cols-2">
-                <Form.Item<FormState>
-                  label="参数键"
-                  name="param_key"
-                  rules={[{ required: true, message: "请输入参数键" }]}
-                >
-                  <Input disabled={editingId !== null} placeholder="如 site.title" />
-                </Form.Item>
-
-                <Form.Item<FormState>
-                  label="参数名称"
-                  name="param_name"
-                  rules={[{ required: true, message: "请输入参数名称" }]}
-                >
-                  <Input placeholder="如 站点标题" />
-                </Form.Item>
-
-                <Form.Item<FormState> className="md:col-span-2" label="参数值" name="param_value">
-                  <Input.TextArea rows={4} />
-                </Form.Item>
-
-                <Form.Item<FormState> className="md:col-span-2" label="说明" name="description">
-                  <Input.TextArea rows={3} />
-                </Form.Item>
-
-                <Form.Item<FormState> label="状态" name="status">
-                  <Select
-                    options={[...PARAM_STATUS_OPTIONS]}
-                  />
-                </Form.Item>
-              </div>
-            </Form>
-
+        <Modal
+          title={editingId === null ? "新建系统参数" : "编辑系统参数"}
+          open={editorOpen}
+          onCancel={closeEditor}
+          width={760}
+          destroyOnClose
+          footer={(
             <Space>
               <Button type="primary" loading={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
                 {saveMutation.isPending ? "提交中..." : editingId === null ? "创建" : "保存"}
               </Button>
               <Button onClick={resetForm}>重置</Button>
             </Space>
-          </Space>
-        </Card>
+          )}
+        >
+          <Form<FormState> form={formApi} layout="vertical" initialValues={EMPTY_FORM}>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Form.Item<FormState>
+                label="参数键"
+                name="param_key"
+                rules={[{ required: true, message: "请输入参数键" }]}
+              >
+                <Input disabled={editingId !== null} placeholder="如 site.title" />
+              </Form.Item>
+
+              <Form.Item<FormState>
+                label="参数名称"
+                name="param_name"
+                rules={[{ required: true, message: "请输入参数名称" }]}
+              >
+                <Input placeholder="如 站点标题" />
+              </Form.Item>
+
+              <Form.Item<FormState> className="md:col-span-2" label="参数值" name="param_value">
+                <Input.TextArea rows={4} />
+              </Form.Item>
+
+              <Form.Item<FormState> className="md:col-span-2" label="说明" name="description">
+                <Input.TextArea rows={3} />
+              </Form.Item>
+
+              <Form.Item<FormState> label="状态" name="status">
+                <Select
+                  options={[...PARAM_STATUS_OPTIONS]}
+                />
+              </Form.Item>
+            </div>
+          </Form>
+        </Modal>
       )}
     </Space>
   );
