@@ -103,6 +103,42 @@ def _ensure_user_timestamp_column_compatibility() -> None:
             )
 
 
+def _ensure_user_audit_column_compatibility() -> None:
+    """
+    Keep `users` audit actor columns aligned with current ORM mapping.
+
+    Legacy deployments may still use `create_user` / `update_user`,
+    while current models expect `created_by` / `updated_by`.
+    """
+    if not database_url.startswith("postgresql"):
+        return
+
+    schema = settings.resolved_db_schema
+    with engine.begin() as connection:
+        db_inspector = inspect(connection)
+        if not db_inspector.has_table("users", schema=schema):
+            return
+
+        column_names = {
+            column["name"]
+            for column in db_inspector.get_columns("users", schema=schema)
+        }
+
+        if "created_by" not in column_names and "create_user" in column_names:
+            connection.execute(text("ALTER TABLE users RENAME COLUMN create_user TO created_by"))
+            logger.warning(
+                "Detected legacy users.create_user; renamed to users.created_by for schema compatibility.",
+            )
+            column_names.remove("create_user")
+            column_names.add("created_by")
+
+        if "updated_by" not in column_names and "update_user" in column_names:
+            connection.execute(text("ALTER TABLE users RENAME COLUMN update_user TO updated_by"))
+            logger.warning(
+                "Detected legacy users.update_user; renamed to users.updated_by for schema compatibility.",
+            )
+
+
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
@@ -141,6 +177,7 @@ def init_db() -> None:
 
     _ensure_user_pk_column_compatibility()
     _ensure_user_timestamp_column_compatibility()
+    _ensure_user_audit_column_compatibility()
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         local_hosts = {"db", "localhost", "127.0.0.1", "::1"}
