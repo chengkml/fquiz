@@ -6,6 +6,7 @@ import {
   AuditOutlined,
   CodeOutlined,
   DatabaseOutlined,
+  DeploymentUnitOutlined,
   FileSearchOutlined,
   FolderOpenOutlined,
   GlobalOutlined,
@@ -71,6 +72,14 @@ const CARDS: DashboardCard[] = [
     category: "内容",
     icon: <FolderOpenOutlined />,
     visible: (hasPermission) => hasPermission("file.read") || hasPermission("file.manage"),
+  },
+  {
+    href: "/workers",
+    title: "Worker监控",
+    description: "查看 Worker 在线状态、并发、活跃队列和每个 Worker 的任务快照。",
+    category: "协作",
+    icon: <DeploymentUnitOutlined />,
+    visible: (hasPermission) => hasPermission("celery.read") || hasPermission("celery.manage"),
   },
   {
     href: "/task-monitor",

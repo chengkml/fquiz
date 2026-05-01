@@ -91,6 +91,7 @@ MENU_CODE_PERMISSION_MAP: dict[str, set[str]] = {
     "admin.system_params": {"system_param.read", "system_param.manage"},
     "admin.files": {"file.read", "file.manage"},
     "admin.elevation": {"elevation.read", "elevation.manage"},
+    "admin.workers": {"celery.read", "celery.manage"},
     "admin.task_monitor": {"celery.read", "celery.manage"},
     "admin.atp_models": {"atp.read", "atp.manage", "atp.run"},
     "admin.lightning_currents": {"lightning.read", "lightning.manage"},
@@ -101,6 +102,17 @@ MENU_CODE_PERMISSION_MAP: dict[str, set[str]] = {
 
 SYNTHETIC_LEGACY_MENU_ROWS: list[dict[str, Any]] = [
     {
+        "menu_id": "admin.workers",
+        "menu_name": "admin.workers",
+        "menu_label": "Worker监控",
+        "menu_type": "MENU",
+        "parent_id": None,
+        "url": "/admin/workers",
+        "menu_icon": "DeploymentUnitOutlined",
+        "seq": 53,
+        "state": "ENABLED",
+    },
+    {
         "menu_id": "admin.files",
         "menu_name": "admin.files",
         "menu_label": "文件管理",
@@ -108,7 +120,7 @@ SYNTHETIC_LEGACY_MENU_ROWS: list[dict[str, Any]] = [
         "parent_id": None,
         "url": "/admin/files",
         "menu_icon": "FolderTree",
-        "seq": 54,
+        "seq": 56,
         "state": "ENABLED",
     },
     {
@@ -119,7 +131,7 @@ SYNTHETIC_LEGACY_MENU_ROWS: list[dict[str, Any]] = [
         "parent_id": None,
         "url": "/admin/elevation",
         "menu_icon": "Database",
-        "seq": 56,
+        "seq": 57,
         "state": "ENABLED",
     },
     {
@@ -130,7 +142,7 @@ SYNTHETIC_LEGACY_MENU_ROWS: list[dict[str, Any]] = [
         "parent_id": None,
         "url": "/admin/task-monitor",
         "menu_icon": "RadarChart",
-        "seq": 53,
+        "seq": 54,
         "state": "ENABLED",
     },
     {
@@ -141,7 +153,7 @@ SYNTHETIC_LEGACY_MENU_ROWS: list[dict[str, Any]] = [
         "parent_id": None,
         "url": "/admin/power-lines/atp-viewer",
         "menu_icon": "Experiment",
-        "seq": 54,
+        "seq": 55,
         "state": "ENABLED",
     },
     {

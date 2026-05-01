@@ -70,6 +70,7 @@ const PROTECTED_MENU_CODES = new Set([
   "admin.power_lines",
   "admin.lightning_currents",
   "admin.lightning_distribution",
+  "admin.workers",
   "admin.data_query",
   "admin.hot_search",
   "admin.task_monitor",

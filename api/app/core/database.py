@@ -215,6 +215,7 @@ def init_db() -> None:
         system_param,
         todo,
         user,
+        worker_registry,
     )  # noqa: F401
     from ..services.seed_service import seed_defaults
 

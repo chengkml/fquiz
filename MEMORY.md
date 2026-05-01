@@ -125,6 +125,32 @@
 - 运行时真实 Provider Key 不从数据库反解，统一从环境变量 `LLM_PROVIDER_API_KEYS` 注入（支持 `openai=sk-...` 或 JSON 字典字符串）。
 - 一期模型调用采用非流式 OpenAI-compatible `POST /chat/completions`，后续如需流式再扩展 SSE/WS。
 
+## Celery 监控口径（2026-05-01）
+
+- Celery 监控采用“双页面”：
+  - `Worker监控`：`/admin/workers`（聚焦 worker 在线状态、并发、队列、单 worker 任务快照）
+  - `任务监控`：`/admin/task-monitor`（聚焦全局任务状态分布、队列积压、任务明细）
+- Worker 监控 API 入口：
+  - `GET /api/v1/admin/workers/overview`
+  - `GET /api/v1/admin/workers/tasks?worker=...&recent_limit=...`
+- 两页统一复用权限码：`celery.read` / `celery.manage`。
+
+## 调度与监控口径（2026-05-01）
+
+- 调度能力拆分为独立 `scheduler` 服务：
+  - scheduler 入口：`/api/v1/scheduler/*`
+  - 任务入队：`POST /api/v1/scheduler/v1/tasks/enqueue`
+  - 任务撤销：`POST /api/v1/scheduler/v1/tasks/revoke`
+  - 通过 `x-scheduler-token`（`SCHEDULER_API_TOKEN`）做可选鉴权。
+- 监控能力统一走 Flower 代理：
+  - 后端代理入口：
+    - `GET /api/v1/admin/flower/workers`
+    - `GET /api/v1/admin/flower/worker-tasks`
+  - 前端 `Worker监控` 与 `任务监控` 页面都通过后端代理读取 Flower 数据，不直接连 Flower。
+- Worker 自动注册机制：
+  - Celery worker 启停/心跳通过 signals 写入 `worker_registry` 表。
+  - Beat 定时任务 `app.tasks.worker_registry_tasks.sweep_worker_registry_offline` 负责离线兜底标记。
+
 ## 前端 Radix 全量化口径（2026-04-18）
 
 - `web/src/app/**` 已完成“去语义类 + 组件全量 Radix 化”：不再依赖 `surface-card` / `btn-*` / `control` / `table-*` / `notice*` / `text-muted` 等自定义语义类。

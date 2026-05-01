@@ -10,6 +10,7 @@ import {
   Button,
   Card,
   Col,
+  Drawer,
   Empty,
   Input,
   Row,
@@ -33,37 +34,37 @@ const AntCard = Card as unknown as ComponentType<CardProps>;
 
 const DEFAULT_RECENT_LIMIT = 100;
 
-type FlowerWorkerItem = {
+type WorkerMonitorWorkerItem = {
   worker: string;
   status: string;
   queue_names: string[];
-  registered_count: number;
-  processed_count: number;
   concurrency: number;
   prefetch_count: number;
+  processed_count: number;
   active_count: number;
   reserved_count: number;
   scheduled_count: number;
+  registered_count: number;
   last_heartbeat_at: string | null;
 };
 
-type FlowerWorkersOverviewResponse = {
+type WorkerMonitorOverviewResponse = {
   generated_at: string;
-  workers: FlowerWorkerItem[];
   summary: {
     total: number;
     online: number;
     offline: number;
   };
+  workers: WorkerMonitorWorkerItem[];
 };
 
-type FlowerTaskItem = {
+type WorkerMonitorTaskItem = {
   task_id: string;
   name: string;
   state: string;
   source: string;
-  worker: string;
   queue_name: string | null;
+  worker: string;
   args_text: string | null;
   kwargs_text: string | null;
   eta: string | null;
@@ -75,23 +76,19 @@ type FlowerTaskItem = {
   exception_text: string | null;
 };
 
-type FlowerWorkerTaskOverviewResponse = {
+type WorkerMonitorTaskOverviewResponse = {
   generated_at: string;
   worker: string;
-  active_tasks: FlowerTaskItem[];
-  reserved_tasks: FlowerTaskItem[];
-  scheduled_tasks: FlowerTaskItem[];
-  recent_tasks: FlowerTaskItem[];
   summary: {
     active: number;
     reserved: number;
     scheduled: number;
     recent: number;
   };
-};
-
-type TaskTableRow = FlowerTaskItem & {
-  key: string;
+  active_tasks: WorkerMonitorTaskItem[];
+  reserved_tasks: WorkerMonitorTaskItem[];
+  scheduled_tasks: WorkerMonitorTaskItem[];
+  recent_tasks: WorkerMonitorTaskItem[];
 };
 
 function formatDateTime(value: string | null | undefined): string {
@@ -137,15 +134,6 @@ function containsText(source: string | null | undefined, keyword: string): boole
   return (source || "").toLowerCase().includes(keyword.toLowerCase());
 }
 
-function toTaskRows(workerName: string, source: string, tasks: FlowerTaskItem[]): TaskTableRow[] {
-  return tasks.map((item, index) => ({
-    ...item,
-    source: item.source || source,
-    worker: item.worker || workerName,
-    key: `${workerName}:${source}:${item.task_id}:${index + 1}`,
-  }));
-}
-
 function parseStatusFilter(value: string | undefined): "all" | "online" | "offline" {
   if (value === "online" || value === "offline") {
     return value;
@@ -153,56 +141,59 @@ function parseStatusFilter(value: string | undefined): "all" | "online" | "offli
   return "all";
 }
 
-export default function AdminTaskMonitorPage() {
+export default function AdminWorkersPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const canRead = hasPermission("celery.read") || hasPermission("celery.manage");
 
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [workerKeyword, setWorkerKeyword] = useState("");
   const [queueKeyword, setQueueKeyword] = useState("");
-  const [taskKeyword, setTaskKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "online" | "offline">("all");
+  const [selectedWorker, setSelectedWorker] = useState<string | null>(null);
 
-  const workersOverviewQuery = useQuery({
-    queryKey: ["flower-workers-overview"],
+  const overviewQuery = useQuery({
+    queryKey: ["worker-monitor-overview"],
     enabled: Boolean(user) && canRead,
     queryFn: async () => {
       const response = await fetchWithAuth("/api/v1/admin/flower/workers?forceRefresh=false");
       if (!response.ok) {
         throw new Error(await readApiError(response));
       }
-      return (await response.json()) as FlowerWorkersOverviewResponse;
+      return (await response.json()) as WorkerMonitorOverviewResponse;
     },
     refetchInterval: autoRefresh ? 5_000 : false,
     staleTime: 15_000,
   });
 
-  const workerNames = useMemo(() => (workersOverviewQuery.data?.workers || []).map((item) => item.worker), [workersOverviewQuery.data?.workers]);
+  const workerTasksPath = useMemo(() => {
+    if (!selectedWorker) {
+      return null;
+    }
+    const params = new URLSearchParams();
+    params.set("worker", selectedWorker);
+    params.set("recentLimit", String(DEFAULT_RECENT_LIMIT));
+    params.set("forceRefresh", "false");
+    return `/api/v1/admin/flower/worker-tasks?${params.toString()}`;
+  }, [selectedWorker]);
 
-  const allTasksQuery = useQuery({
-    queryKey: ["flower-worker-tasks-batch", workerNames],
-    enabled: Boolean(user) && canRead && workerNames.length > 0,
+  const workerTasksQuery = useQuery({
+    queryKey: ["worker-monitor-tasks", workerTasksPath],
+    enabled: Boolean(user) && canRead && Boolean(workerTasksPath),
     queryFn: async () => {
-      const settled = await Promise.all(
-        workerNames.map(async (worker) => {
-          const params = new URLSearchParams();
-          params.set("worker", worker);
-          params.set("recentLimit", String(DEFAULT_RECENT_LIMIT));
-          params.set("forceRefresh", "false");
-          const response = await fetchWithAuth(`/api/v1/admin/flower/worker-tasks?${params.toString()}`);
-          if (!response.ok) {
-            throw new Error(await readApiError(response));
-          }
-          return (await response.json()) as FlowerWorkerTaskOverviewResponse;
-        }),
-      );
-      return settled;
+      if (!workerTasksPath) {
+        throw new Error("missing worker path");
+      }
+      const response = await fetchWithAuth(workerTasksPath);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as WorkerMonitorTaskOverviewResponse;
     },
     refetchInterval: autoRefresh ? 5_000 : false,
     staleTime: 15_000,
   });
 
-  const workerColumns = useMemo<TableColumnsType<FlowerWorkerItem>>(
+  const workerColumns = useMemo<TableColumnsType<WorkerMonitorWorkerItem>>(
     () => [
       {
         title: "Worker",
@@ -248,23 +239,34 @@ export default function AdminTaskMonitorPage() {
         width: 110,
       },
       {
-        title: "Active/Reserved/Scheduled",
-        key: "runtime_counts",
-        width: 190,
-        render: (_: unknown, record) => `${record.active_count}/${record.reserved_count}/${record.scheduled_count}`,
-      },
-      {
         title: "最近心跳",
         dataIndex: "last_heartbeat_at",
         key: "last_heartbeat_at",
         width: 170,
         render: (value: string | null) => formatDateTime(value),
       },
+      {
+        title: "Active/Reserved/Scheduled",
+        key: "runtime_counts",
+        width: 190,
+        render: (_: unknown, record) => `${record.active_count}/${record.reserved_count}/${record.scheduled_count}`,
+      },
+      {
+        title: "操作",
+        key: "action",
+        width: 120,
+        fixed: "right",
+        render: (_: unknown, record) => (
+          <Button size="small" onClick={() => setSelectedWorker(record.worker)}>
+            查看任务
+          </Button>
+        ),
+      },
     ],
     [],
   );
 
-  const taskColumns = useMemo<TableColumnsType<TaskTableRow>>(
+  const taskColumns = useMemo<TableColumnsType<WorkerMonitorTaskItem>>(
     () => [
       {
         title: "Task ID",
@@ -291,7 +293,7 @@ export default function AdminTaskMonitorPage() {
         title: "来源",
         dataIndex: "source",
         key: "source",
-        width: 100,
+        width: 90,
         render: (value: string) => value || "-",
       },
       {
@@ -307,6 +309,13 @@ export default function AdminTaskMonitorPage() {
         key: "worker",
         width: 220,
         render: (value: string) => value || "-",
+      },
+      {
+        title: "ETA",
+        dataIndex: "eta",
+        key: "eta",
+        width: 170,
+        render: (value: string | null) => formatDateTime(value),
       },
       {
         title: "接收",
@@ -351,6 +360,20 @@ export default function AdminTaskMonitorPage() {
         render: (value: string | null) => (value ? <Text ellipsis={{ tooltip: value }}>{value}</Text> : "-"),
       },
       {
+        title: "Result",
+        dataIndex: "result_text",
+        key: "result_text",
+        width: 220,
+        render: (value: string | null) =>
+          value ? (
+            <Text ellipsis={{ tooltip: value }}>
+              {value}
+            </Text>
+          ) : (
+            "-"
+          ),
+      },
+      {
         title: "Exception",
         dataIndex: "exception_text",
         key: "exception_text",
@@ -369,7 +392,7 @@ export default function AdminTaskMonitorPage() {
   );
 
   const filteredWorkers = useMemo(() => {
-    const rows = workersOverviewQuery.data?.workers || [];
+    const rows = overviewQuery.data?.workers || [];
     return rows.filter((item) => {
       const online = (item.status || "").toUpperCase() === "ONLINE";
       if (statusFilter === "online" && !online) {
@@ -389,57 +412,12 @@ export default function AdminTaskMonitorPage() {
       }
       return true;
     });
-  }, [workersOverviewQuery.data?.workers, statusFilter, workerKeyword, queueKeyword]);
+  }, [overviewQuery.data?.workers, queueKeyword, statusFilter, workerKeyword]);
 
-  const allTaskRows = useMemo(() => {
-    const workerTaskOverviews = allTasksQuery.data || [];
-    const rows: TaskTableRow[] = [];
-    for (const overview of workerTaskOverviews) {
-      rows.push(...toTaskRows(overview.worker, "ACTIVE", overview.active_tasks));
-      rows.push(...toTaskRows(overview.worker, "RESERVED", overview.reserved_tasks));
-      rows.push(...toTaskRows(overview.worker, "SCHEDULED", overview.scheduled_tasks));
-      rows.push(...toTaskRows(overview.worker, "RECENT", overview.recent_tasks));
-    }
-    return rows;
-  }, [allTasksQuery.data]);
-
-  const filteredTaskRows = useMemo(() => {
-    const workerSet = new Set(filteredWorkers.map((item) => item.worker));
-    const keyword = taskKeyword.trim();
-    return allTaskRows.filter((item) => {
-      if (!workerSet.has(item.worker)) {
-        return false;
-      }
-      if (!keyword) {
-        return true;
-      }
-      const haystack = [item.task_id, item.name, item.queue_name || "", item.worker, item.args_text || "", item.kwargs_text || ""]
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(keyword.toLowerCase());
-    });
-  }, [allTaskRows, filteredWorkers, taskKeyword]);
-
-  const stateBuckets = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const row of filteredTaskRows) {
-      const state = (row.state || "UNKNOWN").toUpperCase();
-      counts.set(state, (counts.get(state) || 0) + 1);
-    }
-    return Array.from(counts.entries())
-      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
-      .map(([state, count]) => ({ state, count }));
-  }, [filteredTaskRows]);
-
-  const queuePendingTotal = filteredWorkers.reduce(
-    (sum, item) => sum + item.active_count + item.reserved_count + item.scheduled_count,
-    0,
-  );
-
-  if (initializing || (workersOverviewQuery.isLoading && !workersOverviewQuery.data && canRead && Boolean(user))) {
+  if (initializing || (overviewQuery.isLoading && !overviewQuery.data && canRead && Boolean(user))) {
     return (
       <div className="py-10">
-        <Spin tip="任务监控数据加载中..." />
+        <Spin tip="Worker监控数据加载中..." />
       </div>
     );
   }
@@ -447,7 +425,7 @@ export default function AdminTaskMonitorPage() {
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问任务监控页面。</p>
+        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问Worker监控页面。</p>
         <Link
           href="/"
           className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
@@ -472,7 +450,8 @@ export default function AdminTaskMonitorPage() {
     );
   }
 
-  const workersOverview = workersOverviewQuery.data;
+  const overview = overviewQuery.data;
+  const taskOverview = workerTasksQuery.data;
 
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
@@ -492,13 +471,6 @@ export default function AdminTaskMonitorPage() {
             onChange={(event) => setQueueKeyword(event.target.value)}
             style={{ width: 220 }}
           />
-          <Input
-            allowClear
-            placeholder="按 Task ID/任务名筛选"
-            value={taskKeyword}
-            onChange={(event) => setTaskKeyword(event.target.value)}
-            style={{ width: 240 }}
-          />
           <Select
             value={statusFilter}
             onChange={(value) => setStatusFilter(parseStatusFilter(value))}
@@ -513,100 +485,143 @@ export default function AdminTaskMonitorPage() {
             <Text>自动刷新</Text>
             <Switch checked={autoRefresh} onChange={setAutoRefresh} />
           </Space>
-          <Button
-            onClick={() => {
-              void workersOverviewQuery.refetch();
-              void allTasksQuery.refetch();
-            }}
-            loading={workersOverviewQuery.isFetching || allTasksQuery.isFetching}
-          >
-            刷新监控数据
+          <Button onClick={() => void overviewQuery.refetch()} loading={overviewQuery.isFetching}>
+            刷新Worker
           </Button>
-          <Text type="secondary">生成时间：{formatDateTime(workersOverview?.generated_at)}</Text>
+          <Text type="secondary">生成时间：{formatDateTime(overview?.generated_at)}</Text>
         </Space>
       </AntCard>
 
-      {workersOverviewQuery.error && (
+      {overviewQuery.error && (
         <Alert
           type="error"
           showIcon
-          message={workersOverviewQuery.error instanceof Error ? workersOverviewQuery.error.message : "任务监控数据加载失败"}
-        />
-      )}
-      {allTasksQuery.error && (
-        <Alert
-          type="error"
-          showIcon
-          message={allTasksQuery.error instanceof Error ? allTasksQuery.error.message : "任务列表数据加载失败"}
+          message={overviewQuery.error instanceof Error ? overviewQuery.error.message : "Worker监控数据加载失败"}
         />
       )}
 
-      {!workersOverview && !workersOverviewQuery.isFetching && (
+      {!overview && !overviewQuery.isFetching && (
         <AntCard>
-          <Empty description="暂无任务监控数据" />
+          <Empty description="暂无Worker监控数据" />
         </AntCard>
       )}
 
-      {workersOverview && (
+      {overview && (
         <>
           <Row gutter={[16, 16]}>
             <Col xs={24} md={6}>
               <AntCard>
-                <Statistic title="在线 Worker" value={workersOverview.summary.online} />
+                <Statistic title="Worker总数" value={overview.summary.total} />
               </AntCard>
             </Col>
             <Col xs={24} md={6}>
               <AntCard>
-                <Statistic title="离线 Worker" value={workersOverview.summary.offline} />
+                <Statistic title="在线Worker" value={overview.summary.online} />
               </AntCard>
             </Col>
             <Col xs={24} md={6}>
               <AntCard>
-                <Statistic title="队列待处理" value={queuePendingTotal} />
+                <Statistic title="离线Worker" value={overview.summary.offline} />
               </AntCard>
             </Col>
             <Col xs={24} md={6}>
               <AntCard>
-                <Statistic title="采样任务数" value={filteredTaskRows.length} />
+                <Statistic title="筛选结果" value={filteredWorkers.length} />
               </AntCard>
             </Col>
           </Row>
 
-          <AntCard title="任务状态分布">
-            <Space wrap>
-              {stateBuckets.length > 0 ? (
-                stateBuckets.map((item) => (
-                  <Tag key={`task-state-${item.state}`} color="geekblue">{`${item.state}: ${item.count}`}</Tag>
-                ))
-              ) : (
-                <Text type="secondary">暂无状态分布数据</Text>
-              )}
-            </Space>
-          </AntCard>
-
-          <AntCard title="Worker 概览">
-            <Table<FlowerWorkerItem>
+          <AntCard title="Worker列表">
+            <Table<WorkerMonitorWorkerItem>
               rowKey={(record) => record.worker}
               columns={workerColumns}
               dataSource={filteredWorkers}
-              pagination={false}
-              locale={{ emptyText: "暂无 Worker 数据" }}
-              scroll={{ x: 1500 }}
-            />
-          </AntCard>
-
-          <AntCard title="任务明细">
-            <Table<TaskTableRow>
-              rowKey={(record) => record.key}
-              columns={taskColumns}
-              dataSource={filteredTaskRows}
-              pagination={{ pageSize: 50, showSizeChanger: true }}
-              locale={{ emptyText: "暂无任务数据" }}
-              scroll={{ x: 2600 }}
+              pagination={{ pageSize: 10, showSizeChanger: true }}
+              locale={{ emptyText: "暂无Worker数据" }}
+              scroll={{ x: 1600 }}
             />
           </AntCard>
         </>
       )}
+
+      <Drawer
+        title={`Worker任务明细 - ${selectedWorker || "-"}`}
+        open={Boolean(selectedWorker)}
+        width={1260}
+        onClose={() => setSelectedWorker(null)}
+        extra={
+          <Space>
+            <Button size="small" onClick={() => void workerTasksQuery.refetch()} loading={workerTasksQuery.isFetching}>
+              刷新任务
+            </Button>
+            <Text type="secondary">{taskOverview ? `采集时间：${formatDateTime(taskOverview.generated_at)}` : "-"}</Text>
+          </Space>
+        }
+      >
+        {workerTasksQuery.isLoading && !taskOverview ? <Spin tip="任务数据加载中..." /> : null}
+        {workerTasksQuery.error ? (
+          <Alert
+            type="error"
+            showIcon
+            message={workerTasksQuery.error instanceof Error ? workerTasksQuery.error.message : "任务数据加载失败"}
+          />
+        ) : null}
+        {!workerTasksQuery.isLoading && !taskOverview ? <Empty description="暂无任务数据" /> : null}
+        {taskOverview ? (
+          <Space direction="vertical" size={16} style={{ width: "100%" }}>
+            <Space size={8} wrap>
+              <Tag color="processing">运行中: {taskOverview.summary.active}</Tag>
+              <Tag color="blue">保留中: {taskOverview.summary.reserved}</Tag>
+              <Tag color="purple">已调度: {taskOverview.summary.scheduled}</Tag>
+              <Tag color="geekblue">最近任务: {taskOverview.summary.recent}</Tag>
+            </Space>
+
+            <AntCard title="运行中任务">
+              <Table<WorkerMonitorTaskItem>
+                rowKey={(record) => `active-${record.task_id}`}
+                columns={taskColumns}
+                dataSource={taskOverview.active_tasks}
+                pagination={false}
+                locale={{ emptyText: "暂无运行中任务" }}
+                scroll={{ x: 2200 }}
+              />
+            </AntCard>
+
+            <AntCard title="保留任务">
+              <Table<WorkerMonitorTaskItem>
+                rowKey={(record) => `reserved-${record.task_id}`}
+                columns={taskColumns}
+                dataSource={taskOverview.reserved_tasks}
+                pagination={false}
+                locale={{ emptyText: "暂无保留任务" }}
+                scroll={{ x: 2200 }}
+              />
+            </AntCard>
+
+            <AntCard title="定时任务">
+              <Table<WorkerMonitorTaskItem>
+                rowKey={(record) => `scheduled-${record.task_id}`}
+                columns={taskColumns}
+                dataSource={taskOverview.scheduled_tasks}
+                pagination={false}
+                locale={{ emptyText: "暂无定时任务" }}
+                scroll={{ x: 2200 }}
+              />
+            </AntCard>
+
+            <AntCard title="最近完成任务">
+              <Table<WorkerMonitorTaskItem>
+                rowKey={(record) => `recent-${record.task_id}`}
+                columns={taskColumns}
+                dataSource={taskOverview.recent_tasks}
+                pagination={false}
+                locale={{ emptyText: "暂无最近任务" }}
+                scroll={{ x: 2200 }}
+              />
+            </AntCard>
+          </Space>
+        ) : null}
+      </Drawer>
     </Space>
   );
 }

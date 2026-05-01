@@ -75,6 +75,7 @@ PROTECTED_MENU_CODES = {
     "admin.power_lines",
     "admin.lightning_currents",
     "admin.lightning_distribution",
+    "admin.workers",
     "admin.task_monitor",
     "admin.atp_models",
     "admin.data_query",
