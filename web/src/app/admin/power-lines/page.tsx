@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  App,
   Alert,
   Button,
   Empty,
@@ -113,6 +114,7 @@ function formatStatus(status: string): string {
 export default function AdminPowerLinesPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
+  const { message: messageApi } = App.useApp();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [lineForm] = Form.useForm<LineFormValues>();
   const [towerForm] = Form.useForm<TowerFormValues>();
@@ -127,9 +129,8 @@ export default function AdminPowerLinesPage() {
   const [towerModalOpen, setTowerModalOpen] = useState(false);
   const [editingLine, setEditingLine] = useState<LineSummary | null>(null);
   const [editingTower, setEditingTower] = useState<LineTowerSummary | null>(null);
-  const [towerViewMode, setTowerViewMode] = useState<"table" | "map">("table");
+  const [towerViewMode, setTowerViewMode] = useState<"table" | "map">("map");
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
   const canLineRead = hasPermission("line.read") || hasPermission("line.manage");
   const canLineManage = hasPermission("line.manage");
@@ -278,14 +279,13 @@ export default function AdminPowerLinesPage() {
     },
     onSuccess: async (mode) => {
       setError("");
-      setSuccess(mode === "created" ? "线路已创建" : "线路已更新");
+      messageApi.success(mode === "created" ? "线路已创建" : "线路已更新");
       setLineModalOpen(false);
       setEditingLine(null);
       lineForm.resetFields();
       await refreshLines();
     },
     onError: (candidate) => {
-      setSuccess("");
       setError(candidate instanceof Error ? candidate.message : "保存线路失败");
     },
   });
@@ -303,12 +303,11 @@ export default function AdminPowerLinesPage() {
         setSelectedLineId(null);
       }
       setError("");
-      setSuccess("线路已删除");
+      messageApi.success("线路已删除");
       await refreshLines();
       await refreshTowers();
     },
     onError: (candidate) => {
-      setSuccess("");
       setError(candidate instanceof Error ? candidate.message : "删除线路失败");
     },
   });
@@ -364,7 +363,7 @@ export default function AdminPowerLinesPage() {
     },
     onSuccess: async (mode) => {
       setError("");
-      setSuccess(mode === "created" ? "杆塔已创建" : "杆塔已更新");
+      messageApi.success(mode === "created" ? "杆塔已创建" : "杆塔已更新");
       setTowerModalOpen(false);
       setEditingTower(null);
       towerForm.resetFields();
@@ -372,7 +371,6 @@ export default function AdminPowerLinesPage() {
       await refreshLines();
     },
     onError: (candidate) => {
-      setSuccess("");
       setError(candidate instanceof Error ? candidate.message : "保存杆塔失败");
     },
   });
@@ -387,12 +385,11 @@ export default function AdminPowerLinesPage() {
     },
     onSuccess: async () => {
       setError("");
-      setSuccess("杆塔已删除");
+      messageApi.success("杆塔已删除");
       await refreshTowers();
       await refreshLines();
     },
     onError: (candidate) => {
-      setSuccess("");
       setError(candidate instanceof Error ? candidate.message : "删除杆塔失败");
     },
   });
@@ -416,14 +413,13 @@ export default function AdminPowerLinesPage() {
     },
     onSuccess: async (result) => {
       setError("");
-      setSuccess(
+      messageApi.success(
         `导入完成：新增 ${result.imported_count} 条，更新 ${result.updated_count} 条，跳过 ${result.skipped_count} 条`,
       );
       await refreshLines();
       await refreshTowers();
     },
     onError: (candidate) => {
-      setSuccess("");
       setError(candidate instanceof Error ? candidate.message : "导入失败");
     },
   });
@@ -453,10 +449,9 @@ export default function AdminPowerLinesPage() {
       document.body.removeChild(anchor);
       window.URL.revokeObjectURL(url);
       setError("");
-      setSuccess("导出成功");
+      messageApi.success("导出成功");
     },
     onError: (candidate) => {
-      setSuccess("");
       setError(candidate instanceof Error ? candidate.message : "导出失败");
     },
   });
@@ -507,81 +502,76 @@ export default function AdminPowerLinesPage() {
     setTowerModalOpen(true);
   };
 
-  const lineColumns = useMemo<ColumnsType<LineSummary>>(
-    () => [
-      {
-        title: "编码",
-        dataIndex: "code",
-        width: 160,
-        render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
-      },
-      {
-        title: "线路名称",
-        dataIndex: "name",
-        width: 260,
-      },
-      {
-        title: "电压(kV)",
-        dataIndex: "voltage_kv",
-        width: 110,
-        render: (value: number | null) => (value ?? "-"),
-      },
-      {
-        title: "塔形",
-        dataIndex: "tower_shape",
-        width: 120,
-        render: (value: string | null) => value || "-",
-      },
-      {
-        title: "杆塔数",
-        dataIndex: "tower_count",
-        width: 100,
-      },
-      {
-        title: "状态",
-        dataIndex: "status",
-        width: 90,
-        render: (value: string) => <Tag color={value === "enabled" ? "success" : "default"}>{formatStatus(value)}</Tag>,
-      },
-      {
-        title: "更新时间",
-        dataIndex: "update_date",
-        width: 180,
-        render: (value: string) => new Date(value).toLocaleString(),
-      },
-      {
-        title: "操作",
-        key: "actions",
-        width: 160,
-        fixed: "right",
-        render: (_: unknown, row) => (
-          <Space size={8}>
-            {canLineManage && (
-              <Button size="small" onClick={() => openEditLineModal(row)}>
-                编辑
-              </Button>
+  const lineCards = useMemo(
+    () =>
+      lines.map((line) => {
+        const selected = line.id === selectedLineId;
+        return (
+          <Card
+            key={line.id}
+            size="small"
+            hoverable
+            onClick={() => setSelectedLineId(line.id)}
+            style={selected
+              ? {
+                borderColor: "var(--ant-color-primary)",
+                background: "var(--ant-color-primary-bg)",
+              }
+              : undefined}
+            title={(
+              <Space size={8} wrap>
+                <Typography.Text strong>{line.name}</Typography.Text>
+                <Tag color={line.status === "enabled" ? "success" : "default"}>{formatStatus(line.status)}</Tag>
+              </Space>
             )}
-            {canLineManage && (
-              <Popconfirm
-                title="删除线路"
-                description={`确认删除线路 ${row.code} 吗？`}
-                okText="删除"
-                cancelText="取消"
-                okButtonProps={{ danger: true }}
-                onConfirm={async () => {
-                  await deleteLineMutation.mutateAsync(row.id);
-                }}
-              >
-                <Button size="small" danger loading={deleteLineMutation.isPending}>
-                  删除
+            extra={canLineManage ? (
+              <Space size={4}>
+                <Button
+                  size="small"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openEditLineModal(line);
+                  }}
+                >
+                  编辑
                 </Button>
-              </Popconfirm>
-            )}
-          </Space>
-        ),
-      },
-    ],
-    [canLineManage, deleteLineMutation],
+                <Popconfirm
+                  title="删除线路"
+                  description={`确认删除线路 ${line.code} 吗？`}
+                  okText="删除"
+                  cancelText="取消"
+                  okButtonProps={{ danger: true }}
+                  onConfirm={async () => {
+                    await deleteLineMutation.mutateAsync(line.id);
+                  }}
+                >
+                  <Button
+                    size="small"
+                    danger
+                    loading={deleteLineMutation.isPending}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    删除
+                  </Button>
+                </Popconfirm>
+              </Space>
+            ) : null}
+          >
+            <Space direction="vertical" size={4} className="w-full">
+              <Typography.Text type="secondary">
+                编码：<Typography.Text code>{line.code}</Typography.Text>
+              </Typography.Text>
+              <Typography.Text type="secondary">电压等级：{line.voltage_kv ?? "-"} kV</Typography.Text>
+              <Typography.Text type="secondary">塔形：{line.tower_shape || "-"}</Typography.Text>
+              <Typography.Text type="secondary">杆塔总数：{line.tower_count}</Typography.Text>
+              <Typography.Text type="secondary">
+                更新时间：{new Date(line.update_date).toLocaleString()}
+              </Typography.Text>
+            </Space>
+          </Card>
+        );
+      }),
+    [canLineManage, deleteLineMutation, lines, selectedLineId],
   );
 
   const towerColumns = useMemo<ColumnsType<LineTowerSummary>>(
@@ -690,26 +680,20 @@ export default function AdminPowerLinesPage() {
       {(error || lineError || towerError) && (
         <Alert type="error" showIcon message="操作失败" description={error || lineError || towerError} />
       )}
-      {success && <Alert type="success" showIcon message="操作成功" description={success} />}
 
-      <Card
-        title="线路管理"
-        extra={(
-          <Space size={8} wrap>
-            <Button href="/power-lines/atp-viewer">ATP查看器</Button>
-            {canLineManage && (
-              <Button type="primary" onClick={openCreateLineModal}>
-                新建线路
-              </Button>
-            )}
-          </Space>
-        )}
-      >
-        <Space direction="vertical" size={12} className="w-full">
-          <Typography.Text type="secondary">
-            维护线路基础信息并选择一条线路进入杆塔管理。
-          </Typography.Text>
-          <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <Card
+          title="线路管理"
+          extra={canLineManage ? (
+            <Button type="primary" onClick={openCreateLineModal}>
+              新建线路
+            </Button>
+          ) : null}
+        >
+          <Space direction="vertical" size={12} className="w-full">
+            <Typography.Text type="secondary">
+              左侧选择线路，右侧查看线路分布图或塔杆列表。
+            </Typography.Text>
             <Input
               value={keyword}
               allowClear
@@ -721,110 +705,109 @@ export default function AdminPowerLinesPage() {
               options={[...STATUS_OPTIONS]}
               onChange={(value) => setStatusFilter(value)}
             />
-          </div>
-          <Table<LineSummary>
-            rowKey={(row) => row.id}
-            columns={lineColumns}
-            dataSource={lines}
-            loading={linesQuery.isFetching}
-            pagination={false}
-            scroll={{ x: 1280 }}
-            rowClassName={(row) => (row.id === selectedLineId ? "bg-blue-50" : "")}
-            onRow={(row) => ({
-              onClick: () => setSelectedLineId(row.id),
-            })}
-          />
-        </Space>
-      </Card>
+            <Space direction="vertical" size={10} className="w-full max-h-[70vh] overflow-y-auto pr-1">
+              {lines.length === 0 ? (
+                <Empty description="暂无线路数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              ) : (
+                lineCards
+              )}
+            </Space>
+          </Space>
+        </Card>
 
-      <Card
-        title={selectedLine ? `杆塔管理 - ${selectedLine.name}` : "杆塔管理"}
-        extra={(
-          <Space size={8}>
-            <Segmented
-              value={towerViewMode}
-              options={[
-                { label: "表格", value: "table" },
-                { label: "走向图", value: "map" },
-              ]}
-              onChange={(value) => setTowerViewMode(value as "table" | "map")}
-              disabled={!selectedLineId}
-            />
-            {canTowerManage && (
-              <Button onClick={() => importInputRef.current?.click()} loading={importMutation.isPending} disabled={!selectedLineId}>
-                导入 CSV
+        <Card
+          title={selectedLine ? `${selectedLine.name} - 杆塔管理` : "杆塔管理"}
+          extra={(
+            <Space size={8} wrap>
+              <Segmented
+                value={towerViewMode}
+                options={[
+                  { label: "分布图", value: "map" },
+                  { label: "塔杆列表", value: "table" },
+                ]}
+                onChange={(value) => setTowerViewMode(value as "table" | "map")}
+                disabled={!selectedLineId}
+              />
+              {canTowerManage && (
+                <Button
+                  onClick={() => importInputRef.current?.click()}
+                  loading={importMutation.isPending}
+                  disabled={!selectedLineId}
+                >
+                  导入 CSV
+                </Button>
+              )}
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    importMutation.mutate(file);
+                  }
+                  event.target.value = "";
+                }}
+              />
+              <Button onClick={() => exportMutation.mutate()} loading={exportMutation.isPending} disabled={!selectedLineId}>
+                导出 CSV
               </Button>
-            )}
-            <input
-              ref={importInputRef}
-              type="file"
-              accept=".csv,text/csv"
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) {
-                  importMutation.mutate(file);
-                }
-                event.target.value = "";
-              }}
-            />
-            <Button onClick={() => exportMutation.mutate()} loading={exportMutation.isPending} disabled={!selectedLineId}>
-              导出 CSV
-            </Button>
-            {canTowerManage && (
-              <Button type="primary" onClick={openCreateTowerModal} disabled={!selectedLineId}>
-                新建杆塔
-              </Button>
-            )}
-          </Space>
-        )}
-      >
-        {!selectedLineId ? (
-          <Empty description="请先选择一条线路" />
-        ) : (
-          <Space direction="vertical" size={12} className="w-full">
-            <Typography.Text type="secondary">
-              当前线路编码：{selectedLine?.code ?? "-"}，杆塔总数：{selectedLine?.tower_count ?? 0}，当前视图：{towerViewMode === "table" ? "表格" : "走向图"}
-            </Typography.Text>
-            <div className="grid gap-3 md:grid-cols-3">
-              <Input
-                value={towerKeyword}
-                allowClear
-                onChange={(event) => setTowerKeyword(event.target.value)}
-                placeholder="按塔号/模型筛选"
-              />
-              <Select
-                value={towerTypeFilter}
-                options={[...TOWER_TYPE_OPTIONS]}
-                onChange={(value) => setTowerTypeFilter(value)}
-              />
-              <Input
-                value={towerRiskFilter}
-                allowClear
-                onChange={(event) => setTowerRiskFilter(event.target.value)}
-                placeholder="按风险等级筛选"
-              />
-            </div>
-            {towerViewMode === "table" ? (
-              <Table<LineTowerSummary>
-                rowKey={(row) => row.id}
-                columns={towerColumns}
-                dataSource={towers}
-                loading={towersQuery.isFetching}
-                pagination={false}
-                scroll={{ x: 1520 }}
-              />
-            ) : (
-              <PowerLineCesiumMap
-                lineCode={selectedLine?.code}
-                lineName={selectedLine?.name}
-                towers={towers}
-                loading={towersQuery.isFetching}
-              />
-            )}
-          </Space>
-        )}
-      </Card>
+              {canTowerManage && (
+                <Button type="primary" onClick={openCreateTowerModal} disabled={!selectedLineId}>
+                  新建杆塔
+                </Button>
+              )}
+            </Space>
+          )}
+        >
+          {!selectedLineId ? (
+            <Empty description="请先选择一条线路" />
+          ) : (
+            <Space direction="vertical" size={12} className="w-full">
+              <Typography.Text type="secondary">
+                当前线路编码：{selectedLine.code}，杆塔总数：{selectedLine.tower_count}，当前视图：{towerViewMode === "table" ? "塔杆列表" : "分布图"}
+              </Typography.Text>
+              <div className="grid gap-3 md:grid-cols-3">
+                <Input
+                  value={towerKeyword}
+                  allowClear
+                  onChange={(event) => setTowerKeyword(event.target.value)}
+                  placeholder="按塔号/模型筛选"
+                />
+                <Select
+                  value={towerTypeFilter}
+                  options={[...TOWER_TYPE_OPTIONS]}
+                  onChange={(value) => setTowerTypeFilter(value)}
+                />
+                <Input
+                  value={towerRiskFilter}
+                  allowClear
+                  onChange={(event) => setTowerRiskFilter(event.target.value)}
+                  placeholder="按风险等级筛选"
+                />
+              </div>
+              {towerViewMode === "table" ? (
+                <Table<LineTowerSummary>
+                  rowKey={(row) => row.id}
+                  columns={towerColumns}
+                  dataSource={towers}
+                  loading={towersQuery.isFetching}
+                  pagination={false}
+                  scroll={{ x: 1520 }}
+                />
+              ) : (
+                <PowerLineCesiumMap
+                  lineCode={selectedLine.code}
+                  lineName={selectedLine.name}
+                  towers={towers}
+                  loading={towersQuery.isFetching}
+                />
+              )}
+            </Space>
+          )}
+        </Card>
+      </div>
 
       <Modal
         title={editingLine ? "编辑线路" : "新建线路"}
