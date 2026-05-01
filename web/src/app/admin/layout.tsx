@@ -21,7 +21,6 @@ import Icon, {
 } from "@ant-design/icons";
 import {
   Alert,
-  Avatar,
   Badge,
   Button,
   Drawer,
@@ -411,28 +410,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
     <AntLayout className="admin-design-shell">
       <Header className="admin-design-header">
-        <Space size={8}>
-          {!isDesktop && (
-            <Button
-              aria-label="打开菜单"
-              icon={<MenuOutlined />}
-              type="text"
-              onClick={() => setMobileMenuOpen(true)}
-            />
-          )}
-          {isDesktop && (
-            <Button
-              aria-label={siderCollapsed ? "展开菜单" : "收起菜单"}
-              icon={siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-              type="text"
-              onClick={() => setSiderCollapsed((previous) => !previous)}
-            />
-          )}
-          <Link className="admin-design-brand" href="/dashboard">
-            <span className="admin-design-logo">Q</span>
-            <Typography.Text strong>fquiz</Typography.Text>
-          </Link>
-        </Space>
+        {!isDesktop && (
+          <Button
+            aria-label="打开菜单"
+            icon={<MenuOutlined />}
+            type="text"
+            onClick={() => setMobileMenuOpen(true)}
+          />
+        )}
 
         <Space style={{ marginLeft: "auto" }}>
           <Dropdown
@@ -452,14 +437,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             placement="bottomRight"
             trigger={["click"]}
           >
-            <Button type="text">
-              <Space size={8}>
-                <Avatar size="small" style={{ backgroundColor: "var(--ant-color-primary)" }}>
-                  {user.username.trim().charAt(0).toUpperCase() || "U"}
-                </Avatar>
-                <Typography.Text className="hidden sm:inline">{user.username}</Typography.Text>
-              </Space>
-            </Button>
+            <Tooltip title={user.username}>
+              <Button aria-label="账号菜单" icon={<UserOutlined />} type="text" />
+            </Tooltip>
           </Dropdown>
         </Space>
       </Header>
@@ -475,7 +455,17 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             width={256}
           >
             <div className="admin-design-sider-inner">
-              {navigationMenu}
+              <div className="admin-design-sider-menu">
+                {navigationMenu}
+              </div>
+              <div className="admin-design-sider-footer">
+                <Button
+                  aria-label={siderCollapsed ? "展开菜单" : "收起菜单"}
+                  icon={siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                  type="text"
+                  onClick={() => setSiderCollapsed((previous) => !previous)}
+                />
+              </div>
             </div>
           </Sider>
         )}
