@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-fquiz}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fquiz}
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "${POSTGRES_PORT:-5434}:5432"
     volumes:
       - fquiz_db_data:/var/lib/postgresql/data
     healthcheck:

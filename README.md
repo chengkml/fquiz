@@ -116,7 +116,7 @@
 - 前端：`http://localhost:3000`
 - 后端：`http://localhost:8000/health`
 - PostgreSQL：默认连接外部库（`DB_HOST/DB_PORT/DB_NAME/DB_SCHEMA/DB_USERNAME/DB_PASSWORD`）
-- 本地 PostgreSQL（可选）：启用 `local-db` profile 后使用 `localhost:5433`（可通过 `POSTGRES_PORT` 覆盖）
+- 本地 PostgreSQL（可选）：启用 `local-db` profile 后使用 `localhost:5434`（可通过 `POSTGRES_PORT` 覆盖）
 
 5. 停止并清理：
 
