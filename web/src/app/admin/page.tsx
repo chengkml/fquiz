@@ -43,7 +43,7 @@ const CARDS: DashboardCard[] = [
   {
     href: "/roles",
     title: "角色管理",
-    description: "配置角色、绑定权限点、分配菜单可见范围。",
+    description: "配置角色并分配菜单可见范围。",
     category: "权限",
     icon: <SafetyCertificateOutlined />,
     visible: (hasPermission) => hasPermission("role.read") || hasPermission("role.manage"),
@@ -51,7 +51,7 @@ const CARDS: DashboardCard[] = [
   {
     href: "/menus",
     title: "菜单管理",
-    description: "维护后台导航、菜单层级和菜单对应权限。",
+    description: "维护后台导航结构、菜单层级与展示状态。",
     category: "权限",
     icon: <AppstoreOutlined />,
     visible: (hasPermission) => hasPermission("menu.read") || hasPermission("menu.manage"),

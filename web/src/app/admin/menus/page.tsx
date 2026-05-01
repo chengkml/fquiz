@@ -48,7 +48,6 @@ type MenuFormValues = {
   visible: boolean;
   cacheable: boolean;
   component?: string;
-  permission_code?: string;
 };
 
 const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
@@ -108,7 +107,6 @@ const DEFAULT_FORM_VALUES: MenuFormValues = {
   visible: true,
   cacheable: false,
   component: "",
-  permission_code: "",
 };
 
 function compareMenuIds(a: string, b: string): number {
@@ -166,7 +164,7 @@ export default function AdminMenusPage() {
         if (!query) {
           return true;
         }
-        const haystack = [menu.code, menu.name, menu.path ?? "", menu.permission_code ?? ""]
+        const haystack = [menu.code, menu.name, menu.path ?? ""]
           .join(" ")
           .toLowerCase();
         return haystack.includes(query);
@@ -250,7 +248,6 @@ export default function AdminMenusPage() {
       visible: menu.visible,
       cacheable: menu.cacheable,
       component: menu.component ?? "",
-      permission_code: menu.permission_code ?? "",
     });
     setDialogOpen(true);
   }, [form]);
@@ -273,7 +270,6 @@ export default function AdminMenusPage() {
         visible: values.visible,
         cacheable: values.cacheable,
         component: values.component?.trim() ? values.component.trim() : null,
-        permission_code: values.permission_code?.trim() ? values.permission_code.trim() : null,
       };
 
       const response = editingMenuId
@@ -360,12 +356,6 @@ export default function AdminMenusPage() {
         title: "路径",
         dataIndex: "path",
         width: 220,
-        render: (value: string | null) => value || "-",
-      },
-      {
-        title: "权限码",
-        dataIndex: "permission_code",
-        width: 180,
         render: (value: string | null) => value || "-",
       },
       {
@@ -488,7 +478,7 @@ export default function AdminMenusPage() {
               allowClear
               value={keyword}
               onChange={(event) => setKeyword(event.currentTarget.value)}
-              placeholder="按编码/名称/路径/权限筛选"
+              placeholder="按编码/名称/路径筛选"
             />
           </Form.Item>
 
@@ -634,12 +624,6 @@ export default function AdminMenusPage() {
                 <Input placeholder="app/admin/users/page" />
               </Form.Item>
             </Col>
-            <Col xs={24} md={12}>
-              <Form.Item label="权限码" name="permission_code">
-                <Input placeholder="menu.read" />
-              </Form.Item>
-            </Col>
-
             <Col xs={24} md={12}>
               <Form.Item name="visible" valuePropName="checked">
                 <Checkbox>可见</Checkbox>

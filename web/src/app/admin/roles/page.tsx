@@ -27,25 +27,22 @@ import type { ComponentType } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
-import type { MenuItem, PermissionItem, RoleItem, RoleListResponse } from "@/types/auth";
+import type { MenuItem, RoleItem, RoleListResponse } from "@/types/auth";
 
 const AntCard = Card as unknown as ComponentType<CardProps>;
 const AntResult = Result as unknown as ComponentType<ResultProps>;
 
-type PermissionResponse = { items: PermissionItem[] };
 type MenuListResponse = { items: MenuItem[]; total: number };
 
 type RoleFormValues = {
   code: string;
   name: string;
-  permission_codes: string[];
   menu_ids: string[];
 };
 
 const EMPTY_FORM: RoleFormValues = {
   code: "",
   name: "",
-  permission_codes: [],
   menu_ids: [],
 };
 
@@ -55,7 +52,6 @@ export default function AdminRolesPage() {
   const [form] = Form.useForm<RoleFormValues>();
   const [roles, setRoles] = useState<RoleItem[]>([]);
   const [searchKeyword, setSearchKeyword] = useState("");
-  const [permissions, setPermissions] = useState<PermissionItem[]>([]);
   const [menus, setMenus] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -65,15 +61,6 @@ export default function AdminRolesPage() {
 
   const canRead = hasPermission("role.read") || hasPermission("role.manage");
   const canManage = hasPermission("role.manage");
-
-  const permissionOptions = useMemo(
-    () =>
-      permissions.map((permission) => ({
-        value: permission.code,
-        label: `${permission.name || permission.code} (${permission.code})`,
-      })),
-    [permissions],
-  );
 
   const menuOptions = useMemo(
     () => menus.map((menu) => ({ value: menu.id, label: `${menu.name} (${menu.code})` })),
@@ -97,7 +84,6 @@ export default function AdminRolesPage() {
       const haystack = [
         role.code,
         role.name,
-        role.permission_codes.join(" "),
         menuNames,
       ]
         .join(" ")
@@ -115,28 +101,22 @@ export default function AdminRolesPage() {
     setLoading(true);
     setError("");
     try {
-      const [roleRes, permissionRes, menuRes] = await Promise.all([
+      const [roleRes, menuRes] = await Promise.all([
         fetchWithAuth("/api/v1/admin/roles"),
-        fetchWithAuth("/api/v1/admin/permissions"),
         fetchWithAuth("/api/v1/admin/menus"),
       ]);
 
       if (!roleRes.ok) {
         throw new Error(await readApiError(roleRes));
       }
-      if (!permissionRes.ok) {
-        throw new Error(await readApiError(permissionRes));
-      }
       if (!menuRes.ok) {
         throw new Error(await readApiError(menuRes));
       }
 
       const rolePayload = (await roleRes.json()) as RoleListResponse;
-      const permissionPayload = (await permissionRes.json()) as PermissionResponse;
       const menuPayload = (await menuRes.json()) as MenuListResponse;
 
       setRoles(rolePayload.items);
-      setPermissions(permissionPayload.items);
       setMenus(menuPayload.items);
     } catch (candidate) {
       setError(candidate instanceof Error ? candidate.message : "角色数据加载失败");
@@ -183,7 +163,6 @@ export default function AdminRolesPage() {
     form.setFieldsValue({
       code: role.code,
       name: role.name,
-      permission_codes: role.permission_codes,
       menu_ids: role.menu_ids,
     });
     setDialogOpen(true);
@@ -198,7 +177,6 @@ export default function AdminRolesPage() {
       const payload: RoleFormValues = {
         code: values.code.trim(),
         name: values.name.trim(),
-        permission_codes: values.permission_codes ?? [],
         menu_ids: values.menu_ids ?? [],
       };
 
@@ -208,7 +186,6 @@ export default function AdminRolesPage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               name: payload.name,
-              permission_codes: payload.permission_codes,
               menu_ids: payload.menu_ids,
             }),
           })
@@ -281,22 +258,6 @@ export default function AdminRolesPage() {
         title: "角色名称",
         dataIndex: "name",
         width: 180,
-      },
-      {
-        title: "权限",
-        dataIndex: "permission_codes",
-        render: (value: string[]) => {
-          if (value.length === 0) {
-            return <Typography.Text type="secondary">未绑定权限</Typography.Text>;
-          }
-          return (
-            <Space wrap size={[4, 4]}>
-              {value.map((permissionCode) => (
-                <Tag key={permissionCode}>{permissionCode}</Tag>
-              ))}
-            </Space>
-          );
-        },
       },
       {
         title: "菜单",
@@ -414,7 +375,7 @@ export default function AdminRolesPage() {
           <Space align="center" wrap>
             <Input.Search
               allowClear
-              placeholder="搜索角色编码、名称、权限或菜单"
+              placeholder="搜索角色编码、名称或菜单"
               style={{ width: 360, maxWidth: "100%" }}
               value={searchKeyword}
               onChange={(event) => setSearchKeyword(event.currentTarget.value)}
@@ -480,16 +441,6 @@ export default function AdminRolesPage() {
               ]}
             >
               <Input placeholder="运营管理员" />
-            </Form.Item>
-
-            <Form.Item label="权限点" name="permission_codes">
-              <Select
-                allowClear
-                mode="multiple"
-                optionFilterProp="label"
-                options={permissionOptions}
-                placeholder="请选择权限点"
-              />
             </Form.Item>
 
             <Form.Item label="可见菜单" name="menu_ids">
