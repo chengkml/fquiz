@@ -947,3 +947,10 @@
 - 为兼容历史库（残留 `users.id`）并避免启动 seed 阶段出现 `UndefinedColumn: users.user_id`，`init_db()` 在 PostgreSQL 下新增启动期兼容逻辑：
   - 若检测到 `users` 表存在且仅有 `id`、缺少 `user_id`，自动执行 `ALTER TABLE users RENAME COLUMN id TO user_id`，再继续 `create_all/seed`。
 - 对已对齐 `users.user_id` 的库，该逻辑不产生任何改动。
+
+## GitHub Actions 发布分支口径（2026-05-01）
+
+- `.github/workflows/main.yml` 的自动发布触发分支已切换为 `dev`：
+  - `on.push.branches: [dev]`
+  - `deploy.if: github.ref == 'refs/heads/dev'`
+- `main` 分支默认不再触发该部署 workflow。
