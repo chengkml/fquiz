@@ -4,17 +4,13 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { usePathname } from "next/navigation";
 import Icon, {
-  BgColorsOutlined,
   CompressOutlined,
   HomeOutlined,
-  LinkOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuOutlined,
   MenuUnfoldOutlined,
   MoonOutlined,
-  ShopOutlined,
-  SmileOutlined,
   SunOutlined,
   SyncOutlined,
   UserOutlined,
@@ -164,8 +160,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     setThemePrimaryMode,
     compactMode,
     setCompactMode,
-    happyWorkMode,
-    setHappyWorkMode,
   } = useThemeAppearance();
   const [menuTree, setMenuTree] = useState<MenuTreeItem[]>([]);
   const [loadingMenus, setLoadingMenus] = useState(true);
@@ -173,7 +167,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const [menuOpenKeys, setMenuOpenKeys] = useState<string[]>([]);
   const [siderCollapsed, setSiderCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [aiThemeEnabled, setAiThemeEnabled] = useState(false);
 
   const loadMenus = useCallback(async () => {
     if (!user) {
@@ -226,23 +219,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     });
   }, [activeMenuState.openKeys]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    let active = true;
-    queueMicrotask(() => {
-      if (!active) {
-        return;
-      }
-      const persisted = window.localStorage.getItem("fquiz:theme:ai-market");
-      setAiThemeEnabled(persisted === "1");
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
-
   const themeBadge = useMemo(() => <Badge color="blue" style={{ marginTop: -1 }} />, []);
   const themeMenuItems = useMemo<NonNullable<MenuProps["items"]>>(
     () => [
@@ -271,32 +247,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         label: "紧凑主题",
         extra: compactMode ? themeBadge : null,
       },
-      { type: "divider" },
-      {
-        key: "happy-work",
-        icon: <SmileOutlined />,
-        label: "快乐工作特效",
-        extra: happyWorkMode ? themeBadge : null,
-      },
-      { type: "divider" },
-      {
-        key: "market",
-        icon: <ShopOutlined />,
-        label: "AI 生成主题",
-        extra: aiThemeEnabled ? themeBadge : null,
-      },
-      {
-        key: "theme-editor",
-        icon: <BgColorsOutlined />,
-        label: (
-          <a href="https://ant.design/theme-editor-cn" rel="noreferrer" target="_blank">
-            主题编辑器
-          </a>
-        ),
-        extra: <LinkOutlined />,
-      },
     ],
-    [aiThemeEnabled, compactMode, happyWorkMode, themeBadge, themePrimaryMode],
+    [compactMode, themeBadge, themePrimaryMode],
   );
 
   const accountMenuItems = useMemo<NonNullable<MenuProps["items"]>>(
@@ -339,24 +291,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         setCompactMode(!compactMode);
         return;
       }
-      if (key === "happy-work") {
-        setHappyWorkMode(!happyWorkMode);
-        return;
-      }
-      if (key === "market") {
-        setAiThemeEnabled((prev) => {
-          const next = !prev;
-          if (typeof window !== "undefined") {
-            window.localStorage.setItem("fquiz:theme:ai-market", next ? "1" : "0");
-            if (next) {
-              window.open("https://ant.design/theme-editor-cn", "_blank", "noopener,noreferrer");
-            }
-          }
-          return next;
-        });
-      }
     },
-    [compactMode, happyWorkMode, setCompactMode, setHappyWorkMode, setThemePrimaryMode],
+    [compactMode, setCompactMode, setThemePrimaryMode],
   );
 
   const onAccountMenuClick = useCallback(
