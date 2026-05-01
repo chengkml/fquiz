@@ -21,6 +21,7 @@ import Icon, {
 } from "@ant-design/icons";
 import {
   Alert,
+  Avatar,
   Badge,
   Button,
   Drawer,
@@ -437,9 +438,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             placement="bottomRight"
             trigger={["click"]}
           >
-            <Tooltip title={user.username}>
-              <Button aria-label="账号菜单" icon={<UserOutlined />} type="text" />
-            </Tooltip>
+            <Button aria-label="用户菜单" type="text">
+              <Avatar size="small" style={{ backgroundColor: "var(--ant-color-primary)" }}>
+                {user.username.trim().charAt(0).toUpperCase() || "U"}
+              </Avatar>
+            </Button>
           </Dropdown>
         </Space>
       </Header>
