@@ -761,12 +761,12 @@ export default function AdminPowerLinesPage() {
             </Space>
           )}
         >
-          {!selectedLineId ? (
-            <Empty description="请先选择一条线路" />
+          {!selectedLineId || !selectedLine ? (
+            <Empty description={selectedLineId ? "所选线路不存在，请重新选择" : "请先选择一条线路"} />
           ) : (
             <Space direction="vertical" size={12} className="w-full">
               <Typography.Text type="secondary">
-                当前线路编码：{selectedLine?.code ?? "-"}，杆塔总数：{selectedLine?.tower_count ?? 0}，当前视图：{towerViewMode === "table" ? "塔杆列表" : "分布图"}
+                当前线路编码：{selectedLine.code}，杆塔总数：{selectedLine.tower_count ?? 0}，当前视图：{towerViewMode === "table" ? "塔杆列表" : "分布图"}
               </Typography.Text>
               <div className="grid gap-3 md:grid-cols-3">
                 <Input
