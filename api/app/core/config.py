@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     db_schema: str = "public"
     db_username: str = "fquiz"
     db_password: str = "fquiz"
+    user_username_column: Literal["username", "user_name"] = "username"
     file_vfs_root: str = "./data/vfs"
     minio_enabled: bool = False
     minio_endpoint: str = "http://minio:9000"

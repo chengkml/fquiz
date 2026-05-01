@@ -226,6 +226,7 @@
 - `DB_SCHEMA` 通过 PostgreSQL `search_path` 注入，语义等价 JDBC 的 `currentSchema`。
 - API 启动初始化口径：`seed_defaults` 对本地目标执行；为兼容老表状态约束，初始管理员状态写入值统一为 `ENABLED`（不使用 `active`）。
 - 用户表兼容口径：用户主键列对齐旧库 `users.user_id`，与用户关联的外键统一引用 `users.user_id`（不再引用 `users.id`）。
+- 用户名列口径：历史环境存在 `users.username` 与 `users.user_name` 双形态；运行时通过 `USER_USERNAME_COLUMN`（`username`/`user_name`）与目标库对齐，避免启动阶段关系预加载触发 `UndefinedColumn`。
 
 ## 发布验收口径（2026-04-26）
 

@@ -7,6 +7,7 @@ from uuid import uuid4
 from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from ..core.config import get_settings
 from ..core.database import Base
 from .base import utcnow
 
@@ -14,6 +15,8 @@ if TYPE_CHECKING:
     from .auth_session import AuthSession
     from .audit_log import AuditLog
     from .rbac import Role
+
+settings = get_settings()
 
 
 class User(Base):
@@ -26,7 +29,12 @@ class User(Base):
         default=lambda: uuid4().hex,
     )
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    username: Mapped[str] = mapped_column("user_name", String(64), unique=True, index=True)
+    username: Mapped[str] = mapped_column(
+        settings.user_username_column,
+        String(64),
+        unique=True,
+        index=True,
+    )
     password_hash: Mapped[str] = mapped_column("password", String(255))
     status: Mapped[str] = mapped_column("state", String(32), default="ENABLED", index=True)
     created_at: Mapped[datetime] = mapped_column(

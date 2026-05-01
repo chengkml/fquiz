@@ -102,6 +102,7 @@ services:
       DB_SCHEMA: ${DB_SCHEMA:-public}
       DB_USERNAME: ${DB_USERNAME:-fquiz}
       DB_PASSWORD: ${DB_PASSWORD:-fquiz}
+      USER_USERNAME_COLUMN: ${USER_USERNAME_COLUMN:-username}
       FILE_VFS_ROOT: ${FILE_VFS_ROOT:-./data/vfs}
       MINIO_ENABLED: ${MINIO_ENABLED:-true}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
@@ -175,6 +176,7 @@ services:
       DB_SCHEMA: ${DB_SCHEMA:-public}
       DB_USERNAME: ${DB_USERNAME:-fquiz}
       DB_PASSWORD: ${DB_PASSWORD:-fquiz}
+      USER_USERNAME_COLUMN: ${USER_USERNAME_COLUMN:-username}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
       CELERY_TIMEZONE: ${CELERY_TIMEZONE:-Asia/Shanghai}
@@ -211,6 +213,7 @@ services:
       DB_SCHEMA: ${DB_SCHEMA:-public}
       DB_USERNAME: ${DB_USERNAME:-fquiz}
       DB_PASSWORD: ${DB_PASSWORD:-fquiz}
+      USER_USERNAME_COLUMN: ${USER_USERNAME_COLUMN:-username}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
       CELERY_TIMEZONE: ${CELERY_TIMEZONE:-Asia/Shanghai}
