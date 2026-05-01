@@ -366,6 +366,8 @@ jobs:
               flower:
                 image: ${API_IMAGE}
                 container_name: fquiz-flower
+                profiles:
+                  - monitoring
                 command:
                   - celery
                   - -A
@@ -397,7 +399,7 @@ jobs:
                   NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
                   NODE_ENV: production
                 ports:
-                  - "3000:3000"
+                  - "${WEB_PORT:-3000}:3000"
                 restart: unless-stopped
 
             volumes:
@@ -409,6 +411,7 @@ jobs:
             if [ ! -f .env ]; then
             cat > .env <<'ENV'
             NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+            WEB_PORT=3000
             API_HOST=0.0.0.0
             API_PORT=8000
             API_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
@@ -476,6 +479,37 @@ jobs:
             ENV
               echo "[warn] .env 不存在，已写入默认模板，请尽快改成生产配置。"
             fi
+
+            ensure_web_port_available() {
+              local configured_web_port
+              configured_web_port="${WEB_PORT:-}"
+              if [ -z "${configured_web_port}" ] && [ -f .env ]; then
+                configured_web_port="$(grep -E '^WEB_PORT=' .env | tail -n 1 | cut -d= -f2- || true)"
+              fi
+              configured_web_port="${configured_web_port:-3000}"
+
+              local conflicting_web_containers
+              conflicting_web_containers="$(docker ps --filter "publish=${configured_web_port}" --format '{{.Names}}' | grep -Ev '^fquiz-web$' || true)"
+              if [ -n "${conflicting_web_containers}" ]; then
+                if [ -n "${WEB_PORT:-}" ]; then
+                  echo "[error] WEB_PORT=${configured_web_port} 已被其他容器占用，请调整后重试。"
+                  echo "[error] 冲突容器: ${conflicting_web_containers//$'\n'/, }"
+                  return 1
+                fi
+                local fallback_web_port=13000
+                while docker ps --filter "publish=${fallback_web_port}" --format '{{.ID}}' | grep -q .; do
+                  fallback_web_port=$((fallback_web_port + 1))
+                done
+                if grep -q '^WEB_PORT=' .env; then
+                  sed -i "s/^WEB_PORT=.*/WEB_PORT=${fallback_web_port}/" .env
+                else
+                  echo "WEB_PORT=${fallback_web_port}" >> .env
+                fi
+                echo "[warn] WEB 端口 ${configured_web_port} 被占用，已自动切换到 ${fallback_web_port}。"
+              fi
+            }
+
+            ensure_web_port_available
 
             cat > .images.env <<ENV
             API_IMAGE=${API_IMAGE}:${IMAGE_TAG}
