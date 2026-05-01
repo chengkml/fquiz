@@ -1031,7 +1031,7 @@ export default function PowerLinesAtpViewerPage() {
             loading={modelsQuery.isFetching}
             pagination={false}
             scroll={{ x: 1500 }}
-            rowClassName={(row) => (row.id === selectedModelId ? "bg-blue-50" : "")}
+            rowClassName={(row) => (row.id === selectedModelId ? "fquiz-row-selected" : "")}
             onRow={(row) => ({
               onClick: () => setSelectedModelId(row.id),
             })}

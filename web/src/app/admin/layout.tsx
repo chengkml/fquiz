@@ -219,7 +219,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     });
   }, [activeMenuState.openKeys]);
 
-  const themeBadge = useMemo(() => <Badge color="blue" style={{ marginTop: -1 }} />, []);
+  const themeBadge = useMemo(
+    () => <Badge color="var(--fquiz-theme-primary, var(--ant-color-primary))" style={{ marginTop: -1 }} />,
+    [],
+  );
   const themeMenuItems = useMemo<NonNullable<MenuProps["items"]>>(
     () => [
       {

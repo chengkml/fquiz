@@ -63,6 +63,37 @@
 
   --fquiz-scrollbar-thumb: var(--ant-color-fill-secondary, rgba(0, 0, 0, 0.15));
   --fquiz-scrollbar-thumb-hover: var(--ant-color-fill, rgba(0, 0, 0, 0.25));
+
+  /* Theme semantic bridge vars (for pages/components avoid hard-coded colors) */
+  --fquiz-theme-bg-layout: var(--ant-color-bg-layout);
+  --fquiz-theme-bg-container: var(--ant-color-bg-container);
+  --fquiz-theme-bg-elevated: #ffffff;
+  --fquiz-theme-bg-soft: var(--gray-2);
+  --fquiz-theme-bg-active: var(--accent-a2);
+
+  --fquiz-theme-text-primary: var(--ant-color-text);
+  --fquiz-theme-text-secondary: var(--ant-color-text-secondary);
+  --fquiz-theme-text-muted: var(--gray-10);
+  --fquiz-theme-text-on-primary: var(--accent-contrast);
+
+  --fquiz-theme-border: var(--ant-color-border-secondary);
+  --fquiz-theme-border-strong: var(--gray-6);
+  --fquiz-theme-primary: var(--ant-color-primary);
+  --fquiz-theme-primary-hover: var(--accent-10);
+  --fquiz-theme-table-header-bg: var(--gray-2);
+  --fquiz-theme-shell-header-bg: var(--fquiz-theme-bg-elevated);
+  --fquiz-theme-shell-sider-bg: var(--fquiz-theme-bg-elevated);
+
+  --fquiz-theme-shadow-card: 0 10px 24px color-mix(in srgb, var(--gray-12) 12%, transparent);
+  --fquiz-theme-shadow-soft: var(--ant-box-shadow-tertiary);
+}
+
+:root[data-fquiz-theme="dark"] {
+  --fquiz-theme-bg-elevated: color-mix(in srgb, var(--ant-color-bg-container) 80%, black);
+  --fquiz-theme-table-header-bg: color-mix(in srgb, var(--ant-color-bg-container) 88%, black);
+  --fquiz-theme-shell-header-bg: color-mix(in srgb, var(--ant-color-bg-container) 82%, black);
+  --fquiz-theme-shell-sider-bg: color-mix(in srgb, var(--ant-color-bg-container) 82%, black);
+  --fquiz-theme-shadow-card: 0 10px 24px color-mix(in srgb, black 45%, transparent);
 }
 
 body {
@@ -175,6 +206,10 @@ body {
 
 .scrollbar-antd {
   scrollbar-gutter: stable;
+}
+
+.fquiz-row-selected > td {
+  background: var(--fquiz-theme-bg-active) !important;
 }
 
 :root.fquiz-happy-work body {

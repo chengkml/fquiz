@@ -1109,7 +1109,7 @@ export default function AdminLightningCurrentsPage() {
             loading={eventsQuery.isFetching}
             pagination={false}
             scroll={{ x: 1700 }}
-            rowClassName={(row) => (row.id === selectedEventId ? "bg-blue-50" : "")}
+            rowClassName={(row) => (row.id === selectedEventId ? "fquiz-row-selected" : "")}
             onRow={(row) => ({
               onClick: () => setSelectedEventId(row.id),
             })}

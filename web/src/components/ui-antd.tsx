@@ -257,6 +257,14 @@ const RADIUS_MAP: Record<string, number> = {
   full: 999,
 };
 
+function buildThemeVisualTokens(isDark: boolean) {
+  return {
+    colorBgLayout: isDark ? "#0f1419" : "#f5f5f5",
+    shellBg: isDark ? "#111a2c" : "#ffffff",
+    tableHeaderBg: isDark ? "#1f1f1f" : "#fafafa",
+  };
+}
+
 function ThemeCssVarsScope({ children }: { children: ReactNode }) {
   const { token } = antdTheme.useToken();
 
@@ -269,6 +277,9 @@ function ThemeCssVarsScope({ children }: { children: ReactNode }) {
         "--ant-color-text-secondary": token.colorTextSecondary,
         "--ant-color-bg-layout": token.colorBgLayout,
         "--ant-color-bg-container": token.colorBgContainer,
+        "--ant-color-primary-bg": token.colorPrimaryBg,
+        "--ant-color-primary-bg-hover": token.colorPrimaryBgHover,
+        "--ant-color-primary-hover": token.colorPrimaryHover,
         "--ant-color-fill-alter": token.colorFillAlter,
         "--ant-color-border-secondary": token.colorBorderSecondary,
         "--ant-border-radius": `${token.borderRadius}px`,
@@ -462,6 +473,7 @@ export function Theme({
   }, []);
 
   const isDark = themePrimaryMode === "auto" ? systemPrefersDark : themePrimaryMode === "dark";
+  const visualTokens = useMemo(() => buildThemeVisualTokens(isDark), [isDark]);
 
   const themeMode = useMemo<ThemeMode>(() => toLegacyThemeMode(isDark, compactMode), [compactMode, isDark]);
 
@@ -496,10 +508,12 @@ export function Theme({
       return;
     }
     document.documentElement.classList.toggle("fquiz-happy-work", happyWorkMode);
+    document.documentElement.dataset.fquizTheme = isDark ? "dark" : "light";
     return () => {
       document.documentElement.classList.remove("fquiz-happy-work");
+      delete document.documentElement.dataset.fquizTheme;
     };
-  }, [happyWorkMode]);
+  }, [happyWorkMode, isDark]);
 
   const themeConfig = useMemo<ThemeConfig>(
     () => ({
@@ -509,13 +523,13 @@ export function Theme({
         borderRadius: RADIUS_MAP[radius] ?? RADIUS_MAP.medium,
         fontFamily:
           "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif",
-        colorBgLayout: isDark ? "#0f1419" : "#f5f5f5",
+        colorBgLayout: visualTokens.colorBgLayout,
       },
       components: {
         Layout: {
-          headerBg: isDark ? "#111a2c" : "#ffffff",
-          siderBg: isDark ? "#111a2c" : "#ffffff",
-          bodyBg: isDark ? "#0f1419" : "#f5f5f5",
+          headerBg: visualTokens.shellBg,
+          siderBg: visualTokens.shellBg,
+          bodyBg: visualTokens.colorBgLayout,
           headerHeight: 64,
           headerPadding: "0 24px",
         },
@@ -527,11 +541,11 @@ export function Theme({
           subMenuItemBorderRadius: RADIUS_MAP.medium,
         },
         Table: {
-          headerBg: isDark ? "#1f1f1f" : "#fafafa",
+          headerBg: visualTokens.tableHeaderBg,
         },
       },
     }),
-    [isDark, radius, resolvedAccentColor, themeAlgorithm],
+    [radius, resolvedAccentColor, themeAlgorithm, visualTokens],
   );
 
   return (
