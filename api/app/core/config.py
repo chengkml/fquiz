@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     db_username: str = "fquiz"
     db_password: str = "fquiz"
     user_username_column: Literal["username", "user_name"] = "username"
+    user_password_column: Literal["password", "password_hash"] = "password_hash"
     file_vfs_root: str = "./data/vfs"
     minio_enabled: bool = False
     minio_endpoint: str = "http://minio:9000"

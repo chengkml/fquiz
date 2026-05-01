@@ -35,7 +35,10 @@ class User(Base):
         unique=True,
         index=True,
     )
-    password_hash: Mapped[str] = mapped_column("password", String(255))
+    password_hash: Mapped[str] = mapped_column(
+        settings.user_password_column,
+        String(255),
+    )
     status: Mapped[str] = mapped_column("state", String(32), default="ENABLED", index=True)
     created_at: Mapped[datetime] = mapped_column(
         "create_date",
