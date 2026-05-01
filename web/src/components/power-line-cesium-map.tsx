@@ -195,6 +195,35 @@ export function PowerLineCesiumMap({
     });
   }, []);
 
+  const resolveZoomDistance = useCallback((): number => {
+    const viewer = viewerRef.current;
+    if (!viewer) {
+      return MIN_CAMERA_RANGE / 3;
+    }
+    const cameraHeight = viewer.camera.positionCartographic?.height;
+    if (Number.isFinite(cameraHeight)) {
+      return Math.max(Number(cameraHeight) * 0.25, 300);
+    }
+    const routeRange = routeViewRef.current?.range ?? MIN_CAMERA_RANGE;
+    return Math.max(routeRange * 0.2, 300);
+  }, []);
+
+  const zoomInRoute = useCallback(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) {
+      return;
+    }
+    viewer.camera.zoomIn(resolveZoomDistance());
+  }, [resolveZoomDistance]);
+
+  const zoomOutRoute = useCallback(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) {
+      return;
+    }
+    viewer.camera.zoomOut(resolveZoomDistance());
+  }, [resolveZoomDistance]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -232,6 +261,7 @@ export function PowerLineCesiumMap({
         viewer.scene.globe.showGroundAtmosphere = false;
         viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0f172a");
         viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#020617");
+        viewer.scene.screenSpaceCameraController.enableZoom = true;
         const creditContainer = viewer.cesiumWidget.creditContainer as HTMLElement | null;
         if (creditContainer) {
           creditContainer.style.display = "none";
@@ -268,7 +298,7 @@ export function PowerLineCesiumMap({
   useEffect(() => {
     const viewer = viewerRef.current;
     const Cesium = cesiumRef.current;
-    if (!viewer || !Cesium) {
+    if (!ready || !viewer || !Cesium) {
       return;
     }
 
@@ -355,7 +385,7 @@ export function PowerLineCesiumMap({
       range,
     };
     focusRoute();
-  }, [towerGeoPoints, routeSegments, colorByRisk, showLabels, focusRoute]);
+  }, [ready, towerGeoPoints, routeSegments, colorByRisk, showLabels, focusRoute]);
 
   return (
     <div className="space-y-3">
@@ -366,6 +396,12 @@ export function PowerLineCesiumMap({
         <Checkbox checked={showLabels} onChange={(event) => setShowLabels(event.target.checked)}>
           显示塔号
         </Checkbox>
+        <Button size="small" onClick={zoomInRoute} disabled={!ready || towerGeoPoints.length === 0}>
+          放大
+        </Button>
+        <Button size="small" onClick={zoomOutRoute} disabled={!ready || towerGeoPoints.length === 0}>
+          缩小
+        </Button>
         <Button size="small" onClick={focusRoute} disabled={!ready || towerGeoPoints.length === 0}>
           居中重置
         </Button>
