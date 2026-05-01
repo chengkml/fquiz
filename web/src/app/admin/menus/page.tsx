@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   App,
@@ -109,6 +109,9 @@ const DEFAULT_FORM_VALUES: MenuFormValues = {
   component: "",
 };
 
+const MENU_TABLE_MIN_SCROLL_Y = 220;
+const MENU_TABLE_BOTTOM_RESERVE = 132;
+
 function compareMenuIds(a: string, b: string): number {
   const aNum = Number(a);
   const bNum = Number(b);
@@ -131,7 +134,9 @@ export default function AdminMenusPage() {
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
   const [sortKey, setSortKey] = useState<SortKey>("sort_order");
+  const [tableScrollY, setTableScrollY] = useState(420);
   const [form] = Form.useForm<MenuFormValues>();
+  const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const canRead = hasPermission("menu.read") || hasPermission("menu.manage");
   const canManage = hasPermission("menu.manage");
@@ -413,6 +418,62 @@ export default function AdminMenusPage() {
     return base;
   }, [canManage, deletingMenuId, menuNameById, removeMenu, startEdit]);
 
+  const updateTableScrollY = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const top = anchor.getBoundingClientRect().top;
+    const nextHeight = Math.max(
+      MENU_TABLE_MIN_SCROLL_Y,
+      Math.floor(window.innerHeight - top - MENU_TABLE_BOTTOM_RESERVE),
+    );
+    setTableScrollY((previous) => (Math.abs(previous - nextHeight) <= 2 ? previous : nextHeight));
+  }, []);
+
+  useEffect(() => {
+    updateTableScrollY();
+  }, [error, updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updateTableScrollY);
+    };
+
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateTableScrollY);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTableScrollY]);
+
   if (initializing) {
     return (
       <div className="flex min-h-[240px] items-center justify-center">
@@ -514,24 +575,25 @@ export default function AdminMenusPage() {
             </Button>
           </Form.Item>
         </Form>
-
-        <Table<MenuItem>
-          className="mt-4"
-          rowKey="id"
-          dataSource={filteredMenus}
-          columns={columns}
-          loading={loading}
-          scroll={{ x: 1200 }}
-          pagination={{
-            pageSize: 20,
-            showSizeChanger: true,
-            pageSizeOptions: [10, 20, 50, 100],
-            showTotal: (total) => `共 ${total} 条`,
-          }}
-          locale={{
-            emptyText: <Empty description="未找到符合筛选条件的菜单项。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
-          }}
-        />
+        <div ref={tableScrollAnchorRef}>
+          <Table<MenuItem>
+            className="mt-4"
+            rowKey="id"
+            dataSource={filteredMenus}
+            columns={columns}
+            loading={loading}
+            scroll={{ x: 1200, y: tableScrollY }}
+            pagination={{
+              pageSize: 20,
+              showSizeChanger: true,
+              pageSizeOptions: [10, 20, 50, 100],
+              showTotal: (total) => `共 ${total} 条`,
+            }}
+            locale={{
+              emptyText: <Empty description="未找到符合筛选条件的菜单项。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
+            }}
+          />
+        </div>
       </AntCard>
 
       <Modal
