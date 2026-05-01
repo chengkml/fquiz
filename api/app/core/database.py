@@ -199,11 +199,9 @@ def init_db() -> None:
         audit_log,
         auth_session,
         calendar_event,
-        diary,
         elevation,
         file_storage,
         hot_search,
-        life_countdown,
         lightning_event,
         lightning_sample,
         line,
@@ -217,7 +215,6 @@ def init_db() -> None:
         system_param,
         todo,
         user,
-        vocabulary_word,
     )  # noqa: F401
     from ..services.seed_service import seed_defaults
 

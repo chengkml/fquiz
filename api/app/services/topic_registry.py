@@ -27,7 +27,6 @@ TOPIC_RULES: dict[str, TopicRule] = {
     "admin.atp-models": TopicRule(any_permission_codes={"atp.read", "atp.run", "atp.manage"}),
     "admin.audit_logs": TopicRule(any_permission_codes={"menu.read", "menu.manage"}),
     "admin.question_bank": TopicRule(any_permission_codes={"question_bank.read", "question_bank.manage"}),
-    "admin.vocabulary": TopicRule(any_permission_codes={"vocabulary.read", "vocabulary.manage"}),
 }
 
 

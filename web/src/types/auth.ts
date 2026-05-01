@@ -153,61 +153,6 @@ export type QuestionTagMutationResponse = {
   affected_questions: number;
 };
 
-export type VocabularyWordStatus = "enabled" | "disabled";
-
-export type VocabularyWordSummary = {
-  id: number;
-  word: string;
-  phonetic: string | null;
-  meaning: string;
-  example: string | null;
-  status: VocabularyWordStatus;
-  created_by_user_id: string | null;
-  updated_by_user_id: string | null;
-  created_at: string;
-  updated_at: string;
-  created_by: UserPublic | null;
-  updated_by: UserPublic | null;
-};
-
-export type VocabularyWordListResponse = {
-  items: VocabularyWordSummary[];
-  total: number;
-};
-
-export type VocabularyStatsSummary = {
-  total_words: number;
-  enabled_words: number;
-  disabled_words: number;
-  enabled_rate: number | null;
-  missing_phonetic_words: number;
-  missing_example_words: number;
-};
-
-export type VocabularyStatusBucketItem = {
-  status: string;
-  count: number;
-};
-
-export type VocabularyInitialBucketItem = {
-  initial: string;
-  count: number;
-};
-
-export type VocabularyWordTrendItem = {
-  id: number;
-  word: string;
-  status: VocabularyWordStatus;
-  updated_at: string;
-};
-
-export type VocabularyWordStatsResponse = {
-  summary: VocabularyStatsSummary;
-  status_buckets: VocabularyStatusBucketItem[];
-  initial_buckets: VocabularyInitialBucketItem[];
-  recently_updated: VocabularyWordTrendItem[];
-};
-
 export type HotSearchRecordSummary = {
   id: number;
   source: string;
@@ -402,48 +347,6 @@ export type ElevationApplyJobListResponse = {
 export type ElevationApplyJobCreateResponse = {
   job: ElevationApplyJobSummary;
   queued: boolean;
-};
-
-export type LifeCountdownProfile = {
-  id?: string;
-  deathDate?: string;
-  todayWarningDate?: string;
-  todayWarningText?: string;
-  todayWarningGeneratedAt?: string;
-  todayWarningModel?: string;
-  createDate?: string;
-  updateDate?: string;
-};
-
-export type LifeCountdownWarning = {
-  warningText?: string;
-  warningDate?: string;
-  generatedAt?: string;
-  modelName?: string;
-  cached?: boolean;
-};
-
-export type DiaryMood = "HAPPY" | "CALM" | "SAD" | "ANGRY" | "TIRED" | "EXCITED";
-
-export type DiarySummary = {
-  id: string;
-  title: string;
-  content: string;
-  diary_date: string;
-  mood: DiaryMood;
-  weather: string | null;
-  archived: boolean;
-  create_date: string;
-  create_user: string | null;
-  update_date: string;
-  update_user: string | null;
-};
-
-export type DiaryListResponse = {
-  items: DiarySummary[];
-  total: number;
-  page_num: number;
-  page_size: number;
 };
 
 export type LineStatus = "enabled" | "disabled";

@@ -37,8 +37,6 @@ DEFAULT_ADMIN_PERMISSION_CODES: set[str] = {
     "wine.manage",
     "question_bank.read",
     "question_bank.manage",
-    "vocabulary.read",
-    "vocabulary.manage",
 }
 
 ADMIN_ROLE_IDS = {
@@ -71,13 +69,6 @@ DISABLED_MENU_CODES: set[str] = {
     "admin.baidu_pan",
     "admin.tag",
     "admin.knowledge_point_mgr",
-    "admin.life_countdown",
-    "admin.password",
-    "admin.token_usage",
-    "admin.history",
-    "admin.vocabulary",
-    "admin.diary",
-    "admin.homework",
     "admin.question_bank",
     "admin.cron_task_mgr",
     "admin.todos",

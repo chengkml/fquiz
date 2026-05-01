@@ -46,12 +46,6 @@ from ..schemas.model_registry import (
     ModelUsageIngestRequest,
     ModelUsageSummary,
 )
-from ..schemas.token_usage import (
-    TokenUsageDailyItem,
-    TokenUsageModelItem,
-    TokenUsageOverviewResponse,
-    TokenUsageSummary,
-)
 from .llm_gateway import create_reply_with_model
 from .push_service import publish_topic
 
@@ -819,106 +813,6 @@ def _serialize_model(model: ModelRegistry, metrics: dict[str, dict]) -> ModelReg
         tests_7d=tests_7d,
         created_at=model.created_at,
         updated_at=model.updated_at,
-    )
-
-
-def get_token_usage_overview(
-    db: Session,
-    *,
-    days: int = 7,
-    model_code: str | None = None,
-) -> TokenUsageOverviewResponse:
-    normalized_days = max(1, min(int(days), 90))
-    normalized_model_code = _normalize_nullable_str(model_code)
-
-    since = utcnow() - timedelta(days=normalized_days)
-
-    where_clause = [ModelUsageLog.recorded_at >= since]
-    if normalized_model_code:
-        where_clause.append(ModelUsageLog.model_code == normalized_model_code)
-
-    summary_row = db.execute(
-        select(
-            func.coalesce(func.sum(ModelUsageLog.request_count), 0),
-            func.coalesce(func.sum(ModelUsageLog.success_count), 0),
-            func.coalesce(func.sum(ModelUsageLog.total_tokens), 0),
-            func.coalesce(func.sum(ModelUsageLog.total_cost_usd), Decimal("0")),
-        ).where(*where_clause)
-    ).one()
-
-    summary_request_count = int(summary_row[0] or 0)
-    summary_success_count = int(summary_row[1] or 0)
-    summary_total_tokens = int(summary_row[2] or 0)
-    summary_total_cost = float(summary_row[3] or 0)
-
-    trend_rows = db.execute(
-        select(
-            func.date(ModelUsageLog.recorded_at),
-            func.coalesce(func.sum(ModelUsageLog.request_count), 0),
-            func.coalesce(func.sum(ModelUsageLog.success_count), 0),
-            func.coalesce(func.sum(ModelUsageLog.total_tokens), 0),
-            func.coalesce(func.sum(ModelUsageLog.total_cost_usd), Decimal("0")),
-        )
-        .where(*where_clause)
-        .group_by(func.date(ModelUsageLog.recorded_at))
-        .order_by(func.date(ModelUsageLog.recorded_at).asc())
-    ).all()
-
-    trend = [
-        TokenUsageDailyItem(
-            date=str(row[0]),
-            request_count=int(row[1] or 0),
-            success_count=int(row[2] or 0),
-            total_tokens=int(row[3] or 0),
-            total_cost_usd=float(row[4] or 0),
-            success_rate=round(int(row[2] or 0) / int(row[1] or 0), 4) if int(row[1] or 0) > 0 else None,
-        )
-        for row in trend_rows
-    ]
-
-    top_model_rows = db.execute(
-        select(
-            ModelUsageLog.model_code,
-            func.coalesce(func.sum(ModelUsageLog.request_count), 0),
-            func.coalesce(func.sum(ModelUsageLog.success_count), 0),
-            func.coalesce(func.sum(ModelUsageLog.total_tokens), 0),
-            func.coalesce(func.sum(ModelUsageLog.total_cost_usd), Decimal("0")),
-        )
-        .where(*where_clause)
-        .group_by(ModelUsageLog.model_code)
-        .order_by(func.coalesce(func.sum(ModelUsageLog.total_tokens), 0).desc(), ModelUsageLog.model_code.asc())
-        .limit(10)
-    ).all()
-
-    top_models = [
-        TokenUsageModelItem(
-            model_code=str(row[0]),
-            request_count=int(row[1] or 0),
-            success_count=int(row[2] or 0),
-            total_tokens=int(row[3] or 0),
-            total_cost_usd=float(row[4] or 0),
-            success_rate=round(int(row[2] or 0) / int(row[1] or 0), 4) if int(row[1] or 0) > 0 else None,
-        )
-        for row in top_model_rows
-    ]
-
-    start_date = trend[0].date if trend else str(since.date())
-    end_date = trend[-1].date if trend else str(utcnow().date())
-
-    return TokenUsageOverviewResponse(
-        days=normalized_days,
-        model_code=normalized_model_code,
-        start_date=start_date,
-        end_date=end_date,
-        summary=TokenUsageSummary(
-            request_count=summary_request_count,
-            success_count=summary_success_count,
-            total_tokens=summary_total_tokens,
-            total_cost_usd=summary_total_cost,
-            success_rate=round(summary_success_count / summary_request_count, 4) if summary_request_count > 0 else None,
-        ),
-        trend=trend,
-        top_models=top_models,
     )
 
 

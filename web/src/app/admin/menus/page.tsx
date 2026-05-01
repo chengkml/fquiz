@@ -82,16 +82,9 @@ const PROTECTED_MENU_CODES = new Set([
   "admin.tag",
   "admin.knowledge_point_mgr",
   "admin.question_bank",
-  "admin.homework",
   "admin.job_mgr",
-  "admin.history",
-  "admin.vocabulary",
-  "admin.diary",
   "admin.syslog",
-  "admin.password",
-  "admin.token_usage",
   "admin.jwt_generator",
-  "admin.life_countdown",
   "admin.wine_runner",
 ]);
 
