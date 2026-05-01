@@ -1,7 +1,7 @@
 "use client";
 
 import { AimOutlined, MinusOutlined, PlusOutlined } from "@ant-design/icons";
-import { Alert, Button, Checkbox, Empty, Spin, Typography } from "antd";
+import { Alert, Button, Checkbox, Empty, Slider, Spin, Typography } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { reloadOnceOnChunkError } from "@/lib/chunk-error";
@@ -36,6 +36,11 @@ type RouteViewState = {
   range: number;
 };
 
+type ZoomBounds = {
+  near: number;
+  far: number;
+};
+
 declare global {
   interface Window {
     CESIUM_BASE_URL?: string;
@@ -45,6 +50,10 @@ declare global {
 const MAP_HEIGHT = 560;
 const DEFAULT_ALTITUDE_M = 0;
 const MIN_CAMERA_RANGE = 1500;
+const MIN_ZOOM_STEP_RANGE = 300;
+const ZOOM_PERCENT_MAX = 100;
+const ZOOM_MIN_FACTOR = 0.22;
+const ZOOM_MAX_FACTOR = 2.8;
 const DEFAULT_POINT_COLOR = "#38bdf8";
 const RISK_COLOR_BY_LEVEL: Record<string, string> = {
   "1": "#22c55e",
@@ -138,6 +147,31 @@ function estimateRouteLengthKm(segments: RouteSegment[]): number {
   }, 0);
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function rangeToZoomPercent(range: number, bounds: ZoomBounds): number {
+  const safeNear = Math.max(bounds.near, 1);
+  const safeFar = Math.max(bounds.far, safeNear + 1);
+  const safeRange = clamp(range, safeNear, safeFar);
+  const minLog = Math.log(safeNear);
+  const maxLog = Math.log(safeFar);
+  const valueLog = Math.log(safeRange);
+  const ratio = (valueLog - minLog) / (maxLog - minLog);
+  return Math.round((1 - ratio) * ZOOM_PERCENT_MAX);
+}
+
+function zoomPercentToRange(percent: number, bounds: ZoomBounds): number {
+  const safeNear = Math.max(bounds.near, 1);
+  const safeFar = Math.max(bounds.far, safeNear + 1);
+  const ratio = clamp(percent, 0, ZOOM_PERCENT_MAX) / ZOOM_PERCENT_MAX;
+  const minLog = Math.log(safeNear);
+  const maxLog = Math.log(safeFar);
+  const valueLog = maxLog - ratio * (maxLog - minLog);
+  return Math.exp(valueLog);
+}
+
 export function PowerLineCesiumMap({
   lineCode,
   lineName,
@@ -148,10 +182,13 @@ export function PowerLineCesiumMap({
   const viewerRef = useRef<import("cesium").Viewer | null>(null);
   const cesiumRef = useRef<CesiumNamespace | null>(null);
   const routeViewRef = useRef<RouteViewState | null>(null);
+  const zoomBoundsRef = useRef<ZoomBounds | null>(null);
+  const sliderChangingRef = useRef(false);
   const [initError, setInitError] = useState("");
   const [ready, setReady] = useState(false);
   const [colorByRisk, setColorByRisk] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
+  const [zoomPercent, setZoomPercent] = useState(50);
 
   const sortedTowers = useMemo(
     () => [...towers].sort((a, b) => a.seq_no - b.seq_no),
@@ -184,6 +221,20 @@ export function PowerLineCesiumMap({
   const invalidGeoCount = Math.max(sortedTowers.length - towerGeoPoints.length, 0);
   const controlsDisabled = !ready || towerGeoPoints.length === 0;
 
+  const syncZoomPercentFromCamera = useCallback(() => {
+    const viewer = viewerRef.current;
+    const bounds = zoomBoundsRef.current;
+    if (!viewer || !bounds || sliderChangingRef.current) {
+      return;
+    }
+    const cameraHeight = viewer.camera.positionCartographic?.height;
+    if (!Number.isFinite(cameraHeight)) {
+      return;
+    }
+    const nextPercent = rangeToZoomPercent(Number(cameraHeight), bounds);
+    setZoomPercent((previous) => (previous === nextPercent ? previous : nextPercent));
+  }, []);
+
   const focusRoute = useCallback(() => {
     const viewer = viewerRef.current;
     const Cesium = cesiumRef.current;
@@ -194,20 +245,23 @@ export function PowerLineCesiumMap({
     viewer.camera.flyToBoundingSphere(routeView.boundingSphere, {
       duration: 0.75,
       offset: new Cesium.HeadingPitchRange(0, -0.65, routeView.range),
+      complete: () => {
+        syncZoomPercentFromCamera();
+      },
     });
-  }, []);
+  }, [syncZoomPercentFromCamera]);
 
   const resolveZoomDistance = useCallback((): number => {
     const viewer = viewerRef.current;
     if (!viewer) {
-      return MIN_CAMERA_RANGE / 3;
+      return MIN_ZOOM_STEP_RANGE;
     }
     const cameraHeight = viewer.camera.positionCartographic?.height;
     if (Number.isFinite(cameraHeight)) {
-      return Math.max(Number(cameraHeight) * 0.25, 300);
+      return Math.max(Number(cameraHeight) * 0.25, MIN_ZOOM_STEP_RANGE);
     }
     const routeRange = routeViewRef.current?.range ?? MIN_CAMERA_RANGE;
-    return Math.max(routeRange * 0.2, 300);
+    return Math.max(routeRange * 0.2, MIN_ZOOM_STEP_RANGE);
   }, []);
 
   const zoomInRoute = useCallback(() => {
@@ -225,6 +279,39 @@ export function PowerLineCesiumMap({
     }
     viewer.camera.zoomOut(resolveZoomDistance());
   }, [resolveZoomDistance]);
+
+  const handleZoomSliderChange = useCallback((value: number) => {
+    const viewer = viewerRef.current;
+    const Cesium = cesiumRef.current;
+    const bounds = zoomBoundsRef.current;
+    if (!viewer || !Cesium || !bounds) {
+      return;
+    }
+    sliderChangingRef.current = true;
+    setZoomPercent(value);
+    const nextHeight = zoomPercentToRange(value, bounds);
+    const current = viewer.camera.positionCartographic;
+    if (!current) {
+      sliderChangingRef.current = false;
+      return;
+    }
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromRadians(
+        current.longitude,
+        current.latitude,
+        nextHeight,
+      ),
+      duration: 0.18,
+      complete: () => {
+        sliderChangingRef.current = false;
+        syncZoomPercentFromCamera();
+      },
+      cancel: () => {
+        sliderChangingRef.current = false;
+        syncZoomPercentFromCamera();
+      },
+    });
+  }, [syncZoomPercentFromCamera]);
 
   useEffect(() => {
     let cancelled = false;
@@ -264,6 +351,7 @@ export function PowerLineCesiumMap({
         viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0f172a");
         viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#020617");
         viewer.scene.screenSpaceCameraController.enableZoom = true;
+        viewer.camera.changed.addEventListener(syncZoomPercentFromCamera);
         const creditContainer = viewer.cesiumWidget.creditContainer as HTMLElement | null;
         if (creditContainer) {
           creditContainer.style.display = "none";
@@ -288,14 +376,16 @@ export function PowerLineCesiumMap({
     return () => {
       cancelled = true;
       if (viewerRef.current && !viewerRef.current.isDestroyed()) {
+        viewerRef.current.camera.changed.removeEventListener(syncZoomPercentFromCamera);
         viewerRef.current.destroy();
       }
       viewerRef.current = null;
       cesiumRef.current = null;
       routeViewRef.current = null;
+      zoomBoundsRef.current = null;
       setReady(false);
     };
-  }, []);
+  }, [syncZoomPercentFromCamera]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -386,6 +476,10 @@ export function PowerLineCesiumMap({
       boundingSphere,
       range,
     };
+    zoomBoundsRef.current = {
+      near: Math.max(range * ZOOM_MIN_FACTOR, MIN_ZOOM_STEP_RANGE),
+      far: Math.max(range * ZOOM_MAX_FACTOR, MIN_CAMERA_RANGE),
+    };
     focusRoute();
   }, [ready, towerGeoPoints, routeSegments, colorByRisk, showLabels, focusRoute]);
 
@@ -398,6 +492,7 @@ export function PowerLineCesiumMap({
         <Checkbox checked={showLabels} onChange={(event) => setShowLabels(event.target.checked)}>
           显示塔号
         </Checkbox>
+        <Typography.Text type="secondary">缩放比例 {zoomPercent}%</Typography.Text>
       </div>
       <Typography.Text type="secondary">
         线路走向图：{lineName || "-"}（{lineCode || "-"}），有效坐标 {towerGeoPoints.length}/{sortedTowers.length}，缺失 {invalidGeoCount}，
@@ -408,6 +503,26 @@ export function PowerLineCesiumMap({
       <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-900/90" style={{ height: MAP_HEIGHT }}>
         <div ref={containerRef} className="h-full w-full" />
         <div className="absolute right-3 top-3 z-10 flex flex-col gap-2 rounded-md border border-slate-700/80 bg-slate-950/70 p-1.5 shadow-lg backdrop-blur-sm">
+          <div className="px-1">
+            <Slider
+              vertical
+              min={0}
+              max={ZOOM_PERCENT_MAX}
+              value={zoomPercent}
+              tooltip={{ open: false }}
+              styles={{
+                rail: { backgroundColor: "rgba(148, 163, 184, 0.35)" },
+                track: { backgroundColor: "rgba(56, 189, 248, 0.9)" },
+                handle: { borderColor: "#38bdf8", backgroundColor: "#e0f2fe" },
+              }}
+              disabled={controlsDisabled}
+              onChange={(value) => {
+                if (typeof value === "number") {
+                  handleZoomSliderChange(value);
+                }
+              }}
+            />
+          </div>
           <Button
             size="small"
             shape="circle"
