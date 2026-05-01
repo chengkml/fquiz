@@ -120,7 +120,7 @@ body {
 
 .admin-design-content {
   min-height: calc(100vh - 64px);
-  padding: 24px;
+  padding: 10px;
 }
 
 .admin-design-page-header {
@@ -146,7 +146,7 @@ body {
   }
 
   .admin-design-content {
-    padding: 16px;
+    padding: 10px;
   }
 }
 
