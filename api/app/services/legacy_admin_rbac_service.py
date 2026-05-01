@@ -8,6 +8,7 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from ..models.menu import Menu
 from ..schemas.admin import (
     MenuCreateRequest,
     MenuListResponse,
@@ -724,15 +725,34 @@ def _get_users_with_menu_access(db: Session, menu_id: str) -> list[str]:
 
 
 def _load_menus_rows(db: Session) -> list[dict[str, object]]:
-    rows = db.execute(
-        text(
-            """
-            SELECT menu_id, menu_name, menu_label, menu_type, parent_id, url, menu_icon, seq, state, menu_descr
-            FROM menu
-            ORDER BY seq ASC NULLS LAST, menu_id ASC
-            """
-        )
-    ).mappings().all()
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT menu_id, menu_name, menu_label, menu_type, parent_id, url, menu_icon, seq, state, menu_descr
+                FROM menu
+                ORDER BY seq ASC NULLS LAST, menu_id ASC
+                """
+            )
+        ).mappings().all()
+    except SQLAlchemyError:
+        db.rollback()
+        menus = db.query(Menu).order_by(Menu.sort_order.asc(), Menu.id.asc()).all()
+        rows = [
+            {
+                "menu_id": str(menu.id),
+                "menu_name": menu.code,
+                "menu_label": menu.name,
+                "menu_type": _to_legacy_menu_type(menu.type),
+                "parent_id": (str(menu.parent_id) if menu.parent_id is not None else None),
+                "url": _to_legacy_url(menu.path),
+                "menu_icon": menu.icon,
+                "seq": menu.sort_order,
+                "state": _to_legacy_state(menu.status),
+                "menu_descr": menu.permission_code or menu.component,
+            }
+            for menu in menus
+        ]
     return [
         dict(row)
         for row in rows
