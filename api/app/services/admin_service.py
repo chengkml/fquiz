@@ -274,12 +274,12 @@ def list_permissions(db: Session) -> list[dict[str, str | int]]:
 
 def serialize_menu(menu: Menu) -> MenuPublic:
     return MenuPublic(
-        id=menu.id,
+        id=str(menu.id),
         code=menu.code,
         name=menu.name,
         path=menu.path,
         icon=menu.icon,
-        parent_id=menu.parent_id,
+        parent_id=str(menu.parent_id) if menu.parent_id is not None else None,
         type=menu.type,
         sort_order=menu.sort_order,
         status=menu.status,
