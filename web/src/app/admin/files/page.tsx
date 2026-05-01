@@ -494,15 +494,14 @@ export default function AdminFilesPage() {
       (listData?.breadcrumbs ?? [{ name: "根目录", path: "/" }]).map((crumb) => ({
         title: (
           <Button
-            type="button"
-            variant="ghost"
+            type="text"
             color="gray"
             size="1"
             onClick={() => {
               setCurrentPath(crumb.path);
               resetActionPanels();
             }}
-            className="px-1"
+            className="px-1 !text-[var(--gray-12)] hover:!text-[var(--accent-11)]"
           >
             {crumb.name}
           </Button>
@@ -782,7 +781,7 @@ export default function AdminFilesPage() {
             </Space>
           </div>
 
-          <div className="mt-4 rounded-lg border border-[var(--gray-5)] bg-[var(--gray-a2)] px-3 py-2">
+          <div className="mt-4 rounded-lg border border-[var(--gray-5)] bg-[var(--gray-a2)] px-3 py-2 [&_.ant-breadcrumb-link]:!text-[var(--gray-12)] [&_.ant-breadcrumb-separator]:!text-[var(--gray-10)]">
             <Breadcrumb items={breadcrumbItems} />
           </div>
 
