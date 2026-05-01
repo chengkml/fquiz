@@ -964,3 +964,11 @@
   - `on.push.branches: [dev]`
   - `deploy.if: github.ref == 'refs/heads/dev'`
 - `main` 分支默认不再触发该部署 workflow。
+
+## legacy 角色查询兼容口径（2026-05-01）
+
+- `/api/v1/admin/roles` 当前入口仍走 `legacy_admin_rbac_service`，但数据库形态可能是 legacy（`user_role/role_menu_rela/menu`）或 modern（`roles/role_menus/menus`）。
+- 角色读取链路兼容策略：
+  - 当 `public.user_role` 存在：继续走 legacy 表链路。
+  - 当 `public.user_role` 缺失：自动回退到 modern 表链路，并补齐 `role_permissions + permissions` 权限码。
+- 该兼容仅针对角色读取相关接口（`list_roles/get_role_by_id/list_role_menu_ids`）；角色写入链路暂仍以 legacy 表为准。
