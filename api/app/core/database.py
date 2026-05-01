@@ -67,6 +67,42 @@ def _ensure_user_pk_column_compatibility() -> None:
         )
 
 
+def _ensure_user_timestamp_column_compatibility() -> None:
+    """
+    Keep `users` timestamp columns aligned with the current ORM mapping.
+
+    Legacy deployments may still use `create_date` / `update_date`,
+    while current models expect `created_at` / `updated_at`.
+    """
+    if not database_url.startswith("postgresql"):
+        return
+
+    schema = settings.resolved_db_schema
+    with engine.begin() as connection:
+        db_inspector = inspect(connection)
+        if not db_inspector.has_table("users", schema=schema):
+            return
+
+        column_names = {
+            column["name"]
+            for column in db_inspector.get_columns("users", schema=schema)
+        }
+
+        if "created_at" not in column_names and "create_date" in column_names:
+            connection.execute(text("ALTER TABLE users RENAME COLUMN create_date TO created_at"))
+            logger.warning(
+                "Detected legacy users.create_date; renamed to users.created_at for schema compatibility.",
+            )
+            column_names.remove("create_date")
+            column_names.add("created_at")
+
+        if "updated_at" not in column_names and "update_date" in column_names:
+            connection.execute(text("ALTER TABLE users RENAME COLUMN update_date TO updated_at"))
+            logger.warning(
+                "Detected legacy users.update_date; renamed to users.updated_at for schema compatibility.",
+            )
+
+
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
@@ -104,6 +140,7 @@ def init_db() -> None:
     from ..services.seed_service import seed_defaults
 
     _ensure_user_pk_column_compatibility()
+    _ensure_user_timestamp_column_compatibility()
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         local_hosts = {"db", "localhost", "127.0.0.1", "::1"}

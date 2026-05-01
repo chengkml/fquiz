@@ -46,12 +46,12 @@ class User(Base):
         index=True,
     )
     created_at: Mapped[datetime] = mapped_column(
-        "create_date",
+        "created_at",
         DateTime(timezone=False),
         default=utcnow,
     )
     updated_at: Mapped[datetime] = mapped_column(
-        "update_date",
+        "updated_at",
         DateTime(timezone=False),
         default=utcnow,
         onupdate=utcnow,
