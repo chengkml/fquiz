@@ -2,7 +2,7 @@ from collections.abc import Generator
 import logging
 from typing import Any
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import get_settings
@@ -36,6 +36,35 @@ SessionLocal = sessionmaker(
 
 class Base(DeclarativeBase):
     pass
+
+
+def _ensure_user_pk_column_compatibility() -> None:
+    """
+    Keep legacy databases compatible with the current ORM mapping.
+
+    Historical deployments may still use `users.id` as the primary key column.
+    Current models and foreign keys uniformly target `users.user_id`.
+    """
+    if not database_url.startswith("postgresql"):
+        return
+
+    schema = settings.resolved_db_schema
+    with engine.begin() as connection:
+        db_inspector = inspect(connection)
+        if not db_inspector.has_table("users", schema=schema):
+            return
+
+        column_names = {
+            column["name"]
+            for column in db_inspector.get_columns("users", schema=schema)
+        }
+        if "user_id" in column_names or "id" not in column_names:
+            return
+
+        connection.execute(text("ALTER TABLE users RENAME COLUMN id TO user_id"))
+        logger.warning(
+            "Detected legacy users.id primary key; renamed to users.user_id for schema compatibility.",
+        )
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -74,6 +103,7 @@ def init_db() -> None:
     )  # noqa: F401
     from ..services.seed_service import seed_defaults
 
+    _ensure_user_pk_column_compatibility()
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         local_hosts = {"db", "localhost", "127.0.0.1", "::1"}
