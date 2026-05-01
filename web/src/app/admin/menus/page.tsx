@@ -102,8 +102,9 @@ const DEFAULT_FORM_VALUES: MenuFormValues = {
   component: "",
 };
 
-const MENU_TABLE_MIN_SCROLL_Y = 220;
-const MENU_TABLE_BOTTOM_RESERVE = 132;
+const MENU_TABLE_MIN_SCROLL_Y = 180;
+const MENU_TABLE_VIEWPORT_GAP = 8;
+const MENU_TABLE_FALLBACK_RESERVE = 220;
 
 function compareMenuIds(a: string, b: string): number {
   const aNum = Number(a);
@@ -127,7 +128,7 @@ export default function AdminMenusPage() {
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
   const [sortKey, setSortKey] = useState<SortKey>("sort_order");
-  const [tableScrollY, setTableScrollY] = useState(420);
+  const [tableScrollY, setTableScrollY] = useState(MENU_TABLE_MIN_SCROLL_Y);
   const [form] = Form.useForm<MenuFormValues>();
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
@@ -420,17 +421,26 @@ export default function AdminMenusPage() {
       return;
     }
 
-    const top = anchor.getBoundingClientRect().top;
-    const nextHeight = Math.max(
-      MENU_TABLE_MIN_SCROLL_Y,
-      Math.floor(window.innerHeight - top - MENU_TABLE_BOTTOM_RESERVE),
-    );
-    setTableScrollY((previous) => (Math.abs(previous - nextHeight) <= 2 ? previous : nextHeight));
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - MENU_TABLE_FALLBACK_RESERVE);
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? MENU_TABLE_MIN_SCROLL_Y;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - MENU_TABLE_VIEWPORT_GAP);
+    }
+
+    const clampedHeight = Math.max(MENU_TABLE_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
   }, []);
 
   useEffect(() => {
     updateTableScrollY();
-  }, [error, updateTableScrollY]);
+  }, [error, filteredMenus.length, loading, updateTableScrollY]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -568,9 +578,8 @@ export default function AdminMenusPage() {
             </Button>
           </Form.Item>
         </Form>
-        <div ref={tableScrollAnchorRef}>
+        <div ref={tableScrollAnchorRef} className="mt-4">
           <Table<MenuItem>
-            className="mt-4"
             rowKey="id"
             dataSource={filteredMenus}
             columns={columns}
