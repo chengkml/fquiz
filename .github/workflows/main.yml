@@ -257,5 +257,11 @@ jobs:
             }
 
             pull_with_retry
-            ${COMPOSE_CMD} --env-file .env --env-file .images.env -f docker-compose.prod.yml up -d --remove-orphans
+            if ! ${COMPOSE_CMD} --env-file .env --env-file .images.env -f docker-compose.prod.yml up -d --remove-orphans; then
+              echo "[error] docker compose up failed, collecting container diagnostics..."
+              ${COMPOSE_CMD} --env-file .env --env-file .images.env -f docker-compose.prod.yml ps || true
+              docker logs --tail 300 fquiz-api || true
+              docker logs --tail 200 fquiz-db || true
+              exit 1
+            fi
             ${COMPOSE_CMD} --env-file .env --env-file .images.env -f docker-compose.prod.yml ps
