@@ -787,23 +787,41 @@ export default function AdminPowerLinesPage() {
                   placeholder="按风险等级筛选"
                 />
               </div>
-              {towerViewMode === "table" ? (
-                <Table<LineTowerSummary>
-                  rowKey={(row) => row.id}
-                  columns={towerColumns}
-                  dataSource={towers}
-                  loading={towersQuery.isFetching}
-                  pagination={false}
-                  scroll={{ x: 1520 }}
-                />
-              ) : (
-                <PowerLineCesiumMap
-                  lineCode={selectedLine.code}
-                  lineName={selectedLine.name}
-                  towers={towers}
-                  loading={towersQuery.isFetching}
-                />
-              )}
+              <div className="relative">
+                <div
+                  aria-hidden={towerViewMode !== "map"}
+                  className={`transition-all duration-300 ease-out motion-reduce:transition-none ${
+                    towerViewMode === "map"
+                      ? "relative translate-y-0 opacity-100"
+                      : "pointer-events-none absolute inset-0 translate-y-1 opacity-0"
+                  }`}
+                >
+                  <PowerLineCesiumMap
+                    lineCode={selectedLine.code}
+                    lineName={selectedLine.name}
+                    towers={towers}
+                    loading={towersQuery.isFetching}
+                  />
+                </div>
+
+                <div
+                  aria-hidden={towerViewMode !== "table"}
+                  className={`transition-all duration-300 ease-out motion-reduce:transition-none ${
+                    towerViewMode === "table"
+                      ? "relative translate-y-0 opacity-100"
+                      : "pointer-events-none absolute inset-0 -translate-y-1 opacity-0"
+                  }`}
+                >
+                  <Table<LineTowerSummary>
+                    rowKey={(row) => row.id}
+                    columns={towerColumns}
+                    dataSource={towers}
+                    loading={towersQuery.isFetching}
+                    pagination={false}
+                    scroll={{ x: 1520 }}
+                  />
+                </div>
+              </div>
             </Space>
           )}
         </Card>

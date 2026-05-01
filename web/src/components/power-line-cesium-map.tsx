@@ -1,5 +1,6 @@
 "use client";
 
+import { AimOutlined, MinusOutlined, PlusOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Empty, Spin, Typography } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -181,6 +182,7 @@ export function PowerLineCesiumMap({
     [routeSegments],
   );
   const invalidGeoCount = Math.max(sortedTowers.length - towerGeoPoints.length, 0);
+  const controlsDisabled = !ready || towerGeoPoints.length === 0;
 
   const focusRoute = useCallback(() => {
     const viewer = viewerRef.current;
@@ -396,15 +398,6 @@ export function PowerLineCesiumMap({
         <Checkbox checked={showLabels} onChange={(event) => setShowLabels(event.target.checked)}>
           显示塔号
         </Checkbox>
-        <Button size="small" onClick={zoomInRoute} disabled={!ready || towerGeoPoints.length === 0}>
-          放大
-        </Button>
-        <Button size="small" onClick={zoomOutRoute} disabled={!ready || towerGeoPoints.length === 0}>
-          缩小
-        </Button>
-        <Button size="small" onClick={focusRoute} disabled={!ready || towerGeoPoints.length === 0}>
-          居中重置
-        </Button>
       </div>
       <Typography.Text type="secondary">
         线路走向图：{lineName || "-"}（{lineCode || "-"}），有效坐标 {towerGeoPoints.length}/{sortedTowers.length}，缺失 {invalidGeoCount}，
@@ -414,6 +407,35 @@ export function PowerLineCesiumMap({
 
       <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-900/90" style={{ height: MAP_HEIGHT }}>
         <div ref={containerRef} className="h-full w-full" />
+        <div className="absolute right-3 top-3 z-10 flex flex-col gap-2 rounded-md border border-slate-700/80 bg-slate-950/70 p-1.5 shadow-lg backdrop-blur-sm">
+          <Button
+            size="small"
+            shape="circle"
+            icon={<PlusOutlined />}
+            aria-label="放大"
+            title="放大"
+            onClick={zoomInRoute}
+            disabled={controlsDisabled}
+          />
+          <Button
+            size="small"
+            shape="circle"
+            icon={<MinusOutlined />}
+            aria-label="缩小"
+            title="缩小"
+            onClick={zoomOutRoute}
+            disabled={controlsDisabled}
+          />
+          <Button
+            size="small"
+            shape="circle"
+            icon={<AimOutlined />}
+            aria-label="居中重置"
+            title="居中重置"
+            onClick={focusRoute}
+            disabled={controlsDisabled}
+          />
+        </div>
         <div className="pointer-events-none absolute left-3 top-3 rounded bg-slate-950/75 px-2 py-1 text-xs text-slate-200">
           线路走向专题视图
         </div>
