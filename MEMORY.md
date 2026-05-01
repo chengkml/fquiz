@@ -236,6 +236,13 @@
 - 线路渲染继续复用 `power_line_tower.altitude_m` 作为高度来源；回填后在 `raw_extra_json.elevation` 写入溯源信息（dataset/sample_distance/sampled_at）。
 - 一期采样策略为 CSV 点集最近邻（非栅格插值），用于先打通管理与回填闭环；默认推荐回填模式 `fill_null_only`，避免覆盖人工高程。
 - 高频通知 topic 为 `admin.elevation`，线路联动通知沿用 `admin.power-lines`。
+- 高程数据文件格式已扩展为：`csv/img/tif/tiff`。
+  - `csv`：继续使用点集最近邻采样。
+  - `img/tif/tiff`：使用栅格像元采样（按杆塔经纬度取值，必要时自动做 CRS 转换）。
+- 栅格实现口径：
+  - 运行依赖 `rasterio`（随 `api` 依赖安装）。
+  - 分析阶段 `sample_count` 使用 `width * height`（超大栅格上限截断为 `2_147_483_647`），`bbox` 直接取源栅格 `bounds`。
+  - 非 WGS84 CRS 会返回告警说明，提醒边界坐标单位可能不是经纬度。
 - 用户名列口径：历史环境存在 `users.username` 与 `users.user_name` 双形态；运行时通过 `USER_USERNAME_COLUMN`（`username`/`user_name`）与目标库对齐，避免启动阶段关系预加载触发 `UndefinedColumn`。
 - 密码列口径：历史环境存在 `users.password` 与 `users.password_hash` 双形态；运行时通过 `USER_PASSWORD_COLUMN`（`password`/`password_hash`）与目标库对齐，避免启动阶段关系预加载触发 `UndefinedColumn`。
 

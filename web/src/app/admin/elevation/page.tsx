@@ -451,8 +451,15 @@ export default function AdminElevationPage() {
           </Space>
         )}
       >
+        <Alert
+          type="info"
+          showIcon
+          message="支持文件格式：CSV（点集）/ IMG / TIF / TIFF（栅格）"
+          description="CSV 需包含经度、纬度、高程列；IMG/TIF 会按塔杆经纬度直接采样。"
+          className="mb-4"
+        />
         {datasets.length === 0 ? (
-          <Empty description="暂无高程数据集，请先上传 CSV 并创建数据集。" />
+          <Empty description="暂无高程数据集，请先上传 CSV/IMG/TIF 并创建数据集。" />
         ) : (
           <Table<ElevationDatasetSummary>
             rowKey={(row) => row.id}
@@ -510,7 +517,7 @@ export default function AdminElevationPage() {
             <Input placeholder="dem_china_90m_v1" />
           </Form.Item>
           <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
-            <Input placeholder="中国90米DEM（CSV）" />
+            <Input placeholder="中国90米DEM（IMG）" />
           </Form.Item>
           <Form.Item name="source" label="来源">
             <Input placeholder="中科院地理空间数据云" />
@@ -519,7 +526,7 @@ export default function AdminElevationPage() {
             <Input placeholder="main" />
           </Form.Item>
           <Form.Item name="file_path" label="文件路径" rules={[{ required: true, message: "请输入文件路径" }]}>
-            <Input placeholder="/elevation/datasets/china90m.csv" />
+            <Input placeholder="/elevation/datasets/china90m.img" />
           </Form.Item>
           <Form.Item name="resolution_m" label="分辨率（米）">
             <InputNumber className="w-full" min={1} max={10000} />
