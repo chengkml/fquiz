@@ -961,3 +961,10 @@
 - 缓冲区分析联动：
   - `GET /api/v1/lightning-currents/stats/tower-buffer` 返回 `terrain_metrics`（若杆塔已有地形指标）。
   - 风险分级引入地形暴露权重：`ng_for_risk = ng * (1 + 0.25 * exposure)`，但原始返回字段 `ng_per_km2_year` 保持未加权值。
+
+## users 主键兼容口径（2026-05-01）
+
+- 用户主键列工程约定仍为 `users.user_id`。
+- 为兼容历史库（残留 `users.id`）并避免启动 seed 阶段出现 `UndefinedColumn: users.user_id`，`init_db()` 在 PostgreSQL 下新增启动期兼容逻辑：
+  - 若检测到 `users` 表存在且仅有 `id`、缺少 `user_id`，自动执行 `ALTER TABLE users RENAME COLUMN id TO user_id`，再继续 `create_all/seed`。
+- 对已对齐 `users.user_id` 的库，该逻辑不产生任何改动。
