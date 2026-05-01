@@ -226,6 +226,16 @@
 - `DB_SCHEMA` 通过 PostgreSQL `search_path` 注入，语义等价 JDBC 的 `currentSchema`。
 - API 启动初始化口径：`seed_defaults` 对本地目标执行；为兼容老表状态约束，初始管理员状态写入值统一为 `ENABLED`（不使用 `active`）。
 - 用户表兼容口径：用户主键列对齐旧库 `users.user_id`，与用户关联的外键统一引用 `users.user_id`（不再引用 `users.id`）。
+
+## 高程数据管理口径（2026-05-01）
+
+- 高程管理一期采用“文件 + 元数据 + 异步回填”三层：
+  - 文件层：高程源数据文件由现有文件管理模块承载（`mount_code + file_path`）。
+  - 元数据层：`elevation_dataset` 记录数据集来源、分辨率、样本统计、覆盖 bbox、状态。
+  - 任务层：`elevation_apply_job` 记录线路高程回填任务状态与统计。
+- 线路渲染继续复用 `power_line_tower.altitude_m` 作为高度来源；回填后在 `raw_extra_json.elevation` 写入溯源信息（dataset/sample_distance/sampled_at）。
+- 一期采样策略为 CSV 点集最近邻（非栅格插值），用于先打通管理与回填闭环；默认推荐回填模式 `fill_null_only`，避免覆盖人工高程。
+- 高频通知 topic 为 `admin.elevation`，线路联动通知沿用 `admin.power-lines`。
 - 用户名列口径：历史环境存在 `users.username` 与 `users.user_name` 双形态；运行时通过 `USER_USERNAME_COLUMN`（`username`/`user_name`）与目标库对齐，避免启动阶段关系预加载触发 `UndefinedColumn`。
 - 密码列口径：历史环境存在 `users.password` 与 `users.password_hash` 双形态；运行时通过 `USER_PASSWORD_COLUMN`（`password`/`password_hash`）与目标库对齐，避免启动阶段关系预加载触发 `UndefinedColumn`。
 

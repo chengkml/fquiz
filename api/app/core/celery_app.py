@@ -10,7 +10,7 @@ celery_app = Celery(
     "fquiz",
     broker=settings.resolved_celery_broker_url,
     backend=settings.resolved_celery_result_backend,
-    include=["app.tasks.schedule_tasks"],
+    include=["app.tasks.schedule_tasks", "app.tasks.elevation_tasks"],
 )
 
 celery_app.conf.update(

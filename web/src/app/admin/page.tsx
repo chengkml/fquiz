@@ -5,6 +5,7 @@ import {
   AppstoreOutlined,
   AuditOutlined,
   CodeOutlined,
+  DatabaseOutlined,
   FileSearchOutlined,
   FolderOpenOutlined,
   GlobalOutlined,
@@ -112,6 +113,14 @@ const CARDS: DashboardCard[] = [
     category: "电力",
     icon: <GlobalOutlined />,
     visible: (hasPermission) => hasPermission("lightning.read") || hasPermission("lightning.manage"),
+  },
+  {
+    href: "/elevation",
+    title: "高程数据管理",
+    description: "维护高程数据集并执行线路杆塔高程回填任务。",
+    category: "电力",
+    icon: <DatabaseOutlined />,
+    visible: (hasPermission) => hasPermission("elevation.read") || hasPermission("elevation.manage"),
   },
   {
     href: "/syslog",

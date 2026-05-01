@@ -1,0 +1,99 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import TYPE_CHECKING
+from uuid import uuid4
+
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from ..core.database import Base
+from .base import utcnow
+
+if TYPE_CHECKING:
+    from .line import Line
+
+
+class ElevationDataset(Base):
+    __tablename__ = "elevation_dataset"
+    __table_args__ = (
+        Index("idx_elevation_dataset_status", "status"),
+        Index("idx_elevation_dataset_mount_code", "mount_code"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(32),
+        primary_key=True,
+        default=lambda: uuid4().hex,
+    )
+    code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    source: Mapped[str | None] = mapped_column(String(128), index=True)
+    file_format: Mapped[str] = mapped_column(String(32), default="csv", index=True)
+    mount_code: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    file_path: Mapped[str] = mapped_column(String(2048), nullable=False)
+    resolution_m: Mapped[float | None] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    sample_count: Mapped[int] = mapped_column(Integer, default=0)
+    bbox_min_lon: Mapped[float | None] = mapped_column(Float)
+    bbox_max_lon: Mapped[float | None] = mapped_column(Float)
+    bbox_min_lat: Mapped[float | None] = mapped_column(Float)
+    bbox_max_lat: Mapped[float | None] = mapped_column(Float)
+    notes: Mapped[str | None] = mapped_column(Text)
+    create_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    create_user: Mapped[str | None] = mapped_column(String(64), index=True)
+    update_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+    )
+    update_user: Mapped[str | None] = mapped_column(String(64), index=True)
+
+
+class ElevationApplyJob(Base):
+    __tablename__ = "elevation_apply_job"
+    __table_args__ = (
+        Index("idx_elevation_apply_job_status", "status"),
+        Index("idx_elevation_apply_job_line", "line_id"),
+        Index("idx_elevation_apply_job_dataset", "dataset_id"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(32),
+        primary_key=True,
+        default=lambda: uuid4().hex,
+    )
+    line_id: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("power_line.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    dataset_id: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("elevation_dataset.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    mode: Mapped[str] = mapped_column(String(32), default="fill_null_only", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    task_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    total_tower_count: Mapped[int] = mapped_column(Integer, default=0)
+    updated_tower_count: Mapped[int] = mapped_column(Integer, default=0)
+    skipped_tower_count: Mapped[int] = mapped_column(Integer, default=0)
+    missing_geo_count: Mapped[int] = mapped_column(Integer, default=0)
+    unmatched_count: Mapped[int] = mapped_column(Integer, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    create_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    create_user: Mapped[str | None] = mapped_column(String(64), index=True)
+    update_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+    )
+    update_user: Mapped[str | None] = mapped_column(String(64), index=True)
+
+    line: Mapped[Line] = relationship("Line", lazy="selectin")
+    dataset: Mapped[ElevationDataset] = relationship("ElevationDataset", lazy="selectin")

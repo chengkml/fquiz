@@ -333,6 +333,77 @@ export type FileOperationResponse = {
   target_path: string | null;
 };
 
+export type ElevationDatasetStatus = "active" | "disabled";
+export type ElevationApplyMode = "fill_null_only" | "overwrite_all";
+export type ElevationApplyJobStatus = "pending" | "running" | "success" | "failed";
+
+export type ElevationDatasetSummary = {
+  id: string;
+  code: string;
+  name: string;
+  source: string | null;
+  file_format: string;
+  mount_code: string;
+  file_path: string;
+  resolution_m: number | null;
+  status: ElevationDatasetStatus;
+  sample_count: number;
+  bbox_min_lon: number | null;
+  bbox_max_lon: number | null;
+  bbox_min_lat: number | null;
+  bbox_max_lat: number | null;
+  notes: string | null;
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
+};
+
+export type ElevationDatasetListResponse = {
+  items: ElevationDatasetSummary[];
+  total: number;
+};
+
+export type ElevationDatasetAnalyzeResponse = {
+  dataset: ElevationDatasetSummary;
+  warnings: string[];
+};
+
+export type ElevationApplyJobSummary = {
+  id: string;
+  line_id: string;
+  line_code: string | null;
+  line_name: string | null;
+  dataset_id: string;
+  dataset_code: string | null;
+  dataset_name: string | null;
+  mode: ElevationApplyMode;
+  status: ElevationApplyJobStatus;
+  task_id: string | null;
+  total_tower_count: number;
+  updated_tower_count: number;
+  skipped_tower_count: number;
+  missing_geo_count: number;
+  unmatched_count: number;
+  error_message: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
+};
+
+export type ElevationApplyJobListResponse = {
+  items: ElevationApplyJobSummary[];
+  total: number;
+};
+
+export type ElevationApplyJobCreateResponse = {
+  job: ElevationApplyJobSummary;
+  queued: boolean;
+};
+
 export type LifeCountdownProfile = {
   id?: string;
   deathDate?: string;

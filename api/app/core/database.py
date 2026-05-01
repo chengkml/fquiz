@@ -200,6 +200,7 @@ def init_db() -> None:
         auth_session,
         calendar_event,
         diary,
+        elevation,
         file_storage,
         hot_search,
         life_countdown,

@@ -32,6 +32,8 @@ DEFAULT_PERMISSIONS: dict[str, str] = {
     "tower.manage": "Manage line towers",
     "lightning.read": "Read lightning current events and features",
     "lightning.manage": "Manage lightning current events and data imports",
+    "elevation.read": "Read elevation datasets and apply jobs",
+    "elevation.manage": "Manage elevation datasets and run altitude apply jobs",
     "atp.read": "Read ATP models and versions",
     "atp.manage": "Manage ATP models and version artifacts",
     "atp.run": "Run ATP simulations",
@@ -66,6 +68,8 @@ DEFAULT_ROLES: dict[str, dict[str, object]] = {
             "tower.manage",
             "lightning.read",
             "lightning.manage",
+            "elevation.read",
+            "elevation.manage",
             "atp.read",
             "atp.manage",
             "atp.run",
@@ -226,6 +230,19 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "permission_code": "file.read",
     },
     {
+        "code": "admin.elevation",
+        "name": "高程数据管理",
+        "path": "/admin/elevation",
+        "icon": "Database",
+        "parent_code": None,
+        "type": "menu",
+        "sort_order": 56,
+        "status": "enabled",
+        "visible": True,
+        "cacheable": False,
+        "permission_code": "elevation.read",
+    },
+    {
         "code": "admin.syslog",
         "name": "系统日志",
         "path": "/admin/syslog",
@@ -254,7 +271,7 @@ DEFAULT_MENUS: list[dict[str, object]] = [
 ]
 
 ROLE_MENU_BINDINGS: dict[str, list[str]] = {
-    "admin": ["dashboard", "admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.power_lines", "admin.lightning_currents", "admin.lightning_distribution", "admin.task_monitor", "admin.atp_models", "admin.files", "admin.syslog", "admin.wine_runner"],
+    "admin": ["dashboard", "admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.power_lines", "admin.lightning_currents", "admin.lightning_distribution", "admin.task_monitor", "admin.atp_models", "admin.files", "admin.elevation", "admin.syslog", "admin.wine_runner"],
     "user": ["dashboard"],
 }
 

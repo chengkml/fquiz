@@ -5,6 +5,7 @@ from .v1.admin_files import router as admin_files_router
 from .v1.atp_models import router as atp_models_router
 from .v1.auth import router as auth_router
 from .v1.diary import router as diary_router
+from .v1.elevation import router as elevation_router
 from .v1.life_countdown import router as life_countdown_router
 from .v1.lightning import router as lightning_router
 from .v1.lines import router as lines_router
@@ -27,6 +28,7 @@ v1_router.include_router(task_monitor_router)
 v1_router.include_router(token_usage_router)
 v1_router.include_router(system_params_router)
 v1_router.include_router(diary_router)
+v1_router.include_router(elevation_router)
 v1_router.include_router(life_countdown_router)
 v1_router.include_router(lightning_router)
 v1_router.include_router(lines_router)

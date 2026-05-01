@@ -64,6 +64,7 @@ const PROTECTED_MENU_CODES = new Set([
   "admin.menus",
   "admin.system_params",
   "admin.files",
+  "admin.elevation",
   "admin.wxapp",
   "admin.filedetector",
   "admin.baidu_pan",
