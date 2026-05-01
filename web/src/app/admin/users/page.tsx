@@ -488,12 +488,6 @@ export default function AdminUsersPage() {
       },
     },
     {
-      title: "权限",
-      dataIndex: "permission_codes",
-      width: 280,
-      render: (value: string[]) => value.join(", ") || "-",
-    },
-    {
       title: "操作",
       key: "actions",
       fixed: "right",
