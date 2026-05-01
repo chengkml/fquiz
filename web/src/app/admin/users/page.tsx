@@ -11,6 +11,7 @@ import {
   Input,
   Modal,
   Popconfirm,
+  Select,
   Space,
   Spin,
   Table,
@@ -40,6 +41,12 @@ type CreateUserValues = {
   password: string;
 };
 
+type EditUserValues = {
+  email: string;
+  username: string;
+  status: "active" | "disabled";
+};
+
 type ResetPasswordValues = {
   password: string;
 };
@@ -55,6 +62,7 @@ export default function AdminUsersPage() {
   const queryClient = useQueryClient();
 
   const [createForm] = Form.useForm<CreateUserValues>();
+  const [editUserForm] = Form.useForm<EditUserValues>();
   const [resetPasswordForm] = Form.useForm<ResetPasswordValues>();
 
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
@@ -62,7 +70,12 @@ export default function AdminUsersPage() {
   const [resettingUserId, setResettingUserId] = useState<string | null>(null);
   const [updatingStatusUserId, setUpdatingStatusUserId] = useState<string | null>(null);
   const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserPublic | null>(null);
   const [resetPasswordTarget, setResetPasswordTarget] = useState<UserPublic | null>(null);
+  const [keywordInput, setKeywordInput] = useState("");
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "disabled">("all");
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -70,14 +83,27 @@ export default function AdminUsersPage() {
   const canManage = hasPermission("user.manage");
   const canReadRoles = hasPermission("role.read") || hasPermission("role.manage");
 
-  const usersPath = "/api/v1/users?limit=200&offset=0";
+  const trimmedKeyword = searchKeyword.trim();
+  const usersQueryParams = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("limit", String(pagination.pageSize));
+    params.set("offset", String((pagination.current - 1) * pagination.pageSize));
+    if (trimmedKeyword) {
+      params.set("keyword", trimmedKeyword);
+    }
+    if (statusFilter !== "all") {
+      params.set("status", statusFilter);
+    }
+    return params.toString();
+  }, [pagination.current, pagination.pageSize, statusFilter, trimmedKeyword]);
+  const usersPath = `/api/v1/users?${usersQueryParams}`;
   const rolesPath = "/api/v1/admin/roles";
 
   const loadUsers = useCallback(async () => {
     const response = await fetchWithAuth(usersPath);
     if (!response.ok) throw new Error(await readApiError(response));
     return (await response.json()) as UserListResponse;
-  }, [fetchWithAuth]);
+  }, [fetchWithAuth, usersPath]);
 
   const loadRoles = useCallback(async () => {
     const response = await fetchWithAuth(rolesPath);
@@ -86,7 +112,7 @@ export default function AdminUsersPage() {
   }, [fetchWithAuth]);
 
   const usersQuery = useQuery({
-    queryKey: [usersPath],
+    queryKey: ["admin.users", usersQueryParams],
     queryFn: loadUsers,
     enabled: !!user && canManage,
   });
@@ -101,7 +127,7 @@ export default function AdminUsersPage() {
     "admin.users",
     useCallback(() => {
       if (!user || !canManage) return;
-      void queryClient.invalidateQueries({ queryKey: [usersPath] });
+      void queryClient.invalidateQueries({ queryKey: ["admin.users"] });
       if (canReadRoles) {
         void queryClient.invalidateQueries({ queryKey: [rolesPath] });
       }
@@ -136,7 +162,7 @@ export default function AdminUsersPage() {
   );
 
   const refreshData = async () => {
-    await queryClient.invalidateQueries({ queryKey: [usersPath] });
+    await queryClient.invalidateQueries({ queryKey: ["admin.users"] });
     if (canReadRoles) {
       await queryClient.invalidateQueries({ queryKey: [rolesPath] });
     }
@@ -218,11 +244,18 @@ export default function AdminUsersPage() {
   });
 
   const updateUserProfileMutation = useMutation({
-    mutationFn: async ({ userId, status }: { userId: string; status: "active" | "disabled" }) => {
+    mutationFn: async ({ userId, payload }: {
+      userId: string;
+      payload: {
+        email?: string;
+        username?: string;
+        status?: "active" | "disabled";
+      };
+    }) => {
       const response = await fetchWithAuth(`/api/v1/users/${userId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify(payload),
       });
       if (!response.ok) throw new Error(await readApiError(response));
       return response.json() as Promise<UserPublic>;
@@ -233,12 +266,18 @@ export default function AdminUsersPage() {
       setSuccess("");
     },
     onSuccess: async (_, variables) => {
-      setSuccess(variables.status === "active" ? "用户已启用" : "用户已禁用");
+      if (variables.payload.status) {
+        setSuccess(variables.payload.status === "active" ? "用户已启用" : "用户已禁用");
+      } else {
+        setSuccess("用户信息已更新");
+      }
+      setEditingUser(null);
+      editUserForm.resetFields();
       await refreshData();
     },
     onError: (candidate) => {
       setSuccess("");
-      setError(candidate instanceof Error ? candidate.message : "更新用户状态失败");
+      setError(candidate instanceof Error ? candidate.message : "更新用户信息失败");
     },
     onSettled: () => setUpdatingStatusUserId(null),
   });
@@ -309,6 +348,52 @@ export default function AdminUsersPage() {
     resetPasswordForm.resetFields();
   };
 
+  const openEditUserModal = (target: UserPublic) => {
+    setError("");
+    setSuccess("");
+    setEditingUser(target);
+    editUserForm.setFieldsValue({
+      email: target.email,
+      username: target.username,
+      status: target.status === "disabled" ? "disabled" : "active",
+    });
+  };
+
+  const closeEditUserModal = () => {
+    if (updateUserProfileMutation.isPending) return;
+    setEditingUser(null);
+    editUserForm.resetFields();
+  };
+
+  const handleSubmitEditUser = (values: EditUserValues) => {
+    if (!editingUser) return;
+    const nextEmail = values.email.trim().toLowerCase();
+    const nextUsername = values.username.trim();
+    const nextStatus = values.status;
+
+    const payload: { email?: string; username?: string; status?: "active" | "disabled" } = {};
+    if (nextEmail !== editingUser.email.toLowerCase()) {
+      payload.email = nextEmail;
+    }
+    if (nextUsername !== editingUser.username) {
+      payload.username = nextUsername;
+    }
+    if (nextStatus !== editingUser.status) {
+      payload.status = nextStatus;
+    }
+
+    if (Object.keys(payload).length === 0) {
+      setSuccess("未检测到变更");
+      closeEditUserModal();
+      return;
+    }
+
+    updateUserProfileMutation.mutate({
+      userId: editingUser.id,
+      payload,
+    });
+  };
+
   const handleSubmitResetPassword = (values: ResetPasswordValues) => {
     if (!resetPasswordTarget) return;
     resetPasswordMutation.mutate({ userId: resetPasswordTarget.id, password: values.password });
@@ -325,6 +410,18 @@ export default function AdminUsersPage() {
     if (createUserMutation.isPending) return;
     setCreateUserModalOpen(false);
     createForm.resetFields();
+  };
+
+  const handleSearch = () => {
+    setSearchKeyword(keywordInput);
+    setPagination((prev) => ({ ...prev, current: 1 }));
+  };
+
+  const handleResetSearch = () => {
+    setKeywordInput("");
+    setSearchKeyword("");
+    setStatusFilter("all");
+    setPagination((prev) => ({ ...prev, current: 1 }));
   };
 
   const queryError =
@@ -402,16 +499,16 @@ export default function AdminUsersPage() {
       fixed: "right",
       width: 260,
       render: (_value, row) => {
-        const statusLoading = updatingStatusUserId === row.id;
+        const updatingLoading = updatingStatusUserId === row.id;
         const resetLoading = resettingUserId === row.id;
         const deleteLoading = deletingUserId === row.id;
-        const rowBusy = statusLoading || resetLoading || deleteLoading;
+        const rowBusy = updatingLoading || resetLoading || deleteLoading;
 
         return (
           <Space wrap>
             <Button
               size="small"
-              loading={statusLoading}
+              loading={updatingLoading}
               disabled={rowBusy || row.id === user?.id}
               onClick={() => {
                 if (row.id === user?.id) {
@@ -419,10 +516,18 @@ export default function AdminUsersPage() {
                   return;
                 }
                 const nextStatus: "active" | "disabled" = row.status === "active" ? "disabled" : "active";
-                updateUserProfileMutation.mutate({ userId: row.id, status: nextStatus });
+                updateUserProfileMutation.mutate({ userId: row.id, payload: { status: nextStatus } });
               }}
             >
               {row.status === "active" ? "禁用" : "启用"}
+            </Button>
+
+            <Button
+              size="small"
+              disabled={rowBusy}
+              onClick={() => openEditUserModal(row)}
+            >
+              编辑
             </Button>
 
             <Button
@@ -491,6 +596,36 @@ export default function AdminUsersPage() {
       {success && <Alert type="success" message={success} showIcon />}
 
       <AntCard
+        title="用户检索"
+      >
+        <Space wrap>
+          <Input
+            allowClear
+            placeholder="按用户ID/邮箱/用户名搜索"
+            value={keywordInput}
+            onChange={(event) => setKeywordInput(event.target.value)}
+            onPressEnter={handleSearch}
+            style={{ width: 320 }}
+          />
+          <Select<"all" | "active" | "disabled">
+            value={statusFilter}
+            style={{ width: 160 }}
+            options={[
+              { label: "全部状态", value: "all" },
+              { label: "启用", value: "active" },
+              { label: "禁用", value: "disabled" },
+            ]}
+            onChange={(value) => {
+              setStatusFilter(value);
+              setPagination((prev) => ({ ...prev, current: 1 }));
+            }}
+          />
+          <Button type="primary" onClick={handleSearch}>搜索</Button>
+          <Button onClick={handleResetSearch}>重置</Button>
+        </Space>
+      </AntCard>
+
+      <AntCard
         title="用户列表"
         extra={(
           <Space>
@@ -506,7 +641,16 @@ export default function AdminUsersPage() {
           rowKey="id"
           dataSource={users}
           columns={columns}
-          pagination={false}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: usersQuery.data?.total ?? 0,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`,
+            onChange: (page, pageSize) => {
+              setPagination({ current: page, pageSize });
+            },
+          }}
           size="middle"
           scroll={{ x: 1500 }}
           locale={{
@@ -584,6 +728,58 @@ export default function AdminUsersPage() {
               <Input.Password placeholder="至少 8 位" />
             </Form.Item>
           </div>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={editingUser ? `编辑用户：${editingUser.username}（${editingUser.id}）` : "编辑用户"}
+        open={!!editingUser}
+        destroyOnClose
+        onCancel={closeEditUserModal}
+        onOk={() => editUserForm.submit()}
+        okText="保存"
+        cancelText="取消"
+        confirmLoading={updateUserProfileMutation.isPending}
+      >
+        <Form<EditUserValues>
+          form={editUserForm}
+          layout="vertical"
+          onFinish={handleSubmitEditUser}
+          autoComplete="off"
+        >
+          <Form.Item
+            label="邮箱"
+            name="email"
+            rules={[
+              { required: true, message: "请输入邮箱" },
+              { type: "email", message: "邮箱格式不正确" },
+            ]}
+          >
+            <Input placeholder="请输入邮箱" />
+          </Form.Item>
+          <Form.Item
+            label="用户名"
+            name="username"
+            rules={[
+              { required: true, message: "请输入用户名" },
+              { min: 3, message: "用户名至少 3 位" },
+              { max: 64, message: "用户名不能超过 64 位" },
+            ]}
+          >
+            <Input placeholder="请输入用户名" />
+          </Form.Item>
+          <Form.Item
+            label="状态"
+            name="status"
+            rules={[{ required: true, message: "请选择状态" }]}
+          >
+            <Select
+              options={[
+                { label: "启用", value: "active" },
+                { label: "禁用", value: "disabled" },
+              ]}
+            />
+          </Form.Item>
         </Form>
       </Modal>
 

@@ -45,10 +45,12 @@ def create_user_account(
 def list_all_users(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    keyword: str | None = Query(default=None, max_length=128),
+    status_filter: str | None = Query(default=None, alias="status"),
     _: CurrentUser = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ) -> UserListResponse:
-    return list_users(db, limit=limit, offset=offset)
+    return list_users(db, limit=limit, offset=offset, keyword=keyword, status=status_filter)
 
 
 @router.get("/{user_id}", response_model=UserPublic)
@@ -81,7 +83,7 @@ def update_user_profile(
     if not updated:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found or username exists",
+            detail="User not found or email/username exists",
         )
     return updated
 

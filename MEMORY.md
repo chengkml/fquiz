@@ -972,3 +972,23 @@
   - 当 `public.user_role` 存在：继续走 legacy 表链路。
   - 当 `public.user_role` 缺失：自动回退到 modern 表链路，并补齐 `role_permissions + permissions` 权限码。
 - 该兼容仅针对角色读取相关接口（`list_roles/get_role_by_id/list_role_menu_ids`）；角色写入链路暂仍以 legacy 表为准。
+
+## 用户管理检索与分页口径（2026-05-01）
+
+- 用户管理列表接口 `GET /api/v1/users` 支持查询参数：
+  - `limit` / `offset`：分页
+  - `keyword`：按 `user_id/email/username` 模糊检索
+  - `status`：状态过滤（`active|enabled|disabled`）
+- 后端统计口径要求：`total` 必须与当前检索/过滤条件一致（不是全量总数）。
+- 前端 `/admin/users` 采用“检索条件 + 分页状态”驱动请求，不再固定拉取 `limit=200` 全量列表。
+
+## 用户管理编辑口径（2026-05-01）
+
+- 用户信息更新接口 `PATCH /api/v1/users/{user_id}` 当前支持：
+  - `email`
+  - `username`
+  - `status`
+- 更新规则：
+  - `email` 入库前统一 `trim + lower`，且做唯一性校验；
+  - `username` 入库前统一 `trim`，且做唯一性校验；
+  - 空字符串视为非法更新（返回失败）。
