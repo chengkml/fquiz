@@ -102,6 +102,87 @@ def _ensure_user_timestamp_column_compatibility() -> None:
                 "Detected legacy users.update_date; renamed to users.updated_at for schema compatibility.",
             )
 
+def _rename_user_column_if_needed(
+    connection: Any,
+    *,
+    column_names: set[str],
+    target_column: str,
+    legacy_candidates: tuple[str, ...],
+) -> set[str]:
+    if target_column in column_names:
+        return column_names
+
+    legacy_column = next(
+        (candidate for candidate in legacy_candidates if candidate in column_names),
+        None,
+    )
+    if not legacy_column:
+        return column_names
+
+    connection.execute(
+        text(f"ALTER TABLE users RENAME COLUMN {legacy_column} TO {target_column}"),
+    )
+    logger.warning(
+        "Detected legacy users.%s; renamed to users.%s for schema compatibility.",
+        legacy_column,
+        target_column,
+    )
+    column_names.remove(legacy_column)
+    column_names.add(target_column)
+    return column_names
+
+
+def _ensure_user_audit_column_compatibility() -> None:
+    """
+    Keep `users` audit columns aligned with the current ORM mapping.
+
+    Some legacy deployments use `create_by` / `created_by` and
+    `update_by` / `updated_by`, or may miss these nullable columns.
+    """
+    if not database_url.startswith("postgresql"):
+        return
+
+    schema = settings.resolved_db_schema
+    with engine.begin() as connection:
+        db_inspector = inspect(connection)
+        if not db_inspector.has_table("users", schema=schema):
+            return
+
+        column_names = {
+            column["name"]
+            for column in db_inspector.get_columns("users", schema=schema)
+        }
+
+        column_names = _rename_user_column_if_needed(
+            connection,
+            column_names=column_names,
+            target_column="create_user",
+            legacy_candidates=("create_by", "created_by"),
+        )
+        column_names = _rename_user_column_if_needed(
+            connection,
+            column_names=column_names,
+            target_column="update_user",
+            legacy_candidates=("update_by", "updated_by"),
+        )
+
+        if "create_user" not in column_names:
+            connection.execute(
+                text("ALTER TABLE users ADD COLUMN IF NOT EXISTS create_user VARCHAR(64)"),
+            )
+            logger.warning(
+                "Detected missing users.create_user; added nullable create_user column for schema compatibility.",
+            )
+            column_names.add("create_user")
+
+        if "update_user" not in column_names:
+            connection.execute(
+                text("ALTER TABLE users ADD COLUMN IF NOT EXISTS update_user VARCHAR(64)"),
+            )
+            logger.warning(
+                "Detected missing users.update_user; added nullable update_user column for schema compatibility.",
+            )
+
 
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
@@ -141,6 +222,7 @@ def init_db() -> None:
 
     _ensure_user_pk_column_compatibility()
     _ensure_user_timestamp_column_compatibility()
+    _ensure_user_audit_column_compatibility()
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         local_hosts = {"db", "localhost", "127.0.0.1", "::1"}

@@ -949,6 +949,15 @@
   - 若检测到 `users` 表存在且仅有 `id`、缺少 `user_id`，自动执行 `ALTER TABLE users RENAME COLUMN id TO user_id`，再继续 `create_all/seed`。
 - 对已对齐 `users.user_id` 的库，该逻辑不产生任何改动。
 
+## users 审计列兼容口径（2026-05-01）
+
+- 用户审计字段工程约定为 `users.create_user`、`users.update_user`。
+- 为兼容历史库并避免启动 seed 阶段出现 `UndefinedColumn: users.create_user/update_user`，`init_db()` 在 PostgreSQL 下新增启动期兼容逻辑：
+  - 若存在 `create_by/created_by`，自动重命名为 `create_user`。
+  - 若存在 `update_by/updated_by`，自动重命名为 `update_user`。
+  - 若目标列仍缺失，自动补齐 nullable 列：`create_user VARCHAR(64)`、`update_user VARCHAR(64)`。
+- 对已对齐审计字段的库，该逻辑不产生任何改动。
+
 ## GitHub Actions 发布分支口径（2026-05-01）
 
 - `.github/workflows/main.yml` 的自动发布触发分支已切换为 `dev`：
