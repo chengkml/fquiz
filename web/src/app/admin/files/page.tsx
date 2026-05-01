@@ -78,6 +78,7 @@ export default function AdminFilesPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
 
   const [currentPath, setCurrentPath] = useState("/");
+  const [createDirectoryModalOpen, setCreateDirectoryModalOpen] = useState(false);
   const [newDirectoryName, setNewDirectoryName] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -123,6 +124,11 @@ export default function AdminFilesPage() {
     });
   }, [queryClient]);
 
+  const closeCreateDirectoryModal = useCallback(() => {
+    setCreateDirectoryModalOpen(false);
+    setNewDirectoryName("");
+  }, []);
+
   const closeRenameModal = useCallback(() => {
     setRenameTarget(null);
     setRenameName("");
@@ -135,9 +141,10 @@ export default function AdminFilesPage() {
   }, [currentPath]);
 
   const resetActionPanels = useCallback(() => {
+    closeCreateDirectoryModal();
     closeRenameModal();
     closeMoveModal();
-  }, [closeMoveModal, closeRenameModal]);
+  }, [closeCreateDirectoryModal, closeMoveModal, closeRenameModal]);
 
   const applyMutationSuccess = useCallback(
     async (payload: FileOperationResponse, fallbackMessage: string) => {
@@ -180,6 +187,7 @@ export default function AdminFilesPage() {
     },
     onSuccess: async (payload) => {
       setNewDirectoryName("");
+      setCreateDirectoryModalOpen(false);
       await applyMutationSuccess(payload, "目录已创建");
     },
     onError: (error) => {
@@ -382,6 +390,14 @@ export default function AdminFilesPage() {
     void moveMutation.mutateAsync(moveTarget);
   };
 
+  const submitCreateDirectory = () => {
+    if (!newDirectoryName.trim()) {
+      setErrorMessage("目录名称不能为空");
+      return;
+    }
+    void createDirectoryMutation.mutateAsync();
+  };
+
   const handleUploadFile = useCallback(
     (file: File) => {
       setSuccessMessage("");
@@ -501,18 +517,13 @@ export default function AdminFilesPage() {
         dataIndex: "name",
         key: "name",
         render: (_value, item) => (
-          <Space direction="vertical" size={2}>
-            <Space size={8}>
-              {item.is_dir ? <FolderFilled className="text-[var(--accent-11)]" /> : <FileOutlined className="text-[var(--gray-11)]" />}
-              {item.is_dir ? (
-                <Typography.Link onClick={() => handleOpenDirectory(item)}>{item.name}</Typography.Link>
-              ) : (
-                <Typography.Text>{item.name}</Typography.Text>
-              )}
-            </Space>
-            <Typography.Text type="secondary" className="text-xs">
-              {item.path}
-            </Typography.Text>
+          <Space size={8}>
+            {item.is_dir ? <FolderFilled className="text-[var(--accent-11)]" /> : <FileOutlined className="text-[var(--gray-11)]" />}
+            {item.is_dir ? (
+              <Typography.Link onClick={() => handleOpenDirectory(item)}>{item.name}</Typography.Link>
+            ) : (
+              <Typography.Text>{item.name}</Typography.Text>
+            )}
           </Space>
         ),
       },
@@ -709,9 +720,11 @@ export default function AdminFilesPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <Typography.Title level={4} className="!mb-1">{pageDisplayName}列表</Typography.Title>
-              <Typography.Text type="secondary">
-                存储后端：{listData?.current_mount.backend.name ?? "-"}（{listData?.current_mount.backend.driver_type ?? "-"}）
-              </Typography.Text>
+              {listData?.current_mount.backend.driver_type !== "VFS" && (
+                <Typography.Text type="secondary">
+                  存储后端：{listData?.current_mount.backend.name ?? "-"}（{listData?.current_mount.backend.driver_type ?? "-"}）
+                </Typography.Text>
+              )}
             </div>
             <Space wrap>
               <Button
@@ -725,6 +738,24 @@ export default function AdminFilesPage() {
               >
                 {filesQuery.isFetching ? "刷新中..." : "刷新"}
               </Button>
+
+              {canManage && (
+                <Button
+                  type="button"
+                  color="gray"
+                  size="1"
+                  variant="soft"
+                  onClick={() => {
+                    setCreateDirectoryModalOpen(true);
+                    setSuccessMessage("");
+                    setErrorMessage("");
+                  }}
+                  disabled={createDirectoryMutation.isPending}
+                  icon={<PlusOutlined />}
+                >
+                  新建目录
+                </Button>
+              )}
 
               {canManage && (
                 <Upload
@@ -751,38 +782,9 @@ export default function AdminFilesPage() {
             </Space>
           </div>
 
-          <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--accent-a2)] px-3 py-2">
+          <div className="mt-4 rounded-lg border border-[var(--gray-5)] bg-[var(--gray-a2)] px-3 py-2">
             <Breadcrumb items={breadcrumbItems} />
           </div>
-
-          {canManage && (
-            <Form layout="inline" className="mt-4">
-              <Form.Item className="min-w-[260px] flex-1">
-                <Input
-                  value={newDirectoryName}
-                  onChange={(event) => setNewDirectoryName(event.currentTarget.value)}
-                  placeholder="新建目录名"
-                  allowClear
-                />
-              </Form.Item>
-              <Form.Item>
-                <Button
-                  type="button"
-                  onClick={() => {
-                    if (!newDirectoryName.trim()) {
-                      setErrorMessage("目录名称不能为空");
-                      return;
-                    }
-                    void createDirectoryMutation.mutateAsync();
-                  }}
-                  disabled={createDirectoryMutation.isPending}
-                  icon={<PlusOutlined />}
-                >
-                  {createDirectoryMutation.isPending ? "创建中..." : "新建目录"}
-                </Button>
-              </Form.Item>
-            </Form>
-          )}
 
           <div className="mt-4">
             <AntTable<FileEntryItem>
@@ -804,6 +806,34 @@ export default function AdminFilesPage() {
             />
           </div>
       </Card>
+
+      <Modal
+        title="新建目录"
+        open={createDirectoryModalOpen}
+        onCancel={closeCreateDirectoryModal}
+        onOk={submitCreateDirectory}
+        okText="确认创建"
+        cancelText="取消"
+        confirmLoading={createDirectoryMutation.isPending}
+        destroyOnClose
+      >
+        <Form layout="vertical">
+          <Form.Item
+            label="目录名称"
+            required
+            validateStatus={newDirectoryName.trim() ? undefined : "error"}
+            help={newDirectoryName.trim() ? undefined : "目录名称不能为空"}
+          >
+            <Input
+              value={newDirectoryName}
+              onChange={(event) => setNewDirectoryName(event.currentTarget.value)}
+              placeholder="请输入目录名称"
+              allowClear
+              autoFocus
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal
         title={renameTarget ? `重命名：${renameTarget.name}` : "重命名"}
