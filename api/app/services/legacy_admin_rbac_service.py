@@ -231,11 +231,31 @@ def update_role(db: Session, role_id: str, payload: RoleUpdateRequest) -> RolePu
     role_id = role_id.strip()
     if not role_id:
         return None
-    role_exists = db.scalar(text("SELECT id FROM user_role WHERE id = :id"), {"id": role_id})
-    if not role_exists:
-        return None
+    role_source = "legacy" if _legacy_role_table_exists(db) else "modern"
+    resolved_role_id = role_id
+    resolved_role_code = role_id
+    if role_source == "legacy":
+        role_exists = db.scalar(text("SELECT id FROM user_role WHERE id = :id"), {"id": role_id})
+        if not role_exists:
+            return None
+    else:
+        role_row = db.execute(
+            text(
+                """
+                SELECT id::text AS id, code
+                FROM roles
+                WHERE id::text = :id OR code = :id
+                LIMIT 1
+                """
+            ),
+            {"id": role_id},
+        ).mappings().first()
+        if not role_row:
+            return None
+        resolved_role_id = str(role_row["id"])
+        resolved_role_code = str(role_row.get("code") or resolved_role_id).strip() or resolved_role_id
 
-    impacted_user_ids = _get_role_user_ids(db, role_id)
+    impacted_user_ids = _get_role_user_ids(db, resolved_role_id)
     menus_changed = False
     try:
         if payload.name is not None:
@@ -243,22 +263,31 @@ def update_role(db: Session, role_id: str, payload: RoleUpdateRequest) -> RolePu
             if not role_name:
                 db.rollback()
                 return None
-            db.execute(
-                text("UPDATE user_role SET name = :name, descr = :descr, update_date = :update_date WHERE id = :id"),
-                {
-                    "id": role_id,
-                    "name": role_name,
-                    "descr": role_name,
-                    "update_date": datetime.now(),
-                },
-            )
+            if role_source == "legacy":
+                db.execute(
+                    text("UPDATE user_role SET name = :name, descr = :descr, update_date = :update_date WHERE id = :id"),
+                    {
+                        "id": resolved_role_id,
+                        "name": role_name,
+                        "descr": role_name,
+                        "update_date": datetime.now(),
+                    },
+                )
+            else:
+                db.execute(
+                    text("UPDATE roles SET name = :name WHERE id::text = :id"),
+                    {
+                        "id": resolved_role_id,
+                        "name": role_name,
+                    },
+                )
 
         if payload.menu_ids is not None:
             menu_ids = sorted(set(menu_id.strip() for menu_id in payload.menu_ids if menu_id.strip()))
-            if not _menu_ids_exist(db, menu_ids):
+            if not _menu_ids_exist(db, menu_ids, role_source=role_source):
                 db.rollback()
                 return None
-            _replace_role_menus_internal(db, role_id, menu_ids)
+            _replace_role_menus_internal(db, resolved_role_id, menu_ids, role_source=role_source)
             menus_changed = True
 
         db.commit()
@@ -272,9 +301,9 @@ def update_role(db: Session, role_id: str, payload: RoleUpdateRequest) -> RolePu
         publish_topic(
             "admin.roles",
             name="roles.changed",
-            payload={"action": "updated", "role_id": role_id, "role_code": role_id},
+            payload={"action": "updated", "role_id": resolved_role_id, "role_code": resolved_role_code},
             requires_refetch=["/api/v1/admin/roles"],
-            dedupe_key=f"roles:updated:{role_id}",
+            dedupe_key=f"roles:updated:{resolved_role_id}",
         )
     )
     if menus_changed:
@@ -282,12 +311,12 @@ def update_role(db: Session, role_id: str, payload: RoleUpdateRequest) -> RolePu
             publish_topic(
                 "admin.menus",
                 name="menus.changed",
-                payload={"action": "role_menus_updated", "role_id": role_id, "role_code": role_id},
+                payload={"action": "role_menus_updated", "role_id": resolved_role_id, "role_code": resolved_role_code},
                 requires_refetch=["/api/v1/admin/menus", "/api/v1/admin/me/menus"],
-                dedupe_key=f"menus:role_updated:{role_id}",
+                dedupe_key=f"menus:role_updated:{resolved_role_id}",
             )
         )
-    return get_role_by_id(db, role_id)
+    return get_role_by_id(db, resolved_role_id)
 
 
 def delete_role(db: Session, role_id: str) -> bool:
@@ -776,13 +805,25 @@ def _permission_codes_from_menu_rows(
     return codes
 
 
-def _menu_ids_exist(db: Session, menu_ids: list[str]) -> bool:
+def _menu_ids_exist(db: Session, menu_ids: list[str], *, role_source: str = "legacy") -> bool:
     if not menu_ids:
         return True
-    rows = db.execute(
-        text("SELECT menu_id, menu_name FROM menu WHERE menu_id IN :menu_ids").bindparams(bindparam("menu_ids", expanding=True)),
-        {"menu_ids": menu_ids},
-    ).mappings().all()
+    if role_source == "legacy":
+        rows = db.execute(
+            text("SELECT menu_id, menu_name FROM menu WHERE menu_id IN :menu_ids").bindparams(bindparam("menu_ids", expanding=True)),
+            {"menu_ids": menu_ids},
+        ).mappings().all()
+    else:
+        rows = db.execute(
+            text(
+                """
+                SELECT id::text AS menu_id, code AS menu_name
+                FROM menus
+                WHERE id::text IN :menu_ids
+                """
+            ).bindparams(bindparam("menu_ids", expanding=True)),
+            {"menu_ids": menu_ids},
+        ).mappings().all()
     existing = {
         str(row["menu_id"])
         for row in rows
@@ -791,25 +832,44 @@ def _menu_ids_exist(db: Session, menu_ids: list[str]) -> bool:
     return set(menu_ids).issubset(existing)
 
 
-def _replace_role_menus_internal(db: Session, role_id: str, menu_ids: list[str]) -> None:
-    db.execute(text("DELETE FROM role_menu_rela WHERE role_id = :role_id"), {"role_id": role_id})
+def _replace_role_menus_internal(db: Session, role_id: str, menu_ids: list[str], *, role_source: str = "legacy") -> None:
+    if role_source == "legacy":
+        db.execute(text("DELETE FROM role_menu_rela WHERE role_id = :role_id"), {"role_id": role_id})
+    else:
+        db.execute(text("DELETE FROM role_menus WHERE role_id::text = :role_id"), {"role_id": role_id})
     if not menu_ids:
         return
-    stmt = text(
-        """
-        INSERT INTO role_menu_rela (rela_id, role_id, menu_id)
-        VALUES (:rela_id, :role_id, :menu_id)
-        """
-    )
-    for menu_id in menu_ids:
-        db.execute(
-            stmt,
-            {
-                "rela_id": uuid4().hex,
-                "role_id": role_id,
-                "menu_id": menu_id,
-            },
+    if role_source == "legacy":
+        stmt = text(
+            """
+            INSERT INTO role_menu_rela (rela_id, role_id, menu_id)
+            VALUES (:rela_id, :role_id, :menu_id)
+            """
         )
+        for menu_id in menu_ids:
+            db.execute(
+                stmt,
+                {
+                    "rela_id": uuid4().hex,
+                    "role_id": role_id,
+                    "menu_id": menu_id,
+                },
+            )
+    else:
+        stmt = text(
+            """
+            INSERT INTO role_menus (role_id, menu_id)
+            VALUES (CAST(:role_id AS INTEGER), CAST(:menu_id AS INTEGER))
+            """
+        )
+        for menu_id in menu_ids:
+            db.execute(
+                stmt,
+                {
+                    "role_id": role_id,
+                    "menu_id": menu_id,
+                },
+            )
 
 
 def _legacy_user_role_relation_exists(db: Session) -> bool:
@@ -822,10 +882,16 @@ def _legacy_user_role_relation_exists(db: Session) -> bool:
 
 def _get_role_user_ids(db: Session, role_id: str) -> list[str]:
     try:
-        rows = db.execute(
-            text("SELECT user_id FROM user_role_rela WHERE role_id = :role_id"),
-            {"role_id": role_id},
-        ).all()
+        if _legacy_user_role_relation_exists(db):
+            rows = db.execute(
+                text("SELECT user_id FROM user_role_rela WHERE role_id = :role_id"),
+                {"role_id": role_id},
+            ).all()
+        else:
+            rows = db.execute(
+                text("SELECT user_id FROM user_roles WHERE role_id::text = :role_id"),
+                {"role_id": role_id},
+            ).all()
     except SQLAlchemyError:
         db.rollback()
         return []
