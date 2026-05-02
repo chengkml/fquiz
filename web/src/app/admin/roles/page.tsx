@@ -1,17 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   App,
   Button,
   Card,
+  Col,
   Empty,
   Form,
   Input,
   Modal,
-  Result,
+  Row,
   Select,
   Space,
   Spin,
@@ -19,7 +20,6 @@ import {
   Tag,
   Typography,
   type CardProps,
-  type ResultProps,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { ComponentType } from "react";
@@ -30,7 +30,6 @@ import { readApiError } from "@/lib/api";
 import type { MenuItem, RoleItem, RoleListResponse } from "@/types/auth";
 
 const AntCard = Card as unknown as ComponentType<CardProps>;
-const AntResult = Result as unknown as ComponentType<ResultProps>;
 
 type MenuListResponse = { items: MenuItem[]; total: number };
 
@@ -46,6 +45,10 @@ const EMPTY_FORM: RoleFormValues = {
   menu_ids: [],
 };
 
+const ROLE_TABLE_MIN_SCROLL_Y = 180;
+const ROLE_TABLE_VIEWPORT_GAP = 8;
+const ROLE_TABLE_FALLBACK_RESERVE = 220;
+
 export default function AdminRolesPage() {
   const { message, modal } = App.useApp();
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
@@ -58,6 +61,8 @@ export default function AdminRolesPage() {
   const [error, setError] = useState("");
   const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [tableScrollY, setTableScrollY] = useState(ROLE_TABLE_MIN_SCROLL_Y);
+  const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const canRead = hasPermission("role.read") || hasPermission("role.manage");
   const canManage = hasPermission("role.manage");
@@ -81,13 +86,7 @@ export default function AdminRolesPage() {
       const menuNames = role.menu_ids
         .map((menuId) => menuNameById.get(menuId) ?? String(menuId))
         .join(" ");
-      const haystack = [
-        role.code,
-        role.name,
-        menuNames,
-      ]
-        .join(" ")
-        .toLowerCase();
+      const haystack = [role.code, role.name, menuNames].join(" ").toLowerCase();
       return haystack.includes(keyword);
     });
   }, [menuNameById, roles, searchKeyword]);
@@ -290,7 +289,7 @@ export default function AdminRolesPage() {
             <Button size="small" onClick={() => startEdit(role)}>
               编辑
             </Button>
-            {!["admin", "user"].includes(role.code) && (
+            {!['admin', 'user'].includes(role.code) && (
               <Button danger size="small" onClick={() => removeRole(role)}>
                 删除
               </Button>
@@ -303,60 +302,118 @@ export default function AdminRolesPage() {
     return base;
   }, [canManage, menuNameById, removeRole, startEdit]);
 
-  if (initializing || loading) {
+  const updateTableScrollY = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - ROLE_TABLE_FALLBACK_RESERVE);
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? ROLE_TABLE_MIN_SCROLL_Y;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(
+        window.innerHeight - anchorTop - topGap - nonBodyHeight - ROLE_TABLE_VIEWPORT_GAP,
+      );
+    }
+
+    const clampedHeight = Math.max(ROLE_TABLE_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, []);
+
+  useEffect(() => {
+    updateTableScrollY();
+  }, [error, filteredRoles.length, loading, updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updateTableScrollY);
+    };
+
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateTableScrollY);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTableScrollY]);
+
+  if (initializing) {
     return (
       <div className="flex min-h-[240px] items-center justify-center">
-        <Space align="center" direction="vertical" size={12}>
-          <Spin />
-          <Typography.Text type="secondary">角色数据加载中...</Typography.Text>
-        </Space>
+        <Spin tip="角色数据加载中..." />
       </div>
     );
   }
 
   if (!user) {
     return (
-      <AntCard>
-        <AntResult
-          status="403"
-          title="请先登录"
-          subTitle="登录后才能访问角色管理页面。"
-          extra={(
-            <Button type="primary">
-              <Link href="/">返回登录</Link>
-            </Button>
-          )}
-        />
-      </AntCard>
+      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
+        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问角色管理页面。</p>
+        <Link
+          href="/"
+          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
+        >
+          返回首页
+        </Link>
+      </main>
     );
   }
 
   if (!canRead) {
     return (
-      <AntCard>
-        <AntResult
-          status="403"
-          title="无访问权限"
-          subTitle="你没有访问该页面的权限（需要 role.read）。"
-          extra={(
-            <Button>
-              <Link href="/users">返回用户管理</Link>
-            </Button>
-          )}
-        />
-      </AntCard>
+      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
+        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `role.read`）。</p>
+        <Link
+          href="/"
+          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
+        >
+          返回首页
+        </Link>
+      </main>
     );
   }
 
   return (
-    <Space direction="vertical" size={24} style={{ width: "100%" }}>
+    <div className="space-y-6">
       {error && (
         <Alert
-          closable
-          showIcon
           type="error"
+          showIcon
+          closable
           message="操作失败"
-          description={error}
+          description={<pre className="mb-0 whitespace-pre-wrap break-words">{error}</pre>}
           onClose={() => setError("")}
         />
       )}
@@ -371,25 +428,29 @@ export default function AdminRolesPage() {
           ) : null
         }
       >
-        <Space direction="vertical" size={16} style={{ width: "100%" }}>
-          <Space align="center" wrap>
-            <Input.Search
+        <Form layout="inline" style={{ rowGap: 12 }}>
+          <Form.Item label="关键词" className="min-w-[260px]">
+            <Input
               allowClear
               placeholder="搜索角色编码、名称或菜单"
-              style={{ width: 360, maxWidth: "100%" }}
               value={searchKeyword}
               onChange={(event) => setSearchKeyword(event.currentTarget.value)}
             />
-            <Typography.Text type="secondary">
-              共 {roles.length} 个角色{searchKeyword.trim() ? `，匹配 ${filteredRoles.length} 个` : ""}
-            </Typography.Text>
-          </Space>
-
+          </Form.Item>
+          <Form.Item>
+            <Button onClick={() => setSearchKeyword("")}>重置筛选</Button>
+          </Form.Item>
+        </Form>
+        <Typography.Text type="secondary">
+          共 {roles.length} 个角色{searchKeyword.trim() ? `，匹配 ${filteredRoles.length} 个` : ""}
+        </Typography.Text>
+        <div ref={tableScrollAnchorRef} className="mt-4">
           <Table<RoleItem>
             rowKey="id"
             columns={columns}
             dataSource={filteredRoles}
-            scroll={{ x: 1200 }}
+            loading={loading}
+            scroll={{ x: 1400, y: tableScrollY }}
             pagination={{
               pageSize: 20,
               showSizeChanger: true,
@@ -400,7 +461,7 @@ export default function AdminRolesPage() {
               emptyText: <Empty description="未找到匹配角色，请调整搜索条件。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
             }}
           />
-        </Space>
+        </div>
       </AntCard>
 
       {canManage && (
@@ -421,40 +482,46 @@ export default function AdminRolesPage() {
             initialValues={EMPTY_FORM}
             preserve={false}
           >
-            <Form.Item
-              label="角色编码"
-              name="code"
-              rules={[
-                { required: true, message: "请输入角色编码" },
-                { max: 80, message: "角色编码不能超过 80 位" },
-              ]}
-            >
-              <Input disabled={editingRoleId !== null} placeholder="admin.operator" />
-            </Form.Item>
-
-            <Form.Item
-              label="角色名称"
-              name="name"
-              rules={[
-                { required: true, message: "请输入角色名称" },
-                { max: 120, message: "角色名称不能超过 120 位" },
-              ]}
-            >
-              <Input placeholder="运营管理员" />
-            </Form.Item>
-
-            <Form.Item label="可见菜单" name="menu_ids">
-              <Select
-                allowClear
-                mode="multiple"
-                optionFilterProp="label"
-                options={menuOptions}
-                placeholder="请选择可见菜单"
-              />
-            </Form.Item>
+            <Row gutter={12}>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  label="角色编码"
+                  name="code"
+                  rules={[
+                    { required: true, message: "请输入角色编码" },
+                    { max: 80, message: "角色编码不能超过 80 位" },
+                  ]}
+                >
+                  <Input disabled={editingRoleId !== null} placeholder="admin.operator" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  label="角色名称"
+                  name="name"
+                  rules={[
+                    { required: true, message: "请输入角色名称" },
+                    { max: 120, message: "角色名称不能超过 120 位" },
+                  ]}
+                >
+                  <Input placeholder="运营管理员" />
+                </Form.Item>
+              </Col>
+              <Col xs={24}>
+                <Form.Item label="可见菜单" name="menu_ids">
+                  <Select
+                    allowClear
+                    mode="multiple"
+                    optionFilterProp="label"
+                    options={menuOptions}
+                    placeholder="请选择可见菜单"
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
           </Form>
         </Modal>
       )}
-    </Space>
+    </div>
   );
 }
