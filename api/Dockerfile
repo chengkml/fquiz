@@ -15,6 +15,7 @@ ENV PIP_RETRIES=${PIP_RETRIES}
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --retries "${PIP_RETRIES}" --timeout "${PIP_DEFAULT_TIMEOUT}" -i "${PIP_INDEX_URL}" -r requirements.txt
+RUN python -c "import rasterio; print('rasterio ready:', rasterio.__version__)"
 
 COPY app ./app
 

@@ -189,6 +189,8 @@ def create_dataset(
 
     normalized_file_path = payload.file_path.strip()
     file_format = _detect_file_format(normalized_file_path)
+    if file_format in RASTER_FILE_FORMATS:
+        _require_rasterio_available()
     _ensure_dataset_file_exists(db, mount_code=payload.mount_code, file_path=normalized_file_path)
 
     now = utcnow()
@@ -710,6 +712,17 @@ def _resolve_dataset_file_format(dataset: ElevationDataset) -> str:
     return detected
 
 
+def _require_rasterio_available() -> Any:
+    try:
+        import rasterio
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="当前服务未启用 rasterio 栅格能力，请联系管理员重建 API 镜像后重试 IMG/TIF 分析与回填",
+        ) from exc
+    return rasterio
+
+
 def _open_raster_dataset(
     db: Session,
     dataset: ElevationDataset,
@@ -721,13 +734,7 @@ def _open_raster_dataset(
             detail=f"当前文件不是栅格高程文件: {dataset.file_path}",
         )
 
-    try:
-        import rasterio
-    except ImportError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="服务未安装 rasterio，暂不支持 IMG/TIF 高程文件",
-        ) from exc
+    rasterio = _require_rasterio_available()
 
     mount = _require_mount(db, dataset.mount_code)
     driver = _build_driver_or_400(mount)
