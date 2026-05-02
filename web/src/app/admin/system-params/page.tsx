@@ -2,24 +2,24 @@
 
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Button,
+  Empty,
   Form,
   Input,
   Modal,
+  Popconfirm,
   Select,
-  Skeleton,
+  Spin,
   Space,
   Table,
   Tag,
-  Typography,
-  type TableProps,
+  type TableColumnsType,
 } from "antd";
 
 import { useAuth } from "@/components/auth-provider";
-import { Card } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { SystemParamListResponse, SystemParamSummary } from "@/types/auth";
@@ -53,6 +53,10 @@ const PARAM_STATUS_OPTIONS = [
   { label: "已禁用", value: "disabled" },
 ] as const satisfies ReadonlyArray<{ label: string; value: FormState["status"] }>;
 
+const PARAM_TABLE_MIN_SCROLL_Y = 180;
+const PARAM_TABLE_VIEWPORT_GAP = 8;
+const PARAM_TABLE_FALLBACK_RESERVE = 220;
+
 export default function AdminSystemParamsPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
@@ -64,6 +68,9 @@ export default function AdminSystemParamsPage() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [tableScrollY, setTableScrollY] = useState(PARAM_TABLE_MIN_SCROLL_Y);
+  const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const canRead = hasPermission("system_param.read") || hasPermission("system_param.manage");
   const canManage = hasPermission("system_param.manage");
@@ -218,35 +225,46 @@ export default function AdminSystemParamsPage() {
     },
   });
 
+  const removeParam = useCallback(async (item: SystemParamSummary) => {
+    setDeletingId(item.id);
+    try {
+      await deleteMutation.mutateAsync(item);
+    } finally {
+      setDeletingId(null);
+    }
+  }, [deleteMutation]);
+
   const items = listQuery.data?.items ?? [];
   const listError = listQuery.error instanceof Error ? listQuery.error.message : "";
+  const displayError = error || listError;
 
-  const columns = useMemo<TableProps<SystemParamSummary>["columns"]>(() => {
-    const baseColumns: NonNullable<TableProps<SystemParamSummary>["columns"]> = [
+  const columns = useMemo<TableColumnsType<SystemParamSummary>>(() => {
+    const baseColumns: TableColumnsType<SystemParamSummary> = [
       {
         title: "ID",
         dataIndex: "id",
         key: "id",
-        width: 90,
+        width: 110,
       },
       {
         title: "参数键",
         dataIndex: "param_key",
         key: "param_key",
-        width: 220,
-        render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
+        width: 240,
+        render: (value: string) => <span className="font-mono text-xs">{value}</span>,
       },
       {
         title: "参数名称",
         dataIndex: "param_name",
         key: "param_name",
-        width: 220,
+        width: 200,
       },
       {
         title: "参数值",
         dataIndex: "param_value",
         key: "param_value",
         ellipsis: true,
+        width: 240,
         render: (value: string) => value || "-",
       },
       {
@@ -276,110 +294,213 @@ export default function AdminSystemParamsPage() {
         fixed: "right",
         width: 150,
         render: (_, record) => (
-          <Space size={8}>
+          <Space size="small">
             <Button size="small" onClick={() => startEdit(record)}>
               编辑
             </Button>
-            <Button
-              size="small"
-              danger
-              loading={deleteMutation.isPending}
-              onClick={() => {
-                Modal.confirm({
-                  title: "删除系统参数",
-                  content: `确认删除系统参数 ${record.param_key} 吗？`,
-                  okText: "删除",
-                  okButtonProps: { danger: true },
-                  cancelText: "取消",
-                  onOk: async () => {
-                    await deleteMutation.mutateAsync(record);
-                  },
-                });
-              }}
+            <Popconfirm
+              title="删除系统参数"
+              description={`确认删除系统参数 ${record.param_key} 吗？`}
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true, loading: deletingId === record.id }}
+              onConfirm={() => void removeParam(record)}
             >
-              删除
-            </Button>
+              <Button size="small" danger loading={deletingId === record.id}>
+                删除
+              </Button>
+            </Popconfirm>
           </Space>
         ),
       });
     }
 
     return baseColumns;
-  }, [canManage, deleteMutation.isPending, deleteMutation, startEdit]);
+  }, [canManage, deletingId, removeParam, startEdit]);
+
+  const updateTableScrollY = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - PARAM_TABLE_FALLBACK_RESERVE);
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? PARAM_TABLE_MIN_SCROLL_Y;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - PARAM_TABLE_VIEWPORT_GAP);
+    }
+
+    const clampedHeight = Math.max(PARAM_TABLE_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, []);
+
+  useEffect(() => {
+    updateTableScrollY();
+  }, [items.length, listQuery.isFetching, listError, error, success, updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updateTableScrollY);
+    };
+
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateTableScrollY);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTableScrollY]);
 
   if (initializing || listQuery.isLoading) {
     return (
-      <Card>
-        <Skeleton active paragraph={{ rows: 8 }} />
-      </Card>
+      <div className="flex min-h-[240px] items-center justify-center">
+        <Spin tip="系统参数加载中..." />
+      </div>
     );
   }
 
   if (!user) {
     return (
-      <Card>
-        <Space direction="vertical" size={12}>
-          <Typography.Text type="secondary">请先登录后再访问系统参数页面。</Typography.Text>
-          <Button>
-            <Link href="/">返回首页</Link>
-          </Button>
-        </Space>
-      </Card>
+      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
+        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问参数管理页面。</p>
+        <Link
+          href="/"
+          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
+        >
+          返回首页
+        </Link>
+      </main>
     );
   }
 
   if (!canRead) {
     return (
-      <Card>
-        <Space direction="vertical" size={12}>
-          <Typography.Text type="secondary">
-            你没有访问该页面的权限（需要 `system_param.read`）。
-          </Typography.Text>
-          <Button>
-            <Link href="/">返回首页</Link>
-          </Button>
-        </Space>
-      </Card>
+      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
+        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `system_param.read`）。</p>
+        <Link
+          href="/"
+          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
+        >
+          返回首页
+        </Link>
+      </main>
     );
   }
 
   return (
-    <Space direction="vertical" size={16} className="w-full">
-      {(error || listError) && <Alert type="error" showIcon message="操作失败" description={error || listError} />}
-      {success && <Alert type="success" showIcon message="操作成功" description={success} />}
+    <div className="space-y-6">
+      {displayError && (
+        <Alert
+          type="error"
+          showIcon
+          closable={Boolean(error)}
+          message="操作失败"
+          description={<pre className="mb-0 whitespace-pre-wrap break-words">{displayError}</pre>}
+          onClose={() => setError("")}
+        />
+      )}
+      {success && (
+        <Alert
+          type="success"
+          showIcon
+          closable
+          message="操作成功"
+          description={success}
+          onClose={() => setSuccess("")}
+        />
+      )}
 
-      <Card
-        title="系统参数列表"
-        extra={canManage ? <Button type="primary" onClick={startCreate}>新建参数</Button> : undefined}
-      >
-        <Space direction="vertical" size={12} className="w-full">
-          <Typography.Text type="secondary">维护系统级参数键值、状态与说明。</Typography.Text>
+      <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--gray-1)] p-4 shadow-sm sm:p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-[var(--gray-12)]">参数列表</h2>
+          {canManage ? (
+            <Button type="primary" onClick={startCreate}>
+              新建参数
+            </Button>
+          ) : null}
+        </div>
 
-          <div className="grid gap-3 md:grid-cols-2">
+        <Form layout="inline" style={{ rowGap: 12 }}>
+          <Form.Item label="关键词" className="min-w-[240px]">
             <Input
               value={keyword}
               allowClear
-              onChange={(event) => setKeyword(event.target.value)}
-              placeholder="按参数键 / 名称 / 值筛选"
+              onChange={(event) => setKeyword(event.currentTarget.value)}
+              placeholder="按参数键/名称/值筛选"
             />
+          </Form.Item>
+
+          <Form.Item label="状态" className="min-w-[170px]">
             <Select<StatusFilter>
               value={statusFilter}
               options={[...STATUS_FILTER_OPTIONS]}
               onChange={(value) => setStatusFilter(value)}
             />
-          </div>
+          </Form.Item>
 
+          <Form.Item>
+            <Button
+              onClick={() => {
+                setKeyword("");
+                setStatusFilter("all");
+              }}
+            >
+              重置筛选
+            </Button>
+          </Form.Item>
+        </Form>
+
+        <div ref={tableScrollAnchorRef} className="mt-4">
           <Table<SystemParamSummary>
             rowKey="id"
             loading={listQuery.isFetching}
             dataSource={items}
             columns={columns}
-            pagination={false}
-            scroll={{ x: 980 }}
-            locale={{ emptyText: "未找到系统参数。" }}
+            scroll={{ x: 1120, y: tableScrollY }}
+            pagination={{
+              pageSize: 20,
+              showSizeChanger: true,
+              pageSizeOptions: [10, 20, 50, 100],
+              showTotal: (total) => `共 ${total} 条`,
+            }}
+            locale={{
+              emptyText: <Empty description="未找到符合筛选条件的系统参数。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
+            }}
           />
-        </Space>
-      </Card>
+        </div>
+      </div>
 
       {canManage && (
         <Modal
@@ -424,14 +545,12 @@ export default function AdminSystemParamsPage() {
               </Form.Item>
 
               <Form.Item<FormState> label="状态" name="status">
-                <Select
-                  options={[...PARAM_STATUS_OPTIONS]}
-                />
+                <Select options={[...PARAM_STATUS_OPTIONS]} />
               </Form.Item>
             </div>
           </Form>
         </Modal>
       )}
-    </Space>
+    </div>
   );
 }
