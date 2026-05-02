@@ -481,31 +481,19 @@ jobs:
             fi
 
             ensure_web_port_available() {
-              local configured_web_port
-              configured_web_port="${WEB_PORT:-}"
-              if [ -z "${configured_web_port}" ] && [ -f .env ]; then
-                configured_web_port="$(grep -E '^WEB_PORT=' .env | tail -n 1 | cut -d= -f2- || true)"
+              local target_web_port=3000
+              if grep -q '^WEB_PORT=' .env; then
+                sed -i "s/^WEB_PORT=.*/WEB_PORT=${target_web_port}/" .env
+              else
+                echo "WEB_PORT=${target_web_port}" >> .env
               fi
-              configured_web_port="${configured_web_port:-3000}"
 
               local conflicting_web_containers
-              conflicting_web_containers="$(docker ps --filter "publish=${configured_web_port}" --format '{{.Names}}' | grep -Ev '^fquiz-web$' || true)"
+              conflicting_web_containers="$(docker ps --filter "publish=${target_web_port}" --format '{{.Names}}' | grep -Ev '^fquiz-web$' || true)"
               if [ -n "${conflicting_web_containers}" ]; then
-                if [ -n "${WEB_PORT:-}" ]; then
-                  echo "[error] WEB_PORT=${configured_web_port} 已被其他容器占用，请调整后重试。"
-                  echo "[error] 冲突容器: ${conflicting_web_containers//$'\n'/, }"
-                  return 1
-                fi
-                local fallback_web_port=13000
-                while docker ps --filter "publish=${fallback_web_port}" --format '{{.ID}}' | grep -q .; do
-                  fallback_web_port=$((fallback_web_port + 1))
-                done
-                if grep -q '^WEB_PORT=' .env; then
-                  sed -i "s/^WEB_PORT=.*/WEB_PORT=${fallback_web_port}/" .env
-                else
-                  echo "WEB_PORT=${fallback_web_port}" >> .env
-                fi
-                echo "[warn] WEB 端口 ${configured_web_port} 被占用，已自动切换到 ${fallback_web_port}。"
+                echo "[error] WEB 端口 ${target_web_port} 已被其他容器占用，停止部署。"
+                echo "[error] 冲突容器: ${conflicting_web_containers//$'\n'/, }"
+                return 1
               fi
             }
 
