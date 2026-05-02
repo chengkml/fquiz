@@ -122,6 +122,8 @@ jobs:
             export COMPOSE_HTTP_TIMEOUT="${COMPOSE_HTTP_TIMEOUT:-600}"
 
             DEPLOY_DIR="${DEPLOY_PATH:-/opt/fquiz}"
+            mkdir -p "${DEPLOY_DIR}"
+            mkdir -p "${DEPLOY_DIR}/deploy/pro-deploy"
             cd "${DEPLOY_DIR}"
 
             cat > deploy/pro-deploy/compose.yml <<'YAML'
