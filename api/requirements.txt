@@ -15,4 +15,5 @@ python-multipart==0.0.20
 boto3==1.40.59
 httpx==0.28.1
 celery[redis]==5.5.3
+flower==2.0.1
 rasterio==1.4.3
