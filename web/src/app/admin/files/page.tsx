@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  App,
   Breadcrumb,
   Empty,
   Form,
@@ -90,6 +91,7 @@ function readXhrError(xhr: XMLHttpRequest): string {
 export default function AdminFilesPage() {
   const queryClient = useQueryClient();
   const [messageApi, messageContextHolder] = antdMessage.useMessage();
+  const { modal } = App.useApp();
   const { user, initializing, fetchWithAuth, hasPermission, getAccessToken, refreshAccessToken } = useAuth();
 
   const [currentPath, setCurrentPath] = useState("/");
@@ -399,7 +401,7 @@ export default function AdminFilesPage() {
         ? `确认删除目录 ${item.name} 吗？将递归删除目录内全部内容。`
         : `确认删除文件 ${item.name} 吗？`;
 
-      Modal.confirm({
+      modal.confirm({
         title: "删除确认",
         content,
         okText: "确认删除",
@@ -408,7 +410,7 @@ export default function AdminFilesPage() {
         onOk: () => deleteMutation.mutateAsync(item),
       });
     },
-    [deleteMutation],
+    [deleteMutation, modal],
   );
 
   const startRename = (item: FileEntryItem) => {
@@ -786,7 +788,6 @@ export default function AdminFilesPage() {
                   variant="soft"
                   onClick={() => {
                     setCreateDirectoryModalOpen(true);
-                    setSuccessMessage("");
                     setErrorMessage("");
                   }}
                   disabled={createDirectoryMutation.isPending}
