@@ -553,11 +553,8 @@ export default function AdminUsersPage() {
 
   if (initializing || usersQuery.isLoading || rolesQuery.isLoading) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <Space direction="vertical" align="center" size={12}>
-          <Spin />
-          <Typography.Text type="secondary">正在加载用户数据...</Typography.Text>
-        </Space>
+      <div className="flex min-h-[240px] items-center justify-center">
+        <Spin tip="用户数据加载中..." />
       </div>
     );
   }
@@ -565,10 +562,13 @@ export default function AdminUsersPage() {
   if (!user) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <Typography.Text type="secondary">请先登录后再访问用户管理页面。</Typography.Text>
-        <Button type="default" className="w-fit">
-          <Link href="/">返回首页</Link>
-        </Button>
+        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问用户管理页面。</p>
+        <Link
+          href="/"
+          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
+        >
+          返回首页
+        </Link>
       </main>
     );
   }
@@ -576,48 +576,30 @@ export default function AdminUsersPage() {
   if (!canManage) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <Typography.Text type="secondary">你没有访问该页面的权限（需要 `user.manage`）。</Typography.Text>
-        <Button type="default" className="w-fit">
-          <Link href="/">返回首页</Link>
-        </Button>
+        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `user.manage`）。</p>
+        <Link
+          href="/"
+          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
+        >
+          返回首页
+        </Link>
       </main>
     );
   }
 
   return (
     <div className="space-y-6">
-      {anyError && <Alert type="error" message="操作失败" description={anyError} showIcon />}
-      {success && <Alert type="success" message={success} showIcon />}
-
-      <AntCard
-        title="用户检索"
-      >
-        <Space wrap>
-          <Input
-            allowClear
-            placeholder="按用户ID/邮箱/用户名搜索"
-            value={keywordInput}
-            onChange={(event) => setKeywordInput(event.target.value)}
-            onPressEnter={handleSearch}
-            style={{ width: 320 }}
-          />
-          <Select<"all" | "active" | "disabled">
-            value={statusFilter}
-            style={{ width: 160 }}
-            options={[
-              { label: "全部状态", value: "all" },
-              { label: "启用", value: "active" },
-              { label: "禁用", value: "disabled" },
-            ]}
-            onChange={(value) => {
-              setStatusFilter(value);
-              setPagination((prev) => ({ ...prev, current: 1 }));
-            }}
-          />
-          <Button type="primary" onClick={handleSearch}>搜索</Button>
-          <Button onClick={handleResetSearch}>重置</Button>
-        </Space>
-      </AntCard>
+      {anyError && (
+        <Alert
+          type="error"
+          showIcon
+          closable
+          message="操作失败"
+          description={<pre className="mb-0 whitespace-pre-wrap break-words">{anyError}</pre>}
+          onClose={() => setError("")}
+        />
+      )}
+      {success && <Alert type="success" showIcon closable message={success} onClose={() => setSuccess("")} />}
 
       <AntCard
         title="用户列表"
@@ -631,7 +613,45 @@ export default function AdminUsersPage() {
           </Space>
         )}
       >
+        <Form layout="inline" style={{ rowGap: 12 }}>
+          <Form.Item label="关键词" className="min-w-[240px]">
+            <Input
+              allowClear
+              placeholder="按用户 ID/邮箱/用户名搜索"
+              value={keywordInput}
+              onChange={(event) => setKeywordInput(event.target.value)}
+              onPressEnter={handleSearch}
+            />
+          </Form.Item>
+
+          <Form.Item label="状态" className="min-w-[170px]">
+            <Select<"all" | "active" | "disabled">
+              value={statusFilter}
+              options={[
+                { value: "all", label: "全部" },
+                { value: "active", label: "已启用" },
+                { value: "disabled", label: "已禁用" },
+              ]}
+              onChange={(value) => {
+                setStatusFilter(value);
+                setPagination((prev) => ({ ...prev, current: 1 }));
+              }}
+            />
+          </Form.Item>
+
+          <Form.Item>
+            <Button type="primary" onClick={handleSearch}>
+              搜索
+            </Button>
+          </Form.Item>
+
+          <Form.Item>
+            <Button onClick={handleResetSearch}>重置筛选</Button>
+          </Form.Item>
+        </Form>
+
         <Table<UserPublic>
+          className="mt-4"
           rowKey="id"
           dataSource={users}
           columns={columns}
@@ -640,18 +660,18 @@ export default function AdminUsersPage() {
             pageSize: pagination.pageSize,
             total: usersQuery.data?.total ?? 0,
             showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50, 100],
             showTotal: (total) => `共 ${total} 条`,
             onChange: (page, pageSize) => {
               setPagination({ current: page, pageSize });
             },
           }}
-          size="middle"
           scroll={{ x: 1500 }}
           locale={{
             emptyText: (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="暂无用户数据"
+                description="未找到符合筛选条件的用户。"
               />
             ),
           }}
