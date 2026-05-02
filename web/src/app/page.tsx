@@ -93,6 +93,16 @@ export default function Home() {
     <main className="flex min-h-screen items-center justify-center bg-[var(--fquiz-theme-bg-layout)] px-4 py-8">
       <Card className="w-full max-w-[360px]">
         <Space direction="vertical" size={20} className="w-full">
+          <div className="flex justify-center">
+            <img
+              src="/favicon.ico"
+              alt="高压电塔图标"
+              width={72}
+              height={72}
+              className="h-[72px] w-[72px]"
+            />
+          </div>
+
           <Typography.Title level={3} className="!mb-0 !text-center">
             防雷计算
           </Typography.Title>
