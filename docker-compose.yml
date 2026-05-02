@@ -125,9 +125,6 @@ services:
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
       CELERY_TIMEZONE: ${CELERY_TIMEZONE:-Asia/Shanghai}
       SCHEDULER_EXPIRE_INTERVAL_SECONDS: ${SCHEDULER_EXPIRE_INTERVAL_SECONDS:-60}
-      SCHEDULER_API_BASE_URL: ${SCHEDULER_API_BASE_URL:-http://scheduler:19100}
-      SCHEDULER_API_TOKEN: ${SCHEDULER_API_TOKEN:-}
-      SCHEDULER_DEFAULT_QUEUE: ${SCHEDULER_DEFAULT_QUEUE:-default}
       WINE_BINARY_PATH: ${WINE_BINARY_PATH:-wine}
       WINE_ALLOWED_ROOT: ${WINE_ALLOWED_ROOT:-./data/wine}
       WINE_DEFAULT_TIMEOUT_SECONDS: ${WINE_DEFAULT_TIMEOUT_SECONDS:-300}
@@ -189,9 +186,6 @@ services:
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
       CELERY_TIMEZONE: ${CELERY_TIMEZONE:-Asia/Shanghai}
       SCHEDULER_EXPIRE_INTERVAL_SECONDS: ${SCHEDULER_EXPIRE_INTERVAL_SECONDS:-60}
-      SCHEDULER_API_BASE_URL: ${SCHEDULER_API_BASE_URL:-http://scheduler:19100}
-      SCHEDULER_API_TOKEN: ${SCHEDULER_API_TOKEN:-}
-      SCHEDULER_DEFAULT_QUEUE: ${SCHEDULER_DEFAULT_QUEUE:-default}
       FLOWER_API_BASE_URL: ${FLOWER_API_BASE_URL:-http://flower:5555}
       FLOWER_API_TIMEOUT_SECONDS: ${FLOWER_API_TIMEOUT_SECONDS:-10}
       FLOWER_BASIC_AUTH: ${FLOWER_BASIC_AUTH:-}
@@ -235,42 +229,7 @@ services:
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
       CELERY_TIMEZONE: ${CELERY_TIMEZONE:-Asia/Shanghai}
       SCHEDULER_EXPIRE_INTERVAL_SECONDS: ${SCHEDULER_EXPIRE_INTERVAL_SECONDS:-60}
-      SCHEDULER_API_BASE_URL: ${SCHEDULER_API_BASE_URL:-http://scheduler:19100}
-      SCHEDULER_API_TOKEN: ${SCHEDULER_API_TOKEN:-}
-      SCHEDULER_DEFAULT_QUEUE: ${SCHEDULER_DEFAULT_QUEUE:-default}
       WORKER_REGISTRY_TTL_SECONDS: ${WORKER_REGISTRY_TTL_SECONDS:-90}
-    restart: unless-stopped
-
-  scheduler:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
-      args:
-        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-docker.m.daocloud.io/library/python:3.11-slim}
-        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
-        PIP_DEFAULT_TIMEOUT: ${PIP_DEFAULT_TIMEOUT:-300}
-        PIP_RETRIES: ${PIP_RETRIES:-20}
-    container_name: fquiz-scheduler
-    command:
-      - uvicorn
-      - app.scheduler_main:app
-      - --host
-      - 0.0.0.0
-      - --port
-      - "19100"
-    depends_on:
-      redis:
-        condition: service_healthy
-      api:
-        condition: service_healthy
-    environment:
-      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
-      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
-      CELERY_TIMEZONE: ${CELERY_TIMEZONE:-Asia/Shanghai}
-      SCHEDULER_API_TOKEN: ${SCHEDULER_API_TOKEN:-}
-      SCHEDULER_DEFAULT_QUEUE: ${SCHEDULER_DEFAULT_QUEUE:-default}
-    ports:
-      - "${SCHEDULER_PORT:-19100}:19100"
     restart: unless-stopped
 
   flower:

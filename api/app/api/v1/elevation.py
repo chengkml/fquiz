@@ -111,7 +111,6 @@ def get_elevation_job_detail(
 @router.post("/jobs/apply-line", response_model=ElevationApplyJobCreateResponse)
 def create_elevation_apply_line_job(
     payload: ElevationApplyJobCreateRequest,
-    dispatch_mode: str = Query(default="celery_direct", alias="dispatchMode"),
     current_user: CurrentUser = Depends(require_permission("elevation.manage")),
     db: Session = Depends(get_db),
 ) -> ElevationApplyJobCreateResponse:
@@ -119,5 +118,4 @@ def create_elevation_apply_line_job(
         db,
         payload,
         actor=current_user.user,
-        dispatch_mode=dispatch_mode,
     )

@@ -52,9 +52,6 @@ class Settings(BaseSettings):
     celery_result_backend: str | None = None
     celery_timezone: str = "Asia/Shanghai"
     scheduler_expire_interval_seconds: int = 60
-    scheduler_api_token: str = ""
-    scheduler_default_queue: str = "default"
-    scheduler_api_base_url: str = "http://scheduler:19100"
     flower_api_base_url: str = "http://flower:5555"
     flower_api_timeout_seconds: int = 10
     flower_basic_auth: str = ""
@@ -200,22 +197,6 @@ class Settings(BaseSettings):
     @property
     def resolved_celery_result_backend(self) -> str:
         return (self.celery_result_backend or "redis://redis:6379/1").strip()
-
-    @property
-    def resolved_scheduler_api_token(self) -> str:
-        return (self.scheduler_api_token or "").strip()
-
-    @property
-    def resolved_scheduler_default_queue(self) -> str:
-        queue = (self.scheduler_default_queue or "").strip()
-        return queue or "default"
-
-    @property
-    def resolved_scheduler_api_base_url(self) -> str:
-        value = (self.scheduler_api_base_url or "").strip().rstrip("/")
-        if not value:
-            return "http://scheduler:19100"
-        return value
 
     @property
     def resolved_flower_api_base_url(self) -> str:

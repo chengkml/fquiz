@@ -335,7 +335,6 @@ def create_apply_job(
     payload: ElevationApplyJobCreateRequest,
     *,
     actor: User,
-    dispatch_mode: str = "celery_direct",
 ) -> ElevationApplyJobCreateResponse:
     line = db.execute(select(Line).where(Line.id == payload.line_id)).scalar_one_or_none()
     if not line:
@@ -380,10 +379,7 @@ def create_apply_job(
     if not saved:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="创建任务失败")
 
-    task = _dispatch_elevation_apply_task(
-        job_id=saved.id,
-        dispatch_mode=dispatch_mode,
-    )
+    task = _dispatch_elevation_apply_task(job_id=saved.id)
     saved.task_id = task.id
     saved.update_user = actor.id
     saved.update_date = utcnow()
@@ -400,58 +396,10 @@ def create_apply_job(
     return ElevationApplyJobCreateResponse(job=serialize_job(latest), queued=True)
 
 
-def _dispatch_elevation_apply_task(*, job_id: str, dispatch_mode: str):
-    normalized_mode = (dispatch_mode or "").strip().lower()
-    if normalized_mode == "scheduler_api":
-        return _enqueue_via_scheduler_api(job_id)
-
+def _dispatch_elevation_apply_task(*, job_id: str):
     from ..tasks.elevation_tasks import apply_elevation_for_line_job
 
     return apply_elevation_for_line_job.delay(job_id)
-
-
-def _enqueue_via_scheduler_api(job_id: str):
-    from ..core.config import get_settings
-
-    import httpx
-
-    settings = get_settings()
-    scheduler_base_url = settings.resolved_scheduler_api_base_url
-    path = "/api/v1/v1/tasks/enqueue"
-    payload = {
-        "taskName": "app.tasks.elevation_tasks.apply_elevation_for_line_job",
-        "taskId": job_id,
-        "queueName": settings.resolved_scheduler_default_queue,
-        "args": [job_id],
-        "kwargs": {},
-    }
-    headers = {"Content-Type": "application/json"}
-    token = settings.resolved_scheduler_api_token
-    if token:
-        headers["x-scheduler-token"] = token
-    try:
-        with httpx.Client(timeout=15) as client:
-            response = client.post(f"{scheduler_base_url}{path}", json=payload, headers=headers)
-        if response.status_code >= 400:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"scheduler enqueue failed: {response.status_code} {response.text}",
-            )
-        data = response.json()
-        task_id = str(data.get("taskId") or data.get("task_id") or job_id).strip() or job_id
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"scheduler request failed: {exc}",
-        ) from exc
-
-    class _TaskRef:
-        def __init__(self, value: str) -> None:
-            self.id = value
-
-    return _TaskRef(task_id)
 
 
 def execute_apply_job(job_id: str) -> None:

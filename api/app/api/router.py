@@ -9,7 +9,6 @@ from .v1.flower_monitor import router as flower_monitor_router
 from .v1.lightning import router as lightning_router
 from .v1.lines import router as lines_router
 from .v1.question_bank import router as question_bank_router
-from .v1.scheduler import router as scheduler_router
 from .v1.system_params import router as system_params_router
 from .v1.task_monitor import router as task_monitor_router
 from .v1.users import router as users_router
@@ -29,7 +28,6 @@ v1_router.include_router(flower_monitor_router)
 v1_router.include_router(lightning_router)
 v1_router.include_router(lines_router)
 v1_router.include_router(question_bank_router)
-v1_router.include_router(scheduler_router)
 v1_router.include_router(wine_router)
 v1_router.include_router(ws_router)
 

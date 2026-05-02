@@ -135,13 +135,11 @@
   - `GET /api/v1/admin/workers/tasks?worker=...&recent_limit=...`
 - 两页统一复用权限码：`celery.read` / `celery.manage`。
 
-## 调度与监控口径（2026-05-01）
+## 调度与监控口径（2026-05-02）
 
-- 调度能力拆分为独立 `scheduler` 服务：
-  - scheduler 入口：`/api/v1/scheduler/*`
-  - 任务入队：`POST /api/v1/scheduler/v1/tasks/enqueue`
-  - 任务撤销：`POST /api/v1/scheduler/v1/tasks/revoke`
-  - 通过 `x-scheduler-token`（`SCHEDULER_API_TOKEN`）做可选鉴权。
+- 调度链路已统一为 API 直连 Celery（不再保留独立 `scheduler` 服务与 `SCHEDULER_API_*` 配置）：
+  - Web 任务调用 API 业务接口后，由后端服务层直接 `.delay()` 入队。
+  - 任务执行与定时触发继续由 `celery-worker` / `celery-beat` 负责。
 - 监控能力统一走 Flower 代理：
   - 后端代理入口：
     - `GET /api/v1/admin/flower/workers`
