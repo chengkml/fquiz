@@ -179,10 +179,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         credentials: "include",
       });
     } finally {
-      clearAuth();
       if (typeof window !== "undefined") {
         window.location.replace("/");
+        return;
       }
+      clearAuth();
     }
   }, [clearAuth]);
 
