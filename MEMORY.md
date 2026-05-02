@@ -894,6 +894,10 @@
 - 当前挂载上下文统一以接口返回的 `current_mount` 为准；文件操作仍透传 `mount_code`，保持与后端接口契约一致。
 - 后端仍保留多挂载点模型能力（`file_storage_mounts`），本次仅收敛前端交互层。
 
+## 文件管理删除交互口径（2026-05-03）
+
+- `web/src/app/admin/files/page.tsx` 删除确认弹窗统一使用 `App.useApp().modal.confirm`，避免 `Modal.confirm` 静态方法在 React 19 + Antd 5 组合下出现“点击删除无响应”问题。
+
 ## 任务监控口径更新（2026-04-26）
 
 - `/admin/task-monitor` 与 `GET /api/v1/admin/task-monitor/overview` 已收口为 **Celery 运行态监控**，不再承载需求/待办风险聚合。
