@@ -63,7 +63,7 @@ function normalizeAdminPath(path: string | null): string | null {
     return path;
   }
   if (path === "/admin" || path === "/admin/") {
-    return "/dashboard";
+    return "/users";
   }
   if (path.startsWith("/admin/")) {
     return path.slice("/admin".length);
@@ -272,7 +272,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       {
         key: "home",
         icon: <HomeOutlined />,
-        label: <Link href="/dashboard">后台首页</Link>,
+        label: <Link href="/users">用户管理</Link>,
       },
       {
         key: "logout",

@@ -57,7 +57,6 @@ const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
 ];
 
 const PROTECTED_MENU_CODES = new Set([
-  "dashboard",
   "admin.users",
   "admin.roles",
   "admin.menus",

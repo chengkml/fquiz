@@ -17,7 +17,6 @@ TOPIC_RULES: dict[str, TopicRule] = {
     "system": TopicRule(allow_any_authenticated_user=True, auto_subscribe=True),
     "auth": TopicRule(allow_any_authenticated_user=True, auto_subscribe=True),
     "notifications": TopicRule(allow_any_authenticated_user=True, auto_subscribe=True),
-    "admin.dashboard": TopicRule(allow_any_authenticated_user=True),
     "admin.users": TopicRule(any_permission_codes={"user.manage"}),
     "admin.roles": TopicRule(any_permission_codes={"role.read", "role.manage"}),
     "admin.menus": TopicRule(any_permission_codes={"menu.read", "menu.manage"}),

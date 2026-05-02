@@ -30,6 +30,7 @@ from .user_service import queue_users_auth_refresh
 
 PROTECTED_ROLE_IDS = {"admin", "user", "sys_mgr"}
 REMOVED_MENU_CODES = {
+    "dashboard",
     "admin.wxapp",
     "admin.system_message",
     "admin.inbox",
@@ -62,7 +63,6 @@ REMOVED_MENU_CODES = {
 }
 
 PROTECTED_MENU_CODES = {
-    "dashboard",
     "admin.users",
     "admin.roles",
     "admin.menus",

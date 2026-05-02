@@ -47,6 +47,7 @@ ADMIN_ROLE_IDS = {
 }
 
 DISABLED_MENU_CODES: set[str] = {
+    "dashboard",
     "admin.wxapp",
     "admin.system_message",
     "admin.inbox",
@@ -97,7 +98,6 @@ MENU_CODE_PERMISSION_MAP: dict[str, set[str]] = {
     "admin.lightning_currents": {"lightning.read", "lightning.manage"},
     "admin.lightning_distribution": {"lightning.read", "lightning.manage"},
     "admin.wine_runner": {"wine.read", "wine.manage"},
-    "dashboard": {"menu.read"},
 }
 
 SYNTHETIC_LEGACY_MENU_ROWS: list[dict[str, Any]] = [

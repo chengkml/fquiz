@@ -340,7 +340,7 @@ export default function AdminRolesPage() {
           subTitle="你没有访问该页面的权限（需要 role.read）。"
           extra={(
             <Button>
-              <Link href="/dashboard">返回工作台</Link>
+              <Link href="/users">返回用户管理</Link>
             </Button>
           )}
         />

@@ -32,22 +32,26 @@ export function middleware(request: NextRequest) {
   // Keep backward compatibility for existing /admin links.
   if (pathname === "/admin" || pathname === "/admin/") {
     const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
+    url.pathname = "/users";
+    return NextResponse.redirect(url);
+  }
+  if (pathname === "/dashboard" || pathname === "/dashboard/") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/users";
     return NextResponse.redirect(url);
   }
   if (pathname.startsWith("/admin/")) {
     const url = request.nextUrl.clone();
-    url.pathname = pathname.slice("/admin".length) || "/dashboard";
+    url.pathname = pathname.slice("/admin".length) || "/users";
     return NextResponse.redirect(url);
   }
 
   // New public URLs without /admin are internally rewritten to existing routes.
   const url = request.nextUrl.clone();
-  url.pathname = pathname === "/dashboard" ? "/admin" : `/admin${pathname}`;
+  url.pathname = `/admin${pathname}`;
   return NextResponse.rewrite(url);
 }
 
 export const config = {
   matcher: "/:path*",
 };
-

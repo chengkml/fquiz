@@ -83,26 +83,13 @@ DEFAULT_ROLES: dict[str, dict[str, object]] = {
 
 DEFAULT_MENUS: list[dict[str, object]] = [
     {
-        "code": "dashboard",
-        "name": "仪表盘",
-        "path": "/admin",
-        "icon": "LayoutDashboard",
-        "parent_code": None,
-        "type": "menu",
-        "sort_order": 10,
-        "status": "enabled",
-        "visible": True,
-        "cacheable": False,
-        "permission_code": None,
-    },
-    {
         "code": "admin.users",
         "name": "用户管理",
         "path": "/admin/users",
         "icon": "Users",
         "parent_code": None,
         "type": "menu",
-        "sort_order": 20,
+        "sort_order": 10,
         "status": "enabled",
         "visible": True,
         "cacheable": False,
@@ -280,8 +267,8 @@ DEFAULT_MENUS: list[dict[str, object]] = [
 ]
 
 ROLE_MENU_BINDINGS: dict[str, list[str]] = {
-    "admin": ["dashboard", "admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.power_lines", "admin.lightning_currents", "admin.lightning_distribution", "admin.workers", "admin.task_monitor", "admin.atp_models", "admin.files", "admin.elevation", "admin.syslog", "admin.wine_runner"],
-    "user": ["dashboard"],
+    "admin": ["admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.power_lines", "admin.lightning_currents", "admin.lightning_distribution", "admin.workers", "admin.task_monitor", "admin.atp_models", "admin.files", "admin.elevation", "admin.syslog", "admin.wine_runner"],
+    "user": [],
 }
 
 

@@ -24,7 +24,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!initializing && user) {
-      router.replace("/dashboard");
+      router.replace("/users");
     }
   }, [initializing, router, user]);
 

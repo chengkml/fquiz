@@ -32,6 +32,7 @@ AUDIT_LOG_LOAD_OPTIONS = (
 )
 
 REMOVED_MENU_CODES = {
+    "dashboard",
     "admin.wxapp",
     "admin.system_message",
     "admin.inbox",
@@ -403,7 +404,7 @@ def update_menu(db: Session, menu_id: int, payload: MenuUpdateRequest) -> MenuPu
 
 def delete_menu(db: Session, menu_id: int) -> bool:
     menu = get_menu_by_id(db, menu_id)
-    if not menu or menu.code in {"dashboard", "admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.power_lines", "admin.lightning_currents", "admin.lightning_distribution", "admin.workers", "admin.task_monitor", "admin.atp_models", "admin.files", "admin.elevation", "admin.syslog", "admin.wine_runner"}:
+    if not menu or menu.code in {"admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.power_lines", "admin.lightning_currents", "admin.lightning_distribution", "admin.workers", "admin.task_monitor", "admin.atp_models", "admin.files", "admin.elevation", "admin.syslog", "admin.wine_runner"}:
         return False
     child_exists = db.scalar(select(Menu.id).where(Menu.parent_id == menu_id))
     if child_exists is not None:
