@@ -13,6 +13,7 @@ import {
   Typography,
   Upload,
   Alert,
+  Progress,
   Dropdown,
   message as antdMessage,
   type MenuProps,
@@ -72,10 +73,24 @@ function buildFilesApiPath(path: string): string {
   return `/api/v1/admin/files?${params.toString()}`;
 }
 
+function readXhrError(xhr: XMLHttpRequest): string {
+  const fallback = `HTTP ${xhr.status}`;
+  const raw = xhr.responseText?.trim();
+  if (!raw) {
+    return fallback;
+  }
+  try {
+    const parsed = JSON.parse(raw) as { detail?: string };
+    return parsed.detail?.trim() ? parsed.detail : fallback;
+  } catch {
+    return raw.length > 200 ? fallback : raw;
+  }
+}
+
 export default function AdminFilesPage() {
   const queryClient = useQueryClient();
   const [messageApi, messageContextHolder] = antdMessage.useMessage();
-  const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
+  const { user, initializing, fetchWithAuth, hasPermission, getAccessToken, refreshAccessToken } = useAuth();
 
   const [currentPath, setCurrentPath] = useState("/");
   const [createDirectoryModalOpen, setCreateDirectoryModalOpen] = useState(false);
@@ -90,6 +105,8 @@ export default function AdminFilesPage() {
   const [moveTarget, setMoveTarget] = useState<FileEntryItem | null>(null);
   const [moveTargetParentPath, setMoveTargetParentPath] = useState("/");
   const [moveNewName, setMoveNewName] = useState("");
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadFileName, setUploadFileName] = useState("");
 
   const canRead = hasPermission("file.read") || hasPermission("file.manage");
   const canManage = hasPermission("file.manage");
@@ -291,27 +308,76 @@ export default function AdminFilesPage() {
       if (!activeMountCode) {
         throw new Error("当前无可用存储挂载");
       }
+      setUploadProgress(0);
+      setUploadFileName(file.name || "未命名文件");
+
       const params = new URLSearchParams({
         mount_code: activeMountCode,
         parent_path: filesQuery.data?.current_path ?? currentPath,
       });
 
-      const formData = new FormData();
-      formData.append("file", file);
+      const uploadWithXhr = (token: string | null) =>
+        new Promise<FileOperationResponse>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("POST", `${window.location.origin}/api/v1/admin/files/upload?${params.toString()}`);
+          xhr.withCredentials = true;
+          if (token) {
+            xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+          }
 
-      const response = await fetchWithAuth(`/api/v1/admin/files/upload?${params.toString()}`, {
-        method: "POST",
-        body: formData,
-      });
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
+          xhr.upload.onprogress = (event: ProgressEvent<EventTarget>) => {
+            if (!event.lengthComputable || event.total <= 0) {
+              return;
+            }
+            const percent = Math.min(99, Math.max(0, Math.round((event.loaded / event.total) * 100)));
+            setUploadProgress(percent);
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              setUploadProgress(100);
+              try {
+                resolve(JSON.parse(xhr.responseText) as FileOperationResponse);
+              } catch {
+                reject(new Error("上传成功但响应解析失败"));
+              }
+              return;
+            }
+            reject(new Error(readXhrError(xhr)));
+          };
+
+          xhr.onerror = () => reject(new Error("网络异常，上传失败"));
+          xhr.onabort = () => reject(new Error("上传已取消"));
+
+          const formData = new FormData();
+          formData.append("file", file);
+          xhr.send(formData);
+        });
+
+      let payload: FileOperationResponse;
+      try {
+        payload = await uploadWithXhr(getAccessToken());
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "上传失败";
+        const isUnauthorized = message.includes("401") || message.includes("未授权");
+        if (!isUnauthorized) {
+          throw error;
+        }
+        const refreshed = await refreshAccessToken();
+        if (!refreshed) {
+          throw error;
+        }
+        payload = await uploadWithXhr(getAccessToken());
       }
-      return (await response.json()) as FileOperationResponse;
+      return payload;
     },
     onSuccess: async (payload) => {
       await applyMutationSuccess(payload, "上传成功");
+      setUploadFileName("");
+      setUploadProgress(0);
     },
     onError: (error) => {
+      setUploadProgress(0);
       const message = error instanceof Error ? error.message : "上传失败";
       setErrorMessage(message);
       messageApi.error(message);
@@ -754,6 +820,18 @@ export default function AdminFilesPage() {
               )}
             </Space>
           </div>
+
+          {uploadMutation.isPending && (
+            <div className="mt-3 rounded-md border border-[var(--gray-5)] bg-[var(--gray-a2)] px-3 py-2">
+              <div className="mb-1 flex items-center justify-between gap-3">
+                <Typography.Text ellipsis={{ tooltip: uploadFileName || undefined }} className="max-w-[420px]">
+                  正在上传：{uploadFileName || "未命名文件"}
+                </Typography.Text>
+                <Typography.Text type="secondary">{uploadProgress}%</Typography.Text>
+              </div>
+              <Progress percent={uploadProgress} size="small" showInfo={false} />
+            </div>
+          )}
 
           <div className="mt-4 rounded-lg border border-[var(--gray-5)] bg-[var(--gray-a2)] px-3 py-2 [&_.ant-breadcrumb-link]:!text-[var(--gray-12)] [&_.ant-breadcrumb-separator]:!text-[var(--gray-10)]">
             <Breadcrumb items={breadcrumbItems} />

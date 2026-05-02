@@ -1060,3 +1060,15 @@
 - 角色管理页面（`/admin/roles`）当前仅提供角色基础信息与“可见菜单”配置，不再提供权限点（`permission_codes`）配置入口。
 - 菜单管理页面（`/admin/menus`）当前不再提供菜单权限码（`permission_code`）配置入口与列表展示。
 - 后端权限字段与接口兼容能力保留，作为历史数据与鉴权映射兜底；前端交互层默认不暴露该配置。
+
+## 文件管理上传进度口径（2026-05-02）
+
+- 文件管理页（`/admin/files`）上传链路已从 `fetch` 切换为 `XMLHttpRequest`，用于获取浏览器原生上传进度事件并展示百分比。
+- 上传进度展示基线：
+  - 上传进行中显示文件名、百分比数值与进度条；
+  - 上传成功后清空进度状态；
+  - 上传失败时进度归零并沿用现有错误提示通道。
+- 鉴权口径：
+  - XHR 上传沿用 `withCredentials + Authorization: Bearer <token>`；
+  - 401 时触发一次 `refreshAccessToken` 并重试上传，保持与现有鉴权刷新机制一致。
+- AuthContext 对外新增 `getAccessToken()`，用于在异步重试场景读取最新 token，避免闭包持有旧值。

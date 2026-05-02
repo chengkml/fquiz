@@ -16,6 +16,7 @@ import type { AuthTokenResponse, UserPublic } from "@/types/auth";
 type AuthContextValue = {
   user: UserPublic | null;
   accessToken: string | null;
+  getAccessToken: () => string | null;
   initializing: boolean;
   login: (userId: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
@@ -50,6 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     accessTokenRef.current = token;
     setAccessToken(token);
   }, []);
+  const getAccessToken = useCallback(() => accessTokenRef.current, []);
 
   const clearAuth = useCallback(() => {
     setUser(null);
@@ -214,6 +216,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       user,
       accessToken,
+      getAccessToken,
       initializing,
       login,
       register,
@@ -226,6 +229,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [
       user,
       accessToken,
+      getAccessToken,
       initializing,
       login,
       register,
