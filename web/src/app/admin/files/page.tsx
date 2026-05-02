@@ -80,7 +80,6 @@ export default function AdminFilesPage() {
   const [currentPath, setCurrentPath] = useState("/");
   const [createDirectoryModalOpen, setCreateDirectoryModalOpen] = useState(false);
   const [newDirectoryName, setNewDirectoryName] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
   const pageDisplayName = "文件管理";
@@ -149,7 +148,6 @@ export default function AdminFilesPage() {
   const applyMutationSuccess = useCallback(
     async (payload: FileOperationResponse, fallbackMessage: string) => {
       const nextMessage = payload.action ? `操作成功：${payload.action}` : fallbackMessage;
-      setSuccessMessage(nextMessage);
       setErrorMessage("");
       messageApi.success(nextMessage);
       resetActionPanels();
@@ -191,7 +189,6 @@ export default function AdminFilesPage() {
       await applyMutationSuccess(payload, "目录已创建");
     },
     onError: (error) => {
-      setSuccessMessage("");
       const message = error instanceof Error ? error.message : "目录创建失败";
       setErrorMessage(message);
       messageApi.error(message);
@@ -222,7 +219,6 @@ export default function AdminFilesPage() {
       await applyMutationSuccess(payload, "路径已删除");
     },
     onError: (error) => {
-      setSuccessMessage("");
       const message = error instanceof Error ? error.message : "删除失败";
       setErrorMessage(message);
       messageApi.error(message);
@@ -253,7 +249,6 @@ export default function AdminFilesPage() {
       await applyMutationSuccess(payload, "重命名成功");
     },
     onError: (error) => {
-      setSuccessMessage("");
       const message = error instanceof Error ? error.message : "重命名失败";
       setErrorMessage(message);
       messageApi.error(message);
@@ -285,7 +280,6 @@ export default function AdminFilesPage() {
       await applyMutationSuccess(payload, "移动成功");
     },
     onError: (error) => {
-      setSuccessMessage("");
       const message = error instanceof Error ? error.message : "移动失败";
       setErrorMessage(message);
       messageApi.error(message);
@@ -318,7 +312,6 @@ export default function AdminFilesPage() {
       await applyMutationSuccess(payload, "上传成功");
     },
     onError: (error) => {
-      setSuccessMessage("");
       const message = error instanceof Error ? error.message : "上传失败";
       setErrorMessage(message);
       messageApi.error(message);
@@ -330,7 +323,6 @@ export default function AdminFilesPage() {
       return;
     }
     setCurrentPath(item.path);
-    setSuccessMessage("");
     setErrorMessage("");
     resetActionPanels();
   };
@@ -356,7 +348,6 @@ export default function AdminFilesPage() {
   const startRename = (item: FileEntryItem) => {
     setRenameTarget(item);
     setRenameName(item.name);
-    setSuccessMessage("");
     setErrorMessage("");
   };
 
@@ -364,7 +355,6 @@ export default function AdminFilesPage() {
     setMoveTarget(item);
     setMoveTargetParentPath(item.parent_path || currentPath || "/");
     setMoveNewName(item.name);
-    setSuccessMessage("");
     setErrorMessage("");
   };
 
@@ -400,7 +390,6 @@ export default function AdminFilesPage() {
 
   const handleUploadFile = useCallback(
     (file: File) => {
-      setSuccessMessage("");
       setErrorMessage("");
       void uploadMutation.mutateAsync(file);
     },
@@ -432,11 +421,9 @@ export default function AdminFilesPage() {
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(objectUrl);
-      setSuccessMessage(`下载已开始：${item.name}`);
       setErrorMessage("");
       messageApi.success(`下载已开始：${item.name}`);
     } catch (error) {
-      setSuccessMessage("");
       const message = error instanceof Error ? error.message : "下载失败";
       setErrorMessage(message);
       messageApi.error(message);
@@ -468,11 +455,9 @@ export default function AdminFilesPage() {
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(objectUrl);
-      setSuccessMessage(`目录下载已开始：${item.name}`);
       setErrorMessage("");
       messageApi.success(`目录下载已开始：${item.name}`);
     } catch (error) {
-      setSuccessMessage("");
       const message = error instanceof Error ? error.message : "目录下载失败";
       setErrorMessage(message);
       messageApi.error(message);
@@ -701,17 +686,6 @@ export default function AdminFilesPage() {
           message="操作失败"
           description={listError || errorMessage}
           onClose={() => setErrorMessage("")}
-        />
-      )}
-
-      {successMessage && (
-        <Alert
-          type="success"
-          showIcon
-          closable
-          message="操作成功"
-          description={successMessage}
-          onClose={() => setSuccessMessage("")}
         />
       )}
 
