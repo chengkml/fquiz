@@ -359,6 +359,22 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           />
         )}
 
+        <Link
+          href="/dashboard"
+          className="ml-2 flex items-center gap-2 text-inherit no-underline md:ml-0"
+        >
+          <img
+            src="/favicon.ico"
+            alt="高压电塔图标"
+            width={22}
+            height={22}
+            className="h-[22px] w-[22px]"
+          />
+          <Typography.Text strong style={{ marginBottom: 0 }}>
+            防雷计算
+          </Typography.Text>
+        </Link>
+
         <Space style={{ marginLeft: "auto" }}>
           <Dropdown
             menu={{ items: themeMenuItems, onClick: onThemeMenuClick }}
