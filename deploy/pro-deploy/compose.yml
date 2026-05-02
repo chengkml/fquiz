@@ -162,6 +162,6 @@ services:
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
       NODE_ENV: production
-    expose:
-      - "3000"
+    ports:
+      - "3000:3000"
     restart: unless-stopped
