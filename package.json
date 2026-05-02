@@ -11,8 +11,8 @@
     "build:web": "npm --workspace web run build",
     "lint:web": "npm --workspace web run lint",
     "dev:api": "python3 -m uvicorn api.app.main:app --reload --host 0.0.0.0 --port 8000",
-    "docker:up": "docker compose up --build -d",
-    "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f"
+    "docker:up": "docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml up --build -d",
+    "docker:down": "docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml down",
+    "docker:logs": "docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml logs -f"
   }
 }

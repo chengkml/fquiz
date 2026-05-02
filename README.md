@@ -86,29 +86,27 @@
 
 ## Docker Compose 部署
 
+- 开发部署目录：`deploy/dev-deploy`
+- 生产部署目录：`deploy/pro-deploy`
+
 1. 准备环境变量：
 
    ```bash
-   cp .env.example .env
+   cp deploy/dev-deploy/.env deploy/dev-deploy/.env.local
+   cp deploy/dev-deploy/.env.dev deploy/dev-deploy/.env.dev.local
    ```
 
 2. 构建并启动容器：
 
    ```bash
-   docker compose up --build -d
-   ```
-
-   如需同时启动本地 PostgreSQL 容器（`db`），使用：
-
-   ```bash
-   docker compose --profile local-db up --build -d
+   docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml up --build -d
    ```
 
 3. 查看运行状态和日志：
 
    ```bash
-   docker compose ps
-   docker compose logs -f
+   docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml ps
+   docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml logs -f
    ```
 
 4. 访问服务：
@@ -116,16 +114,16 @@
 - 前端：`http://localhost:3000`
 - 后端：`http://localhost:8000/health`
 - PostgreSQL：默认连接外部库（`DB_HOST/DB_PORT/DB_NAME/DB_SCHEMA/DB_USERNAME/DB_PASSWORD`）
-- 本地 PostgreSQL（可选）：启用 `local-db` profile 后使用 `localhost:5434`（可通过 `POSTGRES_PORT` 覆盖）
+- 本地 PostgreSQL：`localhost:5434`（可通过 `deploy/dev-deploy/.env` 的 `POSTGRES_PORT` 覆盖）
 
 5. 停止并清理：
 
    ```bash
-   docker compose down
+   docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml down
    ```
 
 说明：
-- `NEXT_PUBLIC_API_BASE_URL` 在 Next.js 中是构建期注入；如果修改该值，需要重新执行 `docker compose up --build`。
+- `NEXT_PUBLIC_API_BASE_URL` 在 Next.js 中是构建期注入；如果修改该值，需要重新执行 `docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml up --build`。
 - 若未显式设置 `DATABASE_URL`，API 会使用 `DB_*` 变量自动组装 PostgreSQL 连接，并将 `DB_SCHEMA` 作为 `search_path`（等价 JDBC 的 `currentSchema` 语义）。
 - 若出现跨域（CORS）错误，请在 `.env` 配置：
   - `API_CORS_ORIGINS`：精确来源列表（逗号分隔），如 `https://admin.example.com,http://localhost:3000`
@@ -133,5 +131,5 @@
   - 支持在 `API_CORS_ORIGINS` 中使用通配符（如 `https://*.example.com`）或 `*`（仅建议开发调试）
 - AI 聊天依赖模型路由与 Provider Key：
   - 路由优先级：`CAPABILITY: chat.default` -> `GLOBAL: __global__`
-  - 在 `.env` 配置 `LLM_PROVIDER_API_KEYS`（示例：`openai=sk-xxx`）
-- 默认镜像源已配置为 `docker.m.daocloud.io`，并默认使用 `pgvector` 镜像；如你网络环境可直连 Docker Hub，可在 `.env` 中覆盖 `POSTGRES_IMAGE / PYTHON_BASE_IMAGE / NODE_BASE_IMAGE`。
+  - 在 `deploy/dev-deploy/.env.dev` 配置 `LLM_PROVIDER_API_KEYS`（示例：`openai=sk-xxx`）
+- 默认镜像源已配置为 `docker.m.daocloud.io`，并默认使用 `pgvector` 镜像；如你网络环境可直连 Docker Hub，可在 `deploy/dev-deploy/.env` 中覆盖 `POSTGRES_IMAGE / PYTHON_BASE_IMAGE / NODE_BASE_IMAGE`。

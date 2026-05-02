@@ -50,8 +50,8 @@
 - 宿主机 DB 暴露端口统一走 `POSTGRES_PORT`（默认 `5434`），用于规避与宿主机已有 PostgreSQL（常见 `5432`）冲突；容器内连接仍保持 `db:5432`。
 - CORS 来源控制采用“双轨配置”：`API_CORS_ORIGINS`（精确列表）+ `API_CORS_ORIGIN_REGEX`（正则，可选）；`API_CORS_ORIGINS` 支持 `*` 和通配符域名并在后端转换为 `allow_origin_regex`。
 - GitHub Actions 使用 `appleboy/ssh-action` 部署时，慢网环境需显式设置 `command_timeout`（建议 `45m`）并为 `docker compose pull` 增加重试，避免出现 `Run Command Timeout` 直接中断发布。
-- `docker compose up -d` 不会重建 `build` 类型服务镜像；本项目 `web` 无源码挂载且运行 Next.js 生产构建产物，前端代码变更后需执行 `docker compose up --build -d web`（必要时先 `docker compose build --no-cache web`）。
-- `api` 构建若在拉取 `docker.m.daocloud.io/library/python:3.11-slim` 时出现 manifest `EOF`，优先重试 `docker compose build api`；若持续失败，可在 `.env` 覆盖 `PYTHON_BASE_IMAGE=python:3.11-slim` 走 Docker Hub 兜底。
+- `docker compose up -d` 不会重建 `build` 类型服务镜像；开发链路默认使用 `deploy/dev-deploy/compose.yml`，前端代码变更后需执行 `docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml up --build -d web`（必要时先 `docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml build --no-cache web`）。
+- `api` 构建若在拉取 `docker.m.daocloud.io/library/python:3.11-slim` 时出现 manifest `EOF`，优先重试 `docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml build api`；若持续失败，可在 `deploy/dev-deploy/.env` 覆盖 `PYTHON_BASE_IMAGE=python:3.11-slim` 走 Docker Hub 兜底。
 
 ## 前端视觉口径（2026-04-12）
 
@@ -272,14 +272,14 @@
 
 ## 发布验收口径（2026-04-26）
 
-- 发布链路默认执行：
-  - `docker compose build`
-  - `docker compose up -d`
+- 发布链路默认执行（开发链路）：
+  - `docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml build`
+  - `docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml up -d`
 - 最小运行态验收：
-  - `docker compose ps`（关键服务 `api/web/celery-worker/celery-beat/db/redis/minio` 为 Up，关键依赖健康）。
+  - `docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml ps`（关键服务 `api/web/celery-worker/celery-beat/db/redis/minio` 为 Up，关键依赖健康）。
   - `curl -fsS http://127.0.0.1:8000/health` 返回 API 健康 JSON。
   - `curl -I -fsS http://127.0.0.1:3000/` 返回 `HTTP/1.1 200 OK`。
-  - 结合 `docker compose logs --tail` 抽样检查 `api/web/celery-worker/celery-beat` 启动日志是否正常。
+  - 结合 `docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml logs --tail` 抽样检查 `api/web/celery-worker/celery-beat` 启动日志是否正常。
 
 ## 前端组件栈口径（2026-04-22）
 
@@ -627,10 +627,10 @@
 ## 发布执行口径（2026-04-25）
 
 - 本项目本地发布更新容器的标准链路保持为：
-  - `docker compose build`
-  - `docker compose up -d`
+  - `docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml build`
+  - `docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml up -d`
 - 发布后至少执行以下验收：
-  - `docker compose ps`（容器状态/健康）
+  - `docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml ps`（容器状态/健康）
   - `curl -fsS http://127.0.0.1:8000/health`（API 健康）
   - `curl -I -fsS http://127.0.0.1:3000/`（前端可达）
 - 2026-04-25 二次重发验证通过：按上述链路重跑后，`api/web/db` 均可正常拉起并通过健康检查。
@@ -805,7 +805,7 @@
 
 ## 文件管理 MinIO 接入口径（2026-04-25）
 
-- `docker-compose.yml` 新增 `minio` 与 `minio-init` 服务：
+- `deploy/dev-deploy/compose.yml` 与 `deploy/pro-deploy/compose.yml` 均包含 `minio` 与 `minio-init` 服务：
   - `minio` 提供 S3 兼容对象存储（`9000` API，`9001` Console）。
   - `minio-init` 使用 `minio/mc` 自动创建 `MINIO_BUCKET`，避免首用报 `NoSuchBucket`。
 - `api` 服务通过环境变量接入 MinIO：

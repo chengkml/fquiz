@@ -19,7 +19,7 @@
 - 前端：`web/`，`Next.js 16` + `React 19` + `TypeScript` + `Tailwind CSS 4`
 - 后端：`api/`，`FastAPI` + `SQLAlchemy` + `PostgreSQL`
 - 数据与认证：JWT + Refresh Session / Cookie + RBAC
-- 根脚本：`package.json` 统一调度 `web` / `api` / `docker compose`
+- 根脚本：`package.json` 统一调度 `web` / `api` / `deploy/dev-deploy` 的 `docker compose`
 
 ## 2. 工作原则
 
