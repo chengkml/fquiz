@@ -96,6 +96,41 @@ jobs:
             exit 1
           fi
 
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 准备远端部署目录
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || vars.DEPLOY_PATH }}
+        with:
+          host: ${{ secrets.SERVER_HOST || vars.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER || vars.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT || vars.SERVER_PORT || 22 }}
+          timeout: 120s
+          command_timeout: 10m
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          envs: DEPLOY_PATH
+          script: |
+            set -euo pipefail
+            DEPLOY_DIR="${DEPLOY_PATH:-/opt/fquiz}"
+            mkdir -p "${DEPLOY_DIR}"
+
+      - name: 同步 deploy/pro-deploy 配置到服务器
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST || vars.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER || vars.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT || vars.SERVER_PORT || 22 }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          timeout: 120s
+          command_timeout: 10m
+          source: "deploy/pro-deploy"
+          target: ${{ secrets.DEPLOY_PATH || vars.DEPLOY_PATH || '/opt/fquiz' }}
+          overwrite: true
+
       - name: 通过 SSH 拉取并更新容器
         uses: appleboy/ssh-action@v1.2.0
         env:
@@ -122,257 +157,15 @@ jobs:
             export COMPOSE_HTTP_TIMEOUT="${COMPOSE_HTTP_TIMEOUT:-600}"
 
             DEPLOY_DIR="${DEPLOY_PATH:-/opt/fquiz}"
-            mkdir -p "${DEPLOY_DIR}"
-            mkdir -p "${DEPLOY_DIR}/deploy/pro-deploy"
             cd "${DEPLOY_DIR}"
-
-            cat > deploy/pro-deploy/compose.yml <<'YAML'
-            services:
-              db:
-                image: ${POSTGRES_IMAGE}
-                container_name: ${COMPOSE_PROJECT_NAME}-db
-                environment:
-                  POSTGRES_DB: ${POSTGRES_DB}
-                  POSTGRES_USER: ${POSTGRES_USER}
-                  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-                ports:
-                  - "${POSTGRES_PORT}:5432"
-                volumes:
-                  - prod_db_data:/var/lib/postgresql/data
-                restart: unless-stopped
-
-              redis:
-                image: ${REDIS_IMAGE}
-                container_name: ${COMPOSE_PROJECT_NAME}-redis
-                command: redis-server --appendonly yes
-                ports:
-                  - "${REDIS_PORT}:6379"
-                volumes:
-                  - prod_redis_data:/data
-                restart: unless-stopped
-
-              minio:
-                image: ${MINIO_IMAGE}
-                container_name: ${COMPOSE_PROJECT_NAME}-minio
-                command: server /data --console-address ":9001"
-                environment:
-                  MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
-                  MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
-                ports:
-                  - "${MINIO_API_PORT}:9000"
-                  - "${MINIO_CONSOLE_PORT}:9001"
-                volumes:
-                  - prod_minio_data:/data
-                restart: unless-stopped
-
-              minio-init:
-                image: ${MINIO_MC_IMAGE}
-                container_name: ${COMPOSE_PROJECT_NAME}-minio-init
-                depends_on:
-                  - minio
-                entrypoint: /bin/sh
-                command:
-                  - -c
-                  - >
-                    until mc alias set local "$${MINIO_ENDPOINT}" "$${MINIO_ACCESS_KEY}" "$${MINIO_SECRET_KEY}"; do
-                      sleep 1;
-                    done;
-                    mc mb -p "local/$${MINIO_BUCKET}" || true;
-                environment:
-                  MINIO_ENDPOINT: ${MINIO_ENDPOINT}
-                  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
-                  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
-                  MINIO_BUCKET: ${MINIO_BUCKET}
-                restart: "no"
-
-              api:
-                image: ${API_IMAGE}
-                container_name: ${COMPOSE_PROJECT_NAME}-api
-                depends_on:
-                  - db
-                  - redis
-                  - minio
-                  - minio-init
-                env_file:
-                  - ./.env.prod
-                environment:
-                  API_HOST: 0.0.0.0
-                  API_PORT: 8000
-                  DB_HOST: db
-                  DB_PORT: 5432
-                  MINIO_ENDPOINT: http://minio:9000
-                  CELERY_BROKER_URL: redis://redis:6379/0
-                  CELERY_RESULT_BACKEND: redis://redis:6379/1
-                expose:
-                  - "8000"
-                restart: unless-stopped
-
-              celery-worker:
-                image: ${API_IMAGE}
-                container_name: ${COMPOSE_PROJECT_NAME}-celery-worker
-                command:
-                  - celery
-                  - -A
-                  - app.core.celery_app.celery_app
-                  - worker
-                  - --loglevel=${CELERY_LOG_LEVEL}
-                  - --concurrency=${CELERY_WORKER_CONCURRENCY}
-                  - --queues=${CELERY_WORKER_QUEUES}
-                depends_on:
-                  - api
-                  - redis
-                env_file:
-                  - ./.env.prod
-                environment:
-                  DB_HOST: db
-                  DB_PORT: 5432
-                  CELERY_BROKER_URL: redis://redis:6379/0
-                  CELERY_RESULT_BACKEND: redis://redis:6379/1
-                  FLOWER_API_BASE_URL: http://flower:5555
-                restart: unless-stopped
-
-              celery-beat:
-                image: ${API_IMAGE}
-                container_name: ${COMPOSE_PROJECT_NAME}-celery-beat
-                command:
-                  - celery
-                  - -A
-                  - app.core.celery_app.celery_app
-                  - beat
-                  - --loglevel=${CELERY_LOG_LEVEL}
-                  - --schedule=/tmp/celerybeat-schedule
-                depends_on:
-                  - api
-                  - redis
-                env_file:
-                  - ./.env.prod
-                environment:
-                  DB_HOST: db
-                  DB_PORT: 5432
-                  CELERY_BROKER_URL: redis://redis:6379/0
-                  CELERY_RESULT_BACKEND: redis://redis:6379/1
-                restart: unless-stopped
-
-              flower:
-                image: ${API_IMAGE}
-                container_name: ${COMPOSE_PROJECT_NAME}-flower
-                command:
-                  - celery
-                  - -A
-                  - app.core.celery_app.celery_app
-                  - flower
-                  - --address=0.0.0.0
-                  - --port=5555
-                  - --persistent=False
-                  - --basic-auth=${FLOWER_BASIC_AUTH}
-                depends_on:
-                  - redis
-                environment:
-                  CELERY_BROKER_URL: redis://redis:6379/0
-                  CELERY_RESULT_BACKEND: redis://redis:6379/1
-                  CELERY_TIMEZONE: ${CELERY_TIMEZONE}
-                  FLOWER_BASIC_AUTH: ${FLOWER_BASIC_AUTH}
-                expose:
-                  - "5555"
-                restart: unless-stopped
-
-              web:
-                image: ${WEB_IMAGE}
-                container_name: ${COMPOSE_PROJECT_NAME}-web
-                depends_on:
-                  - api
-                environment:
-                  NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
-                  NODE_ENV: production
-                expose:
-                  - "3000"
-                restart: unless-stopped
-
-            volumes:
-              prod_db_data:
-              prod_redis_data:
-              prod_minio_data:
-            YAML
-
-            if [ ! -f deploy/pro-deploy/.env ]; then
-            cat > deploy/pro-deploy/.env <<'ENV'
-            COMPOSE_PROJECT_NAME=fquiz-prod
-            API_IMAGE=ghcr.io/chengkml/fquiz-api:latest
-            WEB_IMAGE=ghcr.io/chengkml/fquiz-web:latest
-            POSTGRES_IMAGE=docker.m.daocloud.io/pgvector/pgvector:pg16
-            REDIS_IMAGE=docker.m.daocloud.io/library/redis:7-alpine
-            MINIO_IMAGE=minio/minio:latest
-            MINIO_MC_IMAGE=minio/mc:latest
-            POSTGRES_PORT=5434
-            REDIS_PORT=6379
-            MINIO_API_PORT=9000
-            MINIO_CONSOLE_PORT=9001
-            NEXT_PUBLIC_API_BASE_URL=https://quiz.example.com/api
-            CELERY_LOG_LEVEL=INFO
-            CELERY_WORKER_CONCURRENCY=4
-            CELERY_WORKER_QUEUES=default,celery
-            CELERY_TIMEZONE=Asia/Shanghai
-            FLOWER_BASIC_AUTH=admin:change_me
-            POSTGRES_DB=fquiz
-            POSTGRES_USER=fquiz
-            MINIO_ENDPOINT=http://minio:9000
-            MINIO_BUCKET=fquiz-files
-            ENV
-              echo "[warn] deploy/pro-deploy/.env 不存在，已写入默认模板，请尽快改成生产配置。"
-            fi
-
-            if [ ! -f deploy/pro-deploy/.env.prod ]; then
-            cat > deploy/pro-deploy/.env.prod <<'ENV'
-            DATABASE_URL=postgresql+psycopg://fquiz:replace_strong_password@db:5432/fquiz
-            DB_HOST=db
-            DB_PORT=5432
-            DB_NAME=postgres
-            DB_SCHEMA=public
-            DB_USERNAME=fquiz
-            DB_PASSWORD=replace_strong_password
-            USER_USERNAME_COLUMN=username
-            USER_PASSWORD_COLUMN=password_hash
-            USER_STATUS_COLUMN=status
-            FILE_VFS_ROOT=./data/vfs
-            MINIO_ENABLED=true
-            MINIO_ENDPOINT=http://minio:9000
-            MINIO_ACCESS_KEY=replace_strong_access_key
-            MINIO_SECRET_KEY=replace_strong_secret_key
-            MINIO_BUCKET=fquiz-files
-            MINIO_REGION=us-east-1
-            JWT_SECRET_KEY=replace_strong_jwt_secret
-            ACCESS_TOKEN_EXPIRE_MINUTES=480
-            REFRESH_TOKEN_EXPIRE_DAYS=30
-            REFRESH_COOKIE_SECURE=true
-            REFRESH_COOKIE_SAMESITE=lax
-            LLM_PROVIDER_API_KEYS=
-            LLM_REQUEST_TIMEOUT_SECONDS=60
-            CHAT_CONTEXT_MESSAGE_LIMIT=12
-            CHAT_DEFAULT_SYSTEM_PROMPT=You are a helpful assistant.
-            CELERY_BROKER_URL=redis://redis:6379/0
-            CELERY_RESULT_BACKEND=redis://redis:6379/1
-            CELERY_TIMEZONE=Asia/Shanghai
-            SCHEDULER_EXPIRE_INTERVAL_SECONDS=60
-            FLOWER_API_BASE_URL=http://flower:5555
-            FLOWER_API_TIMEOUT_SECONDS=10
-            FLOWER_BASIC_AUTH=admin:change_me
-            WORKER_REGISTRY_TTL_SECONDS=90
-            CELERY_WORKER_QUEUES=default,celery
-            WINE_BINARY_PATH=wine
-            WINE_ALLOWED_ROOT=./data/wine
-            WINE_DEFAULT_TIMEOUT_SECONDS=300
-            WINE_MAX_TIMEOUT_SECONDS=1800
-            INITIAL_ADMIN_EMAIL=admin@example.com
-            INITIAL_ADMIN_USERNAME=admin
-            INITIAL_ADMIN_PASSWORD=replace_strong_admin_password
-            POSTGRES_DB=fquiz
-            POSTGRES_USER=fquiz
-            POSTGRES_PASSWORD=replace_strong_password
-            API_CORS_ORIGINS=https://quiz.example.com
-            API_CORS_ORIGIN_REGEX=
-            ENV
-              echo "[warn] deploy/pro-deploy/.env.prod 不存在，已写入默认模板，请尽快改成生产配置。"
-            fi
+            [ -f deploy/pro-deploy/compose.yml ] || { echo "[error] deploy/pro-deploy/compose.yml 不存在"; exit 1; }
+            [ -f deploy/pro-deploy/.env ] || { echo "[error] deploy/pro-deploy/.env 不存在"; exit 1; }
+            [ -f deploy/pro-deploy/.env.prod ] || { echo "[error] deploy/pro-deploy/.env.prod 不存在"; exit 1; }
+            mkdir -p \
+              deploy/pro-deploy/data/postgres \
+              deploy/pro-deploy/data/redis \
+              deploy/pro-deploy/data/minio \
+              deploy/pro-deploy/data/app/celery
 
             cat > .images.env <<ENV
             API_IMAGE=${API_IMAGE}:${IMAGE_TAG}
