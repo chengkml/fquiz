@@ -1,17 +1,19 @@
 "use client";
 
+import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Button, Empty, Input, Space, Spin, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Empty, Form, Input, Space, Spin, Table, Tag, Typography, type CardProps } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import type { ComponentType } from "react";
 import { useCallback, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { Card } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { AuditLogItem, AuditLogListResponse } from "@/types/auth";
 
 const PAGE_SIZE = 50;
+const AntCard = Card as unknown as ComponentType<CardProps>;
 
 type Filters = {
   action: string;
@@ -127,95 +129,104 @@ export default function AdminSyslogPage() {
 
   if (initializing || logsQuery.isLoading) {
     return (
-      <Card>
-        <Space>
-          <Spin size="small" />
-          <Typography.Text type="secondary">加载系统日志中...</Typography.Text>
-        </Space>
-      </Card>
+      <div className="flex min-h-[240px] items-center justify-center">
+        <Spin tip="系统日志加载中..." />
+      </div>
     );
   }
 
   if (!user) {
     return (
-      <Card>
-        <Space direction="vertical" size={12}>
-          <Alert type="info" showIcon message="请先登录后再访问系统日志页面。" />
-          <Button href="/">返回首页</Button>
-        </Space>
-      </Card>
+      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
+        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问系统日志页面。</p>
+        <Link
+          href="/"
+          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
+        >
+          返回首页
+        </Link>
+      </main>
     );
   }
 
   if (!canRead) {
     return (
-      <Card>
-        <Space direction="vertical" size={12}>
-          <Alert type="error" showIcon message="你没有访问该页面的权限（需要 `menu.read`）。" />
-          <Button href="/">返回首页</Button>
-        </Space>
-      </Card>
+      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
+        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `menu.read`）。</p>
+        <Link
+          href="/"
+          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
+        >
+          返回首页
+        </Link>
+      </main>
     );
   }
 
   return (
-    <Space direction="vertical" size={16} className="w-full">
-      {error ? <Alert type="error" showIcon message={error} /> : null}
+    <div className="space-y-6">
+      {error ? <Alert type="error" showIcon message="日志加载失败" description={error} /> : null}
 
-      <Card title="系统日志" extra={<Typography.Text type="secondary">常见动作：auth.login / auth.logout / auth.refresh</Typography.Text>}>
+      <AntCard title="系统日志" extra={<Typography.Text type="secondary">常见动作：auth.login / auth.logout / auth.refresh</Typography.Text>}>
         <Typography.Paragraph type="secondary" className="!mb-4">
           查看鉴权与会话类审计日志，支持按动作和用户筛选。
         </Typography.Paragraph>
 
-        <Space wrap size={12}>
-          <Input
-            allowClear
-            className="!w-72"
-            placeholder="按动作筛选（如 auth.login）"
-            value={draftFilters.action}
-            onChange={(event) =>
-              setDraftFilters((prev) => ({
-                ...prev,
-                action: event.target.value,
-              }))
-            }
-          />
-          <Input
-            allowClear
-            className="!w-72"
-            placeholder="按用户ID筛选（如 openclaw）"
-            value={draftFilters.user_id}
-            onChange={(event) =>
-              setDraftFilters((prev) => ({
-                ...prev,
-                user_id: event.target.value,
-              }))
-            }
-          />
-          <Button
-            type="primary"
-            onClick={() => {
-              setOffset(0);
-              setFilters({
-                action: draftFilters.action.trim(),
-                user_id: draftFilters.user_id.trim(),
-              });
-            }}
-          >
-            查询
-          </Button>
-          <Button
-            onClick={() => {
-              setOffset(0);
-              setDraftFilters(EMPTY_FILTERS);
-              setFilters(EMPTY_FILTERS);
-            }}
-          >
-            重置
-          </Button>
-        </Space>
+        <Form layout="inline" style={{ rowGap: 12 }}>
+          <Form.Item label="动作" className="min-w-[280px]">
+            <Input
+              allowClear
+              placeholder="按动作筛选（如 auth.login）"
+              value={draftFilters.action}
+              onChange={(event) =>
+                setDraftFilters((prev) => ({
+                  ...prev,
+                  action: event.target.value,
+                }))
+              }
+            />
+          </Form.Item>
+          <Form.Item label="用户ID" className="min-w-[280px]">
+            <Input
+              allowClear
+              placeholder="按用户ID筛选（如 openclaw）"
+              value={draftFilters.user_id}
+              onChange={(event) =>
+                setDraftFilters((prev) => ({
+                  ...prev,
+                  user_id: event.target.value,
+                }))
+              }
+            />
+          </Form.Item>
+          <Form.Item>
+            <Space size={8}>
+              <Button
+                type="primary"
+                onClick={() => {
+                  setOffset(0);
+                  setFilters({
+                    action: draftFilters.action.trim(),
+                    user_id: draftFilters.user_id.trim(),
+                  });
+                }}
+              >
+                查询
+              </Button>
+              <Button
+                onClick={() => {
+                  setOffset(0);
+                  setDraftFilters(EMPTY_FILTERS);
+                  setFilters(EMPTY_FILTERS);
+                }}
+              >
+                重置筛选
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
 
-        <div className="mb-4 mt-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <Typography.Text type="secondary">
             共 {total} 条，当前第 {currentPage} 页
           </Typography.Text>
@@ -234,13 +245,14 @@ export default function AdminSyslogPage() {
             onChange: (page) => setOffset((page - 1) * PAGE_SIZE),
             showSizeChanger: false,
             showQuickJumper: false,
+            showTotal: (value) => `共 ${value} 条`,
           }}
           locale={{
             emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无日志数据" />,
           }}
           scroll={{ x: 980 }}
         />
-      </Card>
-    </Space>
+      </AntCard>
+    </div>
   );
 }
