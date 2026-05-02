@@ -27,6 +27,7 @@ __pycache__/
 .env
 .env.local
 .env.*.local
+!deploy/pro-deploy/.env
 api/.env
 web/.env.local
 
