@@ -322,6 +322,53 @@ export type ElevationDatasetAnalyzeResponse = {
   warnings: string[];
 };
 
+export type TowerModelSummary = {
+  id: string;
+  code: string;
+  name: string;
+  tower_type: string | null;
+  description: string | null;
+  image_mount_code: string | null;
+  image_path: string | null;
+  source_tag: string | null;
+  is_enabled: boolean;
+  sort_order: number;
+  default_altitude_m: number | null;
+  default_terrain: string | null;
+  default_ground_resistance_ohm: number | null;
+  default_lightning_density: number | null;
+  default_span_small_m: number | null;
+  default_span_large_m: number | null;
+  default_slope_1: number | null;
+  default_slope_2: number | null;
+  default_risk_level: string | null;
+  default_raw_json: Record<string, unknown>;
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
+};
+
+export type TowerModelListResponse = {
+  items: TowerModelSummary[];
+  total: number;
+};
+
+export type TowerModelImageUploadResponse = {
+  model: TowerModelSummary;
+  mount_code: string;
+  image_path: string;
+};
+
+export type TowerModelSeedResponse = {
+  total_models: number;
+  imported_models: number;
+  updated_models: number;
+  skipped_models: number;
+  copied_images: number;
+  warnings: string[];
+};
+
 export type ElevationDatasetBatchImportResponse = {
   imported_count: number;
   analyzed_count: number;

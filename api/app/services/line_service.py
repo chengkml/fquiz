@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from ..models.base import utcnow
 from ..models.line import Line
 from ..models.line_tower import LineTower
+from ..models.tower_model import TowerModel
 from ..schemas.line import (
     LineCreateRequest,
     LineListResponse,
@@ -26,6 +27,7 @@ from ..schemas.line import (
     LineUpdateRequest,
 )
 from .push_service import publish_topic
+from .tower_model_service import derive_tower_model_code_from_legacy, derive_tower_model_default_values_from_legacy_row
 
 LINE_TOPIC = "admin.power-lines"
 CSV_ENCODINGS = ("utf-8-sig", "utf-8", "gbk", "latin-1")
@@ -281,27 +283,28 @@ def create_line_tower(
     if existed:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tower sequence or tower number already exists")
 
+    model_defaults = _load_tower_model_defaults(db, payload.tower_model)
     now = utcnow()
     item = LineTower(
         line_id=line_id,
         seq_no=payload.seq_no,
         tower_no=payload.tower_no.strip(),
-        tower_model=_normalize_str(payload.tower_model),
-        tower_type=_normalize_str(payload.tower_type),
+        tower_model=model_defaults.get("tower_model") if model_defaults else _normalize_str(payload.tower_model),
+        tower_type=_pick_optional_value(payload.tower_type, model_defaults.get("tower_type") if model_defaults else None),
         longitude=payload.longitude,
         latitude=payload.latitude,
-        altitude_m=payload.altitude_m,
-        terrain=_normalize_str(payload.terrain),
-        ground_resistance_ohm=payload.ground_resistance_ohm,
-        lightning_density=payload.lightning_density,
-        span_small_m=payload.span_small_m,
-        span_large_m=payload.span_large_m,
-        slope_1=payload.slope_1,
-        slope_2=payload.slope_2,
-        risk_level=_normalize_str(payload.risk_level),
-        circuit_geometry_json=payload.circuit_geometry_json,
-        lightning_result_json=payload.lightning_result_json,
-        raw_extra_json=payload.raw_extra_json,
+        altitude_m=_pick_optional_value(payload.altitude_m, model_defaults.get("altitude_m") if model_defaults else None),
+        terrain=_pick_optional_value(_normalize_str(payload.terrain), model_defaults.get("terrain") if model_defaults else None),
+        ground_resistance_ohm=_pick_optional_value(payload.ground_resistance_ohm, model_defaults.get("ground_resistance_ohm") if model_defaults else None),
+        lightning_density=_pick_optional_value(payload.lightning_density, model_defaults.get("lightning_density") if model_defaults else None),
+        span_small_m=_pick_optional_value(payload.span_small_m, model_defaults.get("span_small_m") if model_defaults else None),
+        span_large_m=_pick_optional_value(payload.span_large_m, model_defaults.get("span_large_m") if model_defaults else None),
+        slope_1=_pick_optional_value(payload.slope_1, model_defaults.get("slope_1") if model_defaults else None),
+        slope_2=_pick_optional_value(payload.slope_2, model_defaults.get("slope_2") if model_defaults else None),
+        risk_level=_pick_optional_value(_normalize_str(payload.risk_level), model_defaults.get("risk_level") if model_defaults else None),
+        circuit_geometry_json=_pick_dict_value(payload.circuit_geometry_json, _extract_model_default_dict(model_defaults, "circuit_geometry_json")),
+        lightning_result_json=_pick_dict_value(payload.lightning_result_json, _extract_model_default_dict(model_defaults, "lightning_result_json")),
+        raw_extra_json=payload.raw_extra_json or {},
         create_user=actor_user_id,
         update_user=actor_user_id,
         create_date=now,
@@ -480,21 +483,26 @@ def import_line_towers_from_csv(
 
         tower.seq_no = seq_no
         tower.tower_no = tower_no
-        tower.tower_model = _normalize_str(row.get("杆塔模型"))
-        tower.tower_type = _normalize_str(row.get("直线或耐张杆塔"))
+        source_model_name = _normalize_str(row.get("杆塔模型"))
+        model_defaults = _load_tower_model_defaults_from_row(db, source_row=row, source_model_name=source_model_name)
+        tower.tower_model = model_defaults.get("tower_model") if model_defaults else source_model_name
+        tower.tower_type = _pick_optional_value(
+            _normalize_str(row.get("直线或耐张杆塔")),
+            model_defaults.get("tower_type") if model_defaults else None,
+        )
         tower.longitude = _parse_float(row.get("经度"))
         tower.latitude = _parse_float(row.get("纬度"))
-        tower.altitude_m = _parse_float(row.get("海拔m"))
-        tower.terrain = _normalize_str(row.get("地形"))
-        tower.ground_resistance_ohm = _parse_float(row.get("接地电阻"))
-        tower.lightning_density = _parse_float(row.get("地闪密度"))
-        tower.span_small_m = _parse_float(row.get("小号侧档距"))
-        tower.span_large_m = _parse_float(row.get("大号侧档距"))
-        tower.slope_1 = _parse_float(row.get("地面倾角1"))
-        tower.slope_2 = _parse_float(row.get("地面倾角2"))
-        tower.risk_level = _normalize_str(row.get("雷击风险等级"))
-        tower.circuit_geometry_json = _build_circuit_geometry(row)
-        tower.lightning_result_json = _build_lightning_result(row)
+        tower.altitude_m = _pick_optional_value(_parse_float(row.get("海拔m")), model_defaults.get("altitude_m") if model_defaults else None)
+        tower.terrain = _pick_optional_value(_normalize_str(row.get("地形")), model_defaults.get("terrain") if model_defaults else None)
+        tower.ground_resistance_ohm = _pick_optional_value(_parse_float(row.get("接地电阻")), model_defaults.get("ground_resistance_ohm") if model_defaults else None)
+        tower.lightning_density = _pick_optional_value(_parse_float(row.get("地闪密度")), model_defaults.get("lightning_density") if model_defaults else None)
+        tower.span_small_m = _pick_optional_value(_parse_float(row.get("小号侧档距")), model_defaults.get("span_small_m") if model_defaults else None)
+        tower.span_large_m = _pick_optional_value(_parse_float(row.get("大号侧档距")), model_defaults.get("span_large_m") if model_defaults else None)
+        tower.slope_1 = _pick_optional_value(_parse_float(row.get("地面倾角1")), model_defaults.get("slope_1") if model_defaults else None)
+        tower.slope_2 = _pick_optional_value(_parse_float(row.get("地面倾角2")), model_defaults.get("slope_2") if model_defaults else None)
+        tower.risk_level = _pick_optional_value(_normalize_str(row.get("雷击风险等级")), model_defaults.get("risk_level") if model_defaults else None)
+        tower.circuit_geometry_json = _pick_dict_value(_build_circuit_geometry(row), _extract_model_default_dict(model_defaults, "circuit_geometry_json"))
+        tower.lightning_result_json = _pick_dict_value(_build_lightning_result(row), _extract_model_default_dict(model_defaults, "lightning_result_json"))
         tower.raw_extra_json = _extract_extra_values(row, extra_headers)
         tower.update_user = actor_user_id
         tower.update_date = utcnow()
@@ -809,6 +817,114 @@ def _publish_line_change(event_name: str, payload: dict[str, Any]) -> None:
             dedupe_key=f"{event_name}:{payload.get('line_id', 'unknown')}",
         )
     )
+
+
+def _pick_optional_value(primary: Any, fallback: Any) -> Any:
+    if primary is None:
+        return fallback
+    if isinstance(primary, str) and not primary.strip():
+        return fallback
+    return primary
+
+
+def _pick_dict_value(primary: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
+    if _has_meaningful_dict_data(primary):
+        return primary
+    if fallback:
+        return fallback
+    return {}
+
+
+def _has_meaningful_dict_data(value: dict[str, Any] | None) -> bool:
+    if not value:
+        return False
+    for item in value.values():
+        if item is None:
+            continue
+        if isinstance(item, dict):
+            if _has_meaningful_dict_data(item):
+                return True
+            continue
+        if isinstance(item, list):
+            if len(item) > 0:
+                return True
+            continue
+        return True
+    return False
+
+
+def _extract_model_default_dict(defaults: dict[str, Any] | None, key: str) -> dict[str, Any]:
+    if not defaults:
+        return {}
+    raw_json = defaults.get("raw_json")
+    if not isinstance(raw_json, dict):
+        return {}
+    candidate = raw_json.get(key)
+    if isinstance(candidate, dict):
+        return candidate
+    return {}
+
+
+def _load_tower_model_defaults(db: Session, model_code: str | None) -> dict[str, Any] | None:
+    normalized = _normalize_str(model_code)
+    if normalized is None:
+        return None
+    model = db.execute(
+        select(TowerModel).where(
+            func.lower(TowerModel.code) == normalized.lower(),
+            TowerModel.is_enabled.is_(True),
+        )
+    ).scalar_one_or_none()
+    if not model:
+        return None
+
+    return {
+        "tower_model": model.code,
+        "tower_type": model.tower_type,
+        "altitude_m": model.default_altitude_m,
+        "terrain": model.default_terrain,
+        "ground_resistance_ohm": model.default_ground_resistance_ohm,
+        "lightning_density": model.default_lightning_density,
+        "span_small_m": model.default_span_small_m,
+        "span_large_m": model.default_span_large_m,
+        "slope_1": model.default_slope_1,
+        "slope_2": model.default_slope_2,
+        "risk_level": model.default_risk_level,
+        "raw_json": model.default_raw_json or {},
+    }
+
+
+def _load_tower_model_defaults_from_row(
+    db: Session,
+    *,
+    source_row: dict[str, str],
+    source_model_name: str | None,
+) -> dict[str, Any] | None:
+    model_code = derive_tower_model_code_from_legacy(source_model_name or "")
+    model_defaults = _load_tower_model_defaults(db, model_code)
+    if model_defaults:
+        return model_defaults
+
+    if not model_code:
+        return None
+
+    fallback = derive_tower_model_default_values_from_legacy_row(source_row)
+    if not fallback:
+        return None
+    return {
+        "tower_model": model_code,
+        "tower_type": fallback.get("tower_type"),
+        "altitude_m": fallback.get("altitude_m"),
+        "terrain": fallback.get("terrain"),
+        "ground_resistance_ohm": fallback.get("ground_resistance_ohm"),
+        "lightning_density": fallback.get("lightning_density"),
+        "span_small_m": fallback.get("span_small_m"),
+        "span_large_m": fallback.get("span_large_m"),
+        "slope_1": fallback.get("slope_1"),
+        "slope_2": fallback.get("slope_2"),
+        "risk_level": fallback.get("risk_level"),
+        "raw_json": fallback.get("raw_json") or {},
+    }
 
 
 def _fire_and_forget(coro: object) -> None:

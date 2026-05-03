@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..core.config import get_settings
@@ -6,7 +6,9 @@ from ..core.security import hash_password
 from ..models.file_storage import FileStorageBackend, FileStorageMount
 from ..models.menu import Menu
 from ..models.rbac import Permission, Role
+from ..models.tower_model import TowerModel
 from ..models.user import User
+from .tower_model_service import seed_tower_models_from_legacy
 
 settings = get_settings()
 
@@ -28,6 +30,8 @@ DEFAULT_PERMISSIONS: dict[str, str] = {
     "line.manage": "Manage power lines",
     "tower.read": "Read line towers",
     "tower.manage": "Manage line towers",
+    "tower_model.read": "Read tower model library",
+    "tower_model.manage": "Manage tower model library and images",
     "lightning.read": "Read lightning current events and features",
     "lightning.manage": "Manage lightning current events and data imports",
     "elevation.read": "Read elevation datasets and apply jobs",
@@ -62,6 +66,8 @@ DEFAULT_ROLES: dict[str, dict[str, object]] = {
             "line.manage",
             "tower.read",
             "tower.manage",
+            "tower_model.read",
+            "tower_model.manage",
             "lightning.read",
             "lightning.manage",
             "elevation.read",
@@ -213,13 +219,26 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "permission_code": "atp.read",
     },
     {
+        "code": "admin.tower_models",
+        "name": "杆塔模型管理",
+        "path": "/admin/tower-models",
+        "icon": "Apartment",
+        "parent_code": None,
+        "type": "menu",
+        "sort_order": 56,
+        "status": "enabled",
+        "visible": True,
+        "cacheable": False,
+        "permission_code": "tower_model.read",
+    },
+    {
         "code": "admin.files",
         "name": "文件管理",
         "path": "/admin/files",
         "icon": "FolderTree",
         "parent_code": None,
         "type": "menu",
-        "sort_order": 56,
+        "sort_order": 57,
         "status": "enabled",
         "visible": True,
         "cacheable": False,
@@ -232,7 +251,7 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "icon": "Database",
         "parent_code": None,
         "type": "menu",
-        "sort_order": 57,
+        "sort_order": 58,
         "status": "enabled",
         "visible": True,
         "cacheable": False,
@@ -245,7 +264,7 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "icon": "FileText",
         "parent_code": None,
         "type": "menu",
-        "sort_order": 58,
+        "sort_order": 59,
         "status": "enabled",
         "visible": True,
         "cacheable": False,
@@ -267,7 +286,7 @@ DEFAULT_MENUS: list[dict[str, object]] = [
 ]
 
 ROLE_MENU_BINDINGS: dict[str, list[str]] = {
-    "admin": ["admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.power_lines", "admin.lightning_currents", "admin.lightning_distribution", "admin.workers", "admin.task_monitor", "admin.atp_models", "admin.files", "admin.elevation", "admin.syslog", "admin.wine_runner"],
+    "admin": ["admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.power_lines", "admin.lightning_currents", "admin.lightning_distribution", "admin.workers", "admin.task_monitor", "admin.atp_models", "admin.tower_models", "admin.files", "admin.elevation", "admin.syslog", "admin.wine_runner"],
     "user": [],
 }
 
@@ -322,6 +341,7 @@ def seed_defaults(db: Session) -> None:
     _seed_file_storage(db)
     _seed_initial_admin(db)
     db.commit()
+    _seed_legacy_tower_models_if_empty(db)
 
 
 def _seed_permissions(db: Session) -> dict[str, Permission]:
@@ -482,3 +502,24 @@ def _seed_initial_admin(db: Session) -> None:
     role_codes = {role.code for role in user.roles}
     if "admin" not in role_codes:
         user.roles.append(admin_role)
+
+
+def _seed_legacy_tower_models_if_empty(db: Session) -> None:
+    existing_count = int(db.scalar(select(func.count()).select_from(TowerModel)) or 0)
+    if existing_count > 0:
+        return
+
+    actor = db.scalar(select(User).where(User.username == settings.initial_admin_username))
+    if actor is None:
+        actor = db.scalar(select(User).order_by(User.created_at.asc()))
+    if actor is None:
+        return
+
+    try:
+        seed_tower_models_from_legacy(
+            db,
+            actor=actor,
+            overwrite_existing=False,
+        )
+    except Exception:
+        db.rollback()

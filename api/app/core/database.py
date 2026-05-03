@@ -277,6 +277,61 @@ def _ensure_elevation_dataset_column_compatibility() -> None:
             )
 
 
+def _ensure_tower_model_column_compatibility() -> None:
+    """
+    Keep `tower_model` columns aligned with the current ORM mapping.
+    """
+    if not database_url.startswith("postgresql"):
+        return
+
+    schema = settings.resolved_db_schema
+    with engine.begin() as connection:
+        db_inspector = inspect(connection)
+        if not db_inspector.has_table("tower_model", schema=schema):
+            return
+
+        column_names = {
+            column["name"]
+            for column in db_inspector.get_columns("tower_model", schema=schema)
+        }
+
+        if "source_tag" not in column_names:
+            connection.execute(
+                text("ALTER TABLE tower_model ADD COLUMN IF NOT EXISTS source_tag VARCHAR(64)"),
+            )
+            logger.warning(
+                "Detected missing tower_model.source_tag; added nullable source tag column.",
+            )
+
+        if "sort_order" not in column_names:
+            connection.execute(
+                text("ALTER TABLE tower_model ADD COLUMN IF NOT EXISTS sort_order INTEGER"),
+            )
+            connection.execute(
+                text("UPDATE tower_model SET sort_order = 0 WHERE sort_order IS NULL"),
+            )
+            connection.execute(
+                text("ALTER TABLE tower_model ALTER COLUMN sort_order SET NOT NULL"),
+            )
+            logger.warning(
+                "Detected missing tower_model.sort_order; added with default 0.",
+            )
+
+        if "default_raw_json" not in column_names:
+            connection.execute(
+                text("ALTER TABLE tower_model ADD COLUMN IF NOT EXISTS default_raw_json JSON"),
+            )
+            connection.execute(
+                text("UPDATE tower_model SET default_raw_json = '{}'::json WHERE default_raw_json IS NULL"),
+            )
+            connection.execute(
+                text("ALTER TABLE tower_model ALTER COLUMN default_raw_json SET NOT NULL"),
+            )
+            logger.warning(
+                "Detected missing tower_model.default_raw_json; added with default empty JSON.",
+            )
+
+
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
@@ -307,6 +362,7 @@ def init_db() -> None:
         requirement,
         system_param,
         todo,
+        tower_model,
         user,
         worker_registry,
     )  # noqa: F401
@@ -316,6 +372,7 @@ def init_db() -> None:
     _ensure_user_timestamp_column_compatibility()
     _ensure_user_audit_column_compatibility()
     _ensure_elevation_dataset_column_compatibility()
+    _ensure_tower_model_column_compatibility()
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         local_hosts = {"db", "localhost", "127.0.0.1", "::1"}

@@ -70,6 +70,7 @@ PROTECTED_MENU_CODES = {
     "admin.wxapp",
     "admin.files",
     "admin.elevation",
+    "admin.tower_models",
     "admin.filedetector",
     "admin.baidu_pan",
     "admin.power_lines",

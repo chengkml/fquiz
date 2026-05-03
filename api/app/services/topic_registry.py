@@ -22,6 +22,7 @@ TOPIC_RULES: dict[str, TopicRule] = {
     "admin.menus": TopicRule(any_permission_codes={"menu.read", "menu.manage"}),
     "admin.system-params": TopicRule(any_permission_codes={"system_param.read", "system_param.manage"}),
     "admin.files": TopicRule(any_permission_codes={"file.read", "file.manage"}),
+    "admin.tower-models": TopicRule(any_permission_codes={"tower_model.read", "tower_model.manage", "tower.read", "tower.manage"}),
     "admin.elevation": TopicRule(any_permission_codes={"elevation.read", "elevation.manage"}),
     "admin.atp-models": TopicRule(any_permission_codes={"atp.read", "atp.run", "atp.manage"}),
     "admin.audit_logs": TopicRule(any_permission_codes={"menu.read", "menu.manage"}),

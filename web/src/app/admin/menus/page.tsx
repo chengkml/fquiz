@@ -61,6 +61,7 @@ const PROTECTED_MENU_CODES = new Set([
   "admin.roles",
   "admin.menus",
   "admin.system_params",
+  "admin.tower_models",
   "admin.files",
   "admin.elevation",
   "admin.wxapp",

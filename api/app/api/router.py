@@ -11,6 +11,7 @@ from .v1.lines import router as lines_router
 from .v1.question_bank import router as question_bank_router
 from .v1.system_params import router as system_params_router
 from .v1.task_monitor import router as task_monitor_router
+from .v1.tower_models import router as tower_models_router
 from .v1.users import router as users_router
 from .v1.wine import router as wine_router
 from .v1.ws import router as ws_router
@@ -27,6 +28,7 @@ v1_router.include_router(elevation_router)
 v1_router.include_router(flower_monitor_router)
 v1_router.include_router(lightning_router)
 v1_router.include_router(lines_router)
+v1_router.include_router(tower_models_router)
 v1_router.include_router(question_bank_router)
 v1_router.include_router(wine_router)
 v1_router.include_router(ws_router)

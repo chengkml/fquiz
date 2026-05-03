@@ -34,6 +34,7 @@ import type {
   LineTowerImportResponse,
   LineTowerListResponse,
   LineTowerSummary,
+  TowerModelSummary,
 } from "@/types/auth";
 
 type LineFormValues = {
@@ -178,6 +179,7 @@ export default function AdminPowerLinesPage() {
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_OPTIONS)[number]["value"]>("all");
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const [selectedLineTouched, setSelectedLineTouched] = useState(false);
   const [towerKeyword, setTowerKeyword] = useState("");
   const [towerTypeFilter, setTowerTypeFilter] = useState("");
   const [towerRiskFilter, setTowerRiskFilter] = useState("");
@@ -267,6 +269,18 @@ export default function AdminPowerLinesPage() {
     },
   });
 
+  const towerModelOptionsQuery = useQuery({
+    queryKey: ["/api/v1/tower-models/selector"],
+    enabled: !!user && canTowerRead,
+    queryFn: async () => {
+      const response = await fetchWithAuth("/api/v1/tower-models/selector");
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as TowerModelSummary[];
+    },
+  });
+
   const refreshLines = useCallback(async () => {
     await queryClient.invalidateQueries({
       predicate: (query) =>
@@ -289,32 +303,58 @@ export default function AdminPowerLinesPage() {
     void refreshLines();
     void refreshTowers();
   }, [refreshLines, refreshTowers]));
+  useTopicSubscription("admin.tower-models", useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["/api/v1/tower-models/selector"] });
+  }, [queryClient]));
 
   const lines = linesQuery.data?.items ?? [];
   const towers = towersQuery.data?.items ?? [];
+
+  const towerModels = towerModelOptionsQuery.data ?? [];
+  const towerModelOptions = towerModels.map((item) => ({ value: item.code, label: `${item.code} - ${item.name}` }));
+  const effectiveSelectedLineId = useMemo(() => {
+    if (selectedLineTouched) {
+      if (selectedLineId && lines.some((item) => item.id === selectedLineId)) {
+        return selectedLineId;
+      }
+      return lines.length > 0 ? lines[0].id : null;
+    }
+    return selectedLineId ?? (lines.length > 0 ? lines[0].id : null);
+  }, [lines, selectedLineId, selectedLineTouched]);
+  const towerQueryCurrent = towerPagination.current;
+  const shouldResetTowerPage = towerQueryCurrent !== 1 && (
+    selectedLineId !== effectiveSelectedLineId
+    || towerKeyword.trim().length > 0
+    || towerTypeFilter.length > 0
+    || towerRiskFilter.trim().length > 0
+  );
+  const effectiveTowerPageCurrent = shouldResetTowerPage ? 1 : towerQueryCurrent;
   const selectedLine = useMemo(
-    () => lines.find((item) => item.id === selectedLineId) ?? null,
-    [lines, selectedLineId],
+    () => lines.find((item) => item.id === effectiveSelectedLineId) ?? null,
+    [lines, effectiveSelectedLineId],
   );
 
-  useEffect(() => {
-    if (!selectedLineId && lines.length > 0) {
-      setSelectedLineId(lines[0].id);
+  const applyTowerModelDefaults = useCallback((modelCode: string | null | undefined) => {
+    if (!modelCode) {
       return;
     }
-    if (selectedLineId && !lines.some((item) => item.id === selectedLineId)) {
-      setSelectedLineId(lines.length > 0 ? lines[0].id : null);
+    const matched = towerModels.find((item) => item.code === modelCode);
+    if (!matched) {
+      return;
     }
-  }, [lines, selectedLineId]);
-
-  useEffect(() => {
-    setTowerPagination((prev) => {
-      if (prev.current === 1) {
-        return prev;
-      }
-      return { ...prev, current: 1 };
+    towerForm.setFieldsValue({
+      tower_type: matched.tower_type ?? "",
+      altitude_m: matched.default_altitude_m ?? null,
+      terrain: matched.default_terrain ?? "",
+      ground_resistance_ohm: matched.default_ground_resistance_ohm ?? null,
+      lightning_density: matched.default_lightning_density ?? null,
+      span_small_m: matched.default_span_small_m ?? null,
+      span_large_m: matched.default_span_large_m ?? null,
+      slope_1: matched.default_slope_1 ?? null,
+      slope_2: matched.default_slope_2 ?? null,
+      risk_level: matched.default_risk_level ?? "",
     });
-  }, [selectedLineId, towerKeyword, towerTypeFilter, towerRiskFilter]);
+  }, [towerForm, towerModels]);
 
   const saveLineMutation = useMutation({
     mutationFn: async (values: LineFormValues) => {
@@ -378,7 +418,8 @@ export default function AdminPowerLinesPage() {
       return lineId;
     },
     onSuccess: async (lineId) => {
-      if (selectedLineId === lineId) {
+      if (effectiveSelectedLineId === lineId) {
+        setSelectedLineTouched(false);
         setSelectedLineId(null);
       }
       setError("");
@@ -393,7 +434,7 @@ export default function AdminPowerLinesPage() {
 
   const saveTowerMutation = useMutation({
     mutationFn: async (values: TowerFormValues) => {
-      if (!selectedLineId) {
+      if (!effectiveSelectedLineId) {
         throw new Error("请先选择线路");
       }
       if (!canTowerManage) {
@@ -430,7 +471,7 @@ export default function AdminPowerLinesPage() {
         return "updated" as const;
       }
 
-      const response = await fetchWithAuth(`/api/v1/lines/${selectedLineId}/towers`, {
+      const response = await fetchWithAuth(`/api/v1/lines/${effectiveSelectedLineId}/towers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -475,13 +516,13 @@ export default function AdminPowerLinesPage() {
 
   const importMutation = useMutation({
     mutationFn: async (file: File) => {
-      if (!selectedLineId) {
+      if (!effectiveSelectedLineId) {
         throw new Error("请先选择线路");
       }
       const formData = new FormData();
       formData.append("file", file);
 
-      const response = await fetchWithAuth(`/api/v1/lines/${selectedLineId}/towers/import`, {
+      const response = await fetchWithAuth(`/api/v1/lines/${effectiveSelectedLineId}/towers/import`, {
         method: "POST",
         body: formData,
       });
@@ -505,10 +546,10 @@ export default function AdminPowerLinesPage() {
 
   const exportMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedLineId) {
+      if (!effectiveSelectedLineId) {
         throw new Error("请先选择线路");
       }
-      const response = await fetchWithAuth(`/api/v1/lines/${selectedLineId}/towers/export`);
+      const response = await fetchWithAuth(`/api/v1/lines/${effectiveSelectedLineId}/towers/export`);
       if (!response.ok) {
         throw new Error(await readApiError(response));
       }
@@ -557,6 +598,13 @@ export default function AdminPowerLinesPage() {
     setEditingTower(null);
     towerForm.setFieldsValue(EMPTY_TOWER_FORM);
     setTowerModalOpen(true);
+    if (towerModels.length > 0) {
+      const preferred = towerModels[0]?.code;
+      if (preferred) {
+        towerForm.setFieldsValue({ tower_model: preferred });
+        applyTowerModelDefaults(preferred);
+      }
+    }
   };
 
   const openEditTowerModal = (item: LineTowerSummary) => {
@@ -581,141 +629,137 @@ export default function AdminPowerLinesPage() {
     setTowerModalOpen(true);
   };
 
-  const lineCards = useMemo(
-    () =>
-      lines.map((line) => {
-        const selected = line.id === selectedLineId;
-        return (
-          <Card
-            key={line.id}
-            size="small"
-            hoverable
-            onClick={() => setSelectedLineId(line.id)}
-            style={selected
-              ? {
-                borderColor: "var(--ant-color-primary)",
-                background: "var(--ant-color-primary-bg)",
-              }
-              : undefined}
-            title={(
-              <Space size={8} wrap>
-                <Typography.Text strong>{line.name}</Typography.Text>
-                <Tag color={line.status === "enabled" ? "success" : "default"}>{formatStatus(line.status)}</Tag>
-              </Space>
-            )}
-            extra={canLineManage ? (
-              <Space size={4}>
-                <Button
-                  size="small"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    openEditLineModal(line);
-                  }}
-                >
-                  编辑
-                </Button>
-                <Popconfirm
-                  title="删除线路"
-                  description={`确认删除线路 ${line.code} 吗？`}
-                  okText="删除"
-                  cancelText="取消"
-                  okButtonProps={{ danger: true }}
-                  onConfirm={async () => {
-                    await deleteLineMutation.mutateAsync(line.id);
-                  }}
-                >
-                  <Button
-                    size="small"
-                    danger
-                    loading={deleteLineMutation.isPending}
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    删除
-                  </Button>
-                </Popconfirm>
-              </Space>
-            ) : null}
-          >
-            <Space direction="vertical" size={4} className="w-full">
-              <Typography.Text type="secondary">
-                编码：<Typography.Text code>{line.code}</Typography.Text>
-              </Typography.Text>
-              <Typography.Text type="secondary">电压等级：{line.voltage_kv ?? "-"} kV</Typography.Text>
-              <Typography.Text type="secondary">塔形：{line.tower_shape || "-"}</Typography.Text>
-              <Typography.Text type="secondary">杆塔总数：{line.tower_count}</Typography.Text>
-              <Typography.Text type="secondary">
-                更新时间：{new Date(line.update_date).toLocaleString()}
-              </Typography.Text>
-            </Space>
-          </Card>
-        );
-      }),
-    [canLineManage, deleteLineMutation, lines, selectedLineId],
-  );
-
-  const towerColumns = useMemo<ColumnsType<LineTowerSummary>>(
-    () => [
-      { title: "序号", dataIndex: "seq_no", width: 80 },
-      {
-        title: "塔号",
-        dataIndex: "tower_no",
-        width: 120,
-        render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
-      },
-      { title: "模型", dataIndex: "tower_model", width: 180, render: (value: string | null) => value || "-" },
-      { title: "塔型", dataIndex: "tower_type", width: 100, render: (value: string | null) => value || "-" },
-      {
-        title: "坐标",
-        key: "geo",
-        width: 200,
-        render: (_: unknown, row) =>
-          row.longitude !== null && row.latitude !== null
-            ? `${row.longitude.toFixed(6)}, ${row.latitude.toFixed(6)}`
-            : "-",
-      },
-      { title: "接地电阻", dataIndex: "ground_resistance_ohm", width: 100, render: (value: number | null) => value ?? "-" },
-      { title: "地闪密度", dataIndex: "lightning_density", width: 100, render: (value: number | null) => value ?? "-" },
-      { title: "风险等级", dataIndex: "risk_level", width: 100, render: (value: string | null) => value || "-" },
-      {
-        title: "更新时间",
-        dataIndex: "update_date",
-        width: 180,
-        render: (value: string) => new Date(value).toLocaleString(),
-      },
-      {
-        title: "操作",
-        key: "actions",
-        width: 160,
-        fixed: "right",
-        render: (_: unknown, row) => (
-          <Space size={8}>
-            {canTowerManage && (
-              <Button size="small" onClick={() => openEditTowerModal(row)}>
-                编辑
-              </Button>
-            )}
-            {canTowerManage && (
-              <Popconfirm
-                title="删除杆塔"
-                description={`确认删除杆塔 ${row.tower_no} 吗？`}
-                okText="删除"
-                cancelText="取消"
-                okButtonProps={{ danger: true }}
-                onConfirm={async () => {
-                  await deleteTowerMutation.mutateAsync(row.id);
-                }}
-              >
-                <Button size="small" danger loading={deleteTowerMutation.isPending}>
-                  删除
-                </Button>
-              </Popconfirm>
-            )}
+  const lineCards = lines.map((line) => {
+    const selected = line.id === effectiveSelectedLineId;
+    return (
+      <Card
+        key={line.id}
+        size="small"
+        hoverable
+        onClick={() => {
+          setSelectedLineTouched(true);
+          setSelectedLineId(line.id);
+        }}
+        style={selected
+          ? {
+            borderColor: "var(--ant-color-primary)",
+            background: "var(--ant-color-primary-bg)",
+          }
+          : undefined}
+        title={(
+          <Space size={8} wrap>
+            <Typography.Text strong>{line.name}</Typography.Text>
+            <Tag color={line.status === "enabled" ? "success" : "default"}>{formatStatus(line.status)}</Tag>
           </Space>
-        ),
-      },
-    ],
-    [canTowerManage, deleteTowerMutation],
-  );
+        )}
+        extra={canLineManage ? (
+          <Space size={4}>
+            <Button
+              size="small"
+              onClick={(event) => {
+                event.stopPropagation();
+                openEditLineModal(line);
+              }}
+            >
+              编辑
+            </Button>
+            <Popconfirm
+              title="删除线路"
+              description={`确认删除线路 ${line.code} 吗？`}
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+              onConfirm={async () => {
+                await deleteLineMutation.mutateAsync(line.id);
+              }}
+            >
+              <Button
+                size="small"
+                danger
+                loading={deleteLineMutation.isPending}
+                onClick={(event) => event.stopPropagation()}
+              >
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        ) : null}
+      >
+        <Space direction="vertical" size={4} className="w-full">
+          <Typography.Text type="secondary">
+            编码：<Typography.Text code>{line.code}</Typography.Text>
+          </Typography.Text>
+          <Typography.Text type="secondary">电压等级：{line.voltage_kv ?? "-"} kV</Typography.Text>
+          <Typography.Text type="secondary">塔形：{line.tower_shape || "-"}</Typography.Text>
+          <Typography.Text type="secondary">杆塔总数：{line.tower_count}</Typography.Text>
+          <Typography.Text type="secondary">
+            更新时间：{new Date(line.update_date).toLocaleString()}
+          </Typography.Text>
+        </Space>
+      </Card>
+    );
+  });
+
+  const towerColumns: ColumnsType<LineTowerSummary> = [
+    { title: "序号", dataIndex: "seq_no", width: 80 },
+    {
+      title: "塔号",
+      dataIndex: "tower_no",
+      width: 120,
+      render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
+    },
+    { title: "模型", dataIndex: "tower_model", width: 180, render: (value: string | null) => value || "-" },
+    { title: "塔型", dataIndex: "tower_type", width: 100, render: (value: string | null) => value || "-" },
+    {
+      title: "坐标",
+      key: "geo",
+      width: 200,
+      render: (_: unknown, row) =>
+        row.longitude !== null && row.latitude !== null
+          ? `${row.longitude.toFixed(6)}, ${row.latitude.toFixed(6)}`
+          : "-",
+    },
+    { title: "接地电阻", dataIndex: "ground_resistance_ohm", width: 100, render: (value: number | null) => value ?? "-" },
+    { title: "地闪密度", dataIndex: "lightning_density", width: 100, render: (value: number | null) => value ?? "-" },
+    { title: "风险等级", dataIndex: "risk_level", width: 100, render: (value: string | null) => value || "-" },
+    {
+      title: "更新时间",
+      dataIndex: "update_date",
+      width: 180,
+      render: (value: string) => new Date(value).toLocaleString(),
+    },
+    {
+      title: "操作",
+      key: "actions",
+      width: 160,
+      fixed: "right",
+      render: (_: unknown, row) => (
+        <Space size={8}>
+          {canTowerManage && (
+            <Button size="small" onClick={() => openEditTowerModal(row)}>
+              编辑
+            </Button>
+          )}
+          {canTowerManage && (
+            <Popconfirm
+              title="删除杆塔"
+              description={`确认删除杆塔 ${row.tower_no} 吗？`}
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+              onConfirm={async () => {
+                await deleteTowerMutation.mutateAsync(row.id);
+              }}
+            >
+              <Button size="small" danger loading={deleteTowerMutation.isPending}>
+                删除
+              </Button>
+            </Popconfirm>
+          )}
+        </Space>
+      ),
+    },
+  ];
 
   if (initializing || linesQuery.isLoading) {
     return (
@@ -805,13 +849,13 @@ export default function AdminPowerLinesPage() {
                   { label: "塔杆列表", value: "table" },
                 ]}
                 onChange={(value) => setTowerViewMode(value as "table" | "map")}
-                disabled={!selectedLineId}
+                disabled={!effectiveSelectedLineId}
               />
               {canTowerManage && (
                 <Button
                   onClick={() => importInputRef.current?.click()}
                   loading={importMutation.isPending}
-                  disabled={!selectedLineId}
+                  disabled={!effectiveSelectedLineId}
                 >
                   导入 CSV
                 </Button>
@@ -829,19 +873,19 @@ export default function AdminPowerLinesPage() {
                   event.target.value = "";
                 }}
               />
-              <Button onClick={() => exportMutation.mutate()} loading={exportMutation.isPending} disabled={!selectedLineId}>
+              <Button onClick={() => exportMutation.mutate()} loading={exportMutation.isPending} disabled={!effectiveSelectedLineId}>
                 导出 CSV
               </Button>
               {canTowerManage && (
-                <Button type="primary" onClick={openCreateTowerModal} disabled={!selectedLineId}>
+                <Button type="primary" onClick={openCreateTowerModal} disabled={!effectiveSelectedLineId}>
                   新建杆塔
                 </Button>
               )}
             </Space>
           )}
         >
-          {!selectedLineId || !selectedLine ? (
-            <Empty description={selectedLineId ? "所选线路不存在，请重新选择" : "请先选择一条线路"} />
+          {!effectiveSelectedLineId || !selectedLine ? (
+            <Empty description={effectiveSelectedLineId ? "所选线路不存在，请重新选择" : "请先选择一条线路"} />
           ) : (
             <Space direction="vertical" size={12} className="w-full">
               <Typography.Text type="secondary">
@@ -897,7 +941,7 @@ export default function AdminPowerLinesPage() {
                     dataSource={towers}
                     loading={towersQuery.isFetching}
                     pagination={{
-                      current: towerPagination.current,
+                      current: effectiveTowerPageCurrent,
                       pageSize: towerPagination.pageSize,
                       total: towersQuery.data?.total ?? 0,
                       showSizeChanger: true,
@@ -984,7 +1028,18 @@ export default function AdminPowerLinesPage() {
               <Input />
             </Form.Item>
             <Form.Item name="tower_model" label="杆塔模型">
-              <Input />
+              <Select
+                showSearch
+                allowClear
+                loading={towerModelOptionsQuery.isFetching}
+                options={towerModelOptions}
+                placeholder="请选择杆塔模型"
+                onChange={(value) => {
+                  applyTowerModelDefaults(value);
+                }}
+                filterOption={(input, option) =>
+                  String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+              />
             </Form.Item>
             <Form.Item name="tower_type" label="塔型">
               <Select
