@@ -12,6 +12,7 @@ from ...schemas.elevation import (
     ElevationApplyJobSummary,
     ElevationDatasetAnalyzeResponse,
     ElevationDatasetBatchImportResponse,
+    ElevationDatasetDataImportResponse,
     ElevationDatasetCreateRequest,
     ElevationDatasetListResponse,
     ElevationDatasetPreviewResponse,
@@ -24,6 +25,7 @@ from ...services.elevation_service import (
     create_dataset,
     delete_dataset,
     get_job_by_id,
+    import_dataset_data_files,
     import_datasets_from_csv,
     list_datasets,
     list_jobs,
@@ -70,6 +72,21 @@ def import_elevation_datasets(
     return import_datasets_from_csv(
         db,
         file=file,
+        actor=current_user.user,
+    )
+
+
+@router.post("/datasets/{dataset_id}/data/import", response_model=ElevationDatasetDataImportResponse)
+def import_elevation_dataset_data(
+    dataset_id: str,
+    files: list[UploadFile] = File(...),
+    current_user: CurrentUser = Depends(require_permission("elevation.manage")),
+    db: Session = Depends(get_db),
+) -> ElevationDatasetDataImportResponse:
+    return import_dataset_data_files(
+        db,
+        dataset_id=dataset_id,
+        files=files,
         actor=current_user.user,
     )
 

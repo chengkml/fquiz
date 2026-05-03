@@ -184,6 +184,53 @@ def _ensure_user_audit_column_compatibility() -> None:
             )
 
 
+def _ensure_elevation_dataset_column_compatibility() -> None:
+    """
+    Keep `elevation_dataset` columns aligned with the current ORM mapping.
+    """
+    if not database_url.startswith("postgresql"):
+        return
+
+    schema = settings.resolved_db_schema
+    with engine.begin() as connection:
+        db_inspector = inspect(connection)
+        if not db_inspector.has_table("elevation_dataset", schema=schema):
+            return
+
+        column_names = {
+            column["name"]
+            for column in db_inspector.get_columns("elevation_dataset", schema=schema)
+        }
+
+        if "dataset_dir" not in column_names:
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ADD COLUMN IF NOT EXISTS dataset_dir VARCHAR(2048)"),
+            )
+            connection.execute(
+                text("UPDATE elevation_dataset SET dataset_dir = '/elevation/datasets/' || code WHERE dataset_dir IS NULL"),
+            )
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ALTER COLUMN dataset_dir SET NOT NULL"),
+            )
+            logger.warning(
+                "Detected missing elevation_dataset.dataset_dir; added and backfilled from dataset code.",
+            )
+
+        if "usage_status" not in column_names:
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ADD COLUMN IF NOT EXISTS usage_status VARCHAR(32)"),
+            )
+            connection.execute(
+                text("UPDATE elevation_dataset SET usage_status = 'idle' WHERE usage_status IS NULL"),
+            )
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ALTER COLUMN usage_status SET NOT NULL"),
+            )
+            logger.warning(
+                "Detected missing elevation_dataset.usage_status; added with default 'idle'.",
+            )
+
+
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
@@ -222,6 +269,7 @@ def init_db() -> None:
     _ensure_user_pk_column_compatibility()
     _ensure_user_timestamp_column_compatibility()
     _ensure_user_audit_column_compatibility()
+    _ensure_elevation_dataset_column_compatibility()
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         local_hosts = {"db", "localhost", "127.0.0.1", "::1"}

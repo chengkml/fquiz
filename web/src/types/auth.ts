@@ -279,6 +279,7 @@ export type FileOperationResponse = {
 };
 
 export type ElevationDatasetStatus = "active" | "disabled";
+export type ElevationDatasetUsageStatus = "idle" | "in_use";
 export type ElevationApplyMode = "fill_null_only" | "overwrite_all";
 export type ElevationApplyJobStatus = "pending" | "running" | "success" | "failed";
 
@@ -289,9 +290,11 @@ export type ElevationDatasetSummary = {
   source: string | null;
   file_format: string;
   mount_code: string;
+  dataset_dir: string;
   file_path: string;
   resolution_m: number | null;
   status: ElevationDatasetStatus;
+  usage_status: ElevationDatasetUsageStatus;
   sample_count: number;
   bbox_min_lon: number | null;
   bbox_max_lon: number | null;
@@ -321,6 +324,17 @@ export type ElevationDatasetBatchImportResponse = {
   warning_count: number;
   warnings: string[];
   items: ElevationDatasetSummary[];
+};
+
+export type ElevationDatasetDataImportResponse = {
+  dataset: ElevationDatasetSummary;
+  uploaded_file_count: number;
+  extracted_file_count: number;
+  imported_file_count: number;
+  analyzed: boolean;
+  warning_count: number;
+  warnings: string[];
+  imported_files: string[];
 };
 
 export type ElevationDatasetPreviewPoint = {

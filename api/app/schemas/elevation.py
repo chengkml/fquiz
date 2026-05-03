@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 
 ElevationDatasetStatus = Literal["active", "disabled"]
+ElevationDatasetUsageStatus = Literal["idle", "in_use"]
 ElevationApplyMode = Literal["fill_null_only", "overwrite_all"]
 ElevationApplyJobStatus = Literal["pending", "running", "success", "failed"]
 
@@ -18,9 +19,11 @@ class ElevationDatasetSummary(BaseModel):
     source: str | None = None
     file_format: str
     mount_code: str
+    dataset_dir: str
     file_path: str
     resolution_m: float | None = None
     status: ElevationDatasetStatus
+    usage_status: ElevationDatasetUsageStatus
     sample_count: int = 0
     bbox_min_lon: float | None = None
     bbox_max_lon: float | None = None
@@ -51,8 +54,8 @@ class ElevationDatasetCreateRequest(BaseModel):
     code: str = Field(min_length=2, max_length=64)
     name: str = Field(min_length=2, max_length=255)
     source: str | None = Field(default=None, max_length=128)
-    mount_code: str = Field(min_length=2, max_length=64)
-    file_path: str = Field(min_length=1, max_length=2048)
+    mount_code: str | None = Field(default=None, min_length=2, max_length=64)
+    file_name: str | None = Field(default=None, min_length=1, max_length=255)
     resolution_m: float | None = Field(default=None, gt=0)
     notes: str | None = Field(default=None, max_length=2000)
 
@@ -120,6 +123,17 @@ class ElevationDatasetPreviewResponse(BaseModel):
     cells: list[ElevationDatasetPreviewCell] = Field(default_factory=list)
     diagnostics: ElevationDatasetPreviewDiagnostics | None = None
     warnings: list[str] = Field(default_factory=list)
+
+
+class ElevationDatasetDataImportResponse(BaseModel):
+    dataset: ElevationDatasetSummary
+    uploaded_file_count: int
+    extracted_file_count: int
+    imported_file_count: int
+    analyzed: bool = False
+    warning_count: int
+    warnings: list[str] = Field(default_factory=list)
+    imported_files: list[str] = Field(default_factory=list)
 
 
 class ElevationApplyJobSummary(BaseModel):

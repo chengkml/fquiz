@@ -33,6 +33,7 @@ import type {
   ElevationApplyJobSummary,
   ElevationDatasetAnalyzeResponse,
   ElevationDatasetBatchImportResponse,
+  ElevationDatasetDataImportResponse,
   ElevationDatasetListResponse,
   ElevationDatasetPreviewResponse,
   ElevationDatasetSummary,
@@ -44,8 +45,6 @@ type DatasetFormValues = {
   code: string;
   name: string;
   source: string;
-  mount_code: string;
-  file_path: string;
   resolution_m: number | null;
   notes: string;
 };
@@ -60,8 +59,6 @@ const DEFAULT_DATASET_FORM: DatasetFormValues = {
   code: "",
   name: "",
   source: "",
-  mount_code: "main",
-  file_path: "",
   resolution_m: null,
   notes: "",
 };
@@ -111,6 +108,7 @@ export default function AdminElevationPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [analyzingDatasetId, setAnalyzingDatasetId] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const datasetDataImportRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [datasetForm] = Form.useForm<DatasetFormValues>();
   const [applyForm] = Form.useForm<ApplyFormValues>();
 
@@ -229,8 +227,8 @@ export default function AdminElevationPage() {
         code: values.code.trim(),
         name: values.name.trim(),
         source: values.source.trim() || null,
-        mount_code: values.mount_code.trim(),
-        file_path: values.file_path.trim(),
+        mount_code: null,
+        file_name: null,
         resolution_m: values.resolution_m,
         notes: values.notes.trim() || null,
       };
@@ -244,17 +242,48 @@ export default function AdminElevationPage() {
       }
       return (await response.json()) as ElevationDatasetSummary;
     },
-    onSuccess: async (createdDataset) => {
-      setSuccess("高程数据集已创建，已自动触发分析");
+    onSuccess: async () => {
+      setSuccess("高程数据集已创建");
       setError("");
-      messageApi.success("高程数据集已创建，已自动触发分析");
+      messageApi.success("高程数据集已创建");
       setDatasetModalOpen(false);
       datasetForm.resetFields();
       await refreshElevationData();
-      analyzeMutation.mutate(createdDataset.id);
     },
     onError: (candidate) => {
       const nextError = candidate instanceof Error ? candidate.message : "创建高程数据集失败";
+      setError(nextError);
+      setSuccess("");
+      messageApi.error(nextError);
+    },
+  });
+
+  const datasetDataImportMutation = useMutation({
+    mutationFn: async (payload: { datasetId: string; files: File[] }) => {
+      const formData = new FormData();
+      for (const file of payload.files) {
+        formData.append("files", file);
+      }
+      const response = await fetchWithAuth(`/api/v1/elevation/datasets/${payload.datasetId}/data/import`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as ElevationDatasetDataImportResponse;
+    },
+    onSuccess: async (payload) => {
+      const msg = payload.warning_count > 0
+        ? `数据导入完成：上传 ${payload.uploaded_file_count} 个、解压 ${payload.extracted_file_count} 个、可用 ${payload.imported_file_count} 个，告警 ${payload.warning_count} 条`
+        : `数据导入完成：上传 ${payload.uploaded_file_count} 个、解压 ${payload.extracted_file_count} 个、可用 ${payload.imported_file_count} 个`;
+      setSuccess(msg);
+      setError("");
+      messageApi.success(msg);
+      await refreshElevationData();
+    },
+    onError: (candidate) => {
+      const nextError = candidate instanceof Error ? candidate.message : "导入高程数据失败";
       setError(nextError);
       setSuccess("");
       messageApi.error(nextError);
@@ -379,6 +408,7 @@ export default function AdminElevationPage() {
       { title: "名称", dataIndex: "name", width: 220 },
       { title: "来源", dataIndex: "source", width: 140, render: (value: string | null) => value || "-" },
       { title: "挂载", dataIndex: "mount_code", width: 100 },
+      { title: "数据集目录", dataIndex: "dataset_dir", width: 220 },
       { title: "文件路径", dataIndex: "file_path", width: 260 },
       { title: "分辨率(m)", dataIndex: "resolution_m", width: 110, render: (value: number | null) => value ?? "-" },
       { title: "样本数", dataIndex: "sample_count", width: 100 },
@@ -389,9 +419,15 @@ export default function AdminElevationPage() {
         render: (value: string) => <Tag color={statusTagColor(value)}>{value}</Tag>,
       },
       {
+        title: "使用状态",
+        dataIndex: "usage_status",
+        width: 100,
+        render: (value: string) => <Tag color={value === "in_use" ? "processing" : "default"}>{value}</Tag>,
+      },
+      {
         title: "边界框",
         key: "bbox",
-        width: 280,
+        width: 320,
         render: (_, row) => (
           <Typography.Text type="secondary">
             {row.bbox_min_lon ?? "-"}, {row.bbox_min_lat ?? "-"} ~ {row.bbox_max_lon ?? "-"}, {row.bbox_max_lat ?? "-"}
@@ -408,7 +444,7 @@ export default function AdminElevationPage() {
         title: "操作",
         key: "actions",
         fixed: "right",
-        width: 120,
+        width: 190,
         render: (_, row) => (
           <Space size="small">
             <Typography.Link
@@ -451,6 +487,31 @@ export default function AdminElevationPage() {
               {analyzingDatasetId === row.id ? "分析中..." : "分析"}
             </Typography.Link>
             <Typography.Link
+              disabled={!canManage || datasetDataImportMutation.isPending}
+              onClick={() => {
+                if (!canManage || datasetDataImportMutation.isPending) return;
+                datasetDataImportRefs.current[row.id]?.click();
+              }}
+            >
+              导入数据
+            </Typography.Link>
+            <input
+              ref={(element) => {
+                datasetDataImportRefs.current[row.id] = element;
+              }}
+              type="file"
+              multiple
+              accept=".csv,.img,.tif,.tiff,.zip"
+              className="hidden"
+              onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                const selected = event.target.files ? Array.from(event.target.files) : [];
+                if (selected.length > 0) {
+                  datasetDataImportMutation.mutate({ datasetId: row.id, files: selected });
+                }
+                event.target.value = "";
+              }}
+            />
+            <Typography.Link
               disabled={!canManage || datasetDeleteMutation.isPending}
               onClick={() => {
                 if (!canManage || datasetDeleteMutation.isPending) return;
@@ -472,7 +533,7 @@ export default function AdminElevationPage() {
         ),
       },
     ],
-    [analyzeMutation, analyzingDatasetId, canManage, datasetDeleteMutation, fetchWithAuth, messageApi, modal],
+    [analyzeMutation, analyzingDatasetId, canManage, datasetDataImportMutation, datasetDeleteMutation, fetchWithAuth, messageApi, modal],
   );
 
   const jobColumns = useMemo<ColumnsType<ElevationApplyJobSummary>>(
@@ -540,6 +601,8 @@ export default function AdminElevationPage() {
     );
   }
 
+  const datasetTableScrollX = 1950;
+
   return (
     <div className="space-y-6">
       {messageContextHolder}
@@ -599,8 +662,8 @@ export default function AdminElevationPage() {
         <Alert
           type="info"
           showIcon
-          message="支持文件格式：CSV（点集）/ IMG / TIF / TIFF（栅格）"
-          description="CSV 预览为点云；IMG/TIF/TIFF 预览为地形网格高低色带（与杆塔无关）。支持通过“批量导入”上传数据集元数据 CSV。"
+          message="支持文件格式：CSV（点集）/ IMG / TIF / TIFF（栅格）/ ZIP（解压后 csv/img/tif）"
+          description="先新建数据集，再使用“导入数据”上传多个高程文件。数据集目录自动固定为 /elevation/datasets/{数据集编码}，导入完成后自动触发分析。"
           className="mb-4"
         />
         {datasets.length === 0 ? (
@@ -611,7 +674,7 @@ export default function AdminElevationPage() {
             columns={datasetColumns}
             dataSource={datasets}
             pagination={false}
-            scroll={{ x: 1650 }}
+            scroll={{ x: datasetTableScrollX }}
           />
         )}
       </Card>
@@ -768,12 +831,13 @@ export default function AdminElevationPage() {
           <Form.Item name="source" label="来源">
             <Input placeholder="中科院地理空间数据云" />
           </Form.Item>
-          <Form.Item name="mount_code" label="挂载编码" rules={[{ required: true, message: "请输入挂载编码" }]}>
-            <Input placeholder="main" />
-          </Form.Item>
-          <Form.Item name="file_path" label="文件路径" rules={[{ required: true, message: "请输入文件路径" }]}>
-            <Input placeholder="/elevation/datasets/china90m.img" />
-          </Form.Item>
+          <Alert
+            type="info"
+            showIcon
+            className="mb-4"
+            message="数据目录自动生成"
+            description="创建后目录自动固定为 /elevation/datasets/{编码}。请在列表里使用“导入数据”上传 csv/img/tif/tiff/zip。"
+          />
           <Form.Item name="resolution_m" label="分辨率（米）">
             <InputNumber className="w-full" min={1} max={10000} />
           </Form.Item>

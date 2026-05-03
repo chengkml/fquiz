@@ -18,6 +18,7 @@ class ElevationDataset(Base):
     __tablename__ = "elevation_dataset"
     __table_args__ = (
         Index("idx_elevation_dataset_status", "status"),
+        Index("idx_elevation_dataset_usage_status", "usage_status"),
         Index("idx_elevation_dataset_mount_code", "mount_code"),
     )
 
@@ -31,9 +32,11 @@ class ElevationDataset(Base):
     source: Mapped[str | None] = mapped_column(String(128), index=True)
     file_format: Mapped[str] = mapped_column(String(32), default="csv", index=True)
     mount_code: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    dataset_dir: Mapped[str] = mapped_column(String(2048), nullable=False)
     file_path: Mapped[str] = mapped_column(String(2048), nullable=False)
     resolution_m: Mapped[float | None] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    usage_status: Mapped[str] = mapped_column(String(32), default="idle", index=True)
     sample_count: Mapped[int] = mapped_column(Integer, default=0)
     bbox_min_lon: Mapped[float | None] = mapped_column(Float)
     bbox_max_lon: Mapped[float | None] = mapped_column(Float)
