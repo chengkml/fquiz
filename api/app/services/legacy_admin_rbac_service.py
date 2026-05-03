@@ -530,33 +530,78 @@ def update_menu(db: Session, menu_id: str, payload: MenuUpdateRequest) -> MenuPu
 
 
 def delete_menu(db: Session, menu_id: str) -> bool:
-    menu = get_menu_by_id(db, menu_id)
-    if not menu:
-        return False
-    if menu.code in PROTECTED_MENU_CODES:
+    normalized_menu_id = menu_id.strip()
+    if not normalized_menu_id:
         return False
 
-    child_exists = db.scalar(text("SELECT menu_id FROM menu WHERE parent_id = :parent_id LIMIT 1"), {"parent_id": menu.id})
-    if child_exists:
-        return False
+    menu_source = "legacy" if _legacy_menu_table_exists(db) else "modern"
 
-    impacted_user_ids = _get_users_with_menu_access(db, menu.id)
-    try:
-        db.execute(text("DELETE FROM role_menu_rela WHERE menu_id = :menu_id"), {"menu_id": menu.id})
-        db.execute(text("DELETE FROM menu WHERE menu_id = :menu_id"), {"menu_id": menu.id})
-        db.commit()
-    except SQLAlchemyError:
-        db.rollback()
-        return False
+    if menu_source == "legacy":
+        menu = get_menu_by_id(db, normalized_menu_id)
+        if not menu:
+            return False
+        if menu.code in PROTECTED_MENU_CODES:
+            return False
+
+        child_exists = db.scalar(text("SELECT menu_id FROM menu WHERE parent_id = :parent_id LIMIT 1"), {"parent_id": menu.id})
+        if child_exists:
+            return False
+
+        impacted_user_ids = _get_users_with_menu_access(db, menu.id, role_source=menu_source)
+        try:
+            db.execute(text("DELETE FROM role_menu_rela WHERE menu_id = :menu_id"), {"menu_id": menu.id})
+            db.execute(text("DELETE FROM menu WHERE menu_id = :menu_id"), {"menu_id": menu.id})
+            db.commit()
+        except SQLAlchemyError:
+            db.rollback()
+            return False
+
+        deleted_menu_id = menu.id
+        deleted_menu_code = menu.code
+    else:
+        menu_row = db.execute(
+            text(
+                """
+                SELECT id::text AS menu_id, code AS menu_code
+                FROM menus
+                WHERE id::text = :menu_id OR code = :menu_id
+                LIMIT 1
+                """
+            ),
+            {"menu_id": normalized_menu_id},
+        ).mappings().first()
+        if not menu_row:
+            return False
+
+        resolved_menu_id = str(menu_row["menu_id"])
+        resolved_menu_code = str(menu_row.get("menu_code") or "").strip()
+        if not resolved_menu_code or resolved_menu_code in PROTECTED_MENU_CODES:
+            return False
+
+        child_exists = db.scalar(text("SELECT id::text FROM menus WHERE parent_id::text = :parent_id LIMIT 1"), {"parent_id": resolved_menu_id})
+        if child_exists:
+            return False
+
+        impacted_user_ids = _get_users_with_menu_access(db, resolved_menu_id, role_source=menu_source)
+        try:
+            db.execute(text("DELETE FROM role_menus WHERE menu_id::text = :menu_id"), {"menu_id": resolved_menu_id})
+            db.execute(text("DELETE FROM menus WHERE id::text = :menu_id"), {"menu_id": resolved_menu_id})
+            db.commit()
+        except SQLAlchemyError:
+            db.rollback()
+            return False
+
+        deleted_menu_id = resolved_menu_id
+        deleted_menu_code = resolved_menu_code
 
     queue_users_auth_refresh(db, impacted_user_ids)
     _fire_and_forget(
         publish_topic(
             "admin.menus",
             name="menus.changed",
-            payload={"action": "deleted", "menu_id": menu.id, "menu_code": menu.code},
+            payload={"action": "deleted", "menu_id": deleted_menu_id, "menu_code": deleted_menu_code},
             requires_refetch=["/api/v1/admin/menus", "/api/v1/admin/me/menus"],
-            dedupe_key=f"menus:deleted:{menu.id}",
+            dedupe_key=f"menus:deleted:{deleted_menu_id}",
         )
     )
     return True
@@ -777,6 +822,14 @@ def _legacy_role_table_exists(db: Session) -> bool:
         return False
 
 
+def _legacy_menu_table_exists(db: Session) -> bool:
+    try:
+        return bool(db.scalar(text("SELECT to_regclass('public.menu')")))
+    except SQLAlchemyError:
+        db.rollback()
+        return False
+
+
 def _permission_codes_from_menu_rows(
     menu_rows: dict[str, dict[str, object]],
     menu_ids: list[str],
@@ -892,19 +945,32 @@ def _get_role_user_ids(db: Session, role_id: str) -> list[str]:
     return sorted({str(row[0]) for row in rows})
 
 
-def _get_users_with_menu_access(db: Session, menu_id: str) -> list[str]:
+def _get_users_with_menu_access(db: Session, menu_id: str, *, role_source: str = "legacy") -> list[str]:
     try:
-        rows = db.execute(
-            text(
-                """
-                SELECT DISTINCT urr.user_id
-                FROM role_menu_rela rmr
-                JOIN user_role_rela urr ON urr.role_id = rmr.role_id
-                WHERE rmr.menu_id = :menu_id
-                """
-            ),
-            {"menu_id": menu_id},
-        ).all()
+        if role_source == "legacy":
+            rows = db.execute(
+                text(
+                    """
+                    SELECT DISTINCT urr.user_id
+                    FROM role_menu_rela rmr
+                    JOIN user_role_rela urr ON urr.role_id = rmr.role_id
+                    WHERE rmr.menu_id = :menu_id
+                    """
+                ),
+                {"menu_id": menu_id},
+            ).all()
+        else:
+            rows = db.execute(
+                text(
+                    """
+                    SELECT DISTINCT ur.user_id
+                    FROM role_menus rm
+                    JOIN user_roles ur ON ur.role_id = rm.role_id
+                    WHERE rm.menu_id::text = :menu_id
+                    """
+                ),
+                {"menu_id": menu_id},
+            ).all()
     except SQLAlchemyError:
         db.rollback()
         return []
