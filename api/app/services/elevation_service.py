@@ -1281,6 +1281,10 @@ def _resolve_dataset_file_format(dataset: ElevationDataset) -> str:
 def _require_rasterio_available() -> Any:
     try:
         import rasterio
+        import rasterio.warp as rasterio_warp
+
+        if not hasattr(rasterio, "warp"):
+            setattr(rasterio, "warp", rasterio_warp)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
