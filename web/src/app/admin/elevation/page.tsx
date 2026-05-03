@@ -965,7 +965,7 @@ export default function AdminElevationPage() {
           if (!importDataset || datasetDataImportMutation.isPending) return;
           const files = importFileList
             .map((item) => item.originFileObj)
-            .filter((item): item is File => !!item);
+            .filter((item): item is NonNullable<typeof item> => !!item);
           if (files.length === 0) {
             messageApi.warning("请先选择至少一个文件");
             return;
