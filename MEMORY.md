@@ -148,6 +148,8 @@
 - Worker 自动注册机制：
   - Celery worker 启停/心跳通过 signals 写入 `worker_registry` 表。
   - Beat 定时任务 `app.tasks.worker_registry_tasks.sweep_worker_registry_offline` 负责离线兜底标记。
+- Flower 代理鉴权一致性：
+  - `api` 服务必须显式注入 `FLOWER_BASIC_AUTH`（与 `flower` 服务保持同一来源），避免 `/api/v1/admin/flower/*` 代理调用因 Basic Auth 不一致返回 `401` 并在前端表现为 `502`。
 
 ## 前端 Radix 全量化口径（2026-04-18）
 
