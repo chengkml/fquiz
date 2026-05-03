@@ -981,12 +981,13 @@
 - 模型与 seed：`file_storage_backends` / `file_storage_mounts` / `file_index_entries` 已恢复注册；默认 seed 会创建 `files.vfs.default`、`files.s3.default` 与 `main` 挂载。
 - 交互口径：页面保持“单挂载点”模式，不展示左侧挂载点切换面板。
 
-## ATP 查看器口径（2026-04-26）
+## ATP 查看器口径（2026-04-26，2026-05-04 更新）
 
 - ATP 文本查看能力已落地在线路模块子路由：`/power-lines/atp-viewer`（内部路由 `web/src/app/admin/power-lines/atp-viewer/page.tsx`）。
 - 技术栈固定为“前端本地解析 + 前端只读渲染”：
   - 解析：`web/src/lib/atp/parse-atp-text.ts`
-  - 渲染：`@maxgraph/core` + `web/src/components/atp-maxgraph-viewer.tsx`
+  - 渲染：`@antv/x6` + `web/src/components/atp-x6-viewer.tsx`
+  - 电气元件符号：组件内置 SVG data-uri 映射（R/L/C/SW/SRC/XFMR/LINE/CTRL/MISC）。
 - 当前目标是“查看保真优先”，明确不包含仿真内核调用。
 - 解析覆盖常见元件行格式，复杂 ATP 控制卡/模型卡默认容错跳过并输出 warnings，不阻断基础图形查看。
 

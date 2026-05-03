@@ -11,7 +11,7 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@maxgraph/core": "^0.23.0",
+    "@antv/x6": "^3.1.7",
     "@tanstack/react-query": "^5.90.5",
     "antd": "^5.29.3",
     "cesium": "^1.140.0",

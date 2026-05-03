@@ -23,7 +23,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 
 import { useAuth } from "@/components/auth-provider";
-import { AtpMaxGraphViewer } from "@/components/atp-maxgraph-viewer";
+import { AtpX6Viewer } from "@/components/atp-x6-viewer";
 import { Card } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
@@ -1223,8 +1223,8 @@ export default function PowerLinesAtpViewerPage() {
               )}
             </Card>
 
-            <Card title="maxGraph 渲染结果">
-              <AtpMaxGraphViewer graph={graphJson} />
+            <Card title="X6 渲染结果">
+              <AtpX6Viewer graph={graphJson} />
             </Card>
           </div>
         </Space>
