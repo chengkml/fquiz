@@ -130,7 +130,8 @@ class ElevationDatasetDataImportResponse(BaseModel):
     uploaded_file_count: int
     extracted_file_count: int
     imported_file_count: int
-    analyzed: bool = False
+    analysis_task_queued: bool = False
+    analysis_task_id: str | None = None
     warning_count: int
     warnings: list[str] = Field(default_factory=list)
     imported_files: list[str] = Field(default_factory=list)

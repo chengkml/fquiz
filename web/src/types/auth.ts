@@ -331,7 +331,8 @@ export type ElevationDatasetDataImportResponse = {
   uploaded_file_count: number;
   extracted_file_count: number;
   imported_file_count: number;
-  analyzed: boolean;
+  analysis_task_queued: boolean;
+  analysis_task_id: string | null;
   warning_count: number;
   warnings: string[];
   imported_files: string[];

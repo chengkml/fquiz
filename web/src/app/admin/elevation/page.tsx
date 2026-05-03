@@ -18,6 +18,7 @@ import {
   Table,
   Tag,
   Typography,
+  Progress,
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -26,7 +27,7 @@ import { useAuth } from "@/components/auth-provider";
 import { ElevationPreviewCesiumMap } from "@/components/elevation-preview-cesium-map";
 import { Card } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
-import { readApiError } from "@/lib/api";
+import { getApiBaseUrl, readApiError } from "@/lib/api";
 import type {
   ElevationApplyJobCreateResponse,
   ElevationApplyJobListResponse,
@@ -93,10 +94,31 @@ function formatNumber(value: number | null | undefined, digits = 6): string {
   return Number(value).toFixed(digits);
 }
 
+function readXhrError(xhr: XMLHttpRequest): string {
+  const fallback = `HTTP ${xhr.status}`;
+  const raw = xhr.responseText?.trim();
+  if (!raw) {
+    return fallback;
+  }
+  try {
+    const parsed = JSON.parse(raw) as { detail?: string };
+    return parsed.detail?.trim() ? parsed.detail : fallback;
+  } catch {
+    return raw.length > 200 ? fallback : raw;
+  }
+}
+
 export default function AdminElevationPage() {
   const { modal } = App.useApp();
   const queryClient = useQueryClient();
-  const { user, initializing, hasPermission, fetchWithAuth } = useAuth();
+  const {
+    user,
+    initializing,
+    hasPermission,
+    fetchWithAuth,
+    getAccessToken,
+    refreshAccessToken,
+  } = useAuth();
   const [messageApi, messageContextHolder] = message.useMessage();
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -107,6 +129,9 @@ export default function AdminElevationPage() {
   const [previewData, setPreviewData] = useState<ElevationDatasetPreviewResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [analyzingDatasetId, setAnalyzingDatasetId] = useState<string | null>(null);
+  const [datasetDataUploadProgress, setDatasetDataUploadProgress] = useState(0);
+  const [datasetDataUploadFileName, setDatasetDataUploadFileName] = useState("");
+  const [datasetDataUploadingDatasetId, setDatasetDataUploadingDatasetId] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const datasetDataImportRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [datasetForm] = Form.useForm<DatasetFormValues>();
@@ -260,33 +285,92 @@ export default function AdminElevationPage() {
 
   const datasetDataImportMutation = useMutation({
     mutationFn: async (payload: { datasetId: string; files: File[] }) => {
-      const formData = new FormData();
-      for (const file of payload.files) {
-        formData.append("files", file);
+      setDatasetDataUploadProgress(0);
+      setDatasetDataUploadFileName(
+        payload.files.length === 1 ? payload.files[0].name : `共 ${payload.files.length} 个文件`,
+      );
+      setDatasetDataUploadingDatasetId(payload.datasetId);
+
+      const uploadWithXhr = (token: string | null) =>
+        new Promise<ElevationDatasetDataImportResponse>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("POST", `${getApiBaseUrl()}/api/v1/elevation/datasets/${payload.datasetId}/data/import`);
+          xhr.withCredentials = true;
+          if (token) {
+            xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+          }
+
+          xhr.upload.onprogress = (event: ProgressEvent<EventTarget>) => {
+            if (!event.lengthComputable || event.total <= 0) {
+              return;
+            }
+            const percent = Math.min(99, Math.max(0, Math.round((event.loaded / event.total) * 100)));
+            setDatasetDataUploadProgress(percent);
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              setDatasetDataUploadProgress(100);
+              try {
+                resolve(JSON.parse(xhr.responseText) as ElevationDatasetDataImportResponse);
+              } catch {
+                reject(new Error("上传成功但响应解析失败"));
+              }
+              return;
+            }
+            reject(new Error(readXhrError(xhr)));
+          };
+
+          xhr.onerror = () => reject(new Error("网络异常，导入失败"));
+          xhr.onabort = () => reject(new Error("导入已取消"));
+
+          const formData = new FormData();
+          for (const file of payload.files) {
+            formData.append("files", file);
+          }
+          xhr.send(formData);
+        });
+
+      let result: ElevationDatasetDataImportResponse;
+      try {
+        result = await uploadWithXhr(getAccessToken());
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "导入失败";
+        const isUnauthorized = message.includes("401") || message.includes("未授权");
+        if (!isUnauthorized) {
+          throw error;
+        }
+        const refreshed = await refreshAccessToken();
+        if (!refreshed) {
+          throw error;
+        }
+        result = await uploadWithXhr(getAccessToken());
       }
-      const response = await fetchWithAuth(`/api/v1/elevation/datasets/${payload.datasetId}/data/import`, {
-        method: "POST",
-        body: formData,
-      });
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-      return (await response.json()) as ElevationDatasetDataImportResponse;
+      return result;
     },
     onSuccess: async (payload) => {
+      const monitorHint = payload.analysis_task_id
+        ? `，分析任务已入队（Task ID: ${payload.analysis_task_id}，可在“任务监控”查看进度）`
+        : "";
       const msg = payload.warning_count > 0
-        ? `数据导入完成：上传 ${payload.uploaded_file_count} 个、解压 ${payload.extracted_file_count} 个、可用 ${payload.imported_file_count} 个，告警 ${payload.warning_count} 条`
-        : `数据导入完成：上传 ${payload.uploaded_file_count} 个、解压 ${payload.extracted_file_count} 个、可用 ${payload.imported_file_count} 个`;
+        ? `数据导入完成：上传 ${payload.uploaded_file_count} 个、解压 ${payload.extracted_file_count} 个、可用 ${payload.imported_file_count} 个，告警 ${payload.warning_count} 条${monitorHint}`
+        : `数据导入完成：上传 ${payload.uploaded_file_count} 个、解压 ${payload.extracted_file_count} 个、可用 ${payload.imported_file_count} 个${monitorHint}`;
       setSuccess(msg);
       setError("");
       messageApi.success(msg);
       await refreshElevationData();
+      setDatasetDataUploadProgress(0);
+      setDatasetDataUploadFileName("");
+      setDatasetDataUploadingDatasetId(null);
     },
     onError: (candidate) => {
       const nextError = candidate instanceof Error ? candidate.message : "导入高程数据失败";
       setError(nextError);
       setSuccess("");
       messageApi.error(nextError);
+      setDatasetDataUploadProgress(0);
+      setDatasetDataUploadFileName("");
+      setDatasetDataUploadingDatasetId(null);
     },
   });
 
@@ -493,7 +577,7 @@ export default function AdminElevationPage() {
                 datasetDataImportRefs.current[row.id]?.click();
               }}
             >
-              导入数据
+              {datasetDataImportMutation.isPending && datasetDataUploadingDatasetId === row.id ? "导入中..." : "导入数据"}
             </Typography.Link>
             <input
               ref={(element) => {
@@ -533,7 +617,17 @@ export default function AdminElevationPage() {
         ),
       },
     ],
-    [analyzeMutation, analyzingDatasetId, canManage, datasetDataImportMutation, datasetDeleteMutation, fetchWithAuth, messageApi, modal],
+    [
+      analyzeMutation,
+      analyzingDatasetId,
+      canManage,
+      datasetDataImportMutation,
+      datasetDataUploadingDatasetId,
+      datasetDeleteMutation,
+      fetchWithAuth,
+      messageApi,
+      modal,
+    ],
   );
 
   const jobColumns = useMemo<ColumnsType<ElevationApplyJobSummary>>(
@@ -612,6 +706,22 @@ export default function AdminElevationPage() {
           type={error || datasetsQuery.error || jobsQuery.error || linesQuery.error ? "error" : "success"}
           showIcon
           message={error || (datasetsQuery.error instanceof Error ? datasetsQuery.error.message : jobsQuery.error instanceof Error ? jobsQuery.error.message : linesQuery.error instanceof Error ? linesQuery.error.message : success)}
+        />
+      )}
+
+      {datasetDataImportMutation.isPending && (
+        <Alert
+          type="info"
+          showIcon
+          message={datasetDataUploadingDatasetId
+            ? `正在导入数据（数据集 ${datasetDataUploadingDatasetId}）`
+            : "正在导入数据"}
+          description={(
+            <div className="space-y-2">
+              <Typography.Text type="secondary">{datasetDataUploadFileName || "正在上传文件..."}</Typography.Text>
+              <Progress percent={datasetDataUploadProgress} status={datasetDataUploadProgress >= 100 ? "active" : "normal"} />
+            </div>
+          )}
         />
       )}
 
