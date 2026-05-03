@@ -39,7 +39,7 @@ import type {
 type LineFormValues = {
   code: string;
   name: string;
-  voltage_kv: number | null;
+  voltage_level: string | null;
   tower_shape: string;
   status: LineStatus;
 };
@@ -79,13 +79,59 @@ const TOWER_TYPE_OPTIONS = [
   { value: "耐张", label: "耐张" },
 ] as const;
 
+const LINE_VOLTAGE_OPTIONS = [
+  { value: "dc_500", label: "直流500kV", voltage_kv: 500 },
+  { value: "dc_800", label: "直流800kV", voltage_kv: 800 },
+  { value: "dc_1000", label: "直流1000kV", voltage_kv: 1000 },
+  { value: "ac_35", label: "交流35kV", voltage_kv: 35 },
+  { value: "ac_66", label: "交流66kV", voltage_kv: 66 },
+  { value: "ac_110", label: "交流110kV", voltage_kv: 110 },
+  { value: "ac_220", label: "交流220kV", voltage_kv: 220 },
+  { value: "ac_330", label: "交流330kV", voltage_kv: 330 },
+  { value: "ac_500", label: "交流500kV", voltage_kv: 500 },
+  { value: "ac_750", label: "交流750kV", voltage_kv: 750 },
+  { value: "ac_800", label: "交流800kV", voltage_kv: 800 },
+  { value: "ac_1000", label: "交流1000kV", voltage_kv: 1000 },
+  { value: "ac_110_x4", label: "交流110kV|交流110kV|交流110kV|交流110kV", voltage_kv: 110 },
+  { value: "ac_220_x4", label: "交流220kV|交流220kV|交流220kV|交流220kV", voltage_kv: 220 },
+] as const;
+
+const LINE_VOLTAGE_VALUE_TO_KV: Record<(typeof LINE_VOLTAGE_OPTIONS)[number]["value"], number> = {
+  dc_500: 500,
+  dc_800: 800,
+  dc_1000: 1000,
+  ac_35: 35,
+  ac_66: 66,
+  ac_110: 110,
+  ac_220: 220,
+  ac_330: 330,
+  ac_500: 500,
+  ac_750: 750,
+  ac_800: 800,
+  ac_1000: 1000,
+  ac_110_x4: 110,
+  ac_220_x4: 220,
+};
+
+const LINE_VOLTAGE_KV_TO_DEFAULT_OPTION: Partial<Record<number, (typeof LINE_VOLTAGE_OPTIONS)[number]["value"]>> = {
+  35: "ac_35",
+  66: "ac_66",
+  110: "ac_110",
+  220: "ac_220",
+  330: "ac_330",
+  500: "dc_500",
+  750: "ac_750",
+  800: "dc_800",
+  1000: "dc_1000",
+};
+
 const TOWER_TABLE_DEFAULT_PAGE_SIZE = 20;
 const TOWER_MAP_QUERY_LIMIT = 500;
 
 const EMPTY_LINE_FORM: LineFormValues = {
   code: "",
   name: "",
-  voltage_kv: null,
+  voltage_level: null,
   tower_shape: "",
   status: "enabled",
 };
@@ -112,6 +158,13 @@ function formatStatus(status: string): string {
   if (status === "enabled") return "启用";
   if (status === "disabled") return "禁用";
   return status || "-";
+}
+
+function resolveVoltageOptionFromKv(voltageKv: number | null): LineFormValues["voltage_level"] {
+  if (voltageKv === null) {
+    return null;
+  }
+  return LINE_VOLTAGE_KV_TO_DEFAULT_OPTION[voltageKv] ?? null;
 }
 
 export default function AdminPowerLinesPage() {
@@ -271,7 +324,7 @@ export default function AdminPowerLinesPage() {
       const payload = {
         code: values.code.trim(),
         name: values.name.trim(),
-        voltage_kv: values.voltage_kv ?? null,
+        voltage_kv: values.voltage_level ? LINE_VOLTAGE_VALUE_TO_KV[values.voltage_level] : null,
         tower_shape: values.tower_shape.trim() || null,
         status: values.status,
       };
@@ -493,7 +546,7 @@ export default function AdminPowerLinesPage() {
     lineForm.setFieldsValue({
       code: line.code,
       name: line.name,
-      voltage_kv: line.voltage_kv,
+      voltage_level: resolveVoltageOptionFromKv(line.voltage_kv),
       tower_shape: line.tower_shape ?? "",
       status: line.status,
     });
@@ -891,8 +944,12 @@ export default function AdminPowerLinesPage() {
           >
             <Input />
           </Form.Item>
-          <Form.Item name="voltage_kv" label="电压等级(kV)">
-            <InputNumber min={1} max={2000} className="w-full" />
+          <Form.Item name="voltage_level" label="电压等级">
+            <Select
+              allowClear
+              placeholder="请选择电压等级"
+              options={[...LINE_VOLTAGE_OPTIONS].map((item) => ({ value: item.value, label: item.label }))}
+            />
           </Form.Item>
           <Form.Item name="tower_shape" label="塔形">
             <Input />
