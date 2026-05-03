@@ -24,6 +24,7 @@ from ..schemas.elevation import (
     ElevationApplyJobListResponse,
     ElevationApplyJobSummary,
     ElevationDatasetAnalyzeResponse,
+    ElevationDatasetPreviewCell,
     ElevationDatasetCreateRequest,
     ElevationDatasetListResponse,
     ElevationDatasetPreviewPoint,
@@ -316,9 +317,11 @@ def preview_dataset(
         sampled = _sample_preview_points_from_csv(points=points, limit=preview_limit)
         return ElevationDatasetPreviewResponse(
             dataset=serialize_dataset(item),
+            preview_mode="point_cloud",
             total_points=len(points),
             sampled_points=len(sampled),
             points=[ElevationDatasetPreviewPoint(longitude=point.lon, latitude=point.lat, altitude_m=point.altitude_m) for point in sampled],
+            cells=[],
             warnings=warnings,
         )
 
@@ -835,7 +838,7 @@ def _append_non_wgs84_bounds_warning(*, rasterio: Any, src: Any) -> str | None:
         return None
     return (
         f"栅格 CRS 为 {src_crs_obj.to_string()}，数据集边界框基于该投影坐标，"
-        "回填时会自动从 WGS84 坐标转换后采样"
+        "预览渲染会自动转换到 WGS84 经度/纬度"
     )
 
 
@@ -929,15 +932,18 @@ def _build_raster_preview(
         if width <= 0 or height <= 0:
             return ElevationDatasetPreviewResponse(
                 dataset=serialize_dataset(dataset),
+                preview_mode="terrain_grid",
                 total_points=0,
                 sampled_points=0,
                 points=[],
+                cells=[],
                 warnings=warnings,
             )
 
         band_nodata = src.nodatavals[0] if src.nodatavals else None
         total_points = width * height
         sampled_points: list[ElevationDatasetPreviewPoint] = []
+        sampled_cells: list[ElevationDatasetPreviewCell] = []
 
         target_count = max(1, limit)
         step = max(1, int((width * height / target_count) ** 0.5))
@@ -962,7 +968,7 @@ def _build_raster_preview(
                     x += step
                     continue
 
-                world_x, world_y = src.xy(y, x)
+                world_x, world_y = rasterio.transform.xy(src.transform, y, x, offset="center")
                 lon = float(world_x)
                 lat = float(world_y)
                 if src.crs and str(src.crs) not in {"EPSG:4326", "OGC:CRS84"}:
@@ -977,6 +983,45 @@ def _build_raster_preview(
                     x += step
                     continue
 
+                col_end = min(width - 1, x + step)
+                row_end = min(height - 1, y + step)
+                try:
+                    lon_min, lat_min = rasterio.transform.xy(src.transform, row_end, x, offset="ll")
+                    lon_max, lat_max = rasterio.transform.xy(src.transform, y, col_end, offset="ur")
+                except Exception:
+                    x += step
+                    continue
+                min_lon = float(min(lon_min, lon_max))
+                max_lon = float(max(lon_min, lon_max))
+                min_lat = float(min(lat_min, lat_max))
+                max_lat = float(max(lat_min, lat_max))
+                if src.crs and str(src.crs) not in {"EPSG:4326", "OGC:CRS84"}:
+                    try:
+                        xs, ys = rasterio.warp.transform(
+                            src.crs,
+                            "EPSG:4326",
+                            [min_lon, max_lon, min_lon, max_lon],
+                            [min_lat, min_lat, max_lat, max_lat],
+                        )
+                    except Exception:
+                        x += step
+                        continue
+                    min_lon = float(min(xs))
+                    max_lon = float(max(xs))
+                    min_lat = float(min(ys))
+                    max_lat = float(max(ys))
+                if min_lon < -180 or max_lon > 180 or min_lat < -90 or max_lat > 90:
+                    x += step
+                    continue
+                sampled_cells.append(
+                    ElevationDatasetPreviewCell(
+                        min_longitude=round(min_lon, 6),
+                        max_longitude=round(max_lon, 6),
+                        min_latitude=round(min_lat, 6),
+                        max_latitude=round(max_lat, 6),
+                        altitude_m=round(altitude, 3),
+                    )
+                )
                 sampled_points.append(
                     ElevationDatasetPreviewPoint(
                         longitude=round(lon, 6),
@@ -987,14 +1032,16 @@ def _build_raster_preview(
                 x += step
             y += step
 
-        if not sampled_points:
-            warnings.append("未提取到有效预览点（可能为 nodata 或投影不匹配）")
+        if not sampled_cells:
+            warnings.append("未提取到有效地形网格（可能为 nodata 或投影定义不匹配）")
 
         return ElevationDatasetPreviewResponse(
             dataset=serialize_dataset(dataset),
+            preview_mode="terrain_grid",
             total_points=total_points,
-            sampled_points=len(sampled_points),
+            sampled_points=len(sampled_cells),
             points=sampled_points,
+            cells=sampled_cells,
             warnings=warnings,
         )
 

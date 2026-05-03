@@ -67,11 +67,21 @@ class ElevationDatasetPreviewPoint(BaseModel):
     altitude_m: float
 
 
+class ElevationDatasetPreviewCell(BaseModel):
+    min_longitude: float
+    max_longitude: float
+    min_latitude: float
+    max_latitude: float
+    altitude_m: float
+
+
 class ElevationDatasetPreviewResponse(BaseModel):
     dataset: ElevationDatasetSummary
+    preview_mode: Literal["point_cloud", "terrain_grid"]
     total_points: int
     sampled_points: int
     points: list[ElevationDatasetPreviewPoint] = Field(default_factory=list)
+    cells: list[ElevationDatasetPreviewCell] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
 

@@ -320,11 +320,21 @@ export type ElevationDatasetPreviewPoint = {
   altitude_m: number;
 };
 
+export type ElevationDatasetPreviewCell = {
+  min_longitude: number;
+  max_longitude: number;
+  min_latitude: number;
+  max_latitude: number;
+  altitude_m: number;
+};
+
 export type ElevationDatasetPreviewResponse = {
   dataset: ElevationDatasetSummary;
+  preview_mode: "point_cloud" | "terrain_grid";
   total_points: number;
   sampled_points: number;
   points: ElevationDatasetPreviewPoint[];
+  cells: ElevationDatasetPreviewCell[];
   warnings: string[];
 };
 

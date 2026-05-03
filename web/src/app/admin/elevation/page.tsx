@@ -491,7 +491,7 @@ export default function AdminElevationPage() {
           type="info"
           showIcon
           message="支持文件格式：CSV（点集）/ IMG / TIF / TIFF（栅格）"
-          description="CSV 需包含经度、纬度、高程列；IMG/TIF 会按塔杆经纬度直接采样。"
+          description="CSV 预览为点云；IMG/TIF/TIFF 预览为地形网格高低色带（与杆塔无关）。"
           className="mb-4"
         />
         {datasets.length === 0 ? (
@@ -552,7 +552,9 @@ export default function AdminElevationPage() {
               type="info"
               showIcon
               message={`数据集：${previewDataset.name}（${previewDataset.file_format.toUpperCase()}）`}
-              description={previewData ? `总点位 ${previewData.total_points}，预览采样 ${previewData.sampled_points}。` : "正在加载预览数据..."}
+              description={previewData
+                ? `预览模式：${previewData.preview_mode === "terrain_grid" ? "地形网格" : "点云"}；总样本 ${previewData.total_points}，当前展示 ${previewData.sampled_points}。`
+                : "正在加载预览数据..."}
             />
             {previewData && previewData.warnings.length > 0 && (
               <Alert
@@ -564,6 +566,7 @@ export default function AdminElevationPage() {
             )}
             <ElevationPreviewCesiumMap
               points={previewData?.points ?? []}
+              cells={previewData?.cells ?? []}
               loading={previewLoading}
             />
           </div>

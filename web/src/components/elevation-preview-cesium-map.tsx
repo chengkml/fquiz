@@ -4,10 +4,11 @@ import { Alert, Empty, Spin } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { reloadOnceOnChunkError } from "@/lib/chunk-error";
-import type { ElevationDatasetPreviewPoint } from "@/types/auth";
+import type { ElevationDatasetPreviewCell, ElevationDatasetPreviewPoint } from "@/types/auth";
 
 type ElevationPreviewCesiumMapProps = {
   points: ElevationDatasetPreviewPoint[];
+  cells?: ElevationDatasetPreviewCell[];
   loading?: boolean;
 };
 
@@ -46,6 +47,7 @@ function formatErrorMessage(candidate: unknown): string {
 
 export function ElevationPreviewCesiumMap({
   points,
+  cells = [],
   loading = false,
 }: ElevationPreviewCesiumMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -68,19 +70,38 @@ export function ElevationPreviewCesiumMap({
       ),
     [points],
   );
+  const safeCells = useMemo(
+    () =>
+      cells.filter(
+        (item) =>
+          Number.isFinite(item.min_longitude)
+          && Number.isFinite(item.max_longitude)
+          && Number.isFinite(item.min_latitude)
+          && Number.isFinite(item.max_latitude)
+          && Number.isFinite(item.altitude_m)
+          && item.min_longitude < item.max_longitude
+          && item.min_latitude < item.max_latitude
+          && item.min_longitude >= -180
+          && item.max_longitude <= 180
+          && item.min_latitude >= -90
+          && item.max_latitude <= 90,
+      ),
+    [cells],
+  );
 
   const altitudeRange = useMemo(() => {
-    if (safePoints.length === 0) {
+    if (safeCells.length === 0 && safePoints.length === 0) {
       return { min: 0, max: 0 };
     }
-    let min = safePoints[0].altitude_m;
-    let max = safePoints[0].altitude_m;
-    for (const point of safePoints) {
-      if (point.altitude_m < min) min = point.altitude_m;
-      if (point.altitude_m > max) max = point.altitude_m;
+    const source = safeCells.length > 0 ? safeCells.map((item) => item.altitude_m) : safePoints.map((item) => item.altitude_m);
+    let min = source[0];
+    let max = source[0];
+    for (const altitude of source) {
+      if (altitude < min) min = altitude;
+      if (altitude > max) max = altitude;
     }
     return { min, max };
-  }, [safePoints]);
+  }, [safeCells, safePoints]);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,35 +168,70 @@ export function ElevationPreviewCesiumMap({
       return;
     }
     viewer.entities.removeAll();
-    if (safePoints.length === 0) {
+    if (safeCells.length === 0 && safePoints.length === 0) {
       return;
     }
 
     const positions: import("cesium").Cartesian3[] = [];
-    for (let index = 0; index < safePoints.length; index += 1) {
-      const point = safePoints[index];
-      const position = Cesium.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude_m);
-      positions.push(position);
-      const color = pointColorByAltitude(point.altitude_m, altitudeRange.min, altitudeRange.max);
-      const size = pointSizeByAltitude(point.altitude_m, altitudeRange.min, altitudeRange.max);
+    if (safeCells.length > 0) {
+      for (let index = 0; index < safeCells.length; index += 1) {
+        const cell = safeCells[index];
+        const centerLon = (cell.min_longitude + cell.max_longitude) / 2;
+        const centerLat = (cell.min_latitude + cell.max_latitude) / 2;
+        const centerAltitude = cell.altitude_m;
+        const position = Cesium.Cartesian3.fromDegrees(centerLon, centerLat, centerAltitude);
+        positions.push(position);
+        const color = Cesium.Color.fromCssColorString(
+          pointColorByAltitude(centerAltitude, altitudeRange.min, altitudeRange.max),
+        ).withAlpha(0.82);
 
-      viewer.entities.add({
-        id: `elevation-point-${index}`,
-        position,
-        point: {
-          pixelSize: size,
-          color: Cesium.Color.fromCssColorString(color),
-          outlineColor: Cesium.Color.WHITE.withAlpha(0.9),
-          outlineWidth: 1.0,
-        },
-        description: `
-          <div style="line-height:1.7;">
-            <div><strong>经度：</strong>${point.longitude.toFixed(6)}</div>
-            <div><strong>纬度：</strong>${point.latitude.toFixed(6)}</div>
-            <div><strong>高程(m)：</strong>${point.altitude_m.toFixed(3)}</div>
-          </div>
-        `,
-      });
+        viewer.entities.add({
+          id: `elevation-cell-${index}`,
+          rectangle: {
+            coordinates: Cesium.Rectangle.fromDegrees(
+              cell.min_longitude,
+              cell.min_latitude,
+              cell.max_longitude,
+              cell.max_latitude,
+            ),
+            material: color,
+            outline: false,
+            height: centerAltitude,
+          },
+          description: `
+            <div style="line-height:1.7;">
+              <div><strong>高程(m)：</strong>${centerAltitude.toFixed(3)}</div>
+              <div><strong>边界：</strong>${cell.min_longitude.toFixed(4)}, ${cell.min_latitude.toFixed(4)} ~ ${cell.max_longitude.toFixed(4)}, ${cell.max_latitude.toFixed(4)}</div>
+            </div>
+          `,
+        });
+      }
+    } else {
+      for (let index = 0; index < safePoints.length; index += 1) {
+        const point = safePoints[index];
+        const position = Cesium.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude_m);
+        positions.push(position);
+        const color = pointColorByAltitude(point.altitude_m, altitudeRange.min, altitudeRange.max);
+        const size = pointSizeByAltitude(point.altitude_m, altitudeRange.min, altitudeRange.max);
+
+        viewer.entities.add({
+          id: `elevation-point-${index}`,
+          position,
+          point: {
+            pixelSize: size,
+            color: Cesium.Color.fromCssColorString(color),
+            outlineColor: Cesium.Color.WHITE.withAlpha(0.9),
+            outlineWidth: 1.0,
+          },
+          description: `
+            <div style="line-height:1.7;">
+              <div><strong>经度：</strong>${point.longitude.toFixed(6)}</div>
+              <div><strong>纬度：</strong>${point.latitude.toFixed(6)}</div>
+              <div><strong>高程(m)：</strong>${point.altitude_m.toFixed(3)}</div>
+            </div>
+          `,
+        });
+      }
     }
 
     if (positions.length > 0) {
@@ -185,7 +241,7 @@ export function ElevationPreviewCesiumMap({
         offset: new Cesium.HeadingPitchRange(0, -0.6, Math.max(1200, boundingSphere.radius * 2.4)),
       });
     }
-  }, [altitudeRange.max, altitudeRange.min, ready, safePoints]);
+  }, [altitudeRange.max, altitudeRange.min, ready, safeCells, safePoints]);
 
   if (error) {
     return (
@@ -197,14 +253,14 @@ export function ElevationPreviewCesiumMap({
     );
   }
 
-  if (safePoints.length === 0 && !loading) {
+  if (safeCells.length === 0 && safePoints.length === 0 && !loading) {
     return <Empty description="暂无可展示的高程预览点。" />;
   }
 
   return (
     <div className="space-y-2">
       <div className="text-xs text-slate-500">
-        颜色由蓝到红表示高程由低到高；点位仅用于预览采样分布。
+        颜色由蓝到红表示高程由低到高；栅格数据优先展示地形网格色带，点位模式用于点集数据。
       </div>
       <div ref={containerRef} className="h-[520px] w-full overflow-hidden rounded-md border border-slate-200 bg-slate-100" />
       {loading && (
