@@ -9,7 +9,7 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ..core.database import SessionLocal
@@ -259,6 +259,41 @@ def update_dataset(
         {"action": "dataset_updated", "dataset_id": saved.id},
     )
     return serialize_dataset(saved)
+
+
+def delete_dataset(
+    db: Session,
+    dataset_id: str,
+) -> bool:
+    item = get_dataset_by_id(db, dataset_id)
+    if not item:
+        return False
+
+    running_job_count = int(
+        db.scalar(
+            select(func.count())
+            .select_from(ElevationApplyJob)
+            .where(
+                ElevationApplyJob.dataset_id == dataset_id,
+                ElevationApplyJob.status == "running",
+            )
+        )
+        or 0
+    )
+    if running_job_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"该数据集存在 {running_job_count} 个运行中的回填任务，暂不能删除",
+        )
+
+    db.execute(delete(ElevationApplyJob).where(ElevationApplyJob.dataset_id == dataset_id))
+    db.delete(item)
+    db.commit()
+    _publish_elevation_change(
+        "elevation.dataset.deleted",
+        {"action": "dataset_deleted", "dataset_id": dataset_id},
+    )
+    return True
 
 
 def analyze_dataset(

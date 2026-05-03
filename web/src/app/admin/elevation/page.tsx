@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  App,
   Alert,
   Empty,
   Form,
@@ -89,6 +90,7 @@ function formatDate(value: string | null): string {
 }
 
 export default function AdminElevationPage() {
+  const { modal } = App.useApp();
   const queryClient = useQueryClient();
   const { user, initializing, hasPermission, fetchWithAuth } = useAuth();
   const [messageApi, messageContextHolder] = message.useMessage();
@@ -283,6 +285,33 @@ export default function AdminElevationPage() {
     },
   });
 
+  const datasetDeleteMutation = useMutation({
+    mutationFn: async (datasetId: string) => {
+      const response = await fetchWithAuth(`/api/v1/elevation/datasets/${datasetId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+    },
+    onSuccess: async () => {
+      setSuccess("高程数据集已删除");
+      setError("");
+      messageApi.success("高程数据集已删除");
+      setPreviewModalOpen(false);
+      setPreviewDataset(null);
+      setPreviewData(null);
+      setPreviewLoading(false);
+      await refreshElevationData();
+    },
+    onError: (candidate) => {
+      const nextError = candidate instanceof Error ? candidate.message : "删除高程数据集失败";
+      setError(nextError);
+      setSuccess("");
+      messageApi.error(nextError);
+    },
+  });
+
   const datasets = datasetsQuery.data?.items ?? [];
   const jobs = jobsQuery.data?.items ?? [];
   const lines = linesQuery.data?.items ?? [];
@@ -383,11 +412,29 @@ export default function AdminElevationPage() {
             >
               {analyzingDatasetId === row.id ? "分析中..." : "分析"}
             </Typography.Link>
+            <Typography.Link
+              disabled={!canManage || datasetDeleteMutation.isPending}
+              onClick={() => {
+                if (!canManage || datasetDeleteMutation.isPending) return;
+                modal.confirm({
+                  title: "删除高程数据集",
+                  content: `确认删除数据集「${row.code} - ${row.name}」？该操作会同时删除关联的回填任务记录，且不可恢复。`,
+                  okText: "确认删除",
+                  okButtonProps: { danger: true, loading: datasetDeleteMutation.isPending },
+                  cancelText: "取消",
+                  onOk: async () => {
+                    await datasetDeleteMutation.mutateAsync(row.id);
+                  },
+                });
+              }}
+            >
+              删除
+            </Typography.Link>
           </Space>
         ),
       },
     ],
-    [analyzeMutation, analyzingDatasetId, canManage, fetchWithAuth, messageApi],
+    [analyzeMutation, analyzingDatasetId, canManage, datasetDeleteMutation, fetchWithAuth, messageApi, modal],
   );
 
   const jobColumns = useMemo<ColumnsType<ElevationApplyJobSummary>>(

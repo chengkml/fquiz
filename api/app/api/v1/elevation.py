@@ -21,6 +21,7 @@ from ...services.elevation_service import (
     analyze_dataset,
     create_apply_job,
     create_dataset,
+    delete_dataset,
     get_job_by_id,
     list_datasets,
     list_jobs,
@@ -69,6 +70,18 @@ def update_elevation_dataset(
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程数据集不存在")
     return updated
+
+
+@router.delete("/datasets/{dataset_id}")
+def delete_elevation_dataset(
+    dataset_id: str,
+    _: CurrentUser = Depends(require_permission("elevation.manage")),
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    deleted = delete_dataset(db, dataset_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程数据集不存在")
+    return {"success": True}
 
 
 @router.post("/datasets/{dataset_id}/analyze", response_model=ElevationDatasetAnalyzeResponse)
