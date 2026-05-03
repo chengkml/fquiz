@@ -1,10 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { ChangeEvent, useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  App,
   Alert,
   Descriptions,
   Empty,
@@ -12,15 +11,17 @@ import {
   Input,
   InputNumber,
   Modal,
+  Progress,
   Select,
   Space,
   Spin,
   Table,
   Tag,
   Typography,
-  Progress,
+  Upload,
   message,
 } from "antd";
+import type { UploadFile } from "antd/es/upload/interface";
 import type { ColumnsType } from "antd/es/table";
 
 import { useAuth } from "@/components/auth-provider";
@@ -32,9 +33,11 @@ import type {
   ElevationApplyJobCreateResponse,
   ElevationApplyJobListResponse,
   ElevationApplyJobSummary,
-  ElevationDatasetAnalyzeResponse,
+  ElevationDatasetAnalysisTaskStatusResponse,
   ElevationDatasetBatchImportResponse,
   ElevationDatasetDataImportResponse,
+  ElevationDatasetFileItem,
+  ElevationDatasetFileListResponse,
   ElevationDatasetListResponse,
   ElevationDatasetPreviewResponse,
   ElevationDatasetSummary,
@@ -84,7 +87,7 @@ function applyModeLabel(mode: string): string {
   return mode;
 }
 
-function formatDate(value: string | null): string {
+function formatDate(value: string | null | undefined): string {
   if (!value) return "-";
   return new Date(value).toLocaleString();
 }
@@ -92,6 +95,14 @@ function formatDate(value: string | null): string {
 function formatNumber(value: number | null | undefined, digits = 6): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "-";
   return Number(value).toFixed(digits);
+}
+
+function formatFileSize(size: number): string {
+  if (!Number.isFinite(size) || size < 0) return "-";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 function readXhrError(xhr: XMLHttpRequest): string {
@@ -109,7 +120,6 @@ function readXhrError(xhr: XMLHttpRequest): string {
 }
 
 export default function AdminElevationPage() {
-  const { modal } = App.useApp();
   const queryClient = useQueryClient();
   const {
     user,
@@ -120,20 +130,33 @@ export default function AdminElevationPage() {
     refreshAccessToken,
   } = useAuth();
   const [messageApi, messageContextHolder] = message.useMessage();
+
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
   const [datasetModalOpen, setDatasetModalOpen] = useState(false);
   const [applyModalOpen, setApplyModalOpen] = useState(false);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [previewDataset, setPreviewDataset] = useState<ElevationDatasetSummary | null>(null);
   const [previewData, setPreviewData] = useState<ElevationDatasetPreviewResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [analyzingDatasetId, setAnalyzingDatasetId] = useState<string | null>(null);
+
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importDataset, setImportDataset] = useState<ElevationDatasetSummary | null>(null);
+  const [importFileList, setImportFileList] = useState<UploadFile[]>([]);
   const [datasetDataUploadProgress, setDatasetDataUploadProgress] = useState(0);
   const [datasetDataUploadFileName, setDatasetDataUploadFileName] = useState("");
-  const [datasetDataUploadingDatasetId, setDatasetDataUploadingDatasetId] = useState<string | null>(null);
+  const [lastImportedFiles, setLastImportedFiles] = useState<string[]>([]);
+  const [lastAnalysisTaskId, setLastAnalysisTaskId] = useState<string | null>(null);
+
+  const [datasetFilesModalOpen, setDatasetFilesModalOpen] = useState(false);
+  const [datasetFilesDataset, setDatasetFilesDataset] = useState<ElevationDatasetSummary | null>(null);
+  const [datasetFiles, setDatasetFiles] = useState<ElevationDatasetFileItem[]>([]);
+  const [datasetFilesLoading, setDatasetFilesLoading] = useState(false);
+
+  const [analysisModalOpen, setAnalysisModalOpen] = useState(false);
+  const [analysisDataset, setAnalysisDataset] = useState<ElevationDatasetSummary | null>(null);
+
   const importInputRef = useRef<HTMLInputElement | null>(null);
-  const datasetDataImportRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
   const [datasetForm] = Form.useForm<DatasetFormValues>();
   const [applyForm] = Form.useForm<ApplyFormValues>();
 
@@ -214,38 +237,6 @@ export default function AdminElevationPage() {
     }, [refreshPowerLines]),
   );
 
-  const analyzeMutation = useMutation({
-    mutationFn: async (datasetId: string) => {
-      const response = await fetchWithAuth(`/api/v1/elevation/datasets/${datasetId}/analyze`, {
-        method: "POST",
-      });
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-      return (await response.json()) as ElevationDatasetAnalyzeResponse;
-    },
-    onMutate: (datasetId) => {
-      setAnalyzingDatasetId(datasetId);
-    },
-    onSuccess: async (payload) => {
-      const warnings = payload.warnings.length;
-      const msg = warnings > 0 ? `分析完成（${warnings} 条告警）` : "分析完成";
-      setSuccess(msg);
-      setError("");
-      messageApi.success(msg);
-      await refreshElevationData();
-    },
-    onError: (candidate) => {
-      const nextError = candidate instanceof Error ? candidate.message : "分析失败";
-      setError(nextError);
-      setSuccess("");
-      messageApi.error(nextError);
-    },
-    onSettled: () => {
-      setAnalyzingDatasetId(null);
-    },
-  });
-
   const datasetCreateMutation = useMutation({
     mutationFn: async (values: DatasetFormValues) => {
       const payload = {
@@ -268,7 +259,6 @@ export default function AdminElevationPage() {
       return (await response.json()) as ElevationDatasetSummary;
     },
     onSuccess: async () => {
-      setSuccess("高程数据集已创建");
       setError("");
       messageApi.success("高程数据集已创建");
       setDatasetModalOpen(false);
@@ -278,7 +268,6 @@ export default function AdminElevationPage() {
     onError: (candidate) => {
       const nextError = candidate instanceof Error ? candidate.message : "创建高程数据集失败";
       setError(nextError);
-      setSuccess("");
       messageApi.error(nextError);
     },
   });
@@ -289,7 +278,6 @@ export default function AdminElevationPage() {
       setDatasetDataUploadFileName(
         payload.files.length === 1 ? payload.files[0].name : `共 ${payload.files.length} 个文件`,
       );
-      setDatasetDataUploadingDatasetId(payload.datasetId);
 
       const uploadWithXhr = (token: string | null) =>
         new Promise<ElevationDatasetDataImportResponse>((resolve, reject) => {
@@ -349,28 +337,21 @@ export default function AdminElevationPage() {
       return result;
     },
     onSuccess: async (payload) => {
-      const monitorHint = payload.analysis_task_id
-        ? `，分析任务已入队（Task ID: ${payload.analysis_task_id}，可在“任务监控”查看进度）`
-        : "";
+      const monitorHint = payload.analysis_task_id ? `，分析任务ID：${payload.analysis_task_id}` : "";
       const msg = payload.warning_count > 0
         ? `数据导入完成：上传 ${payload.uploaded_file_count} 个、解压 ${payload.extracted_file_count} 个、可用 ${payload.imported_file_count} 个，告警 ${payload.warning_count} 条${monitorHint}`
         : `数据导入完成：上传 ${payload.uploaded_file_count} 个、解压 ${payload.extracted_file_count} 个、可用 ${payload.imported_file_count} 个${monitorHint}`;
-      setSuccess(msg);
       setError("");
       messageApi.success(msg);
+      setLastImportedFiles(payload.imported_files);
+      setLastAnalysisTaskId(payload.analysis_task_id);
       await refreshElevationData();
-      setDatasetDataUploadProgress(0);
-      setDatasetDataUploadFileName("");
-      setDatasetDataUploadingDatasetId(null);
     },
     onError: (candidate) => {
       const nextError = candidate instanceof Error ? candidate.message : "导入高程数据失败";
       setError(nextError);
-      setSuccess("");
       messageApi.error(nextError);
       setDatasetDataUploadProgress(0);
-      setDatasetDataUploadFileName("");
-      setDatasetDataUploadingDatasetId(null);
     },
   });
 
@@ -391,7 +372,6 @@ export default function AdminElevationPage() {
       const msg = payload.warning_count > 0
         ? `批量导入完成：新增 ${payload.imported_count} 条，分析 ${payload.analyzed_count} 条，跳过 ${payload.skipped_count} 条，告警 ${payload.warning_count} 条`
         : `批量导入完成：新增 ${payload.imported_count} 条，分析 ${payload.analyzed_count} 条，跳过 ${payload.skipped_count} 条`;
-      setSuccess(msg);
       setError("");
       messageApi.success(msg);
       await refreshElevationData();
@@ -399,7 +379,6 @@ export default function AdminElevationPage() {
     onError: (candidate) => {
       const nextError = candidate instanceof Error ? candidate.message : "批量导入高程数据集失败";
       setError(nextError);
-      setSuccess("");
       messageApi.error(nextError);
     },
   });
@@ -421,7 +400,6 @@ export default function AdminElevationPage() {
       return (await response.json()) as ElevationApplyJobCreateResponse;
     },
     onSuccess: async () => {
-      setSuccess("高程回填任务已提交");
       setError("");
       messageApi.success("高程回填任务已提交");
       setApplyModalOpen(false);
@@ -431,7 +409,6 @@ export default function AdminElevationPage() {
     onError: (candidate) => {
       const nextError = candidate instanceof Error ? candidate.message : "提交回填任务失败";
       setError(nextError);
-      setSuccess("");
       messageApi.error(nextError);
     },
   });
@@ -446,7 +423,6 @@ export default function AdminElevationPage() {
       }
     },
     onSuccess: async () => {
-      setSuccess("高程数据集已删除");
       setError("");
       messageApi.success("高程数据集已删除");
       setPreviewModalOpen(false);
@@ -458,9 +434,44 @@ export default function AdminElevationPage() {
     onError: (candidate) => {
       const nextError = candidate instanceof Error ? candidate.message : "删除高程数据集失败";
       setError(nextError);
-      setSuccess("");
       messageApi.error(nextError);
     },
+  });
+
+  const datasetFilesMutation = useMutation({
+    mutationFn: async (datasetId: string) => {
+      const response = await fetchWithAuth(`/api/v1/elevation/datasets/${datasetId}/files`);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as ElevationDatasetFileListResponse;
+    },
+    onSuccess: (payload) => {
+      setDatasetFiles(payload.items);
+      setDatasetFilesLoading(false);
+      setError("");
+    },
+    onError: (candidate) => {
+      const nextError = candidate instanceof Error ? candidate.message : "加载文件明细失败";
+      setError(nextError);
+      messageApi.error(nextError);
+      setDatasetFiles([]);
+      setDatasetFilesLoading(false);
+    },
+  });
+
+  const analysisStatusQuery = useQuery({
+    queryKey: ["/api/v1/elevation/datasets/analysis-task", analysisDataset?.id],
+    enabled: !!analysisDataset,
+    queryFn: async () => {
+      const response = await fetchWithAuth(`/api/v1/elevation/datasets/${analysisDataset?.id}/analysis-task`);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as ElevationDatasetAnalysisTaskStatusResponse;
+    },
+    refetchInterval: analysisModalOpen ? 3000 : false,
+    staleTime: 0,
   });
 
   const datasets = datasetsQuery.data?.items ?? [];
@@ -486,6 +497,32 @@ export default function AdminElevationPage() {
     [datasets],
   );
 
+  const fileColumns = useMemo<ColumnsType<ElevationDatasetFileItem>>(
+    () => [
+      { title: "文件名", dataIndex: "name", width: 260 },
+      { title: "路径", dataIndex: "path", width: 420 },
+      {
+        title: "大小",
+        dataIndex: "size",
+        width: 120,
+        render: (value: number) => formatFileSize(value),
+      },
+      {
+        title: "修改时间",
+        dataIndex: "modified_at",
+        width: 180,
+        render: (value: string | null) => formatDate(value),
+      },
+      {
+        title: "类型",
+        dataIndex: "mime_type",
+        width: 160,
+        render: (value: string | null) => value || "-",
+      },
+    ],
+    [],
+  );
+
   const datasetColumns = useMemo<ColumnsType<ElevationDatasetSummary>>(
     () => [
       { title: "编码", dataIndex: "code", width: 140 },
@@ -501,6 +538,21 @@ export default function AdminElevationPage() {
         dataIndex: "status",
         width: 90,
         render: (value: string) => <Tag color={statusTagColor(value)}>{value}</Tag>,
+      },
+      {
+        title: "分析状态",
+        dataIndex: "analysis_status",
+        width: 120,
+        render: (value: string) => {
+          const colorMap: Record<string, string> = {
+            queued: "orange",
+            running: "processing",
+            success: "green",
+            failed: "red",
+            not_started: "default",
+          };
+          return <Tag color={colorMap[value] || "default"}>{value}</Tag>;
+        },
       },
       {
         title: "使用状态",
@@ -528,9 +580,9 @@ export default function AdminElevationPage() {
         title: "操作",
         key: "actions",
         fixed: "right",
-        width: 190,
+        width: 280,
         render: (_, row) => (
-          <Space size="small">
+          <Space size="small" wrap>
             <Typography.Link
               onClick={() => {
                 setPreviewDataset(row);
@@ -551,7 +603,6 @@ export default function AdminElevationPage() {
                   .catch((candidate) => {
                     const nextError = candidate instanceof Error ? candidate.message : "加载预览失败";
                     setError(nextError);
-                    setSuccess("");
                     messageApi.error(nextError);
                   })
                   .finally(() => {
@@ -562,44 +613,44 @@ export default function AdminElevationPage() {
               预览
             </Typography.Link>
             <Typography.Link
-              disabled={!canManage}
               onClick={() => {
-                if (!canManage) return;
-                analyzeMutation.mutate(row.id);
+                setDatasetFilesDataset(row);
+                setDatasetFiles([]);
+                setDatasetFilesModalOpen(true);
+                setDatasetFilesLoading(true);
+                datasetFilesMutation.mutate(row.id);
               }}
             >
-              {analyzingDatasetId === row.id ? "分析中..." : "分析"}
+              文件明细
+            </Typography.Link>
+            <Typography.Link
+              onClick={() => {
+                setAnalysisDataset(row);
+                setAnalysisModalOpen(true);
+              }}
+            >
+              分析进度
             </Typography.Link>
             <Typography.Link
               disabled={!canManage || datasetDataImportMutation.isPending}
               onClick={() => {
                 if (!canManage || datasetDataImportMutation.isPending) return;
-                datasetDataImportRefs.current[row.id]?.click();
+                setImportDataset(row);
+                setImportFileList([]);
+                setDatasetDataUploadProgress(0);
+                setDatasetDataUploadFileName("");
+                setLastImportedFiles([]);
+                setLastAnalysisTaskId(null);
+                setImportModalOpen(true);
               }}
             >
-              {datasetDataImportMutation.isPending && datasetDataUploadingDatasetId === row.id ? "导入中..." : "导入数据"}
+              导入数据
             </Typography.Link>
-            <input
-              ref={(element) => {
-                datasetDataImportRefs.current[row.id] = element;
-              }}
-              type="file"
-              multiple
-              accept=".csv,.img,.tif,.tiff,.zip"
-              className="hidden"
-              onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                const selected = event.target.files ? Array.from(event.target.files) : [];
-                if (selected.length > 0) {
-                  datasetDataImportMutation.mutate({ datasetId: row.id, files: selected });
-                }
-                event.target.value = "";
-              }}
-            />
             <Typography.Link
               disabled={!canManage || datasetDeleteMutation.isPending}
               onClick={() => {
                 if (!canManage || datasetDeleteMutation.isPending) return;
-                modal.confirm({
+                Modal.confirm({
                   title: "删除高程数据集",
                   content: `确认删除数据集「${row.code} - ${row.name}」？该操作会同时删除关联的回填任务记录，且不可恢复。`,
                   okText: "确认删除",
@@ -618,15 +669,12 @@ export default function AdminElevationPage() {
       },
     ],
     [
-      analyzeMutation,
-      analyzingDatasetId,
       canManage,
       datasetDataImportMutation,
-      datasetDataUploadingDatasetId,
       datasetDeleteMutation,
+      datasetFilesMutation,
       fetchWithAuth,
       messageApi,
-      modal,
     ],
   );
 
@@ -695,33 +743,23 @@ export default function AdminElevationPage() {
     );
   }
 
-  const datasetTableScrollX = 1950;
+  const datasetTableScrollX = 2200;
 
   return (
     <div className="space-y-6">
       {messageContextHolder}
 
-      {(error || success || datasetsQuery.error || jobsQuery.error || linesQuery.error) && (
+      {(error || datasetsQuery.error || jobsQuery.error || linesQuery.error) && (
         <Alert
-          type={error || datasetsQuery.error || jobsQuery.error || linesQuery.error ? "error" : "success"}
+          type="error"
           showIcon
-          message={error || (datasetsQuery.error instanceof Error ? datasetsQuery.error.message : jobsQuery.error instanceof Error ? jobsQuery.error.message : linesQuery.error instanceof Error ? linesQuery.error.message : success)}
-        />
-      )}
-
-      {datasetDataImportMutation.isPending && (
-        <Alert
-          type="info"
-          showIcon
-          message={datasetDataUploadingDatasetId
-            ? `正在导入数据（数据集 ${datasetDataUploadingDatasetId}）`
-            : "正在导入数据"}
-          description={(
-            <div className="space-y-2">
-              <Typography.Text type="secondary">{datasetDataUploadFileName || "正在上传文件..."}</Typography.Text>
-              <Progress percent={datasetDataUploadProgress} status={datasetDataUploadProgress >= 100 ? "active" : "normal"} />
-            </div>
-          )}
+          message={error || (datasetsQuery.error instanceof Error
+            ? datasetsQuery.error.message
+            : jobsQuery.error instanceof Error
+              ? jobsQuery.error.message
+              : linesQuery.error instanceof Error
+                ? linesQuery.error.message
+                : "加载失败")}
         />
       )}
 
@@ -747,7 +785,7 @@ export default function AdminElevationPage() {
                   type="file"
                   accept=".csv,text/csv"
                   className="hidden"
-                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                  onChange={(event) => {
                     const file = event.target.files?.[0];
                     if (file) {
                       datasetImportMutation.mutate(file);
@@ -769,13 +807,6 @@ export default function AdminElevationPage() {
           </Space>
         )}
       >
-        <Alert
-          type="info"
-          showIcon
-          message="支持文件格式：CSV（点集）/ IMG / TIF / TIFF（栅格）/ ZIP（解压后 csv/img/tif）"
-          description="先新建数据集，再使用“导入数据”上传多个高程文件。数据集目录自动固定为 /elevation/datasets/{数据集编码}，导入完成后自动触发分析。"
-          className="mb-4"
-        />
         {datasets.length === 0 ? (
           <Empty description="暂无高程数据集，请先上传 CSV/IMG/TIF 并创建数据集。" />
         ) : (
@@ -918,6 +949,178 @@ export default function AdminElevationPage() {
       </Modal>
 
       <Modal
+        title="导入高程数据"
+        open={importModalOpen}
+        onCancel={() => {
+          if (datasetDataImportMutation.isPending) return;
+          setImportModalOpen(false);
+          setImportDataset(null);
+          setImportFileList([]);
+          setDatasetDataUploadProgress(0);
+          setDatasetDataUploadFileName("");
+          setLastImportedFiles([]);
+          setLastAnalysisTaskId(null);
+        }}
+        onOk={() => {
+          if (!importDataset || datasetDataImportMutation.isPending) return;
+          const files = importFileList
+            .map((item) => item.originFileObj)
+            .filter((item): item is File => !!item);
+          if (files.length === 0) {
+            messageApi.warning("请先选择至少一个文件");
+            return;
+          }
+          datasetDataImportMutation.mutate({ datasetId: importDataset.id, files });
+        }}
+        confirmLoading={datasetDataImportMutation.isPending}
+        okText={datasetDataImportMutation.isPending ? "导入中" : "开始导入"}
+        cancelText="取消"
+      >
+        <div className="space-y-3">
+          <Alert
+            type="info"
+            showIcon
+            message="支持文件格式：CSV（点集）/ IMG / TIF / TIFF（栅格）/ ZIP（解压后 csv/img/tif）"
+            description="先新建数据集，再使用“导入数据”上传多个高程文件。数据集目录自动固定为 /elevation/datasets/{数据集编码}，导入完成后自动触发分析。"
+          />
+          {importDataset && (
+            <Descriptions bordered size="small" column={1}>
+              <Descriptions.Item label="数据集">{`${importDataset.code} - ${importDataset.name}`}</Descriptions.Item>
+              <Descriptions.Item label="目录">{importDataset.dataset_dir}</Descriptions.Item>
+            </Descriptions>
+          )}
+          <Upload
+            multiple
+            fileList={importFileList}
+            beforeUpload={() => false}
+            onChange={({ fileList: nextFileList }) => {
+              setImportFileList(nextFileList);
+            }}
+            accept=".csv,.img,.tif,.tiff,.zip"
+            disabled={datasetDataImportMutation.isPending}
+          >
+            <Typography.Link>选择文件（支持多选）</Typography.Link>
+          </Upload>
+
+          {(datasetDataImportMutation.isPending || datasetDataUploadProgress > 0) && (
+            <div className="space-y-2">
+              <Typography.Text type="secondary">
+                {datasetDataUploadFileName || "正在上传文件..."}
+              </Typography.Text>
+              <Progress
+                percent={datasetDataUploadProgress}
+                status={datasetDataUploadProgress >= 100 ? "active" : "normal"}
+              />
+            </div>
+          )}
+
+          {lastImportedFiles.length > 0 && (
+            <Alert
+              type="success"
+              showIcon
+              message={`已导入文件（${lastImportedFiles.length}）`}
+              description={lastImportedFiles.slice(0, 5).join("；")}
+            />
+          )}
+
+          {lastAnalysisTaskId && (
+            <Alert
+              type="info"
+              showIcon
+              message="分析任务已触发"
+              description={`Task ID: ${lastAnalysisTaskId}，可点击数据集行「分析进度」查看实时状态。`}
+            />
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        title={datasetFilesDataset ? `文件明细：${datasetFilesDataset.code}` : "文件明细"}
+        open={datasetFilesModalOpen}
+        footer={null}
+        width={1040}
+        onCancel={() => {
+          setDatasetFilesModalOpen(false);
+          setDatasetFilesDataset(null);
+          setDatasetFiles([]);
+          setDatasetFilesLoading(false);
+        }}
+      >
+        {datasetFilesDataset && (
+          <div className="space-y-3">
+            <Alert
+              type="info"
+              showIcon
+              message={`目录：${datasetFilesDataset.dataset_dir}`}
+              description={`挂载：${datasetFilesDataset.mount_code}`}
+            />
+            {datasetFilesLoading ? (
+              <div className="flex min-h-[180px] items-center justify-center">
+                <Spin tip="文件明细加载中..." />
+              </div>
+            ) : datasetFiles.length === 0 ? (
+              <Empty description="当前目录暂无文件。" />
+            ) : (
+              <Table<ElevationDatasetFileItem>
+                rowKey={(row) => row.path}
+                columns={fileColumns}
+                dataSource={datasetFiles}
+                pagination={false}
+                scroll={{ x: 1000 }}
+              />
+            )}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        title={analysisDataset ? `分析进度：${analysisDataset.code}` : "分析进度"}
+        open={analysisModalOpen}
+        footer={null}
+        onCancel={() => {
+          setAnalysisModalOpen(false);
+          setAnalysisDataset(null);
+        }}
+      >
+        {analysisDataset && (
+          <div className="space-y-3">
+            {analysisStatusQuery.isLoading ? (
+              <div className="flex min-h-[180px] items-center justify-center">
+                <Spin tip="分析状态加载中..." />
+              </div>
+            ) : analysisStatusQuery.error ? (
+              <Alert
+                type="error"
+                showIcon
+                message={analysisStatusQuery.error instanceof Error ? analysisStatusQuery.error.message : "分析状态加载失败"}
+              />
+            ) : (
+              <>
+                <Descriptions bordered size="small" column={1}>
+                  <Descriptions.Item label="任务状态">
+                    <Tag color={statusTagColor(analysisStatusQuery.data?.status || "default")}>
+                      {analysisStatusQuery.data?.status || "-"}
+                    </Tag>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Task ID">{analysisStatusQuery.data?.task_id || "-"}</Descriptions.Item>
+                  <Descriptions.Item label="开始时间">{formatDate(analysisStatusQuery.data?.started_at)}</Descriptions.Item>
+                  <Descriptions.Item label="结束时间">{formatDate(analysisStatusQuery.data?.finished_at)}</Descriptions.Item>
+                  <Descriptions.Item label="更新时间">{formatDate(analysisStatusQuery.data?.update_date)}</Descriptions.Item>
+                </Descriptions>
+                {analysisStatusQuery.data?.detail && (
+                  <Alert
+                    type={analysisStatusQuery.data.status === "failed" ? "error" : "info"}
+                    showIcon
+                    message={analysisStatusQuery.data.detail}
+                  />
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
         title="新建高程数据集"
         open={datasetModalOpen}
         onCancel={() => {
@@ -932,10 +1135,10 @@ export default function AdminElevationPage() {
         confirmLoading={datasetCreateMutation.isPending}
       >
         <Form<DatasetFormValues> form={datasetForm} layout="vertical" initialValues={DEFAULT_DATASET_FORM}>
-          <Form.Item name="code" label="编码" rules={[{ required: true, message: "请输入编码" }]}>
+          <Form.Item name="code" label="编码" rules={[{ required: true, message: "请输入编码" }]}> 
             <Input placeholder="dem_china_90m_v1" />
           </Form.Item>
-          <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}> 
             <Input placeholder="中国90米DEM（IMG）" />
           </Form.Item>
           <Form.Item name="source" label="来源">
@@ -972,13 +1175,13 @@ export default function AdminElevationPage() {
         confirmLoading={applyMutation.isPending}
       >
         <Form<ApplyFormValues> form={applyForm} layout="vertical" initialValues={DEFAULT_APPLY_FORM}>
-          <Form.Item name="line_id" label="线路" rules={[{ required: true, message: "请选择线路" }]}>
+          <Form.Item name="line_id" label="线路" rules={[{ required: true, message: "请选择线路" }]}> 
             <Select showSearch options={lineOptions} optionFilterProp="label" placeholder="选择线路" />
           </Form.Item>
-          <Form.Item name="dataset_id" label="高程数据集" rules={[{ required: true, message: "请选择高程数据集" }]}>
+          <Form.Item name="dataset_id" label="高程数据集" rules={[{ required: true, message: "请选择高程数据集" }]}> 
             <Select showSearch options={datasetOptions} optionFilterProp="label" placeholder="选择高程数据集" />
           </Form.Item>
-          <Form.Item name="mode" label="回填模式" rules={[{ required: true, message: "请选择回填模式" }]}>
+          <Form.Item name="mode" label="回填模式" rules={[{ required: true, message: "请选择回填模式" }]}> 
             <Select
               options={[
                 { value: "fill_null_only", label: "仅填空（推荐）" },

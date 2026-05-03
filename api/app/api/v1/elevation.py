@@ -10,10 +10,12 @@ from ...schemas.elevation import (
     ElevationApplyJobCreateResponse,
     ElevationApplyJobListResponse,
     ElevationApplyJobSummary,
+    ElevationDatasetAnalysisTaskStatusResponse,
     ElevationDatasetAnalyzeResponse,
     ElevationDatasetBatchImportResponse,
     ElevationDatasetDataImportResponse,
     ElevationDatasetCreateRequest,
+    ElevationDatasetFileListResponse,
     ElevationDatasetListResponse,
     ElevationDatasetPreviewResponse,
     ElevationDatasetSummary,
@@ -24,9 +26,11 @@ from ...services.elevation_service import (
     create_apply_job,
     create_dataset,
     delete_dataset,
+    get_dataset_analysis_task_status,
     get_job_by_id,
     import_dataset_data_files,
     import_datasets_from_csv,
+    list_dataset_files,
     list_datasets,
     list_jobs,
     preview_dataset,
@@ -137,6 +141,24 @@ def preview_elevation_dataset(
         dataset_id=dataset_id,
         max_points=max_points,
     )
+
+
+@router.get("/datasets/{dataset_id}/files", response_model=ElevationDatasetFileListResponse)
+def get_elevation_dataset_files(
+    dataset_id: str,
+    _: CurrentUser = Depends(require_any_permission("elevation.read", "elevation.manage")),
+    db: Session = Depends(get_db),
+) -> ElevationDatasetFileListResponse:
+    return list_dataset_files(db, dataset_id=dataset_id)
+
+
+@router.get("/datasets/{dataset_id}/analysis-task", response_model=ElevationDatasetAnalysisTaskStatusResponse)
+def get_elevation_dataset_analysis_task_status(
+    dataset_id: str,
+    _: CurrentUser = Depends(require_any_permission("elevation.read", "elevation.manage")),
+    db: Session = Depends(get_db),
+) -> ElevationDatasetAnalysisTaskStatusResponse:
+    return get_dataset_analysis_task_status(db, dataset_id=dataset_id)
 
 
 @router.get("/jobs", response_model=ElevationApplyJobListResponse)

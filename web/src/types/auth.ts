@@ -300,6 +300,11 @@ export type ElevationDatasetSummary = {
   bbox_max_lon: number | null;
   bbox_min_lat: number | null;
   bbox_max_lat: number | null;
+  analysis_task_id: string | null;
+  analysis_status: string;
+  analysis_error_message: string | null;
+  analysis_started_at: string | null;
+  analysis_finished_at: string | null;
   notes: string | null;
   create_date: string;
   create_user: string | null;
@@ -336,6 +341,42 @@ export type ElevationDatasetDataImportResponse = {
   warning_count: number;
   warnings: string[];
   imported_files: string[];
+};
+
+export type ElevationDatasetFileItem = {
+  path: string;
+  name: string;
+  size: number;
+  modified_at: string | null;
+  mime_type: string | null;
+};
+
+export type ElevationDatasetFileListResponse = {
+  dataset_id: string;
+  dataset_code: string;
+  dataset_dir: string;
+  mount_code: string;
+  items: ElevationDatasetFileItem[];
+  total: number;
+};
+
+export type ElevationDatasetAnalysisTaskStatus =
+  | "queued"
+  | "running"
+  | "success"
+  | "failed"
+  | "unknown"
+  | "not_found";
+
+export type ElevationDatasetAnalysisTaskStatusResponse = {
+  dataset_id: string;
+  dataset_code: string;
+  task_id: string | null;
+  status: ElevationDatasetAnalysisTaskStatus;
+  detail: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  update_date: string | null;
 };
 
 export type ElevationDatasetPreviewPoint = {

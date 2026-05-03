@@ -29,6 +29,11 @@ class ElevationDatasetSummary(BaseModel):
     bbox_max_lon: float | None = None
     bbox_min_lat: float | None = None
     bbox_max_lat: float | None = None
+    analysis_task_id: str | None = None
+    analysis_status: str = "not_started"
+    analysis_error_message: str | None = None
+    analysis_started_at: datetime | None = None
+    analysis_finished_at: datetime | None = None
     notes: str | None = None
     create_date: datetime
     create_user: str | None = None
@@ -135,6 +140,34 @@ class ElevationDatasetDataImportResponse(BaseModel):
     warning_count: int
     warnings: list[str] = Field(default_factory=list)
     imported_files: list[str] = Field(default_factory=list)
+
+
+class ElevationDatasetFileItem(BaseModel):
+    path: str
+    name: str
+    size: int
+    modified_at: datetime | None = None
+    mime_type: str | None = None
+
+
+class ElevationDatasetFileListResponse(BaseModel):
+    dataset_id: str
+    dataset_code: str
+    dataset_dir: str
+    mount_code: str
+    items: list[ElevationDatasetFileItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class ElevationDatasetAnalysisTaskStatusResponse(BaseModel):
+    dataset_id: str
+    dataset_code: str
+    task_id: str | None = None
+    status: Literal["queued", "running", "success", "failed", "unknown", "not_found"] = "not_found"
+    detail: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    update_date: datetime | None = None
 
 
 class ElevationApplyJobSummary(BaseModel):

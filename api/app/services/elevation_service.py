@@ -25,12 +25,15 @@ from ..schemas.elevation import (
     ElevationApplyJobCreateResponse,
     ElevationApplyJobListResponse,
     ElevationApplyJobSummary,
+    ElevationDatasetAnalysisTaskStatusResponse,
     ElevationDatasetAnalyzeResponse,
     ElevationDatasetBatchImportResponse,
     ElevationDatasetDataImportResponse,
     ElevationDatasetPreviewCell,
     ElevationDatasetPreviewDiagnostics,
     ElevationDatasetCreateRequest,
+    ElevationDatasetFileItem,
+    ElevationDatasetFileListResponse,
     ElevationDatasetListResponse,
     ElevationDatasetPreviewPoint,
     ElevationDatasetPreviewResponse,
@@ -119,6 +122,11 @@ def serialize_dataset(item: ElevationDataset) -> ElevationDatasetSummary:
         bbox_max_lon=item.bbox_max_lon,
         bbox_min_lat=item.bbox_min_lat,
         bbox_max_lat=item.bbox_max_lat,
+        analysis_task_id=item.analysis_task_id,
+        analysis_status=item.analysis_status,
+        analysis_error_message=item.analysis_error_message,
+        analysis_started_at=item.analysis_started_at,
+        analysis_finished_at=item.analysis_finished_at,
         notes=item.notes,
         create_date=item.create_date,
         create_user=item.create_user,
@@ -205,6 +213,50 @@ def get_dataset_by_code(db: Session, code: str) -> ElevationDataset | None:
             func.lower(ElevationDataset.code) == normalized.lower()
         )
     ).scalar_one_or_none()
+
+
+def list_dataset_files(
+    db: Session,
+    *,
+    dataset_id: str,
+) -> ElevationDatasetFileListResponse:
+    dataset = get_dataset_by_id(db, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程数据集不存在")
+
+    mount = _require_mount(db, dataset.mount_code)
+    driver = _build_driver_or_400(mount)
+    dataset_dir = _resolve_dataset_dir(dataset.code)
+    try:
+        entries = driver.list_dir(dataset_dir)
+    except StoragePathNotFoundError:
+        entries = []
+    except StorageInvalidPathError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except StorageDriverError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    files = [
+        ElevationDatasetFileItem(
+            path=item.path,
+            name=item.name,
+            size=max(0, int(item.size)),
+            modified_at=item.modified_at,
+            mime_type=item.mime_type,
+        )
+        for item in entries
+        if not item.is_dir
+    ]
+    files.sort(key=lambda item: item.name.lower())
+
+    return ElevationDatasetFileListResponse(
+        dataset_id=dataset.id,
+        dataset_code=dataset.code,
+        dataset_dir=dataset_dir,
+        mount_code=dataset.mount_code,
+        items=files,
+        total=len(files),
+    )
 
 
 def create_dataset(
@@ -445,6 +497,14 @@ def import_dataset_data_files(
         task = _dispatch_elevation_dataset_analysis_task(dataset_id=dataset.id, actor_user_id=actor.id)
         analysis_task_queued = True
         analysis_task_id = str(task.id)
+        dataset.analysis_task_id = analysis_task_id
+        dataset.analysis_status = "queued"
+        dataset.analysis_error_message = None
+        dataset.analysis_started_at = None
+        dataset.analysis_finished_at = None
+        dataset.update_date = utcnow()
+        dataset.update_user = actor.id
+        db.commit()
     except Exception as exc:  # pragma: no cover
         warnings.append(f"自动分析任务派发失败：{exc}")
 
@@ -466,6 +526,46 @@ def import_dataset_data_files(
         warning_count=len(warnings),
         warnings=warnings,
         imported_files=sorted(set(imported_files)),
+    )
+
+
+def get_dataset_analysis_task_status(
+    db: Session,
+    *,
+    dataset_id: str,
+) -> ElevationDatasetAnalysisTaskStatusResponse:
+    dataset = get_dataset_by_id(db, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程数据集不存在")
+
+    status_value = dataset.analysis_status or "not_started"
+    status_map = {
+        "queued": "queued",
+        "running": "running",
+        "success": "success",
+        "failed": "failed",
+        "unknown": "unknown",
+        "not_started": "not_found",
+    }
+    mapped_status = status_map.get(status_value, "unknown")
+    detail = dataset.analysis_error_message
+    if detail is None:
+        if mapped_status == "queued":
+            detail = "分析任务已提交，等待执行。"
+        elif mapped_status == "running":
+            detail = "分析任务执行中。"
+        elif mapped_status == "success":
+            detail = "最近一次分析已完成。"
+
+    return ElevationDatasetAnalysisTaskStatusResponse(
+        dataset_id=dataset.id,
+        dataset_code=dataset.code,
+        task_id=dataset.analysis_task_id,
+        status=mapped_status,  # type: ignore[arg-type]
+        detail=detail,
+        started_at=dataset.analysis_started_at,
+        finished_at=dataset.analysis_finished_at,
+        update_date=dataset.update_date,
     )
 
 
@@ -552,13 +652,32 @@ def analyze_dataset(
     if item.status != "active":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="高程数据集未启用")
 
-    stats, warnings = _analyze_dataset_content(db, item)
+    item.analysis_status = "running"
+    item.analysis_error_message = None
+    if item.analysis_started_at is None:
+        item.analysis_started_at = utcnow()
+    item.analysis_finished_at = None
+    item.update_date = utcnow()
+    db.commit()
+
+    try:
+        stats, warnings = _analyze_dataset_content(db, item)
+    except Exception as exc:
+        item.analysis_status = "failed"
+        item.analysis_error_message = str(exc)
+        item.analysis_finished_at = utcnow()
+        item.update_date = utcnow()
+        db.commit()
+        raise
 
     item.sample_count = stats["sample_count"]
     item.bbox_min_lon = stats["bbox_min_lon"]
     item.bbox_max_lon = stats["bbox_max_lon"]
     item.bbox_min_lat = stats["bbox_min_lat"]
     item.bbox_max_lat = stats["bbox_max_lat"]
+    item.analysis_status = "success"
+    item.analysis_error_message = None
+    item.analysis_finished_at = utcnow()
     item.update_user = actor.id
     item.update_date = utcnow()
     db.commit()
@@ -858,13 +977,59 @@ def execute_dataset_analysis_job(*, dataset_id: str, actor_user_id: str | None) 
         if not item:
             return
 
+        item.analysis_status = "running"
+        item.analysis_error_message = None
+        item.analysis_started_at = utcnow()
+        item.analysis_finished_at = None
+        item.update_date = utcnow()
+        db.commit()
+        _publish_elevation_change(
+            "elevation.dataset.analysis.running",
+            {"action": "dataset_analysis_running", "dataset_id": item.id},
+        )
+
         actor = db.execute(select(User).where(User.id == actor_user_id)).scalar_one_or_none() if actor_user_id else None
         if actor is None:
             actor = db.execute(select(User).where(User.status == "active").order_by(User.id.asc())).scalars().first()
         if actor is None:
+            item.analysis_status = "failed"
+            item.analysis_error_message = "未找到可用用户执行分析"
+            item.analysis_finished_at = utcnow()
+            item.update_date = utcnow()
+            db.commit()
+            _publish_elevation_change(
+                "elevation.dataset.analysis.failed",
+                {"action": "dataset_analysis_failed", "dataset_id": item.id},
+            )
             return
 
         analyze_dataset(db, dataset_id=dataset_id, actor=actor)
+        saved = get_dataset_by_id(db, dataset_id)
+        if saved is None:
+            return
+        saved.analysis_status = "success"
+        saved.analysis_error_message = None
+        saved.analysis_finished_at = utcnow()
+        saved.update_date = utcnow()
+        saved.update_user = actor.id
+        db.commit()
+        _publish_elevation_change(
+            "elevation.dataset.analysis.success",
+            {"action": "dataset_analysis_success", "dataset_id": saved.id},
+        )
+    except Exception as exc:
+        failed = get_dataset_by_id(db, dataset_id)
+        if failed is not None:
+            failed.analysis_status = "failed"
+            failed.analysis_error_message = str(exc)
+            failed.analysis_finished_at = utcnow()
+            failed.update_date = utcnow()
+            db.commit()
+            _publish_elevation_change(
+                "elevation.dataset.analysis.failed",
+                {"action": "dataset_analysis_failed", "dataset_id": failed.id},
+            )
+        raise
     finally:
         db.close()
 

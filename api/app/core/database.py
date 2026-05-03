@@ -230,6 +230,52 @@ def _ensure_elevation_dataset_column_compatibility() -> None:
                 "Detected missing elevation_dataset.usage_status; added with default 'idle'.",
             )
 
+        if "analysis_task_id" not in column_names:
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ADD COLUMN IF NOT EXISTS analysis_task_id VARCHAR(128)"),
+            )
+            logger.warning(
+                "Detected missing elevation_dataset.analysis_task_id; added nullable analysis task id column.",
+            )
+
+        if "analysis_status" not in column_names:
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ADD COLUMN IF NOT EXISTS analysis_status VARCHAR(32)"),
+            )
+            connection.execute(
+                text("UPDATE elevation_dataset SET analysis_status = 'not_started' WHERE analysis_status IS NULL"),
+            )
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ALTER COLUMN analysis_status SET NOT NULL"),
+            )
+            logger.warning(
+                "Detected missing elevation_dataset.analysis_status; added with default 'not_started'.",
+            )
+
+        if "analysis_error_message" not in column_names:
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ADD COLUMN IF NOT EXISTS analysis_error_message TEXT"),
+            )
+            logger.warning(
+                "Detected missing elevation_dataset.analysis_error_message; added nullable analysis error column.",
+            )
+
+        if "analysis_started_at" not in column_names:
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ADD COLUMN IF NOT EXISTS analysis_started_at TIMESTAMPTZ"),
+            )
+            logger.warning(
+                "Detected missing elevation_dataset.analysis_started_at; added nullable analysis start time column.",
+            )
+
+        if "analysis_finished_at" not in column_names:
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ADD COLUMN IF NOT EXISTS analysis_finished_at TIMESTAMPTZ"),
+            )
+            logger.warning(
+                "Detected missing elevation_dataset.analysis_finished_at; added nullable analysis finish time column.",
+            )
+
 
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
