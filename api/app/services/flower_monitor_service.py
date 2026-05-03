@@ -25,6 +25,9 @@ def build_workers_overview(*, force_refresh: bool) -> FlowerWorkersOverviewRespo
     refresh = "true" if force_refresh else "false"
     workers_map = _call_flower_json(f"/api/workers?refresh={refresh}")
     status_map = _call_flower_json("/api/workers?status=true")
+    if not force_refresh and isinstance(workers_map, dict) and not workers_map and isinstance(status_map, dict) and status_map:
+        # Flower may return an empty workers cache before a refresh; self-heal once.
+        workers_map = _call_flower_json("/api/workers?refresh=true")
     if not isinstance(workers_map, dict):
         workers_map = {}
     if not isinstance(status_map, dict):

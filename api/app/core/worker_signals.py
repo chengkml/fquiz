@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from celery import signals
 
 from ..services.worker_registry_service import mark_worker_offline, register_worker
@@ -8,8 +10,33 @@ from ..services.worker_registry_service import mark_worker_offline, register_wor
 def _normalize_worker_name(sender: object | None) -> str:
     if sender is None:
         return ""
-    text = str(sender).strip()
-    return text
+    candidates = (
+        getattr(sender, "hostname", None),
+        getattr(getattr(sender, "eventer", None), "hostname", None),
+        getattr(getattr(sender, "consumer", None), "hostname", None),
+        sender,
+    )
+    for candidate in candidates:
+        normalized = _clean_worker_name(candidate)
+        if normalized:
+            return normalized
+    return ""
+
+
+def _clean_worker_name(value: object | None) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    if "@" in text and not text.startswith("<"):
+        return text
+    if text.startswith("<") and "object at 0x" in text:
+        return ""
+    match = re.search(r"([A-Za-z0-9_.-]+@[A-Za-z0-9_.:-]+)", text)
+    if match:
+        return match.group(1).strip()
+    return ""
 
 
 def _extract_queue_names(sender: object | None) -> list[str]:

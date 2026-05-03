@@ -155,7 +155,7 @@ export default function AdminWorkersPage() {
     queryKey: ["worker-monitor-overview"],
     enabled: Boolean(user) && canRead,
     queryFn: async () => {
-      const response = await fetchWithAuth("/api/v1/admin/flower/workers?forceRefresh=false");
+      const response = await fetchWithAuth("/api/v1/admin/flower/workers?forceRefresh=true");
       if (!response.ok) {
         throw new Error(await readApiError(response));
       }
@@ -172,7 +172,7 @@ export default function AdminWorkersPage() {
     const params = new URLSearchParams();
     params.set("worker", selectedWorker);
     params.set("recentLimit", String(DEFAULT_RECENT_LIMIT));
-    params.set("forceRefresh", "false");
+    params.set("forceRefresh", "true");
     return `/api/v1/admin/flower/worker-tasks?${params.toString()}`;
   }, [selectedWorker]);
 
