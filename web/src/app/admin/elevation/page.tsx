@@ -181,43 +181,6 @@ export default function AdminElevationPage() {
     }, [refreshPowerLines]),
   );
 
-  const datasetCreateMutation = useMutation({
-    mutationFn: async (values: DatasetFormValues) => {
-      const payload = {
-        code: values.code.trim(),
-        name: values.name.trim(),
-        source: values.source.trim() || null,
-        mount_code: values.mount_code.trim(),
-        file_path: values.file_path.trim(),
-        resolution_m: values.resolution_m,
-        notes: values.notes.trim() || null,
-      };
-      const response = await fetchWithAuth("/api/v1/elevation/datasets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-      return (await response.json()) as ElevationDatasetSummary;
-    },
-    onSuccess: async () => {
-      setSuccess("高程数据集已创建");
-      setError("");
-      messageApi.success("高程数据集已创建");
-      setDatasetModalOpen(false);
-      datasetForm.resetFields();
-      await refreshElevationData();
-    },
-    onError: (candidate) => {
-      const nextError = candidate instanceof Error ? candidate.message : "创建高程数据集失败";
-      setError(nextError);
-      setSuccess("");
-      messageApi.error(nextError);
-    },
-  });
-
   const analyzeMutation = useMutation({
     mutationFn: async (datasetId: string) => {
       const response = await fetchWithAuth(`/api/v1/elevation/datasets/${datasetId}/analyze`, {
@@ -247,6 +210,44 @@ export default function AdminElevationPage() {
     },
     onSettled: () => {
       setAnalyzingDatasetId(null);
+    },
+  });
+
+  const datasetCreateMutation = useMutation({
+    mutationFn: async (values: DatasetFormValues) => {
+      const payload = {
+        code: values.code.trim(),
+        name: values.name.trim(),
+        source: values.source.trim() || null,
+        mount_code: values.mount_code.trim(),
+        file_path: values.file_path.trim(),
+        resolution_m: values.resolution_m,
+        notes: values.notes.trim() || null,
+      };
+      const response = await fetchWithAuth("/api/v1/elevation/datasets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as ElevationDatasetSummary;
+    },
+    onSuccess: async (createdDataset) => {
+      setSuccess("高程数据集已创建，已自动触发分析");
+      setError("");
+      messageApi.success("高程数据集已创建，已自动触发分析");
+      setDatasetModalOpen(false);
+      datasetForm.resetFields();
+      await refreshElevationData();
+      analyzeMutation.mutate(createdDataset.id);
+    },
+    onError: (candidate) => {
+      const nextError = candidate instanceof Error ? candidate.message : "创建高程数据集失败";
+      setError(nextError);
+      setSuccess("");
+      messageApi.error(nextError);
     },
   });
 
