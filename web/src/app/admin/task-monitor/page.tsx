@@ -27,6 +27,7 @@ import {
 
 import { useAuth } from "@/components/auth-provider";
 import { readApiError } from "@/lib/api";
+import { getTaskDisplayName } from "@/lib/celery-task-display";
 
 const { Text } = Typography;
 const AntCard = Card as unknown as ComponentType<CardProps>;
@@ -278,7 +279,7 @@ export default function AdminTaskMonitorPage() {
         dataIndex: "name",
         key: "name",
         width: 220,
-        render: (value: string) => value || "-",
+        render: (value: string) => getTaskDisplayName(value),
       },
       {
         title: "状态",
