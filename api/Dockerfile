@@ -13,6 +13,10 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 ENV PIP_DEFAULT_TIMEOUT=${PIP_DEFAULT_TIMEOUT}
 ENV PIP_RETRIES=${PIP_RETRIES}
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libexpat1 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --retries "${PIP_RETRIES}" --timeout "${PIP_DEFAULT_TIMEOUT}" -i "${PIP_INDEX_URL}" -r requirements.txt
 RUN python -c "import rasterio; print('rasterio ready:', rasterio.__version__)"
