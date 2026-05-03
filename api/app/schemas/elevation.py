@@ -61,6 +61,20 @@ class ElevationDatasetAnalyzeResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ElevationDatasetPreviewPoint(BaseModel):
+    longitude: float
+    latitude: float
+    altitude_m: float
+
+
+class ElevationDatasetPreviewResponse(BaseModel):
+    dataset: ElevationDatasetSummary
+    total_points: int
+    sampled_points: int
+    points: list[ElevationDatasetPreviewPoint] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ElevationApplyJobSummary(BaseModel):
     id: str
     line_id: str

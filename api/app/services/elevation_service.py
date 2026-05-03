@@ -26,6 +26,8 @@ from ..schemas.elevation import (
     ElevationDatasetAnalyzeResponse,
     ElevationDatasetCreateRequest,
     ElevationDatasetListResponse,
+    ElevationDatasetPreviewPoint,
+    ElevationDatasetPreviewResponse,
     ElevationDatasetSummary,
     ElevationDatasetUpdateRequest,
 )
@@ -295,6 +297,40 @@ def analyze_dataset(
     )
 
 
+def preview_dataset(
+    db: Session,
+    *,
+    dataset_id: str,
+    max_points: int,
+) -> ElevationDatasetPreviewResponse:
+    item = get_dataset_by_id(db, dataset_id)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程数据集不存在")
+    if item.status != "active":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="高程数据集未启用")
+
+    preview_limit = max(1, min(max_points, 5000))
+    file_format = _resolve_dataset_file_format(item)
+    if file_format == "csv":
+        points, warnings = _load_dataset_points(db, item)
+        sampled = _sample_preview_points_from_csv(points=points, limit=preview_limit)
+        return ElevationDatasetPreviewResponse(
+            dataset=serialize_dataset(item),
+            total_points=len(points),
+            sampled_points=len(sampled),
+            points=[ElevationDatasetPreviewPoint(longitude=point.lon, latitude=point.lat, altitude_m=point.altitude_m) for point in sampled],
+            warnings=warnings,
+        )
+
+    if file_format in RASTER_FILE_FORMATS:
+        return _build_raster_preview(db, dataset=item, limit=preview_limit)
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"不支持的高程文件格式: {file_format}",
+    )
+
+
 def list_jobs(
     db: Session,
     *,
@@ -559,6 +595,22 @@ def _compute_dataset_stats(points: list[ElevationSamplePoint]) -> dict[str, floa
         "bbox_min_lat": min(lat_values),
         "bbox_max_lat": max(lat_values),
     }
+
+
+def _sample_preview_points_from_csv(
+    *,
+    points: list[ElevationSamplePoint],
+    limit: int,
+) -> list[ElevationSamplePoint]:
+    if len(points) <= limit:
+        return points
+    if limit <= 1:
+        return [points[0]]
+    step = max(1, len(points) // limit)
+    sampled = points[::step]
+    if len(sampled) > limit:
+        sampled = sampled[:limit]
+    return sampled
 
 
 def _analyze_dataset_content(
@@ -855,6 +907,95 @@ def _compute_raster_stats(
                 "bbox_max_lat": float(bounds.top),
             },
             warnings,
+        )
+
+
+def _build_raster_preview(
+    db: Session,
+    *,
+    dataset: ElevationDataset,
+    limit: int,
+) -> ElevationDatasetPreviewResponse:
+    warnings: list[str] = []
+    with _open_raster_dataset(db, dataset) as opened:
+        rasterio = opened.rasterio
+        src = opened.dataset
+        warning_text = _append_non_wgs84_bounds_warning(rasterio=rasterio, src=src)
+        if warning_text:
+            warnings.append(warning_text)
+
+        width = int(src.width or 0)
+        height = int(src.height or 0)
+        if width <= 0 or height <= 0:
+            return ElevationDatasetPreviewResponse(
+                dataset=serialize_dataset(dataset),
+                total_points=0,
+                sampled_points=0,
+                points=[],
+                warnings=warnings,
+            )
+
+        band_nodata = src.nodatavals[0] if src.nodatavals else None
+        total_points = width * height
+        sampled_points: list[ElevationDatasetPreviewPoint] = []
+
+        target_count = max(1, limit)
+        step = max(1, int((width * height / target_count) ** 0.5))
+        y = 0
+        while y < height and len(sampled_points) < target_count:
+            x = 0
+            while x < width and len(sampled_points) < target_count:
+                try:
+                    value = src.read(1, window=((y, y + 1), (x, x + 1)), masked=True)[0][0]
+                except Exception:
+                    x += step
+                    continue
+
+                if _is_masked_value(value):
+                    x += step
+                    continue
+                altitude = float(value)
+                if band_nodata is not None and _almost_equal(altitude, float(band_nodata)):
+                    x += step
+                    continue
+                if not _is_finite_number(altitude):
+                    x += step
+                    continue
+
+                world_x, world_y = src.xy(y, x)
+                lon = float(world_x)
+                lat = float(world_y)
+                if src.crs and str(src.crs) not in {"EPSG:4326", "OGC:CRS84"}:
+                    try:
+                        xs, ys = rasterio.warp.transform(src.crs, "EPSG:4326", [lon], [lat])
+                        lon = float(xs[0])
+                        lat = float(ys[0])
+                    except Exception:
+                        x += step
+                        continue
+                if lon < -180 or lon > 180 or lat < -90 or lat > 90:
+                    x += step
+                    continue
+
+                sampled_points.append(
+                    ElevationDatasetPreviewPoint(
+                        longitude=round(lon, 6),
+                        latitude=round(lat, 6),
+                        altitude_m=round(altitude, 3),
+                    )
+                )
+                x += step
+            y += step
+
+        if not sampled_points:
+            warnings.append("未提取到有效预览点（可能为 nodata 或投影不匹配）")
+
+        return ElevationDatasetPreviewResponse(
+            dataset=serialize_dataset(dataset),
+            total_points=total_points,
+            sampled_points=len(sampled_points),
+            points=sampled_points,
+            warnings=warnings,
         )
 
 

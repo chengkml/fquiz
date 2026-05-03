@@ -21,6 +21,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 
 import { useAuth } from "@/components/auth-provider";
+import { ElevationPreviewCesiumMap } from "@/components/elevation-preview-cesium-map";
 import { Card } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
@@ -30,6 +31,7 @@ import type {
   ElevationApplyJobSummary,
   ElevationDatasetAnalyzeResponse,
   ElevationDatasetListResponse,
+  ElevationDatasetPreviewResponse,
   ElevationDatasetSummary,
   LineListResponse,
   LineSummary,
@@ -94,6 +96,10 @@ export default function AdminElevationPage() {
   const [success, setSuccess] = useState("");
   const [datasetModalOpen, setDatasetModalOpen] = useState(false);
   const [applyModalOpen, setApplyModalOpen] = useState(false);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewDataset, setPreviewDataset] = useState<ElevationDatasetSummary | null>(null);
+  const [previewData, setPreviewData] = useState<ElevationDatasetPreviewResponse | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [analyzingDatasetId, setAnalyzingDatasetId] = useState<string | null>(null);
   const [datasetForm] = Form.useForm<DatasetFormValues>();
   const [applyForm] = Form.useForm<ApplyFormValues>();
@@ -338,6 +344,36 @@ export default function AdminElevationPage() {
         render: (_, row) => (
           <Space size="small">
             <Typography.Link
+              onClick={() => {
+                setPreviewDataset(row);
+                setPreviewData(null);
+                setPreviewModalOpen(true);
+                setPreviewLoading(true);
+                void fetchWithAuth(`/api/v1/elevation/datasets/${row.id}/preview?max_points=1500`)
+                  .then(async (response) => {
+                    if (!response.ok) {
+                      throw new Error(await readApiError(response));
+                    }
+                    return (await response.json()) as ElevationDatasetPreviewResponse;
+                  })
+                  .then((payload) => {
+                    setPreviewData(payload);
+                    setError("");
+                  })
+                  .catch((candidate) => {
+                    const nextError = candidate instanceof Error ? candidate.message : "加载预览失败";
+                    setError(nextError);
+                    setSuccess("");
+                    messageApi.error(nextError);
+                  })
+                  .finally(() => {
+                    setPreviewLoading(false);
+                  });
+              }}
+            >
+              预览
+            </Typography.Link>
+            <Typography.Link
               disabled={!canManage}
               onClick={() => {
                 if (!canManage) return;
@@ -350,7 +386,7 @@ export default function AdminElevationPage() {
         ),
       },
     ],
-    [analyzeMutation, analyzingDatasetId, canManage],
+    [analyzeMutation, analyzingDatasetId, canManage, fetchWithAuth, messageApi],
   );
 
   const jobColumns = useMemo<ColumnsType<ElevationApplyJobSummary>>(
@@ -497,6 +533,42 @@ export default function AdminElevationPage() {
           />
         )}
       </Card>
+
+      <Modal
+        title={previewDataset ? `高程预览：${previewDataset.code}` : "高程预览"}
+        open={previewModalOpen}
+        width={1040}
+        footer={null}
+        onCancel={() => {
+          setPreviewModalOpen(false);
+          setPreviewDataset(null);
+          setPreviewData(null);
+          setPreviewLoading(false);
+        }}
+      >
+        {previewDataset && (
+          <div className="space-y-3">
+            <Alert
+              type="info"
+              showIcon
+              message={`数据集：${previewDataset.name}（${previewDataset.file_format.toUpperCase()}）`}
+              description={previewData ? `总点位 ${previewData.total_points}，预览采样 ${previewData.sampled_points}。` : "正在加载预览数据..."}
+            />
+            {previewData && previewData.warnings.length > 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                message={`预览告警（${previewData.warnings.length}）`}
+                description={previewData.warnings.slice(0, 3).join("；")}
+              />
+            )}
+            <ElevationPreviewCesiumMap
+              points={previewData?.points ?? []}
+              loading={previewLoading}
+            />
+          </div>
+        )}
+      </Modal>
 
       <Modal
         title="新建高程数据集"

@@ -13,6 +13,7 @@ from ...schemas.elevation import (
     ElevationDatasetAnalyzeResponse,
     ElevationDatasetCreateRequest,
     ElevationDatasetListResponse,
+    ElevationDatasetPreviewResponse,
     ElevationDatasetSummary,
     ElevationDatasetUpdateRequest,
 )
@@ -23,6 +24,7 @@ from ...services.elevation_service import (
     get_job_by_id,
     list_datasets,
     list_jobs,
+    preview_dataset,
     serialize_job,
     update_dataset,
 )
@@ -76,6 +78,20 @@ def analyze_elevation_dataset(
     db: Session = Depends(get_db),
 ) -> ElevationDatasetAnalyzeResponse:
     return analyze_dataset(db, dataset_id=dataset_id, actor=current_user.user)
+
+
+@router.get("/datasets/{dataset_id}/preview", response_model=ElevationDatasetPreviewResponse)
+def preview_elevation_dataset(
+    dataset_id: str,
+    max_points: int = Query(default=1500, ge=1, le=5000),
+    _: CurrentUser = Depends(require_any_permission("elevation.read", "elevation.manage")),
+    db: Session = Depends(get_db),
+) -> ElevationDatasetPreviewResponse:
+    return preview_dataset(
+        db,
+        dataset_id=dataset_id,
+        max_points=max_points,
+    )
 
 
 @router.get("/jobs", response_model=ElevationApplyJobListResponse)

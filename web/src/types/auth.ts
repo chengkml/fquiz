@@ -314,6 +314,20 @@ export type ElevationDatasetAnalyzeResponse = {
   warnings: string[];
 };
 
+export type ElevationDatasetPreviewPoint = {
+  longitude: number;
+  latitude: number;
+  altitude_m: number;
+};
+
+export type ElevationDatasetPreviewResponse = {
+  dataset: ElevationDatasetSummary;
+  total_points: number;
+  sampled_points: number;
+  points: ElevationDatasetPreviewPoint[];
+  warnings: string[];
+};
+
 export type ElevationApplyJobSummary = {
   id: string;
   line_id: string;
