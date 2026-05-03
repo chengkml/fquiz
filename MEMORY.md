@@ -150,6 +150,14 @@
   - Beat 定时任务 `app.tasks.worker_registry_tasks.sweep_worker_registry_offline` 负责离线兜底标记。
 - Flower 代理鉴权一致性：
   - `api` 服务必须显式注入 `FLOWER_BASIC_AUTH`（与 `flower` 服务保持同一来源），避免 `/api/v1/admin/flower/*` 代理调用因 Basic Auth 不一致返回 `401` 并在前端表现为 `502`。
+ - Flower worker 详情查询兼容：
+   - 当前 Flower 版本下，`/api/workers?...&workername=...` 可能返回 `404 Unknown worker`（即使 worker 在线且 `/api/tasks?workername=...` 可用）。
+   - 后端代理查询 worker 明细时应避免依赖该过滤接口，优先读取 `workers` 全量快照后本地匹配 worker，避免误映射为 `502`。
+
+## Legacy 鉴权兼容口径（2026-05-03）
+
+- 鉴权服务在访问 legacy 表（`user_role_rela` / `role_menu_rela` / `menu` / `user_role`）前应先做 `to_regclass` 存在性判断。
+- 当 legacy 表缺失（modern-only 数据库）时，直接返回空并走 modern 回退逻辑，避免持续 `relation does not exist` 日志与事务回滚。
 
 ## 前端 Radix 全量化口径（2026-04-18）
 

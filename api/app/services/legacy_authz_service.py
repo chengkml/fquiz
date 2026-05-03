@@ -348,6 +348,8 @@ def _sort_menu_tree(nodes: list[dict[str, Any]]) -> None:
 
 
 def _load_legacy_roles(db: Session, user_id: str) -> list[tuple[str, str | None, str | None]]:
+    if not _legacy_table_exists(db, "user_role_rela") or not _legacy_table_exists(db, "user_role"):
+        return []
     stmt = text(
         """
         SELECT ur.id AS role_id, ur.name AS role_name, ur.state AS role_state
@@ -401,6 +403,8 @@ def _load_modern_roles(db: Session, user_id: str) -> list[tuple[str, str | None,
 def _load_legacy_permissions(db: Session, role_codes: set[str]) -> set[str]:
     real_role_ids = sorted(code for code in role_codes if code != "admin")
     if not real_role_ids:
+        return set()
+    if not _legacy_table_exists(db, "role_menu_rela") or not _legacy_table_exists(db, "menu"):
         return set()
 
     stmt = text(
@@ -457,6 +461,8 @@ def _load_modern_permissions(db: Session, role_codes: set[str]) -> set[str]:
 
 
 def _load_legacy_menus(db: Session) -> list[dict[str, Any]]:
+    if not _legacy_table_exists(db, "menu"):
+        return []
     stmt = text(
         """
         SELECT
@@ -489,6 +495,8 @@ def _load_legacy_allowed_menu_ids(db: Session, role_codes: set[str]) -> set[str]
     real_role_ids = sorted(code for code in role_codes if code != "admin")
     if not real_role_ids:
         return set()
+    if not _legacy_table_exists(db, "role_menu_rela"):
+        return set()
 
     stmt = text(
         """
@@ -510,6 +518,15 @@ def _rollback_safely(db: Session) -> None:
         db.rollback()
     except SQLAlchemyError:
         return
+
+
+def _legacy_table_exists(db: Session, table_name: str) -> bool:
+    try:
+        result = db.scalar(text("SELECT to_regclass(:table_name)"), {"table_name": f"public.{table_name}"})
+    except SQLAlchemyError:
+        _rollback_safely(db)
+        return False
+    return result is not None
 
 
 def _is_role_enabled(raw_state: str) -> bool:

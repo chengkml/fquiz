@@ -65,9 +65,11 @@ def build_worker_task_overview(
 
     refresh = "true" if force_refresh else "false"
     safe_recent_limit = max(1, min(200, int(recent_limit)))
-    workers_map = _call_flower_json(
-        f"/api/workers?refresh={refresh}&workername={quote_plus(normalized_worker)}"
-    )
+    # NOTE:
+    # Flower 2.0 may return 404 "Unknown worker" for `/api/workers?...&workername=...`
+    # even when the worker exists in `/api/workers?status=true` and `/api/tasks`.
+    # Use the full workers snapshot and then pick the target worker locally.
+    workers_map = _call_flower_json(f"/api/workers?refresh={refresh}")
     tasks_map = _call_flower_json(
         f"/api/tasks?limit={safe_recent_limit}&workername={quote_plus(normalized_worker)}"
     )
