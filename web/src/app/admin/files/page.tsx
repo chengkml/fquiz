@@ -761,11 +761,6 @@ export default function AdminFilesPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <Typography.Title level={4} className="!mb-1">{pageDisplayName}列表</Typography.Title>
-              {listData?.current_mount.backend.driver_type !== "VFS" && (
-                <Typography.Text type="secondary">
-                  存储后端：{listData?.current_mount.backend.name ?? "-"}（{listData?.current_mount.backend.driver_type ?? "-"}）
-                </Typography.Text>
-              )}
             </div>
             <Space wrap>
               <Button
