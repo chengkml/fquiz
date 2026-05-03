@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -34,7 +34,6 @@ import type {
   ElevationApplyJobListResponse,
   ElevationApplyJobSummary,
   ElevationDatasetAnalysisTaskStatusResponse,
-  ElevationDatasetBatchImportResponse,
   ElevationDatasetDataImportResponse,
   ElevationDatasetFileItem,
   ElevationDatasetFileListResponse,
@@ -154,8 +153,6 @@ export default function AdminElevationPage() {
 
   const [analysisModalOpen, setAnalysisModalOpen] = useState(false);
   const [analysisDataset, setAnalysisDataset] = useState<ElevationDatasetSummary | null>(null);
-
-  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const [datasetForm] = Form.useForm<DatasetFormValues>();
   const [applyForm] = Form.useForm<ApplyFormValues>();
@@ -352,34 +349,6 @@ export default function AdminElevationPage() {
       setError(nextError);
       messageApi.error(nextError);
       setDatasetDataUploadProgress(0);
-    },
-  });
-
-  const datasetImportMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      const response = await fetchWithAuth("/api/v1/elevation/datasets/import", {
-        method: "POST",
-        body: formData,
-      });
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-      return (await response.json()) as ElevationDatasetBatchImportResponse;
-    },
-    onSuccess: async (payload) => {
-      const msg = payload.warning_count > 0
-        ? `批量导入完成：新增 ${payload.imported_count} 条，分析 ${payload.analyzed_count} 条，跳过 ${payload.skipped_count} 条，告警 ${payload.warning_count} 条`
-        : `批量导入完成：新增 ${payload.imported_count} 条，分析 ${payload.analyzed_count} 条，跳过 ${payload.skipped_count} 条`;
-      setError("");
-      messageApi.success(msg);
-      await refreshElevationData();
-    },
-    onError: (candidate) => {
-      const nextError = candidate instanceof Error ? candidate.message : "批量导入高程数据集失败";
-      setError(nextError);
-      messageApi.error(nextError);
     },
   });
 
@@ -767,32 +736,8 @@ export default function AdminElevationPage() {
         title="高程数据集"
         extra={(
           <Space>
-            <Link href="/files">
-              <Typography.Link>去文件管理上传</Typography.Link>
-            </Link>
             {canManage && (
               <>
-                <Typography.Link
-                  onClick={() => {
-                    if (datasetImportMutation.isPending) return;
-                    importInputRef.current?.click();
-                  }}
-                >
-                  批量导入
-                </Typography.Link>
-                <input
-                  ref={importInputRef}
-                  type="file"
-                  accept=".csv,text/csv"
-                  className="hidden"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) {
-                      datasetImportMutation.mutate(file);
-                    }
-                    event.target.value = "";
-                  }}
-                />
                 <a
                   onClick={(event) => {
                     event.preventDefault();
