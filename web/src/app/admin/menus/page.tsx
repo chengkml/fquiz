@@ -23,7 +23,7 @@ import {
   type CardProps,
   type TableColumnsType,
 } from "antd";
-import type { ComponentType } from "react";
+import type { CSSProperties, ComponentType } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
@@ -551,7 +551,11 @@ export default function AdminMenusPage() {
             </Button>
           </Form.Item>
         </Form>
-        <div ref={tableScrollAnchorRef} className="mt-4">
+        <div
+          ref={tableScrollAnchorRef}
+          className="admin-menus-table-anchor mt-4"
+          style={{ "--admin-menus-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+        >
           <Table<MenuItem>
             rowKey="id"
             dataSource={filteredMenus}

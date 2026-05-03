@@ -208,6 +208,10 @@ body {
   scrollbar-gutter: stable;
 }
 
+.admin-menus-table-anchor .ant-table-body {
+  min-height: var(--admin-menus-table-body-min-height, 180px);
+}
+
 .fquiz-row-selected > td {
   background: var(--fquiz-theme-bg-active) !important;
 }
