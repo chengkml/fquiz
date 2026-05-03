@@ -358,6 +358,7 @@ export type ElevationDatasetPreviewDiagnostics = {
   skip_nodata: number;
   skip_nonfinite: number;
   skip_sample_transform_error: number;
+  sample_tx_first_error: string | null;
   skip_sample_out_of_range: number;
   skip_cell_transform_error: number;
   skip_cell_out_of_range: number;

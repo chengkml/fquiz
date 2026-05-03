@@ -105,6 +105,7 @@ class ElevationDatasetPreviewDiagnostics(BaseModel):
     skip_nodata: int = 0
     skip_nonfinite: int = 0
     skip_sample_transform_error: int = 0
+    sample_tx_first_error: str | None = None
     skip_sample_out_of_range: int = 0
     skip_cell_transform_error: int = 0
     skip_cell_out_of_range: int = 0

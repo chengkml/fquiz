@@ -1176,8 +1176,10 @@ def _build_raster_preview(
                         xs, ys = rasterio.warp.transform(src.crs, "EPSG:4326", [lon], [lat])
                         lon = float(xs[0])
                         lat = float(ys[0])
-                    except Exception:
+                    except Exception as exc:
                         diagnostics.skip_sample_transform_error += 1
+                        if diagnostics.sample_tx_first_error is None:
+                            diagnostics.sample_tx_first_error = str(exc)
                         x += step
                         continue
                 if lon < -180 or lon > 180 or lat < -90 or lat > 90:

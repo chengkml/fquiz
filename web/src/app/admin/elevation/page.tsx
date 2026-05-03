@@ -724,6 +724,9 @@ export default function AdminElevationPage() {
                     {" / "}
                     {previewData.diagnostics.skip_sample_out_of_range}
                   </Descriptions.Item>
+                  <Descriptions.Item label="sample_tx_err 首条异常">
+                    {previewData.diagnostics.sample_tx_first_error || "-"}
+                  </Descriptions.Item>
                   <Descriptions.Item label="跳过统计 (cell_tx_err/cell_range)">
                     {previewData.diagnostics.skip_cell_transform_error}
                     {" / "}
