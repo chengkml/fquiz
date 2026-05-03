@@ -591,6 +591,7 @@ export default function AdminMenusPage() {
               showSizeChanger: true,
               pageSizeOptions: [10, 20, 50, 100],
               showTotal: (total) => `共 ${total} 条`,
+              style: { marginBottom: 0 },
             }}
             locale={{
               emptyText: <Empty description="未找到符合筛选条件的菜单项。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
