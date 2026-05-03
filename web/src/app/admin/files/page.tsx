@@ -34,7 +34,7 @@ import {
   MoreOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { Button, Card } from "@/components/ui-antd";
@@ -88,6 +88,10 @@ function readXhrError(xhr: XMLHttpRequest): string {
   }
 }
 
+const FILES_TABLE_MIN_SCROLL_Y = 180;
+const FILES_TABLE_VIEWPORT_GAP = 40;
+const FILES_TABLE_FALLBACK_RESERVE = 220;
+
 export default function AdminFilesPage() {
   const queryClient = useQueryClient();
   const [messageApi, messageContextHolder] = antdMessage.useMessage();
@@ -109,6 +113,8 @@ export default function AdminFilesPage() {
   const [moveNewName, setMoveNewName] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadFileName, setUploadFileName] = useState("");
+  const [tableScrollY, setTableScrollY] = useState(FILES_TABLE_MIN_SCROLL_Y);
+  const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const canRead = hasPermission("file.read") || hasPermission("file.manage");
   const canManage = hasPermission("file.manage");
@@ -563,6 +569,74 @@ export default function AdminFilesPage() {
     [listData?.breadcrumbs, resetActionPanels],
   );
 
+  const updateTableScrollY = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+    const tableContent = anchor.querySelector<HTMLElement>(".ant-table-content");
+
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - FILES_TABLE_FALLBACK_RESERVE);
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height
+        ?? tableContent?.getBoundingClientRect().height
+        ?? FILES_TABLE_MIN_SCROLL_Y;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - FILES_TABLE_VIEWPORT_GAP);
+    }
+
+    const clampedHeight = Math.max(FILES_TABLE_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, []);
+
+  useEffect(() => {
+    updateTableScrollY();
+  }, [errorMessage, filesQuery.isFetching, items.length, listError, updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updateTableScrollY);
+    };
+
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateTableScrollY);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTableScrollY]);
+
   const columns: TableProps<FileEntryItem>["columns"] = [
       {
         title: "名称",
@@ -833,7 +907,11 @@ export default function AdminFilesPage() {
             <Breadcrumb items={breadcrumbItems} />
           </div>
 
-          <div className="mt-4">
+          <div
+            ref={tableScrollAnchorRef}
+            className="admin-files-table-anchor mt-4"
+            style={{ "--admin-files-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+          >
             <AntTable<FileEntryItem>
               rowKey={(item) => `${item.path}-${item.id}`}
               columns={columns}
@@ -841,7 +919,7 @@ export default function AdminFilesPage() {
               pagination={false}
               loading={filesQuery.isLoading || filesQuery.isFetching}
               size="middle"
-              scroll={{ x: 1100 }}
+              scroll={{ x: 1100, y: tableScrollY }}
               locale={{
                 emptyText: (
                   <Empty

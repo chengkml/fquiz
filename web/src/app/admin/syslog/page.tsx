@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Card, Empty, Form, Input, Space, Spin, Table, Tag, Typography, type CardProps } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import type { ComponentType } from "react";
+import type { CSSProperties, ComponentType } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
@@ -292,7 +292,11 @@ export default function AdminSyslogPage() {
           </Form.Item>
         </Form>
 
-        <div ref={tableScrollAnchorRef} className="mt-4">
+        <div
+          ref={tableScrollAnchorRef}
+          className="admin-syslog-table-anchor mt-4"
+          style={{ "--admin-syslog-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+        >
           <Table<AuditLogItem>
             rowKey={(record) => String(record.id)}
             columns={columns}

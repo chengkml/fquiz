@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   Alert,
   Button,
@@ -482,7 +482,11 @@ export default function AdminSystemParamsPage() {
           </Form.Item>
         </Form>
 
-        <div ref={tableScrollAnchorRef} className="mt-4">
+        <div
+          ref={tableScrollAnchorRef}
+          className="admin-system-params-table-anchor mt-4"
+          style={{ "--admin-system-params-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+        >
           <Table<SystemParamSummary>
             rowKey="id"
             loading={listQuery.isFetching}
@@ -494,6 +498,7 @@ export default function AdminSystemParamsPage() {
               showSizeChanger: true,
               pageSizeOptions: [10, 20, 50, 100],
               showTotal: (total) => `共 ${total} 条`,
+              style: { marginBottom: 0 },
             }}
             locale={{
               emptyText: <Empty description="未找到符合筛选条件的系统参数。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
