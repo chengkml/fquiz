@@ -20,7 +20,14 @@ services:
       - "${REDIS_PORT}:6379"
     volumes:
       - ./data/redis:/data
-    command: redis-server --appendonly yes
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --save
+      - ""
+      - --stop-writes-on-bgsave-error
+      - "no"
     restart: unless-stopped
 
   minio:

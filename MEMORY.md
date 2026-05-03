@@ -1078,3 +1078,11 @@
   - XHR 上传沿用 `withCredentials + Authorization: Bearer <token>`；
   - 401 时触发一次 `refreshAccessToken` 并重试上传，保持与现有鉴权刷新机制一致。
 - AuthContext 对外新增 `getAccessToken()`，用于在异步重试场景读取最新 token，避免闭包持有旧值。
+
+## Redis 持久化容错口径（2026-05-03）
+
+- `deploy/dev-deploy/compose.yml` 与 `deploy/pro-deploy/compose.yml` 的 `redis` 统一采用：
+  - `appendonly yes`
+  - `save ""`
+  - `stop-writes-on-bgsave-error no`
+- 目的：规避 RDB 快照失败触发 `MISCONF` 后 Redis 全局拒写，保障 Celery broker/result backend 可持续写入。

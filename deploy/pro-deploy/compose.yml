@@ -16,7 +16,14 @@ services:
   redis:
     image: ${REDIS_IMAGE}
     container_name: ${COMPOSE_PROJECT_NAME}-redis
-    command: redis-server --appendonly yes
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --save
+      - ""
+      - --stop-writes-on-bgsave-error
+      - "no"
     ports:
       - "${REDIS_PORT}:6379"
     volumes:
