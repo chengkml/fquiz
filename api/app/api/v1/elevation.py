@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
@@ -11,6 +11,7 @@ from ...schemas.elevation import (
     ElevationApplyJobListResponse,
     ElevationApplyJobSummary,
     ElevationDatasetAnalyzeResponse,
+    ElevationDatasetBatchImportResponse,
     ElevationDatasetCreateRequest,
     ElevationDatasetListResponse,
     ElevationDatasetPreviewResponse,
@@ -23,6 +24,7 @@ from ...services.elevation_service import (
     create_dataset,
     delete_dataset,
     get_job_by_id,
+    import_datasets_from_csv,
     list_datasets,
     list_jobs,
     preview_dataset,
@@ -57,6 +59,19 @@ def create_elevation_dataset(
     if not created:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="高程数据集编码已存在")
     return created
+
+
+@router.post("/datasets/import", response_model=ElevationDatasetBatchImportResponse)
+def import_elevation_datasets(
+    file: UploadFile = File(...),
+    current_user: CurrentUser = Depends(require_permission("elevation.manage")),
+    db: Session = Depends(get_db),
+) -> ElevationDatasetBatchImportResponse:
+    return import_datasets_from_csv(
+        db,
+        file=file,
+        actor=current_user.user,
+    )
 
 
 @router.patch("/datasets/{dataset_id}", response_model=ElevationDatasetSummary)

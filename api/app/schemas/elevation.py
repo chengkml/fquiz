@@ -38,6 +38,15 @@ class ElevationDatasetListResponse(BaseModel):
     total: int
 
 
+class ElevationDatasetBatchImportResponse(BaseModel):
+    imported_count: int
+    analyzed_count: int
+    skipped_count: int
+    warning_count: int
+    warnings: list[str] = Field(default_factory=list)
+    items: list[ElevationDatasetSummary] = Field(default_factory=list)
+
+
 class ElevationDatasetCreateRequest(BaseModel):
     code: str = Field(min_length=2, max_length=64)
     name: str = Field(min_length=2, max_length=255)

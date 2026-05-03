@@ -8,7 +8,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,7 @@ from ..schemas.elevation import (
     ElevationApplyJobListResponse,
     ElevationApplyJobSummary,
     ElevationDatasetAnalyzeResponse,
+    ElevationDatasetBatchImportResponse,
     ElevationDatasetPreviewCell,
     ElevationDatasetPreviewDiagnostics,
     ElevationDatasetCreateRequest,
@@ -40,6 +41,7 @@ from .storage_driver import StorageInvalidPathError, StoragePathNotFoundError
 ELEVATION_TOPIC = "admin.elevation"
 POWER_LINES_TOPIC = "admin.power-lines"
 CSV_ENCODINGS = ("utf-8-sig", "utf-8", "gbk", "latin-1")
+CSV_IMPORT_TEXT_ENCODINGS = ("utf-8-sig", "utf-8", "gbk", "latin-1")
 NEAREST_MATCH_MAX_DISTANCE_M = 2000.0
 ELEVATION_FILE_EXT_FORMAT_MAP = {
     ".csv": "csv",
@@ -76,6 +78,21 @@ class _OpenedRasterDataset:
             except Exception:
                 pass
         return False
+
+
+@dataclass
+class ElevationDatasetBatchImportStats:
+    imported_count: int = 0
+    analyzed_count: int = 0
+    skipped_count: int = 0
+    warnings: list[str] | None = None
+    items: list[ElevationDatasetSummary] | None = None
+
+    def __post_init__(self) -> None:
+        if self.warnings is None:
+            self.warnings = []
+        if self.items is None:
+            self.items = []
 
 
 def serialize_dataset(item: ElevationDataset) -> ElevationDatasetSummary:
@@ -224,6 +241,96 @@ def create_dataset(
         {"action": "dataset_created", "dataset_id": saved.id},
     )
     return serialize_dataset(saved)
+
+
+def import_datasets_from_csv(
+    db: Session,
+    *,
+    file: UploadFile,
+    actor: User,
+) -> ElevationDatasetBatchImportResponse:
+    content = file.file.read()
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="上传文件为空")
+
+    text = _decode_text_bytes_for_import(content)
+    rows = list(csv.DictReader(io.StringIO(text)))
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSV 文件没有可导入的数据行")
+
+    stats = ElevationDatasetBatchImportStats()
+    batch_created_ids: list[str] = []
+
+    for row_index, row in enumerate(rows, start=2):
+        normalized_row = {
+            str(key).strip(): value
+            for key, value in row.items()
+            if key is not None
+        }
+        if all(not str(value or "").strip() for value in normalized_row.values()):
+            continue
+
+        code = _pick_csv_value(normalized_row, ["code", "编码"])
+        name = _pick_csv_value(normalized_row, ["name", "名称"])
+        mount_code = _pick_csv_value(normalized_row, ["mount_code", "挂载编码", "挂载"])
+        file_path = _pick_csv_value(normalized_row, ["file_path", "文件路径", "路径"])
+        source = _pick_csv_value(normalized_row, ["source", "来源"])
+        notes = _pick_csv_value(normalized_row, ["notes", "备注"])
+        resolution_text = _pick_csv_value(normalized_row, ["resolution_m", "分辨率", "分辨率m", "分辨率(米)"])
+
+        if not code or not name or not mount_code or not file_path:
+            stats.skipped_count += 1
+            if stats.warnings is not None:
+                stats.warnings.append(f"第 {row_index} 行缺少必填字段（code/name/mount_code/file_path），已跳过")
+            continue
+
+        try:
+            payload = ElevationDatasetCreateRequest(
+                code=code,
+                name=name,
+                source=source,
+                mount_code=mount_code,
+                file_path=file_path,
+                resolution_m=_parse_csv_optional_positive_float(resolution_text),
+                notes=notes,
+            )
+            created = create_dataset(db, payload, actor=actor)
+            if created is None:
+                stats.skipped_count += 1
+                if stats.warnings is not None:
+                    stats.warnings.append(f"第 {row_index} 行编码重复（{code}），已跳过")
+                continue
+            stats.imported_count += 1
+            if stats.items is not None:
+                stats.items.append(created)
+            batch_created_ids.append(created.id)
+        except HTTPException as exc:
+            stats.skipped_count += 1
+            detail = str(exc.detail) if exc.detail else "未知错误"
+            if stats.warnings is not None:
+                stats.warnings.append(f"第 {row_index} 行导入失败（{code}）：{detail}")
+            continue
+
+    for dataset_id in batch_created_ids:
+        try:
+            analyze_dataset(db, dataset_id=dataset_id, actor=actor)
+            stats.analyzed_count += 1
+        except HTTPException as exc:
+            detail = str(exc.detail) if exc.detail else "未知错误"
+            if stats.warnings is not None:
+                stats.warnings.append(f"数据集 {dataset_id} 自动分析失败：{detail}")
+        except Exception as exc:
+            if stats.warnings is not None:
+                stats.warnings.append(f"数据集 {dataset_id} 自动分析异常：{exc}")
+
+    return ElevationDatasetBatchImportResponse(
+        imported_count=stats.imported_count,
+        analyzed_count=stats.analyzed_count,
+        skipped_count=stats.skipped_count,
+        warning_count=len(stats.warnings or []),
+        warnings=stats.warnings or [],
+        items=stats.items or [],
+    )
 
 
 def update_dataset(
@@ -1274,6 +1381,39 @@ def _parse_float(value: Any) -> float | None:
         return float(text)
     except ValueError:
         return None
+
+
+def _decode_text_bytes_for_import(content: bytes) -> str:
+    for encoding in CSV_IMPORT_TEXT_ENCODINGS:
+        try:
+            return content.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSV 编码不受支持")
+
+
+def _pick_csv_value(row: dict[str, Any], keys: list[str]) -> str | None:
+    normalized_keys = {str(key).strip(): key for key in row.keys()}
+    for key in keys:
+        actual_key = normalized_keys.get(key)
+        if actual_key is None:
+            continue
+        value = _normalize_str(row.get(actual_key))
+        if value is not None:
+            return value
+    return None
+
+
+def _parse_csv_optional_positive_float(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"无效分辨率：{value}") from exc
+    if number <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"分辨率必须大于 0：{value}")
+    return number
 
 
 def _publish_elevation_change(event_name: str, payload: dict[str, Any]) -> None:

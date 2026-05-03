@@ -314,6 +314,15 @@ export type ElevationDatasetAnalyzeResponse = {
   warnings: string[];
 };
 
+export type ElevationDatasetBatchImportResponse = {
+  imported_count: number;
+  analyzed_count: number;
+  skipped_count: number;
+  warning_count: number;
+  warnings: string[];
+  items: ElevationDatasetSummary[];
+};
+
 export type ElevationDatasetPreviewPoint = {
   longitude: number;
   latitude: number;

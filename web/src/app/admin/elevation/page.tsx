@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   App,
@@ -32,6 +32,7 @@ import type {
   ElevationApplyJobListResponse,
   ElevationApplyJobSummary,
   ElevationDatasetAnalyzeResponse,
+  ElevationDatasetBatchImportResponse,
   ElevationDatasetListResponse,
   ElevationDatasetPreviewResponse,
   ElevationDatasetSummary,
@@ -109,6 +110,7 @@ export default function AdminElevationPage() {
   const [previewData, setPreviewData] = useState<ElevationDatasetPreviewResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [analyzingDatasetId, setAnalyzingDatasetId] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const [datasetForm] = Form.useForm<DatasetFormValues>();
   const [applyForm] = Form.useForm<ApplyFormValues>();
 
@@ -253,6 +255,36 @@ export default function AdminElevationPage() {
     },
     onError: (candidate) => {
       const nextError = candidate instanceof Error ? candidate.message : "创建高程数据集失败";
+      setError(nextError);
+      setSuccess("");
+      messageApi.error(nextError);
+    },
+  });
+
+  const datasetImportMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetchWithAuth("/api/v1/elevation/datasets/import", {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as ElevationDatasetBatchImportResponse;
+    },
+    onSuccess: async (payload) => {
+      const msg = payload.warning_count > 0
+        ? `批量导入完成：新增 ${payload.imported_count} 条，分析 ${payload.analyzed_count} 条，跳过 ${payload.skipped_count} 条，告警 ${payload.warning_count} 条`
+        : `批量导入完成：新增 ${payload.imported_count} 条，分析 ${payload.analyzed_count} 条，跳过 ${payload.skipped_count} 条`;
+      setSuccess(msg);
+      setError("");
+      messageApi.success(msg);
+      await refreshElevationData();
+    },
+    onError: (candidate) => {
+      const nextError = candidate instanceof Error ? candidate.message : "批量导入高程数据集失败";
       setError(nextError);
       setSuccess("");
       messageApi.error(nextError);
@@ -528,15 +560,38 @@ export default function AdminElevationPage() {
               <Typography.Link>去文件管理上传</Typography.Link>
             </Link>
             {canManage && (
-              <a
-                onClick={(event) => {
-                  event.preventDefault();
-                  datasetForm.setFieldsValue(DEFAULT_DATASET_FORM);
-                  setDatasetModalOpen(true);
-                }}
-              >
-                新建数据集
-              </a>
+              <>
+                <Typography.Link
+                  onClick={() => {
+                    if (datasetImportMutation.isPending) return;
+                    importInputRef.current?.click();
+                  }}
+                >
+                  批量导入
+                </Typography.Link>
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                    const file = event.target.files?.[0];
+                    if (file) {
+                      datasetImportMutation.mutate(file);
+                    }
+                    event.target.value = "";
+                  }}
+                />
+                <a
+                  onClick={(event) => {
+                    event.preventDefault();
+                    datasetForm.setFieldsValue(DEFAULT_DATASET_FORM);
+                    setDatasetModalOpen(true);
+                  }}
+                >
+                  新建数据集
+                </a>
+              </>
             )}
           </Space>
         )}
@@ -545,7 +600,7 @@ export default function AdminElevationPage() {
           type="info"
           showIcon
           message="支持文件格式：CSV（点集）/ IMG / TIF / TIFF（栅格）"
-          description="CSV 预览为点云；IMG/TIF/TIFF 预览为地形网格高低色带（与杆塔无关）。"
+          description="CSV 预览为点云；IMG/TIF/TIFF 预览为地形网格高低色带（与杆塔无关）。支持通过“批量导入”上传数据集元数据 CSV。"
           className="mb-4"
         />
         {datasets.length === 0 ? (
