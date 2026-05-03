@@ -14,7 +14,6 @@ import {
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Row,
   Select,
   Space,
@@ -56,39 +55,6 @@ const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
   { value: "name", label: "按名称" },
 ];
 
-const PROTECTED_MENU_CODES = new Set([
-  "admin.users",
-  "admin.roles",
-  "admin.menus",
-  "admin.system_params",
-  "admin.tower_models",
-  "admin.files",
-  "admin.elevation",
-  "admin.wxapp",
-  "admin.filedetector",
-  "admin.baidu_pan",
-  "admin.power_lines",
-  "admin.lightning_currents",
-  "admin.lightning_distribution",
-  "admin.workers",
-  "admin.data_query",
-  "admin.hot_search",
-  "admin.task_monitor",
-  "admin.atp_models",
-  "admin.cron_task_mgr",
-  "admin.queue_mgr",
-  "admin.todos",
-  "admin.knowledge_mastery",
-  "admin.mdresolve",
-  "admin.tag",
-  "admin.knowledge_point_mgr",
-  "admin.question_bank",
-  "admin.job_mgr",
-  "admin.syslog",
-  "admin.jwt_generator",
-  "admin.wine_runner",
-]);
-
 const DEFAULT_FORM_VALUES: MenuFormValues = {
   code: "",
   name: "",
@@ -118,7 +84,7 @@ function compareMenuIds(a: string, b: string): number {
 
 export default function AdminMenusPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
-  const { message: messageApi } = App.useApp();
+  const { message: messageApi, modal } = App.useApp();
   const [menus, setMenus] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -338,6 +304,17 @@ export default function AdminMenusPage() {
     }
   }, [closeDialog, editingMenuId, fetchWithAuth, loadMenus, messageApi]);
 
+  const requestDeleteMenu = useCallback((menu: MenuItem) => {
+    modal.confirm({
+      title: "删除菜单",
+      content: `确认删除菜单 ${menu.name} (${menu.code}) 吗？`,
+      okText: "删除",
+      cancelText: "取消",
+      okButtonProps: { danger: true },
+      onOk: () => removeMenu(menu),
+    });
+  }, [modal, removeMenu]);
+
   const columns = useMemo<TableColumnsType<MenuItem>>(() => {
     const base: TableColumnsType<MenuItem> = [
       { title: "ID", dataIndex: "id", width: 110 },
@@ -392,26 +369,21 @@ export default function AdminMenusPage() {
           <Button size="small" onClick={() => startEdit(record)}>
             编辑
           </Button>
-          {!PROTECTED_MENU_CODES.has(record.code) && (
-            <Popconfirm
-              title="删除菜单"
-              description={`确认删除菜单 ${record.name} (${record.code}) 吗？`}
-              okText="删除"
-              cancelText="取消"
-              okButtonProps={{ danger: true, loading: deletingMenuId === record.id }}
-              onConfirm={() => removeMenu(record)}
-            >
-              <Button size="small" danger loading={deletingMenuId === record.id}>
-                删除
-              </Button>
-            </Popconfirm>
-          )}
+          <Button
+            size="small"
+            danger
+            loading={deletingMenuId === record.id}
+            disabled={Boolean(deletingMenuId && deletingMenuId !== record.id)}
+            onClick={() => requestDeleteMenu(record)}
+          >
+            删除
+          </Button>
         </Space>
       ),
     });
 
     return base;
-  }, [canManage, deletingMenuId, menuNameById, removeMenu, startEdit]);
+  }, [canManage, deletingMenuId, menuNameById, requestDeleteMenu, startEdit]);
 
   const updateTableScrollY = useCallback(() => {
     if (typeof window === "undefined") {
