@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Card, Empty, Form, Input, Space, Spin, Table, Tag, Typography, type CardProps } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { ComponentType } from "react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
@@ -13,6 +13,9 @@ import { readApiError } from "@/lib/api";
 import type { AuditLogItem, AuditLogListResponse } from "@/types/auth";
 
 const PAGE_SIZE = 50;
+const SYSLOG_TABLE_MIN_SCROLL_Y = 180;
+const SYSLOG_TABLE_VIEWPORT_GAP = 40;
+const SYSLOG_TABLE_FALLBACK_RESERVE = 220;
 const AntCard = Card as unknown as ComponentType<CardProps>;
 
 type Filters = {
@@ -40,6 +43,8 @@ export default function AdminSyslogPage() {
   const [offset, setOffset] = useState(0);
   const [draftFilters, setDraftFilters] = useState<Filters>(EMPTY_FILTERS);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [tableScrollY, setTableScrollY] = useState(SYSLOG_TABLE_MIN_SCROLL_Y);
+  const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const canRead = hasPermission("menu.read") || hasPermission("menu.manage");
 
@@ -127,6 +132,71 @@ export default function AdminSyslogPage() {
     [],
   );
 
+  const updateTableScrollY = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - SYSLOG_TABLE_FALLBACK_RESERVE);
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? SYSLOG_TABLE_MIN_SCROLL_Y;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - SYSLOG_TABLE_VIEWPORT_GAP);
+    }
+
+    const clampedHeight = Math.max(SYSLOG_TABLE_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, []);
+
+  useEffect(() => {
+    updateTableScrollY();
+  }, [error, logs.length, logsQuery.isFetching, total, updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updateTableScrollY);
+    };
+
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateTableScrollY);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTableScrollY]);
+
   if (initializing || logsQuery.isLoading) {
     return (
       <div className="flex min-h-[240px] items-center justify-center">
@@ -167,11 +237,7 @@ export default function AdminSyslogPage() {
     <div className="space-y-6">
       {error ? <Alert type="error" showIcon message="日志加载失败" description={error} /> : null}
 
-      <AntCard title="系统日志" extra={<Typography.Text type="secondary">常见动作：auth.login / auth.logout / auth.refresh</Typography.Text>}>
-        <Typography.Paragraph type="secondary" className="!mb-4">
-          查看鉴权与会话类审计日志，支持按动作和用户筛选。
-        </Typography.Paragraph>
-
+      <AntCard title="系统日志">
         <Form layout="inline" style={{ rowGap: 12 }}>
           <Form.Item label="动作" className="min-w-[280px]">
             <Input
@@ -226,32 +292,28 @@ export default function AdminSyslogPage() {
           </Form.Item>
         </Form>
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <Typography.Text type="secondary">
-            共 {total} 条，当前第 {currentPage} 页
-          </Typography.Text>
-          {logsQuery.isFetching ? <Typography.Text type="secondary">刷新中...</Typography.Text> : null}
+        <div ref={tableScrollAnchorRef} className="mt-4">
+          <Table<AuditLogItem>
+            rowKey={(record) => String(record.id)}
+            columns={columns}
+            dataSource={logs}
+            loading={logsQuery.isFetching}
+            pagination={{
+              current: currentPage,
+              pageSize: PAGE_SIZE,
+              total,
+              onChange: (page) => setOffset((page - 1) * PAGE_SIZE),
+              showSizeChanger: false,
+              showQuickJumper: false,
+              showTotal: (value) => `共 ${value} 条`,
+              style: { marginBottom: 0 },
+            }}
+            locale={{
+              emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无日志数据" />,
+            }}
+            scroll={{ x: 980, y: tableScrollY }}
+          />
         </div>
-
-        <Table<AuditLogItem>
-          rowKey={(record) => String(record.id)}
-          columns={columns}
-          dataSource={logs}
-          loading={logsQuery.isFetching}
-          pagination={{
-            current: currentPage,
-            pageSize: PAGE_SIZE,
-            total,
-            onChange: (page) => setOffset((page - 1) * PAGE_SIZE),
-            showSizeChanger: false,
-            showQuickJumper: false,
-            showTotal: (value) => `共 ${value} 条`,
-          }}
-          locale={{
-            emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无日志数据" />,
-          }}
-          scroll={{ x: 980 }}
-        />
       </AntCard>
     </div>
   );
