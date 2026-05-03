@@ -17,7 +17,6 @@ import {
   Space,
   Spin,
   Table,
-  Tag,
   Typography,
   type CardProps,
 } from "antd";
@@ -46,7 +45,7 @@ const EMPTY_FORM: RoleFormValues = {
 };
 
 const ROLE_TABLE_MIN_SCROLL_Y = 180;
-const ROLE_TABLE_VIEWPORT_GAP = 8;
+const ROLE_TABLE_VIEWPORT_GAP = 40;
 const ROLE_TABLE_FALLBACK_RESERVE = 220;
 
 export default function AdminRolesPage() {
@@ -265,14 +264,25 @@ export default function AdminRolesPage() {
           if (value.length === 0) {
             return <Typography.Text type="secondary">未绑定菜单</Typography.Text>;
           }
+          const menuLabels = value.map((menuId) => menuNameById.get(menuId) ?? String(menuId));
+          const fullText = menuLabels.join("、");
+          const compactText = menuLabels.length > 2
+            ? `${menuLabels.slice(0, 2).join("、")}等${menuLabels.length}个...`
+            : fullText;
           return (
-            <Space wrap size={[4, 4]}>
-              {value.map((menuId) => (
-                <Tag color="blue" key={menuId}>
-                  {menuNameById.get(menuId) ?? String(menuId)}
-                </Tag>
-              ))}
-            </Space>
+            <Typography.Text
+              title={fullText}
+              style={{
+                display: "inline-block",
+                maxWidth: 420,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                verticalAlign: "bottom",
+              }}
+            >
+              {compactText}
+            </Typography.Text>
           );
         },
       },
@@ -441,9 +451,6 @@ export default function AdminRolesPage() {
             <Button onClick={() => setSearchKeyword("")}>重置筛选</Button>
           </Form.Item>
         </Form>
-        <Typography.Text type="secondary">
-          共 {roles.length} 个角色{searchKeyword.trim() ? `，匹配 ${filteredRoles.length} 个` : ""}
-        </Typography.Text>
         <div ref={tableScrollAnchorRef} className="mt-4">
           <Table<RoleItem>
             rowKey="id"
@@ -456,6 +463,7 @@ export default function AdminRolesPage() {
               showSizeChanger: true,
               pageSizeOptions: [10, 20, 50, 100],
               showTotal: (total) => `共 ${total} 条`,
+              style: { marginBottom: 0 },
             }}
             locale={{
               emptyText: <Empty description="未找到匹配角色，请调整搜索条件。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
