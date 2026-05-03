@@ -25,6 +25,7 @@ from ..schemas.elevation import (
     ElevationApplyJobSummary,
     ElevationDatasetAnalyzeResponse,
     ElevationDatasetPreviewCell,
+    ElevationDatasetPreviewDiagnostics,
     ElevationDatasetCreateRequest,
     ElevationDatasetListResponse,
     ElevationDatasetPreviewPoint,
@@ -357,6 +358,23 @@ def preview_dataset(
             sampled_points=len(sampled),
             points=[ElevationDatasetPreviewPoint(longitude=point.lon, latitude=point.lat, altitude_m=point.altitude_m) for point in sampled],
             cells=[],
+            diagnostics=ElevationDatasetPreviewDiagnostics(
+                source_crs="EPSG:4326",
+                source_bounds_min_x=min(point.lon for point in points),
+                source_bounds_max_x=max(point.lon for point in points),
+                source_bounds_min_y=min(point.lat for point in points),
+                source_bounds_max_y=max(point.lat for point in points),
+                wgs84_bounds_min_lon=min(point.lon for point in points),
+                wgs84_bounds_max_lon=max(point.lon for point in points),
+                wgs84_bounds_min_lat=min(point.lat for point in points),
+                wgs84_bounds_max_lat=max(point.lat for point in points),
+                raster_width=None,
+                raster_height=None,
+                target_samples=preview_limit,
+                sampling_step=max(1, len(points) // max(1, len(sampled))) if sampled else None,
+                scanned_candidates=len(points),
+                valid_preview_count=len(sampled),
+            ),
             warnings=warnings,
         )
 
@@ -964,6 +982,38 @@ def _build_raster_preview(
 
         width = int(src.width or 0)
         height = int(src.height or 0)
+        source_bounds = src.bounds
+        source_crs_text = str(src.crs) if src.crs is not None else None
+        diagnostics = ElevationDatasetPreviewDiagnostics(
+            source_crs=source_crs_text,
+            source_bounds_min_x=float(source_bounds.left),
+            source_bounds_max_x=float(source_bounds.right),
+            source_bounds_min_y=float(source_bounds.bottom),
+            source_bounds_max_y=float(source_bounds.top),
+            raster_width=width,
+            raster_height=height,
+        )
+
+        if source_crs_text in {"EPSG:4326", "OGC:CRS84"}:
+            diagnostics.wgs84_bounds_min_lon = float(source_bounds.left)
+            diagnostics.wgs84_bounds_max_lon = float(source_bounds.right)
+            diagnostics.wgs84_bounds_min_lat = float(source_bounds.bottom)
+            diagnostics.wgs84_bounds_max_lat = float(source_bounds.top)
+        elif src.crs is not None:
+            try:
+                xs, ys = rasterio.warp.transform(
+                    src.crs,
+                    "EPSG:4326",
+                    [float(source_bounds.left), float(source_bounds.right), float(source_bounds.left), float(source_bounds.right)],
+                    [float(source_bounds.bottom), float(source_bounds.bottom), float(source_bounds.top), float(source_bounds.top)],
+                )
+                diagnostics.wgs84_bounds_min_lon = float(min(xs))
+                diagnostics.wgs84_bounds_max_lon = float(max(xs))
+                diagnostics.wgs84_bounds_min_lat = float(min(ys))
+                diagnostics.wgs84_bounds_max_lat = float(max(ys))
+            except Exception:
+                warnings.append("无法计算栅格转换后的 WGS84 边界范围")
+
         if width <= 0 or height <= 0:
             return ElevationDatasetPreviewResponse(
                 dataset=serialize_dataset(dataset),
@@ -972,6 +1022,7 @@ def _build_raster_preview(
                 sampled_points=0,
                 points=[],
                 cells=[],
+                diagnostics=diagnostics,
                 warnings=warnings,
             )
 
@@ -982,24 +1033,31 @@ def _build_raster_preview(
 
         target_count = max(1, limit)
         step = max(1, int((width * height / target_count) ** 0.5))
+        diagnostics.target_samples = target_count
+        diagnostics.sampling_step = step
         y = 0
         while y < height and len(sampled_points) < target_count:
             x = 0
             while x < width and len(sampled_points) < target_count:
+                diagnostics.scanned_candidates = (diagnostics.scanned_candidates or 0) + 1
                 try:
                     value = src.read(1, window=((y, y + 1), (x, x + 1)), masked=True)[0][0]
                 except Exception:
+                    diagnostics.skip_read_error += 1
                     x += step
                     continue
 
                 if _is_masked_value(value):
+                    diagnostics.skip_masked += 1
                     x += step
                     continue
                 altitude = float(value)
                 if band_nodata is not None and _almost_equal(altitude, float(band_nodata)):
+                    diagnostics.skip_nodata += 1
                     x += step
                     continue
                 if not _is_finite_number(altitude):
+                    diagnostics.skip_nonfinite += 1
                     x += step
                     continue
 
@@ -1012,9 +1070,11 @@ def _build_raster_preview(
                         lon = float(xs[0])
                         lat = float(ys[0])
                     except Exception:
+                        diagnostics.skip_sample_transform_error += 1
                         x += step
                         continue
                 if lon < -180 or lon > 180 or lat < -90 or lat > 90:
+                    diagnostics.skip_sample_out_of_range += 1
                     x += step
                     continue
 
@@ -1039,6 +1099,7 @@ def _build_raster_preview(
                             [min_lat, min_lat, max_lat, max_lat],
                         )
                     except Exception:
+                        diagnostics.skip_cell_transform_error += 1
                         x += step
                         continue
                     min_lon = float(min(xs))
@@ -1046,6 +1107,7 @@ def _build_raster_preview(
                     min_lat = float(min(ys))
                     max_lat = float(max(ys))
                 if min_lon < -180 or max_lon > 180 or min_lat < -90 or max_lat > 90:
+                    diagnostics.skip_cell_out_of_range += 1
                     x += step
                     continue
                 sampled_cells.append(
@@ -1067,6 +1129,7 @@ def _build_raster_preview(
                 x += step
             y += step
 
+        diagnostics.valid_preview_count = len(sampled_cells)
         if not sampled_cells:
             warnings.append("未提取到有效地形网格（可能为 nodata 或投影定义不匹配）")
 
@@ -1077,6 +1140,7 @@ def _build_raster_preview(
             sampled_points=len(sampled_cells),
             points=sampled_points,
             cells=sampled_cells,
+            diagnostics=diagnostics,
             warnings=warnings,
         )
 

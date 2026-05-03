@@ -328,6 +328,32 @@ export type ElevationDatasetPreviewCell = {
   altitude_m: number;
 };
 
+export type ElevationDatasetPreviewDiagnostics = {
+  source_crs: string | null;
+  source_bounds_min_x: number | null;
+  source_bounds_max_x: number | null;
+  source_bounds_min_y: number | null;
+  source_bounds_max_y: number | null;
+  wgs84_bounds_min_lon: number | null;
+  wgs84_bounds_max_lon: number | null;
+  wgs84_bounds_min_lat: number | null;
+  wgs84_bounds_max_lat: number | null;
+  raster_width: number | null;
+  raster_height: number | null;
+  target_samples: number | null;
+  sampling_step: number | null;
+  scanned_candidates: number | null;
+  valid_preview_count: number | null;
+  skip_read_error: number;
+  skip_masked: number;
+  skip_nodata: number;
+  skip_nonfinite: number;
+  skip_sample_transform_error: number;
+  skip_sample_out_of_range: number;
+  skip_cell_transform_error: number;
+  skip_cell_out_of_range: number;
+};
+
 export type ElevationDatasetPreviewResponse = {
   dataset: ElevationDatasetSummary;
   preview_mode: "point_cloud" | "terrain_grid";
@@ -335,6 +361,7 @@ export type ElevationDatasetPreviewResponse = {
   sampled_points: number;
   points: ElevationDatasetPreviewPoint[];
   cells: ElevationDatasetPreviewCell[];
+  diagnostics: ElevationDatasetPreviewDiagnostics | null;
   warnings: string[];
 };
 

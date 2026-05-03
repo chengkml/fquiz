@@ -75,6 +75,32 @@ class ElevationDatasetPreviewCell(BaseModel):
     altitude_m: float
 
 
+class ElevationDatasetPreviewDiagnostics(BaseModel):
+    source_crs: str | None = None
+    source_bounds_min_x: float | None = None
+    source_bounds_max_x: float | None = None
+    source_bounds_min_y: float | None = None
+    source_bounds_max_y: float | None = None
+    wgs84_bounds_min_lon: float | None = None
+    wgs84_bounds_max_lon: float | None = None
+    wgs84_bounds_min_lat: float | None = None
+    wgs84_bounds_max_lat: float | None = None
+    raster_width: int | None = None
+    raster_height: int | None = None
+    target_samples: int | None = None
+    sampling_step: int | None = None
+    scanned_candidates: int | None = None
+    valid_preview_count: int | None = None
+    skip_read_error: int = 0
+    skip_masked: int = 0
+    skip_nodata: int = 0
+    skip_nonfinite: int = 0
+    skip_sample_transform_error: int = 0
+    skip_sample_out_of_range: int = 0
+    skip_cell_transform_error: int = 0
+    skip_cell_out_of_range: int = 0
+
+
 class ElevationDatasetPreviewResponse(BaseModel):
     dataset: ElevationDatasetSummary
     preview_mode: Literal["point_cloud", "terrain_grid"]
@@ -82,6 +108,7 @@ class ElevationDatasetPreviewResponse(BaseModel):
     sampled_points: int
     points: list[ElevationDatasetPreviewPoint] = Field(default_factory=list)
     cells: list[ElevationDatasetPreviewCell] = Field(default_factory=list)
+    diagnostics: ElevationDatasetPreviewDiagnostics | None = None
     warnings: list[str] = Field(default_factory=list)
 
 

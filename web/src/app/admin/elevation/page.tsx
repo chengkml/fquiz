@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   App,
   Alert,
+  Descriptions,
   Empty,
   Form,
   Input,
@@ -87,6 +88,11 @@ function applyModeLabel(mode: string): string {
 function formatDate(value: string | null): string {
   if (!value) return "-";
   return new Date(value).toLocaleString();
+}
+
+function formatNumber(value: number | null | undefined, digits = 6): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "-";
+  return Number(value).toFixed(digits);
 }
 
 export default function AdminElevationPage() {
@@ -611,6 +617,65 @@ export default function AdminElevationPage() {
                 message={`预览告警（${previewData.warnings.length}）`}
                 description={previewData.warnings.slice(0, 3).join("；")}
               />
+            )}
+            {previewData?.diagnostics && (
+              <Card size="2" title="诊断信息">
+                <Descriptions bordered size="small" column={1} styles={{ label: { width: 230 } }}>
+                  <Descriptions.Item label="源数据 CRS">{previewData.diagnostics.source_crs || "-"}</Descriptions.Item>
+                  <Descriptions.Item label="源范围 (minX,maxX,minY,maxY)">
+                    {formatNumber(previewData.diagnostics.source_bounds_min_x, 3)}
+                    {", "}
+                    {formatNumber(previewData.diagnostics.source_bounds_max_x, 3)}
+                    {", "}
+                    {formatNumber(previewData.diagnostics.source_bounds_min_y, 3)}
+                    {", "}
+                    {formatNumber(previewData.diagnostics.source_bounds_max_y, 3)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="WGS84范围 (minLon,maxLon,minLat,maxLat)">
+                    {formatNumber(previewData.diagnostics.wgs84_bounds_min_lon, 6)}
+                    {", "}
+                    {formatNumber(previewData.diagnostics.wgs84_bounds_max_lon, 6)}
+                    {", "}
+                    {formatNumber(previewData.diagnostics.wgs84_bounds_min_lat, 6)}
+                    {", "}
+                    {formatNumber(previewData.diagnostics.wgs84_bounds_max_lat, 6)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="栅格尺寸 (宽 x 高)">
+                    {previewData.diagnostics.raster_width ?? "-"}
+                    {" x "}
+                    {previewData.diagnostics.raster_height ?? "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="目标采样数 / 步长">
+                    {previewData.diagnostics.target_samples ?? "-"}
+                    {" / "}
+                    {previewData.diagnostics.sampling_step ?? "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="扫描候选点 / 有效网格">
+                    {previewData.diagnostics.scanned_candidates ?? "-"}
+                    {" / "}
+                    {previewData.diagnostics.valid_preview_count ?? "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="跳过统计 (read_err/masked/nodata/nonfinite)">
+                    {previewData.diagnostics.skip_read_error}
+                    {" / "}
+                    {previewData.diagnostics.skip_masked}
+                    {" / "}
+                    {previewData.diagnostics.skip_nodata}
+                    {" / "}
+                    {previewData.diagnostics.skip_nonfinite}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="跳过统计 (sample_tx_err/sample_range)">
+                    {previewData.diagnostics.skip_sample_transform_error}
+                    {" / "}
+                    {previewData.diagnostics.skip_sample_out_of_range}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="跳过统计 (cell_tx_err/cell_range)">
+                    {previewData.diagnostics.skip_cell_transform_error}
+                    {" / "}
+                    {previewData.diagnostics.skip_cell_out_of_range}
+                  </Descriptions.Item>
+                </Descriptions>
+              </Card>
             )}
             <ElevationPreviewCesiumMap
               points={previewData?.points ?? []}
