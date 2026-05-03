@@ -180,12 +180,18 @@ jobs:
             if ! docker compose version >/dev/null 2>&1; then
               COMPOSE_CMD="docker-compose"
             fi
+            COMPOSE_PROJECT_NAME="$(awk -F= '/^COMPOSE_PROJECT_NAME=/{print $2; exit}' deploy/pro-deploy/.env | tr -d '[:space:]')"
+            COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-fquiz}"
+
+            compose_run() {
+              ${COMPOSE_CMD} -p "${COMPOSE_PROJECT_NAME}" --env-file deploy/pro-deploy/.env --env-file deploy/pro-deploy/.env.prod --env-file .images.env -f deploy/pro-deploy/compose.yml "$@"
+            }
 
             pull_with_retry() {
               local max_retries=3
               local attempt=1
               while true; do
-                if ${COMPOSE_CMD} --env-file deploy/pro-deploy/.env --env-file deploy/pro-deploy/.env.prod --env-file .images.env -f deploy/pro-deploy/compose.yml pull; then
+                if compose_run pull; then
                   break
                 fi
                 if [ "${attempt}" -ge "${max_retries}" ]; then
@@ -200,15 +206,15 @@ jobs:
             }
 
             pull_with_retry
-            if ! ${COMPOSE_CMD} --env-file deploy/pro-deploy/.env --env-file deploy/pro-deploy/.env.prod --env-file .images.env -f deploy/pro-deploy/compose.yml up -d --remove-orphans; then
+            if ! compose_run up -d --remove-orphans; then
               echo "[error] docker compose up failed, collecting container diagnostics..."
-              ${COMPOSE_CMD} --env-file deploy/pro-deploy/.env --env-file deploy/pro-deploy/.env.prod --env-file .images.env -f deploy/pro-deploy/compose.yml ps || true
-              docker logs --tail 300 fquiz-prod-api || true
-              docker logs --tail 200 fquiz-prod-db || true
-              docker logs --tail 200 fquiz-prod-redis || true
-              docker logs --tail 200 fquiz-prod-celery-worker || true
-              docker logs --tail 200 fquiz-prod-celery-beat || true
-              docker logs --tail 200 fquiz-prod-flower || true
+              compose_run ps || true
+              compose_run logs --no-color --tail 300 api || true
+              compose_run logs --no-color --tail 200 db || true
+              compose_run logs --no-color --tail 200 redis || true
+              compose_run logs --no-color --tail 200 celery-worker || true
+              compose_run logs --no-color --tail 200 celery-beat || true
+              compose_run logs --no-color --tail 200 flower || true
               exit 1
             fi
-            ${COMPOSE_CMD} --env-file deploy/pro-deploy/.env --env-file deploy/pro-deploy/.env.prod --env-file .images.env -f deploy/pro-deploy/compose.yml ps
+            compose_run ps

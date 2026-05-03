@@ -1,7 +1,6 @@
 services:
   db:
     image: ${POSTGRES_IMAGE}
-    container_name: ${COMPOSE_PROJECT_NAME}-db
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -15,7 +14,6 @@ services:
 
   redis:
     image: ${REDIS_IMAGE}
-    container_name: ${COMPOSE_PROJECT_NAME}-redis
     command:
       - redis-server
       - --appendonly
@@ -32,7 +30,6 @@ services:
 
   minio:
     image: ${MINIO_IMAGE}
-    container_name: ${COMPOSE_PROJECT_NAME}-minio
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
@@ -46,7 +43,6 @@ services:
 
   minio-init:
     image: ${MINIO_MC_IMAGE}
-    container_name: ${COMPOSE_PROJECT_NAME}-minio-init
     depends_on:
       - minio
     entrypoint: /bin/sh
@@ -66,7 +62,6 @@ services:
 
   api:
     image: ${API_IMAGE}
-    container_name: ${COMPOSE_PROJECT_NAME}-api
     depends_on:
       - db
       - redis
@@ -91,7 +86,6 @@ services:
 
   celery-worker:
     image: ${API_IMAGE}
-    container_name: ${COMPOSE_PROJECT_NAME}-celery-worker
     command:
       - celery
       - -A
@@ -117,7 +111,6 @@ services:
 
   celery-beat:
     image: ${API_IMAGE}
-    container_name: ${COMPOSE_PROJECT_NAME}-celery-beat
     command:
       - celery
       - -A
@@ -141,7 +134,6 @@ services:
 
   flower:
     image: ${API_IMAGE}
-    container_name: ${COMPOSE_PROJECT_NAME}-flower
     command:
       - celery
       - -A
@@ -164,7 +156,6 @@ services:
 
   web:
     image: ${WEB_IMAGE}
-    container_name: ${COMPOSE_PROJECT_NAME}-web
     depends_on:
       - api
     environment:
