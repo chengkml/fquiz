@@ -21,7 +21,7 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import Link from "next/link";
-import { useCallback, useMemo, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
@@ -57,6 +57,10 @@ function statusLabel(status: string): string {
   return status || "-";
 }
 
+const USERS_TABLE_MIN_SCROLL_Y = 180;
+const USERS_TABLE_VIEWPORT_GAP = 40;
+const USERS_TABLE_FALLBACK_RESERVE = 220;
+
 export default function AdminUsersPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
@@ -76,6 +80,8 @@ export default function AdminUsersPage() {
   const [searchKeyword, setSearchKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "disabled">("all");
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
+  const [tableScrollY, setTableScrollY] = useState(USERS_TABLE_MIN_SCROLL_Y);
+  const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -429,6 +435,71 @@ export default function AdminUsersPage() {
     || (rolesQuery.error instanceof Error ? rolesQuery.error.message : "");
   const anyError = error || queryError;
 
+  const updateTableScrollY = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - USERS_TABLE_FALLBACK_RESERVE);
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? USERS_TABLE_MIN_SCROLL_Y;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - USERS_TABLE_VIEWPORT_GAP);
+    }
+
+    const clampedHeight = Math.max(USERS_TABLE_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, []);
+
+  useEffect(() => {
+    updateTableScrollY();
+  }, [anyError, pagination.current, pagination.pageSize, users.length, usersQuery.isFetching, updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updateTableScrollY);
+    };
+
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateTableScrollY);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTableScrollY]);
+
   const columns: ColumnsType<UserPublic> = [
     {
       title: "用户 ID",
@@ -650,32 +721,38 @@ export default function AdminUsersPage() {
           </Form.Item>
         </Form>
 
-        <Table<UserPublic>
-          className="mt-4"
-          rowKey="id"
-          dataSource={users}
-          columns={columns}
-          pagination={{
-            current: pagination.current,
-            pageSize: pagination.pageSize,
-            total: usersQuery.data?.total ?? 0,
-            showSizeChanger: true,
-            pageSizeOptions: [10, 20, 50, 100],
-            showTotal: (total) => `共 ${total} 条`,
-            onChange: (page, pageSize) => {
-              setPagination({ current: page, pageSize });
-            },
-          }}
-          scroll={{ x: 1500 }}
-          locale={{
-            emptyText: (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="未找到符合筛选条件的用户。"
-              />
-            ),
-          }}
-        />
+        <div
+          ref={tableScrollAnchorRef}
+          className="admin-users-table-anchor mt-4"
+          style={{ "--admin-users-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+        >
+          <Table<UserPublic>
+            rowKey="id"
+            dataSource={users}
+            columns={columns}
+            pagination={{
+              current: pagination.current,
+              pageSize: pagination.pageSize,
+              total: usersQuery.data?.total ?? 0,
+              showSizeChanger: true,
+              pageSizeOptions: [10, 20, 50, 100],
+              showTotal: (total) => `共 ${total} 条`,
+              style: { marginBottom: 0 },
+              onChange: (page, pageSize) => {
+                setPagination({ current: page, pageSize });
+              },
+            }}
+            scroll={{ x: 1500, y: tableScrollY }}
+            locale={{
+              emptyText: (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="未找到符合筛选条件的用户。"
+                />
+              ),
+            }}
+          />
+        </div>
       </AntCard>
 
       <Modal

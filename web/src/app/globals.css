@@ -212,6 +212,14 @@ body {
   min-height: var(--admin-menus-table-body-min-height, 180px);
 }
 
+.admin-users-table-anchor .ant-table-body {
+  min-height: var(--admin-users-table-body-min-height, 180px);
+}
+
+.admin-roles-table-anchor .ant-table-body {
+  min-height: var(--admin-roles-table-body-min-height, 180px);
+}
+
 .fquiz-row-selected > td {
   background: var(--fquiz-theme-bg-active) !important;
 }
