@@ -104,9 +104,8 @@ const DEFAULT_FORM_VALUES: MenuFormValues = {
 };
 
 const MENU_TABLE_MIN_SCROLL_Y = 180;
-const MENU_TABLE_VIEWPORT_GAP = 12;
+const MENU_TABLE_VIEWPORT_GAP = 40;
 const MENU_TABLE_FALLBACK_RESERVE = 220;
-const MENU_TABLE_OVERFLOW_BUFFER = 4;
 
 function compareMenuIds(a: string, b: string): number {
   const aNum = Number(a);
@@ -436,17 +435,8 @@ export default function AdminMenusPage() {
       nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - MENU_TABLE_VIEWPORT_GAP);
     }
 
-    let adjustedHeight = Math.max(MENU_TABLE_MIN_SCROLL_Y, nextHeight);
-
-    const viewportOverflow = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-    if (viewportOverflow > 0) {
-      adjustedHeight = Math.max(
-        MENU_TABLE_MIN_SCROLL_Y,
-        adjustedHeight - viewportOverflow - MENU_TABLE_OVERFLOW_BUFFER,
-      );
-    }
-
-    setTableScrollY((previous) => (Math.abs(previous - adjustedHeight) <= 1 ? previous : adjustedHeight));
+    const clampedHeight = Math.max(MENU_TABLE_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
   }, []);
 
   useEffect(() => {
