@@ -75,10 +75,12 @@ const EMPTY_FORM: TowerModelFormValues = {
   default_risk_level: "",
 };
 
-const TOWER_MODEL_MIN_SCROLL_Y = 220;
-const TOWER_MODEL_TABLE_VIEWPORT_GAP = 40;
-const TOWER_MODEL_TABLE_FALLBACK_RESERVE = 220;
-const TOWER_MODEL_CARD_FALLBACK_RESERVE = 220;
+const TOWER_MODEL_TABLE_MIN_SCROLL_Y = 220;
+const TOWER_MODEL_CARD_MIN_SCROLL_Y = 280;
+const TOWER_MODEL_TABLE_VIEWPORT_GAP = 20;
+const TOWER_MODEL_CARD_VIEWPORT_GAP = 12;
+const TOWER_MODEL_PAGINATION_GAP = 16;
+const TOWER_MODEL_FALLBACK_PAGINATION_HEIGHT = 56;
 const TOWER_MODEL_PAGE_SIZE_OPTIONS = [6, 9, 12, 18, 24];
 const TOWER_MODEL_DEFAULT_PAGE_SIZE = 12;
 
@@ -354,8 +356,9 @@ export default function AdminTowerModelsPage() {
   const [seedOverwrite, setSeedOverwrite] = useState(false);
   const [viewMode, setViewMode] = useState<TowerModelViewMode>("card");
   const [pagination, setPagination] = useState({ current: 1, pageSize: TOWER_MODEL_DEFAULT_PAGE_SIZE });
-  const [tableScrollY, setTableScrollY] = useState(TOWER_MODEL_MIN_SCROLL_Y);
+  const [tableScrollY, setTableScrollY] = useState(TOWER_MODEL_CARD_MIN_SCROLL_Y);
   const viewScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const paginationRef = useRef<HTMLDivElement | null>(null);
 
   const handleImagePreviewError = useCallback((message: string) => {
     setError(message);
@@ -688,21 +691,21 @@ export default function AdminTowerModelsPage() {
     const anchorTop = anchor.getBoundingClientRect().top;
     const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
     const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+    const paginationHeight = paginationRef.current?.getBoundingClientRect().height ?? TOWER_MODEL_FALLBACK_PAGINATION_HEIGHT;
+    const viewportGap = viewMode === "card" ? TOWER_MODEL_CARD_VIEWPORT_GAP : TOWER_MODEL_TABLE_VIEWPORT_GAP;
+    const reservedBottom = paginationHeight + TOWER_MODEL_PAGINATION_GAP + viewportGap;
 
-    let nextHeight = Math.floor(
-      window.innerHeight
-      - anchorTop
-      - (viewMode === "card" ? TOWER_MODEL_CARD_FALLBACK_RESERVE : TOWER_MODEL_TABLE_FALLBACK_RESERVE),
-    );
-    if (tableWrapper) {
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - reservedBottom);
+    if (viewMode === "list" && tableWrapper) {
       const wrapperRect = tableWrapper.getBoundingClientRect();
-      const bodyHeight = tableBody?.getBoundingClientRect().height ?? TOWER_MODEL_MIN_SCROLL_Y;
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? TOWER_MODEL_TABLE_MIN_SCROLL_Y;
       const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
       const topGap = Math.max(0, wrapperRect.top - anchorTop);
-      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - TOWER_MODEL_TABLE_VIEWPORT_GAP);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - reservedBottom);
     }
 
-    const clampedHeight = Math.max(TOWER_MODEL_MIN_SCROLL_Y, nextHeight);
+    const minHeight = viewMode === "card" ? TOWER_MODEL_CARD_MIN_SCROLL_Y : TOWER_MODEL_TABLE_MIN_SCROLL_Y;
+    const clampedHeight = Math.max(minHeight, nextHeight);
     setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
   }, [viewMode]);
 
@@ -731,7 +734,8 @@ export default function AdminTowerModelsPage() {
     }
 
     const anchor = viewScrollAnchorRef.current;
-    if (!anchor) {
+    const paginationEl = paginationRef.current;
+    if (!anchor || !paginationEl) {
       return;
     }
 
@@ -739,6 +743,7 @@ export default function AdminTowerModelsPage() {
       window.requestAnimationFrame(updateTableScrollY);
     });
     resizeObserver.observe(anchor);
+    resizeObserver.observe(paginationEl);
 
     return () => {
       resizeObserver.disconnect();
@@ -889,7 +894,7 @@ export default function AdminTowerModelsPage() {
                   </div>
                 )}
               </div>
-              <div className="mt-4 flex justify-end">
+              <div ref={paginationRef} className="mt-4 flex justify-end">
                 <Pagination
                   current={pagination.current}
                   pageSize={pagination.pageSize}
