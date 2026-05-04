@@ -232,6 +232,16 @@ body {
   min-height: var(--admin-files-table-body-min-height, 180px);
 }
 
+.admin-tower-models-table-anchor .ant-table-body {
+  min-height: var(--admin-tower-models-table-body-min-height, 220px);
+}
+
+.admin-tower-models-card-anchor {
+  max-height: var(--admin-tower-models-card-body-height, 320px);
+  overflow: auto;
+  padding-right: 2px;
+}
+
 .fquiz-row-selected > td {
   background: var(--fquiz-theme-bg-active) !important;
 }

@@ -11,6 +11,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Pagination,
   Popconfirm,
   Segmented,
   Select,
@@ -21,7 +22,7 @@ import {
   Typography,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { Card } from "@/components/ui-antd";
@@ -74,6 +75,13 @@ const EMPTY_FORM: TowerModelFormValues = {
   default_risk_level: "",
 };
 
+const TOWER_MODEL_MIN_SCROLL_Y = 220;
+const TOWER_MODEL_TABLE_VIEWPORT_GAP = 40;
+const TOWER_MODEL_TABLE_FALLBACK_RESERVE = 220;
+const TOWER_MODEL_CARD_FALLBACK_RESERVE = 300;
+const TOWER_MODEL_PAGE_SIZE_OPTIONS = [6, 9, 12, 18, 24];
+const TOWER_MODEL_DEFAULT_PAGE_SIZE = 12;
+
 function toEditValues(item: TowerModelSummary): TowerModelFormValues {
   return {
     code: item.code,
@@ -118,12 +126,14 @@ type TowerModelImageCellProps = {
   model: TowerModelSummary;
   fetchWithAuth: ReturnType<typeof useAuth>["fetchWithAuth"];
   onPreviewError: (message: string) => void;
+  mode?: "compact" | "hero";
 };
 
 function TowerModelImageCell({
   model,
   fetchWithAuth,
   onPreviewError,
+  mode = "compact",
 }: TowerModelImageCellProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -198,6 +208,98 @@ function TowerModelImageCell({
     }
   }, [fetchWithAuth, model.id, onPreviewError]);
 
+  if (mode === "hero") {
+    return (
+      <div
+        style={{
+          position: "relative",
+          borderRadius: 10,
+          overflow: "hidden",
+          border: "1px solid var(--gray-6, #d9d9d9)",
+          background: "#f5f5f5",
+          minHeight: 260,
+          height: 280,
+        }}
+      >
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={model.name}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              display: "block",
+            }}
+          />
+        ) : (
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "#f0f0f0",
+            }}
+          >
+            <Typography.Text type="secondary">{loading ? "图片加载中..." : "未上传模型图片"}</Typography.Text>
+          </div>
+        )}
+
+        <Tag
+          color={model.is_enabled ? "success" : "default"}
+          style={{ position: "absolute", right: 10, top: 10, marginInlineEnd: 0 }}
+        >
+          {model.is_enabled ? "启用" : "禁用"}
+        </Tag>
+
+        <div
+          style={{
+            position: "absolute",
+            inset: "auto 0 0 0",
+            padding: "10px 12px",
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "space-between",
+            gap: 8,
+            background: "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.72) 100%)",
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                color: "#fff",
+                fontWeight: 600,
+                lineHeight: 1.25,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {model.name}
+            </div>
+            <div
+              style={{
+                color: "rgba(255,255,255,0.86)",
+                fontSize: 12,
+                lineHeight: 1.25,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {model.code} · {model.tower_type || "-"}
+            </div>
+          </div>
+          <Button size="small" type="primary" ghost onClick={() => void openPreview()} loading={previewing}>
+            预览
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Space size={8}>
       {imageUrl ? (
@@ -251,6 +353,9 @@ export default function AdminTowerModelsPage() {
   const [seedUploadOpen, setSeedUploadOpen] = useState(false);
   const [seedOverwrite, setSeedOverwrite] = useState(false);
   const [viewMode, setViewMode] = useState<TowerModelViewMode>("card");
+  const [pagination, setPagination] = useState({ current: 1, pageSize: TOWER_MODEL_DEFAULT_PAGE_SIZE });
+  const [tableScrollY, setTableScrollY] = useState(TOWER_MODEL_MIN_SCROLL_Y);
+  const viewScrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const handleImagePreviewError = useCallback((message: string) => {
     setError(message);
@@ -295,6 +400,15 @@ export default function AdminTowerModelsPage() {
     },
   });
 
+  const listError = towerModelsQuery.error instanceof Error ? towerModelsQuery.error.message : "";
+  const listData = towerModelsQuery.data;
+  const listItems = listData?.items ?? [];
+  const totalItems = listData?.total ?? listItems.length;
+  const pagedItems = useMemo(() => {
+    const start = (pagination.current - 1) * pagination.pageSize;
+    return listItems.slice(start, start + pagination.pageSize);
+  }, [listItems, pagination.current, pagination.pageSize]);
+
   const refreshList = useCallback(async () => {
     await queryClient.invalidateQueries({
       predicate: (query) =>
@@ -307,6 +421,17 @@ export default function AdminTowerModelsPage() {
   useTopicSubscription("admin.tower-models", useCallback(() => {
     void refreshList();
   }, [refreshList]));
+
+  useEffect(() => {
+    setPagination((previous) => (previous.current === 1 ? previous : { ...previous, current: 1 }));
+  }, [keyword, enabledFilter]);
+
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(totalItems / pagination.pageSize));
+    if (pagination.current > maxPage) {
+      setPagination((previous) => ({ ...previous, current: maxPage }));
+    }
+  }, [pagination.current, pagination.pageSize, totalItems]);
 
   const saveMutation = useMutation({
     mutationFn: async (values: TowerModelFormValues) => {
@@ -551,6 +676,80 @@ export default function AdminTowerModelsPage() {
     [canManage, deleteMutation, fetchWithAuth, handleImagePreviewError, openEdit],
   );
 
+  const updateTableScrollY = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = viewScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+
+    let nextHeight = Math.floor(
+      window.innerHeight
+      - anchorTop
+      - (viewMode === "card" ? TOWER_MODEL_CARD_FALLBACK_RESERVE : TOWER_MODEL_TABLE_FALLBACK_RESERVE),
+    );
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? TOWER_MODEL_MIN_SCROLL_Y;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - TOWER_MODEL_TABLE_VIEWPORT_GAP);
+    }
+
+    const overflow = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    if (overflow > 0) {
+      nextHeight -= Math.ceil(overflow + 8);
+    }
+
+    const clampedHeight = Math.max(TOWER_MODEL_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, [viewMode]);
+
+  useEffect(() => {
+    updateTableScrollY();
+  }, [error, listError, pagination.current, pagination.pageSize, totalItems, towerModelsQuery.isFetching, updateTableScrollY, viewMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updateTableScrollY);
+    };
+
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = viewScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateTableScrollY);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTableScrollY]);
+
   const mounts = mountsQuery.data?.mounts ?? [];
 
   if (initializing || towerModelsQuery.isLoading) {
@@ -578,9 +777,6 @@ export default function AdminTowerModelsPage() {
       </Card>
     );
   }
-
-  const listError = towerModelsQuery.error instanceof Error ? towerModelsQuery.error.message : "";
-  const listData = towerModelsQuery.data;
 
   return (
     <Space direction="vertical" size={16} className="w-full">
@@ -637,85 +833,84 @@ export default function AdminTowerModelsPage() {
               onChange={(value) => setViewMode(value === "list" ? "list" : "card")}
             />
           </Space>
-          {listData && listData.items.length === 0 ? (
+          {totalItems === 0 ? (
             <Empty description="暂无杆塔模型数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-          ) : viewMode === "card" ? (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {(listData?.items ?? []).map((row) => (
-                <Card key={row.id} size="2">
-                  <Space direction="vertical" size={10} className="w-full">
-                    <Space size={8} align="start" className="w-full justify-between">
-                      <Space direction="vertical" size={0}>
-                        <Typography.Text strong>{row.name}</Typography.Text>
-                        <Typography.Text code>{row.code}</Typography.Text>
-                      </Space>
-                      <Tag color={row.is_enabled ? "success" : "default"}>
-                        {row.is_enabled ? "启用" : "禁用"}
-                      </Tag>
-                    </Space>
-
-                    <Space direction="vertical" size={4}>
-                      <Typography.Text type="secondary">
-                        塔型：{row.tower_type || "-"}
-                      </Typography.Text>
-                      <Typography.Text type="secondary">
-                        排序：{row.sort_order}
-                      </Typography.Text>
-                    </Space>
-
-                    <Space size={[8, 4]} wrap>
-                      <Tag>接地电阻 {row.default_ground_resistance_ohm ?? "-"}Ω</Tag>
-                      <Tag>地闪密度 {row.default_lightning_density ?? "-"}</Tag>
-                      <Tag>档距 {row.default_span_small_m ?? "-"} / {row.default_span_large_m ?? "-"}</Tag>
-                      <Tag>倾角 {row.default_slope_1 ?? "-"} / {row.default_slope_2 ?? "-"}</Tag>
-                    </Space>
-
-                    {row.image_path ? (
-                      <TowerModelImageCell
-                        model={row}
-                        fetchWithAuth={fetchWithAuth}
-                        onPreviewError={handleImagePreviewError}
-                      />
-                    ) : (
-                      <Typography.Text type="secondary">未上传模型图片</Typography.Text>
-                    )}
-
-                    {canManage && (
-                      <Space size={8} wrap>
-                        <Button size="small" onClick={() => openEdit(row)}>
-                          编辑
-                        </Button>
-                        <Button size="small" onClick={() => setUploadModel(row)}>
-                          上传图片
-                        </Button>
-                        <Popconfirm
-                          title="删除杆塔模型"
-                          description={`确认删除模型 ${row.code} 吗？`}
-                          okText="删除"
-                          cancelText="取消"
-                          okButtonProps={{ danger: true }}
-                          onConfirm={async () => {
-                            await deleteMutation.mutateAsync(row.id);
-                          }}
-                        >
-                          <Button size="small" danger loading={deleteMutation.isPending}>
-                            删除
-                          </Button>
-                        </Popconfirm>
-                      </Space>
-                    )}
-                  </Space>
-                </Card>
-              ))}
-            </div>
           ) : (
-            <Table<TowerModelSummary>
-              rowKey={(row) => row.id}
-              columns={tableColumns}
-              dataSource={listData?.items ?? []}
-              pagination={{ pageSize: 20, showSizeChanger: true }}
-              scroll={{ x: 1450 }}
-            />
+            <>
+              <div ref={viewScrollAnchorRef} className="mt-4">
+                {viewMode === "card" ? (
+                  <div
+                    className="admin-tower-models-card-anchor"
+                    style={{ "--admin-tower-models-card-body-height": `${tableScrollY}px` } as CSSProperties}
+                  >
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {pagedItems.map((row) => (
+                        <Card key={row.id} size="2">
+                          <Space direction="vertical" size={10} className="w-full">
+                            <TowerModelImageCell
+                              model={row}
+                              fetchWithAuth={fetchWithAuth}
+                              onPreviewError={handleImagePreviewError}
+                              mode="hero"
+                            />
+                            {canManage && (
+                              <Space size={8} wrap>
+                                <Button size="small" onClick={() => openEdit(row)}>
+                                  编辑
+                                </Button>
+                                <Button size="small" onClick={() => setUploadModel(row)}>
+                                  上传图片
+                                </Button>
+                                <Popconfirm
+                                  title="删除杆塔模型"
+                                  description={`确认删除模型 ${row.code} 吗？`}
+                                  okText="删除"
+                                  cancelText="取消"
+                                  okButtonProps={{ danger: true }}
+                                  onConfirm={async () => {
+                                    await deleteMutation.mutateAsync(row.id);
+                                  }}
+                                >
+                                  <Button size="small" danger loading={deleteMutation.isPending}>
+                                    删除
+                                  </Button>
+                                </Popconfirm>
+                              </Space>
+                            )}
+                          </Space>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className="admin-tower-models-table-anchor"
+                    style={{ "--admin-tower-models-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+                  >
+                    <Table<TowerModelSummary>
+                      rowKey={(row) => row.id}
+                      columns={tableColumns}
+                      dataSource={pagedItems}
+                      pagination={false}
+                      scroll={{ x: 1450, y: tableScrollY }}
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="mt-4 flex justify-end">
+                <Pagination
+                  current={pagination.current}
+                  pageSize={pagination.pageSize}
+                  total={totalItems}
+                  showSizeChanger
+                  pageSizeOptions={TOWER_MODEL_PAGE_SIZE_OPTIONS.map((value) => String(value))}
+                  showTotal={(total) => `共 ${total} 条`}
+                  onChange={(page, pageSize) => {
+                    setPagination({ current: page, pageSize });
+                  }}
+                />
+              </div>
+            </>
           )}
         </Space>
       </Card>
