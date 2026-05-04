@@ -20,6 +20,7 @@ import {
   Typography,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
@@ -128,6 +129,15 @@ const LINE_VOLTAGE_KV_TO_DEFAULT_OPTION: Partial<Record<number, (typeof LINE_VOL
 
 const TOWER_TABLE_DEFAULT_PAGE_SIZE = 20;
 const TOWER_MAP_QUERY_LIMIT = 500;
+const POWER_LINES_PANEL_MIN_HEIGHT = 360;
+const POWER_LINES_PANEL_FALLBACK_RESERVE = 220;
+const POWER_LINES_PANEL_VIEWPORT_GAP = 40;
+const POWER_LINES_PANEL_BODY_GAP = 16;
+const POWER_LINES_FILTERS_ESTIMATE_HEIGHT = 86;
+const POWER_LINES_STATUS_ESTIMATE_HEIGHT = 34;
+const POWER_LINES_MAP_HEADER_ESTIMATE_HEIGHT = 112;
+const POWER_LINES_MAP_MIN_HEIGHT = 240;
+const POWER_LINES_TABLE_MIN_SCROLL_Y = 180;
 
 const EMPTY_LINE_FORM: LineFormValues = {
   code: "",
@@ -173,6 +183,7 @@ export default function AdminPowerLinesPage() {
   const queryClient = useQueryClient();
   const { message: messageApi } = App.useApp();
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const panelScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const [lineForm] = Form.useForm<LineFormValues>();
   const [towerForm] = Form.useForm<TowerFormValues>();
 
@@ -190,6 +201,7 @@ export default function AdminPowerLinesPage() {
   const [editingTower, setEditingTower] = useState<LineTowerSummary | null>(null);
   const [towerViewMode, setTowerViewMode] = useState<"table" | "map">("map");
   const [error, setError] = useState("");
+  const [panelBodyHeight, setPanelBodyHeight] = useState(POWER_LINES_PANEL_MIN_HEIGHT);
 
   const canLineRead = hasPermission("line.read") || hasPermission("line.manage");
   const canLineManage = hasPermission("line.manage");
@@ -766,6 +778,91 @@ export default function AdminPowerLinesPage() {
     },
   ];
 
+  const updatePanelBodyHeight = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = panelScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const anchorTop = anchor.getBoundingClientRect().top;
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - POWER_LINES_PANEL_FALLBACK_RESERVE);
+
+    const rightCard = anchor.querySelector<HTMLElement>(".power-lines-right-card");
+    if (rightCard) {
+      const cardRect = rightCard.getBoundingClientRect();
+      const body = rightCard.querySelector<HTMLElement>(".ant-card-body");
+      const bodyHeight = body?.getBoundingClientRect().height ?? POWER_LINES_PANEL_MIN_HEIGHT;
+      const nonBodyHeight = Math.max(0, cardRect.height - bodyHeight);
+      const topGap = Math.max(0, cardRect.top - anchorTop);
+      nextHeight = Math.floor(
+        window.innerHeight - anchorTop - topGap - nonBodyHeight - POWER_LINES_PANEL_VIEWPORT_GAP,
+      );
+    }
+
+    const clampedHeight = Math.max(POWER_LINES_PANEL_MIN_HEIGHT, nextHeight);
+    setPanelBodyHeight((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, []);
+
+  useEffect(() => {
+    updatePanelBodyHeight();
+  }, [
+    lineCards.length,
+    towerViewMode,
+    towers.length,
+    linesQuery.isFetching,
+    towersQuery.isFetching,
+    updatePanelBodyHeight,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updatePanelBodyHeight);
+    };
+
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updatePanelBodyHeight]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = panelScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updatePanelBodyHeight);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updatePanelBodyHeight]);
+
+  const leftListHeight = Math.max(
+    180,
+    panelBodyHeight - POWER_LINES_FILTERS_ESTIMATE_HEIGHT - POWER_LINES_STATUS_ESTIMATE_HEIGHT - POWER_LINES_PANEL_BODY_GAP,
+  );
+  const rightContentHeight = Math.max(
+    220,
+    panelBodyHeight - POWER_LINES_MAP_HEADER_ESTIMATE_HEIGHT - POWER_LINES_PANEL_BODY_GAP,
+  );
+  const mapHeight = Math.max(POWER_LINES_MAP_MIN_HEIGHT, rightContentHeight - 32);
+  const towerTableScrollY = Math.max(POWER_LINES_TABLE_MIN_SCROLL_Y, rightContentHeight - 54);
+
   if (initializing || linesQuery.isLoading) {
     return (
       <Card>
@@ -809,9 +906,15 @@ export default function AdminPowerLinesPage() {
         <Alert type="error" showIcon message="操作失败" description={error || lineError || towerError} />
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+      <div
+        ref={panelScrollAnchorRef}
+        className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]"
+        style={{ "--admin-power-lines-panel-body-height": `${panelBodyHeight}px` } as CSSProperties}
+      >
         <Card
           title="线路管理"
+          className="power-lines-left-card"
+          styles={{ body: { height: panelBodyHeight, overflow: "hidden" } }}
           extra={canLineManage ? (
             <Button type="primary" onClick={openCreateLineModal}>
               新建线路
@@ -833,7 +936,7 @@ export default function AdminPowerLinesPage() {
               options={[...STATUS_OPTIONS]}
               onChange={(value) => setStatusFilter(value)}
             />
-            <Space direction="vertical" size={10} className="w-full max-h-[70vh] overflow-y-auto pr-1">
+            <Space direction="vertical" size={10} className="w-full overflow-y-auto pr-1" style={{ height: leftListHeight }}>
               {lines.length === 0 ? (
                 <Empty description="暂无线路数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
               ) : (
@@ -844,6 +947,8 @@ export default function AdminPowerLinesPage() {
         </Card>
 
         <Card
+          className="power-lines-right-card"
+          styles={{ body: { height: panelBodyHeight, overflow: "hidden" } }}
           title={selectedLine ? `${selectedLine.name} - 杆塔管理` : "杆塔管理"}
           extra={(
             <Space size={8} wrap>
@@ -915,7 +1020,7 @@ export default function AdminPowerLinesPage() {
                   placeholder="按风险等级筛选"
                 />
               </div>
-              <div className="relative">
+              <div className="relative overflow-y-auto" style={{ height: rightContentHeight }}>
                 <div
                   aria-hidden={towerViewMode !== "map"}
                   className={`transition-all duration-300 ease-out motion-reduce:transition-none ${
@@ -929,6 +1034,7 @@ export default function AdminPowerLinesPage() {
                     lineName={selectedLine.name}
                     towers={towers}
                     loading={towersQuery.isFetching}
+                    height={mapHeight}
                   />
                 </div>
 
@@ -955,7 +1061,7 @@ export default function AdminPowerLinesPage() {
                         setTowerPagination({ current: page, pageSize });
                       },
                     }}
-                    scroll={{ x: 1520 }}
+                    scroll={{ x: 1520, y: towerTableScrollY }}
                   />
                 </div>
               </div>

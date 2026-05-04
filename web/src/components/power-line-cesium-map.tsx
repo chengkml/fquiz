@@ -12,6 +12,7 @@ type PowerLineCesiumMapProps = {
   lineName?: string;
   towers: LineTowerSummary[];
   loading?: boolean;
+  height?: number;
 };
 
 type CesiumNamespace = typeof import("cesium");
@@ -42,7 +43,7 @@ declare global {
   }
 }
 
-const MAP_HEIGHT = 560;
+const DEFAULT_MAP_HEIGHT = 560;
 const DEFAULT_ALTITUDE_M = 0;
 const MIN_CAMERA_RANGE = 1500;
 const MIN_ZOOM_STEP_RANGE = 300;
@@ -144,6 +145,7 @@ export function PowerLineCesiumMap({
   lineName,
   towers,
   loading = false,
+  height = DEFAULT_MAP_HEIGHT,
 }: PowerLineCesiumMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<import("cesium").Viewer | null>(null);
@@ -406,7 +408,7 @@ export function PowerLineCesiumMap({
       </Typography.Text>
       {initError ? <Alert type="error" showIcon message="走向图加载失败" description={initError} /> : null}
 
-      <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-900/90" style={{ height: MAP_HEIGHT }}>
+      <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-900/90" style={{ height }}>
         <div ref={containerRef} className="h-full w-full" />
         <div className="absolute right-3 top-3 z-10 flex flex-col gap-2 rounded-md border border-slate-700/80 bg-slate-950/70 p-1.5 shadow-lg backdrop-blur-sm">
           <Button
