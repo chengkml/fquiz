@@ -20,13 +20,12 @@ import {
   Typography,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import Image from "next/image";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { Card } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
-import { getApiBaseUrl, readApiError } from "@/lib/api";
+import { readApiError } from "@/lib/api";
 import type {
   FileListResponse,
   FileStorageMount,
@@ -112,6 +111,124 @@ function buildPayload(values: TowerModelFormValues): Record<string, unknown> {
   };
 }
 
+type TowerModelImageCellProps = {
+  model: TowerModelSummary;
+  fetchWithAuth: ReturnType<typeof useAuth>["fetchWithAuth"];
+  onPreviewError: (message: string) => void;
+};
+
+function TowerModelImageCell({
+  model,
+  fetchWithAuth,
+  onPreviewError,
+}: TowerModelImageCellProps) {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    const abortController = new AbortController();
+
+    const loadPreview = async () => {
+      if (!model.image_path) {
+        setImageUrl(null);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const response = await fetchWithAuth(`/api/v1/tower-models/${model.id}/image`, {
+          signal: abortController.signal,
+        });
+        if (!response.ok) {
+          throw new Error(await readApiError(response));
+        }
+        objectUrl = URL.createObjectURL(await response.blob());
+        setImageUrl(objectUrl);
+      } catch (candidate) {
+        if (!(candidate instanceof DOMException && candidate.name === "AbortError")) {
+          setImageUrl(null);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void loadPreview();
+
+    return () => {
+      abortController.abort();
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [fetchWithAuth, model.id, model.image_path]);
+
+  const openPreview = useCallback(async () => {
+    setPreviewing(true);
+    try {
+      const response = await fetchWithAuth(`/api/v1/tower-models/${model.id}/image`);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const nextWindow = window.open(objectUrl, "_blank", "noopener,noreferrer");
+      if (!nextWindow) {
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.target = "_blank";
+        anchor.rel = "noopener noreferrer";
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      }
+      window.setTimeout(() => {
+        URL.revokeObjectURL(objectUrl);
+      }, 60_000);
+    } catch (candidate) {
+      const message = candidate instanceof Error ? candidate.message : "图片加载失败";
+      onPreviewError(message);
+    } finally {
+      setPreviewing(false);
+    }
+  }, [fetchWithAuth, model.id, onPreviewError]);
+
+  return (
+    <Space size={8}>
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt={model.name}
+          width={56}
+          height={56}
+          style={{ objectFit: "cover", borderRadius: 6, border: "1px solid #ddd" }}
+        />
+      ) : (
+        <div
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: 6,
+            border: "1px solid #ddd",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {loading ? "加载中" : "无预览"}
+          </Typography.Text>
+        </div>
+      )}
+      <Button size="small" onClick={() => void openPreview()} loading={previewing}>
+        查看
+      </Button>
+    </Space>
+  );
+}
+
 export default function AdminTowerModelsPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
@@ -130,6 +247,10 @@ export default function AdminTowerModelsPage() {
   const [seedRunning, setSeedRunning] = useState(false);
   const [seedUploadOpen, setSeedUploadOpen] = useState(false);
   const [seedOverwrite, setSeedOverwrite] = useState(false);
+
+  const handleImagePreviewError = useCallback((message: string) => {
+    setError(message);
+  }, []);
 
   const canRead = hasPermission("tower_model.read") || hasPermission("tower_model.manage") || hasPermission("tower.read") || hasPermission("tower.manage");
   const canManage = hasPermission("tower_model.manage");
@@ -376,20 +497,7 @@ export default function AdminTowerModelsPage() {
           if (!row.image_path) {
             return <Typography.Text type="secondary">未上传</Typography.Text>;
           }
-          return (
-            <Space size={8}>
-              <Image
-                src={`${getApiBaseUrl()}/api/v1/tower-models/${row.id}/image`}
-                alt={row.name}
-                width={56}
-                height={56}
-                style={{ objectFit: "cover", borderRadius: 6, border: "1px solid #ddd" }}
-              />
-              <Button size="small" onClick={() => window.open(`${getApiBaseUrl()}/api/v1/tower-models/${row.id}/image`, "_blank")}>
-                查看
-              </Button>
-            </Space>
-          );
+          return <TowerModelImageCell model={row} fetchWithAuth={fetchWithAuth} onPreviewError={handleImagePreviewError} />;
         },
       },
       {
@@ -436,7 +544,7 @@ export default function AdminTowerModelsPage() {
         ),
       },
     ],
-    [canManage, deleteMutation, openEdit],
+    [canManage, deleteMutation, fetchWithAuth, handleImagePreviewError, openEdit],
   );
 
   const mounts = mountsQuery.data?.mounts ?? [];
