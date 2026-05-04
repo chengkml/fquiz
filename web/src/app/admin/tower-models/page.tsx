@@ -22,7 +22,7 @@ import {
   Typography,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { Card } from "@/components/ui-antd";
@@ -702,16 +702,11 @@ export default function AdminTowerModelsPage() {
       nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - TOWER_MODEL_TABLE_VIEWPORT_GAP);
     }
 
-    const overflow = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-    if (overflow > 0) {
-      nextHeight -= Math.ceil(overflow + 8);
-    }
-
     const clampedHeight = Math.max(TOWER_MODEL_MIN_SCROLL_Y, nextHeight);
     setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
   }, [viewMode]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     updateTableScrollY();
   }, [error, listError, pagination.current, pagination.pageSize, totalItems, towerModelsQuery.isFetching, updateTableScrollY, viewMode]);
 
@@ -802,9 +797,6 @@ export default function AdminTowerModelsPage() {
         ) : null}
       >
         <Space direction="vertical" size={12} className="w-full">
-          <Typography.Text type="secondary">
-            模型图片由文件服务挂载路径管理；新建线路添加杆塔时会按模型自动带出默认参数。
-          </Typography.Text>
           <div className="grid gap-3 md:grid-cols-[1fr_160px]">
             <Input
               value={keyword}
