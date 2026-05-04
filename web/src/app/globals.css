@@ -237,7 +237,7 @@ body {
 }
 
 .admin-tower-models-card-anchor {
-  max-height: var(--admin-tower-models-card-body-height, 320px);
+  height: var(--admin-tower-models-card-body-height, 320px);
   overflow: auto;
   padding-right: 2px;
 }
