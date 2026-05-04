@@ -77,7 +77,8 @@ const EMPTY_FORM: TowerModelFormValues = {
 
 const TOWER_MODEL_TABLE_MIN_SCROLL_Y = 220;
 const TOWER_MODEL_CARD_MIN_SCROLL_Y = 280;
-const TOWER_MODEL_VIEWPORT_BOTTOM_GAP = 8;
+const TOWER_MODEL_VIEWPORT_BOTTOM_GAP = 28;
+const TOWER_MODEL_MAX_GROW_STEP = 12;
 const TOWER_MODEL_PAGE_SIZE_OPTIONS = [6, 9, 12, 18, 24];
 const TOWER_MODEL_DEFAULT_PAGE_SIZE = 12;
 
@@ -688,7 +689,8 @@ export default function AdminTowerModelsPage() {
 
     const paginationRect = paginationEl.getBoundingClientRect();
     const targetBottom = window.innerHeight - TOWER_MODEL_VIEWPORT_BOTTOM_GAP;
-    const delta = targetBottom - paginationRect.bottom;
+    const rawDelta = targetBottom - paginationRect.bottom;
+    const delta = rawDelta > 0 ? Math.min(rawDelta, TOWER_MODEL_MAX_GROW_STEP) : rawDelta;
     if (Math.abs(delta) <= 1) {
       return;
     }
