@@ -12,6 +12,7 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
+  Segmented,
   Select,
   Space,
   Switch,
@@ -52,6 +53,8 @@ type TowerModelFormValues = {
   default_slope_2: number | null;
   default_risk_level: string;
 };
+
+type TowerModelViewMode = "card" | "list";
 
 const EMPTY_FORM: TowerModelFormValues = {
   code: "",
@@ -247,6 +250,7 @@ export default function AdminTowerModelsPage() {
   const [seedRunning, setSeedRunning] = useState(false);
   const [seedUploadOpen, setSeedUploadOpen] = useState(false);
   const [seedOverwrite, setSeedOverwrite] = useState(false);
+  const [viewMode, setViewMode] = useState<TowerModelViewMode>("card");
 
   const handleImagePreviewError = useCallback((message: string) => {
     setError(message);
@@ -622,8 +626,88 @@ export default function AdminTowerModelsPage() {
               onChange={(value) => setEnabledFilter(value)}
             />
           </div>
+          <Space size={8} align="center" wrap>
+            <Typography.Text type="secondary">展示方式</Typography.Text>
+            <Segmented
+              options={[
+                { label: "卡片", value: "card" },
+                { label: "列表", value: "list" },
+              ]}
+              value={viewMode}
+              onChange={(value) => setViewMode(value === "list" ? "list" : "card")}
+            />
+          </Space>
           {listData && listData.items.length === 0 ? (
             <Empty description="暂无杆塔模型数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          ) : viewMode === "card" ? (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {(listData?.items ?? []).map((row) => (
+                <Card key={row.id} size="2">
+                  <Space direction="vertical" size={10} className="w-full">
+                    <Space size={8} align="start" className="w-full justify-between">
+                      <Space direction="vertical" size={0}>
+                        <Typography.Text strong>{row.name}</Typography.Text>
+                        <Typography.Text code>{row.code}</Typography.Text>
+                      </Space>
+                      <Tag color={row.is_enabled ? "success" : "default"}>
+                        {row.is_enabled ? "启用" : "禁用"}
+                      </Tag>
+                    </Space>
+
+                    <Space direction="vertical" size={4}>
+                      <Typography.Text type="secondary">
+                        塔型：{row.tower_type || "-"}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        排序：{row.sort_order}
+                      </Typography.Text>
+                    </Space>
+
+                    <Space size={[8, 4]} wrap>
+                      <Tag>接地电阻 {row.default_ground_resistance_ohm ?? "-"}Ω</Tag>
+                      <Tag>地闪密度 {row.default_lightning_density ?? "-"}</Tag>
+                      <Tag>档距 {row.default_span_small_m ?? "-"} / {row.default_span_large_m ?? "-"}</Tag>
+                      <Tag>倾角 {row.default_slope_1 ?? "-"} / {row.default_slope_2 ?? "-"}</Tag>
+                    </Space>
+
+                    {row.image_path ? (
+                      <TowerModelImageCell
+                        model={row}
+                        fetchWithAuth={fetchWithAuth}
+                        onPreviewError={handleImagePreviewError}
+                      />
+                    ) : (
+                      <Typography.Text type="secondary">未上传模型图片</Typography.Text>
+                    )}
+
+                    {canManage && (
+                      <Space size={8} wrap>
+                        <Button size="small" onClick={() => openEdit(row)}>
+                          编辑
+                        </Button>
+                        <Button size="small" onClick={() => setUploadModel(row)}>
+                          上传图片
+                        </Button>
+                        <Popconfirm
+                          title="删除杆塔模型"
+                          description={`确认删除模型 ${row.code} 吗？`}
+                          okText="删除"
+                          cancelText="取消"
+                          okButtonProps={{ danger: true }}
+                          onConfirm={async () => {
+                            await deleteMutation.mutateAsync(row.id);
+                          }}
+                        >
+                          <Button size="small" danger loading={deleteMutation.isPending}>
+                            删除
+                          </Button>
+                        </Popconfirm>
+                      </Space>
+                    )}
+                  </Space>
+                </Card>
+              ))}
+            </div>
           ) : (
             <Table<TowerModelSummary>
               rowKey={(row) => row.id}
