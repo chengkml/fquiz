@@ -333,6 +333,11 @@ export default function AdminPowerLinesPage() {
     () => lines.find((item) => item.id === effectiveSelectedLineId) ?? null,
     [lines, effectiveSelectedLineId],
   );
+  useEffect(() => {
+    if (selectedLineId !== effectiveSelectedLineId) {
+      setSelectedLineId(effectiveSelectedLineId);
+    }
+  }, [selectedLineId, effectiveSelectedLineId]);
 
   const applyTowerModelDefaults = useCallback((modelCode: string | null | undefined) => {
     if (!modelCode) {
