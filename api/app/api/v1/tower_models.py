@@ -22,6 +22,7 @@ from ...services.tower_model_service import (
     list_tower_models,
     list_tower_models_for_selector,
     seed_tower_models_from_legacy,
+    seed_tower_models_from_upload,
     serialize_tower_model,
     update_tower_model,
     upload_tower_model_image,
@@ -137,6 +138,25 @@ def seed_legacy_tower_models_endpoint(
         db,
         actor=current_user.user,
         overwrite_existing=overwrite_existing,
+    )
+
+
+@router.post("/seed/upload", response_model=TowerModelSeedResponse)
+def seed_uploaded_tower_models_endpoint(
+    overwrite_existing: bool = Query(default=False),
+    setting_file: UploadFile = File(...),
+    ganta_file: UploadFile = File(...),
+    images_zip: UploadFile | None = File(default=None),
+    current_user: CurrentUser = Depends(require_permission("tower_model.manage")),
+    db: Session = Depends(get_db),
+) -> TowerModelSeedResponse:
+    return seed_tower_models_from_upload(
+        db,
+        actor=current_user.user,
+        overwrite_existing=overwrite_existing,
+        setting_file=setting_file,
+        ganta_file=ganta_file,
+        images_zip=images_zip,
     )
 
 

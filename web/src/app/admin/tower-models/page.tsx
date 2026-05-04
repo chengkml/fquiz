@@ -115,9 +115,12 @@ function buildPayload(values: TowerModelFormValues): Record<string, unknown> {
 export default function AdminTowerModelsPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
-  const { message: messageApi, modal } = App.useApp();
+  const { message: messageApi } = App.useApp();
   const [form] = Form.useForm<TowerModelFormValues>();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const seedSettingInputRef = useRef<HTMLInputElement | null>(null);
+  const seedGantaInputRef = useRef<HTMLInputElement | null>(null);
+  const seedImagesZipInputRef = useRef<HTMLInputElement | null>(null);
   const [keyword, setKeyword] = useState("");
   const [enabledFilter, setEnabledFilter] = useState<"all" | "enabled" | "disabled">("all");
   const [error, setError] = useState("");
@@ -125,6 +128,8 @@ export default function AdminTowerModelsPage() {
   const [editingModel, setEditingModel] = useState<TowerModelSummary | null>(null);
   const [uploadModel, setUploadModel] = useState<TowerModelSummary | null>(null);
   const [seedRunning, setSeedRunning] = useState(false);
+  const [seedUploadOpen, setSeedUploadOpen] = useState(false);
+  const [seedOverwrite, setSeedOverwrite] = useState(false);
 
   const canRead = hasPermission("tower_model.read") || hasPermission("tower_model.manage") || hasPermission("tower.read") || hasPermission("tower.manage");
   const canManage = hasPermission("tower_model.manage");
@@ -270,12 +275,43 @@ export default function AdminTowerModelsPage() {
     setDialogOpen(true);
   }, [form]);
 
-  const triggerSeed = async (overwrite: boolean) => {
+  const resetSeedUploadInputs = () => {
+    if (seedSettingInputRef.current) {
+      seedSettingInputRef.current.value = "";
+    }
+    if (seedGantaInputRef.current) {
+      seedGantaInputRef.current.value = "";
+    }
+    if (seedImagesZipInputRef.current) {
+      seedImagesZipInputRef.current.value = "";
+    }
+  };
+
+  const triggerSeedUpload = async () => {
+    const settingFile = seedSettingInputRef.current?.files?.[0];
+    const gantaFile = seedGantaInputRef.current?.files?.[0];
+    const imagesZipFile = seedImagesZipInputRef.current?.files?.[0];
+    if (!settingFile) {
+      setError("请先上传 LP_Setting 文件");
+      return;
+    }
+    if (!gantaFile) {
+      setError("请先上传 LP_GanTa 文件");
+      return;
+    }
+
     setSeedRunning(true);
     try {
-      const params = new URLSearchParams({ overwrite_existing: overwrite ? "true" : "false" });
-      const response = await fetchWithAuth(`/api/v1/tower-models/seed/legacy?${params.toString()}`, {
+      const params = new URLSearchParams({ overwrite_existing: seedOverwrite ? "true" : "false" });
+      const formData = new FormData();
+      formData.append("setting_file", settingFile);
+      formData.append("ganta_file", gantaFile);
+      if (imagesZipFile) {
+        formData.append("images_zip", imagesZipFile);
+      }
+      const response = await fetchWithAuth(`/api/v1/tower-models/seed/upload?${params.toString()}`, {
         method: "POST",
+        body: formData,
       });
       if (!response.ok) {
         throw new Error(await readApiError(response));
@@ -289,6 +325,9 @@ export default function AdminTowerModelsPage() {
       } else {
         setError("");
       }
+      setSeedUploadOpen(false);
+      setSeedOverwrite(false);
+      resetSeedUploadInputs();
       await refreshList();
     } catch (candidate) {
       setError(candidate instanceof Error ? candidate.message : "初始化失败");
@@ -444,25 +483,12 @@ export default function AdminTowerModelsPage() {
             <Button onClick={openCreate} type="primary">新建模型</Button>
             <Button
               onClick={() => {
-                modal.confirm({
-                  title: "初始化老系统模型数据",
-                  content: "从老系统 LP_Setting/LP_GanTa/Models 导入模型、默认参数和图片。",
-                  closable: false,
-                  maskClosable: false,
-                  keyboard: false,
-                  okText: "覆盖初始化",
-                  cancelText: "仅新增",
-                  onOk: async () => {
-                    await triggerSeed(true);
-                  },
-                  onCancel: async () => {
-                    await triggerSeed(false);
-                  },
-                });
+                setSeedOverwrite(false);
+                setSeedUploadOpen(true);
               }}
               loading={seedRunning}
             >
-              初始化老系统数据
+              上传文件初始化
             </Button>
           </Space>
         ) : null}
@@ -572,6 +598,61 @@ export default function AdminTowerModelsPage() {
             <Input.TextArea rows={3} />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title="上传初始化文件"
+        open={seedUploadOpen}
+        okText="开始初始化"
+        confirmLoading={seedRunning}
+        onCancel={() => {
+          if (seedRunning) {
+            return;
+          }
+          setSeedUploadOpen(false);
+          setSeedOverwrite(false);
+          resetSeedUploadInputs();
+        }}
+        onOk={async () => {
+          await triggerSeedUpload();
+        }}
+      >
+        <Space direction="vertical" size={12} className="w-full">
+          <Typography.Text type="secondary">
+            请上传老系统导出的 LP_Setting、LP_GanTa 文件；图片压缩包可选（zip，按“模型编码.扩展名”匹配）。
+          </Typography.Text>
+          <div>
+            <Typography.Text>LP_Setting 文件（必选）</Typography.Text>
+            <input
+              ref={seedSettingInputRef}
+              type="file"
+              accept=".txt,.csv,text/plain"
+              className="mt-1 block w-full"
+            />
+          </div>
+          <div>
+            <Typography.Text>LP_GanTa 文件（必选）</Typography.Text>
+            <input
+              ref={seedGantaInputRef}
+              type="file"
+              accept=".txt,.csv,text/plain"
+              className="mt-1 block w-full"
+            />
+          </div>
+          <div>
+            <Typography.Text>模型图片压缩包（可选，zip）</Typography.Text>
+            <input
+              ref={seedImagesZipInputRef}
+              type="file"
+              accept=".zip,application/zip,application/x-zip-compressed"
+              className="mt-1 block w-full"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch checked={seedOverwrite} onChange={setSeedOverwrite} />
+            <Typography.Text>覆盖已存在模型（关闭则仅新增）</Typography.Text>
+          </div>
+        </Space>
       </Modal>
 
       <Modal

@@ -4,6 +4,7 @@ import asyncio
 import csv
 import io
 import mimetypes
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -435,6 +436,128 @@ def seed_tower_models_from_legacy(
     )
 
 
+def seed_tower_models_from_upload(
+    db: Session,
+    *,
+    actor: User,
+    overwrite_existing: bool,
+    setting_file: UploadFile,
+    ganta_file: UploadFile,
+    images_zip: UploadFile | None,
+) -> TowerModelSeedResponse:
+    setting_name = (setting_file.filename or "").strip()
+    ganta_name = (ganta_file.filename or "").strip()
+    if not setting_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="LP_Setting 文件名不能为空")
+    if not ganta_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="LP_GanTa 文件名不能为空")
+
+    setting_bytes = _read_upload_bytes(setting_file, label="LP_Setting")
+    ganta_bytes = _read_upload_bytes(ganta_file, label="LP_GanTa")
+    image_bytes_map = _load_image_bytes_from_zip(images_zip)
+
+    mount = _resolve_default_mount(db)
+    driver = _build_driver_or_400(mount)
+    image_dir = normalize_virtual_path(DEFAULT_TOWER_MODEL_IMAGE_DIR)
+    _ensure_directory(driver, image_dir)
+
+    model_codes = _load_legacy_model_codes_from_text(_decode_csv_bytes(setting_bytes))
+    defaults_by_model = _load_legacy_defaults_by_model_from_bytes(ganta_bytes)
+    if not model_codes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="上传的 LP_Setting 未解析到杆塔模型清单")
+
+    imported_models = 0
+    updated_models = 0
+    skipped_models = 0
+    copied_images = 0
+    warnings: list[str] = []
+
+    for sort_index, model_code in enumerate(model_codes, start=1):
+        existing = get_tower_model_by_code(db, model_code)
+        defaults = defaults_by_model.get(model_code, {})
+
+        image_path = None
+        image_payload = image_bytes_map.get(model_code)
+        if image_payload is not None:
+            suffix, content, content_type = image_payload
+            target_name = f"{_sanitize_filename(model_code) or model_code}{suffix}"
+            target_path = join_virtual_path(image_dir, target_name)
+            try:
+                driver.write_file(
+                    target_path,
+                    content=content,
+                    content_type=content_type,
+                )
+                image_path = target_path
+                copied_images += 1
+            except Exception as exc:
+                warnings.append(f"模型 {model_code} 图片复制失败: {exc}")
+        else:
+            warnings.append(f"模型 {model_code} 未在上传图片包中找到匹配图片")
+
+        if existing and not overwrite_existing:
+            skipped_models += 1
+            continue
+
+        if existing is None:
+            now = utcnow()
+            existing = TowerModel(
+                code=model_code,
+                name=model_code,
+                source_tag=DEFAULT_SEED_SOURCE_TAG,
+                is_enabled=True,
+                sort_order=sort_index,
+                create_date=now,
+                create_user=actor.id,
+                update_date=now,
+                update_user=actor.id,
+            )
+            db.add(existing)
+            imported_models += 1
+        else:
+            updated_models += 1
+
+        existing.source_tag = DEFAULT_SEED_SOURCE_TAG
+        existing.is_enabled = True
+        existing.sort_order = sort_index
+        existing.tower_type = _normalize_str(str(defaults.get("tower_type") or ""))
+        existing.default_altitude_m = _coerce_optional_float(defaults.get("altitude_m"))
+        existing.default_terrain = _normalize_str(str(defaults.get("terrain") or ""))
+        existing.default_ground_resistance_ohm = _coerce_optional_float(defaults.get("ground_resistance_ohm"))
+        existing.default_lightning_density = _coerce_optional_float(defaults.get("lightning_density"))
+        existing.default_span_small_m = _coerce_optional_float(defaults.get("span_small_m"))
+        existing.default_span_large_m = _coerce_optional_float(defaults.get("span_large_m"))
+        existing.default_slope_1 = _coerce_optional_float(defaults.get("slope_1"))
+        existing.default_slope_2 = _coerce_optional_float(defaults.get("slope_2"))
+        existing.default_risk_level = _normalize_str(str(defaults.get("risk_level") or ""))
+        existing.default_raw_json = dict(defaults.get("raw_json") or {})
+        if image_path:
+            existing.image_mount_code = mount.code
+            existing.image_path = image_path
+        existing.update_user = actor.id
+        existing.update_date = utcnow()
+
+    db.commit()
+
+    _publish_tower_model_change(
+        "tower-model.seeded",
+        {
+            "action": "tower_model_seeded",
+            "imported_models": imported_models,
+            "updated_models": updated_models,
+            "skipped_models": skipped_models,
+        },
+    )
+    return TowerModelSeedResponse(
+        total_models=len(model_codes),
+        imported_models=imported_models,
+        updated_models=updated_models,
+        skipped_models=skipped_models,
+        copied_images=copied_images,
+        warnings=warnings,
+    )
+
+
 def resolve_tower_model_defaults(
     db: Session,
     *,
@@ -464,6 +587,10 @@ def _ensure_directory(driver: Any, path: str) -> None:
 
 def _load_legacy_model_codes(setting_path: Path) -> list[str]:
     text = setting_path.read_text(encoding="utf-8", errors="ignore")
+    return _load_legacy_model_codes_from_text(text)
+
+
+def _load_legacy_model_codes_from_text(text: str) -> list[str]:
     start_tag = "<GanTaType_Models>"
     end_tag = "</GanTaType_Models>"
     start = text.find(start_tag)
@@ -477,6 +604,10 @@ def _load_legacy_model_codes(setting_path: Path) -> list[str]:
 
 def _load_legacy_defaults_by_model(ganta_path: Path) -> dict[str, dict[str, Any]]:
     content = ganta_path.read_bytes()
+    return _load_legacy_defaults_by_model_from_bytes(content)
+
+
+def _load_legacy_defaults_by_model_from_bytes(content: bytes) -> dict[str, dict[str, Any]]:
     decoded = _decode_csv_bytes(content)
     rows = list(csv.DictReader(io.StringIO(decoded)))
     result: dict[str, dict[str, Any]] = {}
@@ -507,6 +638,52 @@ def _decode_csv_bytes(content: bytes) -> str:
         except UnicodeDecodeError:
             continue
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="老系统 CSV 编码无法识别")
+
+
+def _read_upload_bytes(file: UploadFile, *, label: str) -> bytes:
+    try:
+        content = file.file.read()
+    finally:
+        try:
+            file.file.close()
+        except Exception:
+            pass
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{label} 文件为空")
+    return content
+
+
+def _load_image_bytes_from_zip(images_zip: UploadFile | None) -> dict[str, tuple[str, bytes, str]]:
+    if images_zip is None:
+        return {}
+
+    filename = (images_zip.filename or "").strip().lower()
+    if filename and not filename.endswith(".zip"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="图片包必须是 zip 格式")
+
+    content = _read_upload_bytes(images_zip, label="图片压缩包")
+    mapping: dict[str, tuple[str, bytes, str]] = {}
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                name = Path(info.filename).name
+                suffix = Path(name).suffix.lower()
+                if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}:
+                    continue
+                stem = _normalize_str(Path(name).stem)
+                if not stem or stem in mapping:
+                    continue
+                file_content = zf.read(info)
+                if not file_content:
+                    continue
+                content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+                mapping[stem] = (suffix, file_content, content_type)
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="图片压缩包格式非法") from exc
+
+    return mapping
 
 
 def _parse_float_value(value: Any) -> float | None:
