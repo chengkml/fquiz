@@ -77,10 +77,7 @@ const EMPTY_FORM: TowerModelFormValues = {
 
 const TOWER_MODEL_TABLE_MIN_SCROLL_Y = 220;
 const TOWER_MODEL_CARD_MIN_SCROLL_Y = 280;
-const TOWER_MODEL_TABLE_VIEWPORT_GAP = 20;
-const TOWER_MODEL_CARD_VIEWPORT_GAP = 12;
-const TOWER_MODEL_PAGINATION_GAP = 16;
-const TOWER_MODEL_FALLBACK_PAGINATION_HEIGHT = 56;
+const TOWER_MODEL_VIEWPORT_BOTTOM_GAP = 8;
 const TOWER_MODEL_PAGE_SIZE_OPTIONS = [6, 9, 12, 18, 24];
 const TOWER_MODEL_DEFAULT_PAGE_SIZE = 12;
 
@@ -684,30 +681,22 @@ export default function AdminTowerModelsPage() {
       return;
     }
     const anchor = viewScrollAnchorRef.current;
-    if (!anchor) {
+    const paginationEl = paginationRef.current;
+    if (!anchor || !paginationEl) {
       return;
     }
 
-    const anchorTop = anchor.getBoundingClientRect().top;
-    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
-    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
-    const paginationHeight = paginationRef.current?.getBoundingClientRect().height ?? TOWER_MODEL_FALLBACK_PAGINATION_HEIGHT;
-    const viewportGap = viewMode === "card" ? TOWER_MODEL_CARD_VIEWPORT_GAP : TOWER_MODEL_TABLE_VIEWPORT_GAP;
-    const reservedBottom = paginationHeight + TOWER_MODEL_PAGINATION_GAP + viewportGap;
-
-    let nextHeight = Math.floor(window.innerHeight - anchorTop - reservedBottom);
-    if (viewMode === "list" && tableWrapper) {
-      const wrapperRect = tableWrapper.getBoundingClientRect();
-      const bodyHeight = tableBody?.getBoundingClientRect().height ?? TOWER_MODEL_TABLE_MIN_SCROLL_Y;
-      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
-      const topGap = Math.max(0, wrapperRect.top - anchorTop);
-      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - reservedBottom);
+    const paginationRect = paginationEl.getBoundingClientRect();
+    const targetBottom = window.innerHeight - TOWER_MODEL_VIEWPORT_BOTTOM_GAP;
+    const delta = targetBottom - paginationRect.bottom;
+    if (Math.abs(delta) <= 1) {
+      return;
     }
 
     const minHeight = viewMode === "card" ? TOWER_MODEL_CARD_MIN_SCROLL_Y : TOWER_MODEL_TABLE_MIN_SCROLL_Y;
-    const clampedHeight = Math.max(minHeight, nextHeight);
+    const clampedHeight = Math.max(minHeight, Math.floor(tableScrollY + delta));
     setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
-  }, [viewMode]);
+  }, [tableScrollY, viewMode]);
 
   useLayoutEffect(() => {
     updateTableScrollY();
