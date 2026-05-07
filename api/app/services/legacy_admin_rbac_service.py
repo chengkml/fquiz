@@ -316,19 +316,49 @@ def update_role(db: Session, role_id: str, payload: RoleUpdateRequest) -> RolePu
 
 def delete_role(db: Session, role_id: str) -> bool:
     role_id = role_id.strip()
-    if not role_id or role_id in PROTECTED_ROLE_IDS:
+    if not role_id:
         return False
-    exists = db.scalar(text("SELECT id FROM user_role WHERE id = :id"), {"id": role_id})
-    if not exists:
-        return False
+    role_source = "legacy" if _legacy_role_table_exists(db) else "modern"
+    resolved_role_id = role_id
+    resolved_role_code = role_id
+    if role_source == "legacy":
+        if role_id in PROTECTED_ROLE_IDS:
+            return False
+        exists = db.scalar(text("SELECT id FROM user_role WHERE id = :id"), {"id": role_id})
+        if not exists:
+            return False
+    else:
+        role_row = db.execute(
+            text(
+                """
+                SELECT id::text AS id, code
+                FROM roles
+                WHERE id::text = :id OR code = :id
+                LIMIT 1
+                """
+            ),
+            {"id": role_id},
+        ).mappings().first()
+        if not role_row:
+            return False
+        resolved_role_id = str(role_row["id"])
+        resolved_role_code = str(role_row.get("code") or resolved_role_id).strip() or resolved_role_id
+        if resolved_role_code in PROTECTED_ROLE_IDS:
+            return False
 
-    impacted_user_ids = _get_role_user_ids(db, role_id)
+    impacted_user_ids = _get_role_user_ids(db, resolved_role_id)
     has_user_role_relation = _legacy_user_role_relation_exists(db)
     try:
-        db.execute(text("DELETE FROM role_menu_rela WHERE role_id = :role_id"), {"role_id": role_id})
-        if has_user_role_relation:
-            db.execute(text("DELETE FROM user_role_rela WHERE role_id = :role_id"), {"role_id": role_id})
-        db.execute(text("DELETE FROM user_role WHERE id = :id"), {"id": role_id})
+        if role_source == "legacy":
+            db.execute(text("DELETE FROM role_menu_rela WHERE role_id = :role_id"), {"role_id": resolved_role_id})
+            if has_user_role_relation:
+                db.execute(text("DELETE FROM user_role_rela WHERE role_id = :role_id"), {"role_id": resolved_role_id})
+            db.execute(text("DELETE FROM user_role WHERE id = :id"), {"id": resolved_role_id})
+        else:
+            db.execute(text("DELETE FROM role_menus WHERE role_id::text = :role_id"), {"role_id": resolved_role_id})
+            db.execute(text("DELETE FROM role_permissions WHERE role_id::text = :role_id"), {"role_id": resolved_role_id})
+            db.execute(text("DELETE FROM user_roles WHERE role_id::text = :role_id"), {"role_id": resolved_role_id})
+            db.execute(text("DELETE FROM roles WHERE id::text = :id"), {"id": resolved_role_id})
         db.commit()
     except SQLAlchemyError:
         db.rollback()
@@ -339,18 +369,18 @@ def delete_role(db: Session, role_id: str) -> bool:
         publish_topic(
             "admin.roles",
             name="roles.changed",
-            payload={"action": "deleted", "role_id": role_id, "role_code": role_id},
+            payload={"action": "deleted", "role_id": resolved_role_id, "role_code": resolved_role_code},
             requires_refetch=["/api/v1/admin/roles"],
-            dedupe_key=f"roles:deleted:{role_id}",
+            dedupe_key=f"roles:deleted:{resolved_role_id}",
         )
     )
     _fire_and_forget(
         publish_topic(
             "admin.menus",
             name="menus.changed",
-            payload={"action": "role_deleted", "role_id": role_id, "role_code": role_id},
+            payload={"action": "role_deleted", "role_id": resolved_role_id, "role_code": resolved_role_code},
             requires_refetch=["/api/v1/admin/me/menus"],
-            dedupe_key=f"menus:role_deleted:{role_id}",
+            dedupe_key=f"menus:role_deleted:{resolved_role_id}",
         )
     )
     return True
