@@ -901,174 +901,176 @@ export default function AdminPowerLinesPage() {
   const towerError = towersQuery.error instanceof Error ? towersQuery.error.message : "";
 
   return (
-    <Space direction="vertical" size={16} className="w-full">
-      {(error || lineError || towerError) && (
-        <Alert type="error" showIcon message="操作失败" description={error || lineError || towerError} />
-      )}
+    <>
+      <Space direction="vertical" size={16} className="w-full">
+        {(error || lineError || towerError) && (
+          <Alert type="error" showIcon message="操作失败" description={error || lineError || towerError} />
+        )}
 
-      <div
-        ref={panelScrollAnchorRef}
-        className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]"
-        style={{ "--admin-power-lines-panel-body-height": `${panelBodyHeight}px` } as CSSProperties}
-      >
-        <Card
-          title="线路管理"
-          className="power-lines-left-card"
-          styles={{ body: { height: panelBodyHeight, overflow: "hidden" } }}
-          extra={canLineManage ? (
-            <Button type="primary" onClick={openCreateLineModal}>
-              新建线路
-            </Button>
-          ) : null}
+        <div
+          ref={panelScrollAnchorRef}
+          className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]"
+          style={{ "--admin-power-lines-panel-body-height": `${panelBodyHeight}px` } as CSSProperties}
         >
-          <Space direction="vertical" size={12} className="w-full">
-            <Typography.Text type="secondary">
-              左侧选择线路，右侧查看线路分布图或塔杆列表。
-            </Typography.Text>
-            <Input
-              value={keyword}
-              allowClear
-              onChange={(event) => setKeyword(event.target.value)}
-              placeholder="按线路编码/名称筛选"
-            />
-            <Select
-              value={statusFilter}
-              options={[...STATUS_OPTIONS]}
-              onChange={(value) => setStatusFilter(value)}
-            />
-            <Space direction="vertical" size={10} className="w-full overflow-y-auto pr-1" style={{ height: leftListHeight }}>
-              {lines.length === 0 ? (
-                <Empty description="暂无线路数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-              ) : (
-                lineCards
-              )}
-            </Space>
-          </Space>
-        </Card>
-
-        <Card
-          className="power-lines-right-card"
-          styles={{ body: { height: panelBodyHeight, overflow: "hidden" } }}
-          title={selectedLine ? `${selectedLine.name} - 杆塔管理` : "杆塔管理"}
-          extra={(
-            <Space size={8} wrap>
-              <Segmented
-                value={towerViewMode}
-                options={[
-                  { label: "分布图", value: "map" },
-                  { label: "塔杆列表", value: "table" },
-                ]}
-                onChange={(value) => setTowerViewMode(value as "table" | "map")}
-                disabled={!effectiveSelectedLineId}
-              />
-              {canTowerManage && (
-                <Button
-                  onClick={() => importInputRef.current?.click()}
-                  loading={importMutation.isPending}
-                  disabled={!effectiveSelectedLineId}
-                >
-                  导入 CSV
-                </Button>
-              )}
-              <input
-                ref={importInputRef}
-                type="file"
-                accept=".csv,text/csv"
-                className="hidden"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) {
-                    importMutation.mutate(file);
-                  }
-                  event.target.value = "";
-                }}
-              />
-              <Button onClick={() => exportMutation.mutate()} loading={exportMutation.isPending} disabled={!effectiveSelectedLineId}>
-                导出 CSV
+          <Card
+            title="线路管理"
+            className="power-lines-left-card"
+            styles={{ body: { height: panelBodyHeight, overflow: "hidden" } }}
+            extra={canLineManage ? (
+              <Button type="primary" onClick={openCreateLineModal}>
+                新建线路
               </Button>
-              {canTowerManage && (
-                <Button type="primary" onClick={openCreateTowerModal} disabled={!effectiveSelectedLineId}>
-                  新建杆塔
-                </Button>
-              )}
-            </Space>
-          )}
-        >
-          {!effectiveSelectedLineId || !selectedLine ? (
-            <Empty description={effectiveSelectedLineId ? "所选线路不存在，请重新选择" : "请先选择一条线路"} />
-          ) : (
+            ) : null}
+          >
             <Space direction="vertical" size={12} className="w-full">
               <Typography.Text type="secondary">
-                当前线路编码：{selectedLine.code}，杆塔总数：{selectedLine.tower_count ?? 0}，当前视图：{towerViewMode === "table" ? "塔杆列表" : "分布图"}
+                左侧选择线路，右侧查看线路分布图或塔杆列表。
               </Typography.Text>
-              <div className="grid gap-3 md:grid-cols-3">
-                <Input
-                  value={towerKeyword}
-                  allowClear
-                  onChange={(event) => setTowerKeyword(event.target.value)}
-                  placeholder="按塔号/模型筛选"
-                />
-                <Select
-                  value={towerTypeFilter}
-                  options={[...TOWER_TYPE_OPTIONS]}
-                  onChange={(value) => setTowerTypeFilter(value)}
-                />
-                <Input
-                  value={towerRiskFilter}
-                  allowClear
-                  onChange={(event) => setTowerRiskFilter(event.target.value)}
-                  placeholder="按风险等级筛选"
-                />
-              </div>
-              <div className="relative overflow-y-auto" style={{ height: rightContentHeight }}>
-                <div
-                  aria-hidden={towerViewMode !== "map"}
-                  className={`transition-all duration-300 ease-out motion-reduce:transition-none ${
-                    towerViewMode === "map"
-                      ? "relative translate-y-0 opacity-100"
-                      : "pointer-events-none absolute inset-0 translate-y-1 opacity-0"
-                  }`}
-                >
-                  <PowerLineCesiumMap
-                    lineCode={selectedLine.code}
-                    lineName={selectedLine.name}
-                    towers={towers}
-                    loading={towersQuery.isFetching}
-                    height={mapHeight}
-                  />
-                </div>
-
-                <div
-                  aria-hidden={towerViewMode !== "table"}
-                  className={`transition-all duration-300 ease-out motion-reduce:transition-none ${
-                    towerViewMode === "table"
-                      ? "relative translate-y-0 opacity-100"
-                      : "pointer-events-none absolute inset-0 -translate-y-1 opacity-0"
-                  }`}
-                >
-                  <Table<LineTowerSummary>
-                    rowKey={(row) => row.id}
-                    columns={towerColumns}
-                    dataSource={towers}
-                    loading={towersQuery.isFetching}
-                    pagination={{
-                      current: effectiveTowerPageCurrent,
-                      pageSize: towerPagination.pageSize,
-                      total: towersQuery.data?.total ?? 0,
-                      showSizeChanger: true,
-                      showTotal: (total) => `共 ${total} 条`,
-                      onChange: (page, pageSize) => {
-                        setTowerPagination({ current: page, pageSize });
-                      },
-                    }}
-                    scroll={{ x: 1520, y: towerTableScrollY }}
-                  />
-                </div>
-              </div>
+              <Input
+                value={keyword}
+                allowClear
+                onChange={(event) => setKeyword(event.target.value)}
+                placeholder="按线路编码/名称筛选"
+              />
+              <Select
+                value={statusFilter}
+                options={[...STATUS_OPTIONS]}
+                onChange={(value) => setStatusFilter(value)}
+              />
+              <Space direction="vertical" size={10} className="w-full overflow-y-auto pr-1" style={{ height: leftListHeight }}>
+                {lines.length === 0 ? (
+                  <Empty description="暂无线路数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                ) : (
+                  lineCards
+                )}
+              </Space>
             </Space>
-          )}
-        </Card>
-      </div>
+          </Card>
+
+          <Card
+            className="power-lines-right-card"
+            styles={{ body: { height: panelBodyHeight, overflow: "hidden" } }}
+            title={selectedLine ? `${selectedLine.name} - 杆塔管理` : "杆塔管理"}
+            extra={(
+              <Space size={8} wrap>
+                <Segmented
+                  value={towerViewMode}
+                  options={[
+                    { label: "分布图", value: "map" },
+                    { label: "塔杆列表", value: "table" },
+                  ]}
+                  onChange={(value) => setTowerViewMode(value as "table" | "map")}
+                  disabled={!effectiveSelectedLineId}
+                />
+                {canTowerManage && (
+                  <Button
+                    onClick={() => importInputRef.current?.click()}
+                    loading={importMutation.isPending}
+                    disabled={!effectiveSelectedLineId}
+                  >
+                    导入 CSV
+                  </Button>
+                )}
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) {
+                      importMutation.mutate(file);
+                    }
+                    event.target.value = "";
+                  }}
+                />
+                <Button onClick={() => exportMutation.mutate()} loading={exportMutation.isPending} disabled={!effectiveSelectedLineId}>
+                  导出 CSV
+                </Button>
+                {canTowerManage && (
+                  <Button type="primary" onClick={openCreateTowerModal} disabled={!effectiveSelectedLineId}>
+                    新建杆塔
+                  </Button>
+                )}
+              </Space>
+            )}
+          >
+            {!effectiveSelectedLineId || !selectedLine ? (
+              <Empty description={effectiveSelectedLineId ? "所选线路不存在，请重新选择" : "请先选择一条线路"} />
+            ) : (
+              <Space direction="vertical" size={12} className="w-full">
+                <Typography.Text type="secondary">
+                  当前线路编码：{selectedLine.code}，杆塔总数：{selectedLine.tower_count ?? 0}，当前视图：{towerViewMode === "table" ? "塔杆列表" : "分布图"}
+                </Typography.Text>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <Input
+                    value={towerKeyword}
+                    allowClear
+                    onChange={(event) => setTowerKeyword(event.target.value)}
+                    placeholder="按塔号/模型筛选"
+                  />
+                  <Select
+                    value={towerTypeFilter}
+                    options={[...TOWER_TYPE_OPTIONS]}
+                    onChange={(value) => setTowerTypeFilter(value)}
+                  />
+                  <Input
+                    value={towerRiskFilter}
+                    allowClear
+                    onChange={(event) => setTowerRiskFilter(event.target.value)}
+                    placeholder="按风险等级筛选"
+                  />
+                </div>
+                <div className="relative overflow-y-auto" style={{ height: rightContentHeight }}>
+                  <div
+                    aria-hidden={towerViewMode !== "map"}
+                    className={`transition-all duration-300 ease-out motion-reduce:transition-none ${
+                      towerViewMode === "map"
+                        ? "relative translate-y-0 opacity-100"
+                        : "pointer-events-none absolute inset-0 translate-y-1 opacity-0"
+                    }`}
+                  >
+                    <PowerLineCesiumMap
+                      lineCode={selectedLine.code}
+                      lineName={selectedLine.name}
+                      towers={towers}
+                      loading={towersQuery.isFetching}
+                      height={mapHeight}
+                    />
+                  </div>
+
+                  <div
+                    aria-hidden={towerViewMode !== "table"}
+                    className={`transition-all duration-300 ease-out motion-reduce:transition-none ${
+                      towerViewMode === "table"
+                        ? "relative translate-y-0 opacity-100"
+                        : "pointer-events-none absolute inset-0 -translate-y-1 opacity-0"
+                    }`}
+                  >
+                    <Table<LineTowerSummary>
+                      rowKey={(row) => row.id}
+                      columns={towerColumns}
+                      dataSource={towers}
+                      loading={towersQuery.isFetching}
+                      pagination={{
+                        current: effectiveTowerPageCurrent,
+                        pageSize: towerPagination.pageSize,
+                        total: towersQuery.data?.total ?? 0,
+                        showSizeChanger: true,
+                        showTotal: (total) => `共 ${total} 条`,
+                        onChange: (page, pageSize) => {
+                          setTowerPagination({ current: page, pageSize });
+                        },
+                      }}
+                      scroll={{ x: 1520, y: towerTableScrollY }}
+                    />
+                  </div>
+                </div>
+              </Space>
+            )}
+          </Card>
+        </div>
+      </Space>
 
       <Modal
         title={editingLine ? "编辑线路" : "新建线路"}
@@ -1197,6 +1199,6 @@ export default function AdminPowerLinesPage() {
           </div>
         </Form>
       </Modal>
-    </Space>
+    </>
   );
 }
