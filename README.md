@@ -81,7 +81,8 @@
 - `POST /api/v1/chat/sessions/{id}/messages`（需要 `chat.use`）
 
 初始化管理员（可选）：
-- 在 `.env` 设置 `INITIAL_ADMIN_EMAIL`、`INITIAL_ADMIN_USERNAME`、`INITIAL_ADMIN_PASSWORD`
+- 在 `.env` 设置 `INITIAL_ADMIN_EMAIL`、`INITIAL_ADMIN_USER_ID`、`INITIAL_ADMIN_USERNAME`、`INITIAL_ADMIN_PASSWORD`
+- 默认值：`INITIAL_ADMIN_USER_ID=admin`、`INITIAL_ADMIN_USERNAME=管理员`
 - API 启动时会自动创建并赋予 `admin` 角色
 
 ## Docker Compose 部署

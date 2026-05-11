@@ -487,10 +487,15 @@ def _seed_initial_admin(db: Session) -> None:
     if not admin_role:
         return
 
+    admin_user_id = settings.initial_admin_user_id.strip()
+    if not admin_user_id:
+        return
+
     admin_email = settings.initial_admin_email.lower()
-    user = db.scalar(select(User).where(User.email == admin_email))
+    user = db.scalar(select(User).where((User.id == admin_user_id) | (User.email == admin_email)))
     if not user:
         user = User(
+            id=admin_user_id,
             email=admin_email,
             username=settings.initial_admin_username,
             password_hash=hash_password(settings.initial_admin_password),
@@ -509,7 +514,9 @@ def _seed_legacy_tower_models_if_empty(db: Session) -> None:
     if existing_count > 0:
         return
 
-    actor = db.scalar(select(User).where(User.username == settings.initial_admin_username))
+    actor = db.scalar(select(User).where(User.id == settings.initial_admin_user_id))
+    if actor is None:
+        actor = db.scalar(select(User).where(User.username == settings.initial_admin_username))
     if actor is None:
         actor = db.scalar(select(User).order_by(User.created_at.asc()))
     if actor is None:

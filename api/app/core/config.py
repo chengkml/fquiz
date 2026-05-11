@@ -70,7 +70,8 @@ class Settings(BaseSettings):
     atp_engine_max_timeout_seconds: int = 3600
 
     initial_admin_email: str | None = None
-    initial_admin_username: str = "admin"
+    initial_admin_user_id: str = "admin"
+    initial_admin_username: str = "管理员"
     initial_admin_password: str | None = None
 
     model_config = SettingsConfigDict(
