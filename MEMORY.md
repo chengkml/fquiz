@@ -71,6 +71,8 @@
 
 - `NEXT_PUBLIC_API_BASE_URL` 若误配为 loopback（`127.0.0.1/localhost`），前端运行时会在浏览器端自动改写为“当前页面主机 + 同端口（默认 8000）”，避免公网页面触发 PNA（Private Network Access）阻断。
 - 认证请求与 WebSocket 连接均统一复用该运行时 API 基址解析逻辑。
+- `NEXT_PUBLIC_API_BASE_URL` 必须只配置“协议 + 主机 + 可选端口”，不要额外带 `/api` 前缀；当前前端请求路径已自行拼接 `/api/v1/...`，若环境变量写成 `https://host/api` 会落成 `/api/api/v1/...`。
+- 通过 IP:3000 直接访问站点时，后端 `API_CORS_ORIGINS` 必须显式包含该页面 origin（例如 `http://223.109.142.84:3000`）；仅放行正式域名会导致浏览器在登录预检阶段返回 `Disallowed CORS origin`。
 
 ## 前端构建稳定性口径（2026-04-13）
 
