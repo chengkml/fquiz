@@ -31,11 +31,7 @@ export function getApiBaseUrl(): string {
     return trimTrailingSlash(configured);
   }
 
-  parsed.hostname = browserHost;
-  if (!parsed.port) {
-    parsed.port = "8000";
-  }
-  return trimTrailingSlash(parsed.toString());
+  return trimTrailingSlash(window.location.origin);
 }
 
 export const API_BASE_URL = getApiBaseUrl();

@@ -162,6 +162,17 @@ services:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
       NEXT_PUBLIC_APP_BASE_PATH: ${NEXT_PUBLIC_APP_BASE_PATH:-/fl}
       NODE_ENV: production
+    expose:
+      - "3000"
+    restart: unless-stopped
+
+  proxy:
+    image: docker.m.daocloud.io/library/nginx:1.27-alpine
+    depends_on:
+      - web
+      - api
     ports:
       - "3000:3000"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped
