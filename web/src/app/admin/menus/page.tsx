@@ -28,6 +28,7 @@ import type { CSSProperties, ComponentType } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
+import { normalizeAppRoutePath } from "@/lib/app-route-path";
 import type { MenuItem, MenuListResponse } from "@/types/auth";
 
 const AntCard = Card as unknown as ComponentType<CardProps>;
@@ -80,6 +81,13 @@ function compareMenuIds(a: string, b: string): number {
     return aNum - bNum;
   }
   return a.localeCompare(b, "zh-CN");
+}
+
+function normalizeMenuItemPath(menu: MenuItem): MenuItem {
+  return {
+    ...menu,
+    path: normalizeAppRoutePath(menu.path),
+  };
 }
 
 export default function AdminMenusPage() {
@@ -166,7 +174,7 @@ export default function AdminMenusPage() {
     }
 
     const payload = (await response.json()) as MenuListResponse;
-    setMenus(payload.items);
+    setMenus(payload.items.map(normalizeMenuItemPath));
     setLoading(false);
   }, [canRead, fetchWithAuth]);
 
@@ -227,7 +235,7 @@ export default function AdminMenusPage() {
       const payload = {
         code: values.code.trim(),
         name: values.name.trim(),
-        path: values.path?.trim() ? values.path.trim() : null,
+        path: normalizeAppRoutePath(values.path?.trim() ? values.path.trim() : null),
         icon: values.icon?.trim() ? values.icon.trim() : null,
         parent_id: values.parent_id?.trim() ? values.parent_id.trim() : null,
         type: values.type,

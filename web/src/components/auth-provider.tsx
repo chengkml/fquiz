@@ -14,6 +14,8 @@ import { getApiBaseUrl, readApiError } from "@/lib/api";
 import { withBasePath } from "@/lib/base-path";
 import type { AuthTokenResponse, UserPublic } from "@/types/auth";
 
+const AUTH_SESSION_HINT_KEY = "auth.session_hint";
+
 type AuthContextValue = {
   user: UserPublic | null;
   accessToken: string | null;
@@ -41,6 +43,27 @@ function withApiPath(path: string): string {
   return `${getApiBaseUrl()}${path}`;
 }
 
+function hasSessionHint(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return window.localStorage.getItem(AUTH_SESSION_HINT_KEY) === "1";
+}
+
+function persistSessionHint(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(AUTH_SESSION_HINT_KEY, "1");
+}
+
+function clearSessionHint(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.removeItem(AUTH_SESSION_HINT_KEY);
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserPublic | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -57,12 +80,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const clearAuth = useCallback(() => {
     setUser(null);
     applyToken(null);
+    clearSessionHint();
   }, [applyToken]);
 
   const applyAuthPayload = useCallback(
     (payload: AuthTokenResponse) => {
       setUser(payload.user);
       applyToken(payload.access_token);
+      persistSessionHint();
     },
     [applyToken],
   );
@@ -183,7 +208,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
     } finally {
       if (typeof window !== "undefined") {
-        window.location.replace(withBasePath("/"));
+        window.location.replace(withBasePath("/login"));
         return;
       }
       clearAuth();
@@ -192,6 +217,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const bootstrap = async () => {
+      if (!hasSessionHint()) {
+        setInitializing(false);
+        return;
+      }
+
       try {
         await refreshAccessToken();
       } finally {

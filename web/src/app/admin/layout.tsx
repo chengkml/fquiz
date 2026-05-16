@@ -37,6 +37,7 @@ import {
 import { useAuth } from "@/components/auth-provider";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
+import { normalizeAppRoutePath } from "@/lib/app-route-path";
 import type { MenuTreeItem } from "@/types/auth";
 import { useThemeAppearance } from "@/components/ui-antd";
 import { withBasePath } from "@/lib/base-path";
@@ -60,16 +61,7 @@ function ThemeIcon() {
 }
 
 function normalizeAdminPath(path: string | null): string | null {
-  if (!path) {
-    return path;
-  }
-  if (path === "/admin" || path === "/admin/") {
-    return "/users";
-  }
-  if (path.startsWith("/admin/")) {
-    return path.slice("/admin".length);
-  }
-  return path;
+  return normalizeAppRoutePath(path);
 }
 
 function normalizeMenuTreePaths(items: MenuTreeItem[]): MenuTreeItem[] {
@@ -152,7 +144,8 @@ function AdminCenteredState({ children }: { children: ReactNode }) {
 }
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
+  const rawPathname = usePathname();
+  const pathname = normalizeAppRoutePath(rawPathname) ?? rawPathname;
   const screens = Grid.useBreakpoint();
   const isDesktop = screens.md === true;
   const { user, initializing, fetchWithAuth, logout } = useAuth();
@@ -340,7 +333,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           subTitle="登录后才能访问后台工作台。"
           extra={(
             <Button type="primary">
-              <Link href="/">前往登录</Link>
+              <Link href="/login">前往登录</Link>
             </Button>
           )}
         />

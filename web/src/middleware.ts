@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { normalizeAppRoutePath } from "./lib/app-route-path";
+
 function normalizeBasePath(value: string | undefined): string {
   const trimmed = value?.trim() ?? "";
   if (!trimmed || trimmed === "/") {
@@ -50,7 +52,7 @@ function withBasePath(pathname: string): string {
 }
 
 function isBypassedPath(pathname: string): boolean {
-  if (pathname === "/") {
+  if (pathname === "/" || pathname === "/login" || pathname === "/login/") {
     return true;
   }
   if (PUBLIC_FILE.test(pathname)) {
@@ -68,26 +70,23 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Keep backward compatibility for existing /admin links.
-  if (pathname === "/admin" || pathname === "/admin/") {
-    const url = request.nextUrl.clone();
-    url.pathname = withBasePath("/users");
-    return NextResponse.redirect(url);
-  }
-  if (pathname === "/dashboard" || pathname === "/dashboard/") {
-    const url = request.nextUrl.clone();
-    url.pathname = withBasePath("/users");
-    return NextResponse.redirect(url);
-  }
+  const canonicalPath = normalizeAppRoutePath(pathname) ?? pathname;
+
+  // Keep backward compatibility for existing /admin links and legacy menu aliases.
   if (pathname.startsWith("/admin/")) {
     const url = request.nextUrl.clone();
-    url.pathname = withBasePath(pathname.slice("/admin".length) || "/users");
+    url.pathname = withBasePath(canonicalPath);
+    return NextResponse.redirect(url);
+  }
+  if (canonicalPath !== pathname) {
+    const url = request.nextUrl.clone();
+    url.pathname = withBasePath(canonicalPath);
     return NextResponse.redirect(url);
   }
 
   // New public URLs without /admin are internally rewritten to existing routes.
   const url = request.nextUrl.clone();
-  url.pathname = withBasePath(`/admin${pathname}`);
+  url.pathname = withBasePath(`/admin${canonicalPath}`);
   return NextResponse.rewrite(url);
 }
 
