@@ -197,11 +197,13 @@ services:
       args:
         NODE_BASE_IMAGE: ${NODE_BASE_IMAGE}
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+        NEXT_PUBLIC_APP_BASE_PATH: ${NEXT_PUBLIC_APP_BASE_PATH:-/fl}
     container_name: ${COMPOSE_PROJECT_NAME}-web
     depends_on:
       - api
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+      NEXT_PUBLIC_APP_BASE_PATH: ${NEXT_PUBLIC_APP_BASE_PATH:-/fl}
       NODE_ENV: production
     ports:
       - "3000:3000"

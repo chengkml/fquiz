@@ -160,6 +160,7 @@ services:
       - api
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+      NEXT_PUBLIC_APP_BASE_PATH: ${NEXT_PUBLIC_APP_BASE_PATH:-/fl}
       NODE_ENV: production
     ports:
       - "3000:3000"

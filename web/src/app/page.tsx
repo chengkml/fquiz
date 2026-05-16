@@ -7,6 +7,7 @@ import { Alert, Button, Checkbox, Input, Space, Typography } from "antd";
 
 import { useAuth } from "@/components/auth-provider";
 import { Card } from "@/components/ui-antd";
+import { withBasePath } from "@/lib/base-path";
 
 const LOGIN_REMEMBER_KEY = "login.remember";
 const LOGIN_USER_ID_KEY = "login.user_id";
@@ -95,7 +96,7 @@ export default function Home() {
         <Space direction="vertical" size={20} className="w-full">
           <div className="flex justify-center">
             <img
-              src="/favicon.ico"
+              src={withBasePath("/favicon.ico")}
               alt="高压电塔图标"
               width={72}
               height={72}

@@ -39,6 +39,7 @@ import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { MenuTreeItem } from "@/types/auth";
 import { useThemeAppearance } from "@/components/ui-antd";
+import { withBasePath } from "@/lib/base-path";
 
 const { Header, Sider, Content } = AntLayout;
 const AntResult = Result as unknown as ComponentType<ResultProps>;
@@ -364,7 +365,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           className="ml-2 flex items-center gap-2 text-inherit no-underline md:ml-0"
         >
           <img
-            src="/favicon.ico"
+            src={withBasePath("/favicon.ico")}
             alt="高压电塔图标"
             width={22}
             height={22}

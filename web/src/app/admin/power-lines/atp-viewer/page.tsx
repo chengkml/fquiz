@@ -23,6 +23,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 
 import { useAuth } from "@/components/auth-provider";
+import { withBasePath } from "@/lib/base-path";
 import { AtpX6Viewer } from "@/components/atp-x6-viewer";
 import { Card } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
@@ -1000,7 +1001,7 @@ export default function PowerLinesAtpViewerPage() {
         title="ATP模型台账"
         extra={(
           <Space size={8} wrap>
-            <Button href="/power-lines">返回线路管理</Button>
+            <Button href={withBasePath("/power-lines")}>返回线路管理</Button>
             {canManage && (
               <Button type="primary" onClick={openCreateModelModal}>
                 新建模型

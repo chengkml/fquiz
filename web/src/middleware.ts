@@ -1,5 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 
+function normalizeBasePath(value: string | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed || trimmed === "/") {
+    return "";
+  }
+
+  return `/${trimmed.replace(/^\/+|\/+$/g, "")}`;
+}
+
+const APP_BASE_PATH = normalizeBasePath(process.env.NEXT_PUBLIC_APP_BASE_PATH);
+
 const RESERVED_PREFIXES = [
   "/api",
   "/_next",
@@ -9,6 +20,34 @@ const RESERVED_PREFIXES = [
 ];
 
 const PUBLIC_FILE = /\.[^/]+$/;
+
+function stripBasePath(pathname: string): string {
+  if (!APP_BASE_PATH) {
+    return pathname;
+  }
+
+  if (pathname === APP_BASE_PATH) {
+    return "/";
+  }
+
+  if (pathname.startsWith(`${APP_BASE_PATH}/`)) {
+    return pathname.slice(APP_BASE_PATH.length) || "/";
+  }
+
+  return pathname;
+}
+
+function withBasePath(pathname: string): string {
+  if (!APP_BASE_PATH) {
+    return pathname;
+  }
+
+  if (pathname === "/") {
+    return APP_BASE_PATH;
+  }
+
+  return `${APP_BASE_PATH}${pathname}`;
+}
 
 function isBypassedPath(pathname: string): boolean {
   if (pathname === "/") {
@@ -23,7 +62,7 @@ function isBypassedPath(pathname: string): boolean {
 }
 
 export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  const pathname = stripBasePath(request.nextUrl.pathname);
 
   if (isBypassedPath(pathname)) {
     return NextResponse.next();
@@ -32,23 +71,23 @@ export function middleware(request: NextRequest) {
   // Keep backward compatibility for existing /admin links.
   if (pathname === "/admin" || pathname === "/admin/") {
     const url = request.nextUrl.clone();
-    url.pathname = "/users";
+    url.pathname = withBasePath("/users");
     return NextResponse.redirect(url);
   }
   if (pathname === "/dashboard" || pathname === "/dashboard/") {
     const url = request.nextUrl.clone();
-    url.pathname = "/users";
+    url.pathname = withBasePath("/users");
     return NextResponse.redirect(url);
   }
   if (pathname.startsWith("/admin/")) {
     const url = request.nextUrl.clone();
-    url.pathname = pathname.slice("/admin".length) || "/users";
+    url.pathname = withBasePath(pathname.slice("/admin".length) || "/users");
     return NextResponse.redirect(url);
   }
 
   // New public URLs without /admin are internally rewritten to existing routes.
   const url = request.nextUrl.clone();
-  url.pathname = `/admin${pathname}`;
+  url.pathname = withBasePath(`/admin${pathname}`);
   return NextResponse.rewrite(url);
 }
 

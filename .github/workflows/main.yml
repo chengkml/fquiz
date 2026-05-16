@@ -70,6 +70,7 @@ jobs:
           push: true
           build-args: |
             NEXT_PUBLIC_API_BASE_URL=${{ vars.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000' }}
+            NEXT_PUBLIC_APP_BASE_PATH=${{ vars.NEXT_PUBLIC_APP_BASE_PATH || '/fl' }}
           tags: |
             ${{ steps.vars.outputs.web_image }}:${{ steps.vars.outputs.image_tag }}
             ${{ steps.vars.outputs.web_image }}:latest
@@ -171,6 +172,7 @@ jobs:
             API_IMAGE=${API_IMAGE}:${IMAGE_TAG}
             WEB_IMAGE=${WEB_IMAGE}:${IMAGE_TAG}
             NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+            NEXT_PUBLIC_APP_BASE_PATH=/fl
             FLOWER_BASIC_AUTH=${FLOWER_BASIC_AUTH}
             ENV
 

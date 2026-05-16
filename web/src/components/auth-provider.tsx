@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import { getApiBaseUrl, readApiError } from "@/lib/api";
+import { withBasePath } from "@/lib/base-path";
 import type { AuthTokenResponse, UserPublic } from "@/types/auth";
 
 type AuthContextValue = {
@@ -182,7 +183,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
     } finally {
       if (typeof window !== "undefined") {
-        window.location.replace("/");
+        window.location.replace(withBasePath("/"));
         return;
       }
       clearAuth();
