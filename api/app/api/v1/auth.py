@@ -28,24 +28,37 @@ def _client_ip(request: Request) -> str | None:
     return None
 
 
-def _set_refresh_cookie(response: Response, token: str) -> None:
+def _is_secure_request(request: Request) -> bool:
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    if forwarded_proto:
+        return forwarded_proto.split(",")[0].strip().lower() == "https"
+    return request.url.scheme == "https"
+
+
+def _refresh_cookie_secure(request: Request) -> bool:
+    if not settings.refresh_cookie_secure:
+        return False
+    return _is_secure_request(request)
+
+
+def _set_refresh_cookie(request: Request, response: Response, token: str) -> None:
     response.set_cookie(
         key=settings.refresh_cookie_name,
         value=token,
         httponly=True,
-        secure=settings.refresh_cookie_secure,
+        secure=_refresh_cookie_secure(request),
         samesite=settings.refresh_cookie_samesite,
         max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
         path="/api/v1/auth",
     )
 
 
-def _clear_refresh_cookie(response: Response) -> None:
+def _clear_refresh_cookie(request: Request, response: Response) -> None:
     response.delete_cookie(
         key=settings.refresh_cookie_name,
         path="/api/v1/auth",
         httponly=True,
-        secure=settings.refresh_cookie_secure,
+        secure=_refresh_cookie_secure(request),
         samesite=settings.refresh_cookie_samesite,
     )
 
@@ -71,7 +84,7 @@ def register(
         user_agent=request.headers.get("user-agent"),
         ip_address=_client_ip(request),
     )
-    _set_refresh_cookie(response, result.refresh_token)
+    _set_refresh_cookie(request, response, result.refresh_token)
     return _to_auth_response(result)
 
 
@@ -88,7 +101,7 @@ def login(
         user_agent=request.headers.get("user-agent"),
         ip_address=_client_ip(request),
     )
-    _set_refresh_cookie(response, result.refresh_token)
+    _set_refresh_cookie(request, response, result.refresh_token)
     return _to_auth_response(result)
 
 
@@ -104,7 +117,7 @@ def refresh(
         user_agent=request.headers.get("user-agent"),
         ip_address=_client_ip(request),
     )
-    _set_refresh_cookie(response, result.refresh_token)
+    _set_refresh_cookie(request, response, result.refresh_token)
     return _to_auth_response(result)
 
 
@@ -119,7 +132,7 @@ def logout(
         request.cookies.get(settings.refresh_cookie_name),
         user_id=None,
     )
-    _clear_refresh_cookie(response)
+    _clear_refresh_cookie(request, response)
     return MessageResponse(message="Logged out")
 
 

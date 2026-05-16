@@ -39,18 +39,6 @@ function stripBasePath(pathname: string): string {
   return pathname;
 }
 
-function withBasePath(pathname: string): string {
-  if (!APP_BASE_PATH) {
-    return pathname;
-  }
-
-  if (pathname === "/") {
-    return APP_BASE_PATH;
-  }
-
-  return `${APP_BASE_PATH}${pathname}`;
-}
-
 function isBypassedPath(pathname: string): boolean {
   if (pathname === "/" || pathname === "/login" || pathname === "/login/") {
     return true;
@@ -75,18 +63,18 @@ export function middleware(request: NextRequest) {
   // Keep backward compatibility for existing /admin links and legacy menu aliases.
   if (pathname.startsWith("/admin/")) {
     const url = request.nextUrl.clone();
-    url.pathname = withBasePath(canonicalPath);
+    url.pathname = canonicalPath;
     return NextResponse.redirect(url);
   }
   if (canonicalPath !== pathname) {
     const url = request.nextUrl.clone();
-    url.pathname = withBasePath(canonicalPath);
+    url.pathname = canonicalPath;
     return NextResponse.redirect(url);
   }
 
   // New public URLs without /admin are internally rewritten to existing routes.
   const url = request.nextUrl.clone();
-  url.pathname = withBasePath(`/admin${canonicalPath}`);
+  url.pathname = `/admin${canonicalPath}`;
   return NextResponse.rewrite(url);
 }
 
