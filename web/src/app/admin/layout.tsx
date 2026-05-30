@@ -4,15 +4,30 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { usePathname } from "next/navigation";
 import Icon, {
+  ApartmentOutlined,
+  AppstoreOutlined,
+  ConsoleSqlOutlined,
   CompressOutlined,
+  DatabaseOutlined,
+  DeploymentUnitOutlined,
+  ExperimentOutlined,
+  FileTextOutlined,
+  FolderOpenOutlined,
+  GlobalOutlined,
   HomeOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuOutlined,
   MenuUnfoldOutlined,
   MoonOutlined,
+  NodeIndexOutlined,
+  RadarChartOutlined,
+  SafetyCertificateOutlined,
+  SettingOutlined,
   SunOutlined,
   SyncOutlined,
+  TeamOutlined,
+  ThunderboltOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import {
@@ -81,15 +96,61 @@ function isActivePath(pathname: string, menuPath: string | null): boolean {
 
 type AntdMenuItems = NonNullable<MenuProps["items"]>;
 
+const MENU_ICON_COMPONENTS = {
+  // Existing seed data uses a mix of lucide-like names and Ant icon names.
+  Users: TeamOutlined,
+  ShieldCheck: SafetyCertificateOutlined,
+  MenuSquare: AppstoreOutlined,
+  Settings2: SettingOutlined,
+  Network: NodeIndexOutlined,
+  Zap: ThunderboltOutlined,
+  Map: GlobalOutlined,
+  DeploymentUnitOutlined,
+  RadarChart: RadarChartOutlined,
+  Experiment: ExperimentOutlined,
+  Apartment: ApartmentOutlined,
+  FolderTree: FolderOpenOutlined,
+  Database: DatabaseOutlined,
+  FileText: FileTextOutlined,
+  Terminal: ConsoleSqlOutlined,
+  TeamOutlined,
+  SafetyCertificateOutlined,
+  AppstoreOutlined,
+  SettingOutlined,
+  NodeIndexOutlined,
+  ThunderboltOutlined,
+  GlobalOutlined,
+  RadarChartOutlined,
+  ExperimentOutlined,
+  ApartmentOutlined,
+  FolderOpenOutlined,
+  DatabaseOutlined,
+  FileTextOutlined,
+  ConsoleSqlOutlined,
+} as const;
+
+function resolveMenuIcon(icon: string | null): ReactNode {
+  const iconName = icon?.trim();
+  if (iconName) {
+    const IconComponent = MENU_ICON_COMPONENTS[iconName as keyof typeof MENU_ICON_COMPONENTS];
+    if (IconComponent) {
+      return <IconComponent />;
+    }
+  }
+  return <AppstoreOutlined />;
+}
+
 function buildMenuItems(items: MenuTreeItem[]): AntdMenuItems {
   return items.map((item) => {
     const children = buildMenuItems(item.children);
     const label = item.path ? <Link href={item.path}>{item.name}</Link> : item.name;
+    const icon = resolveMenuIcon(item.icon);
 
     if (children.length > 0) {
       return {
         key: item.id,
         label,
+        icon,
         children,
       };
     }
@@ -97,6 +158,7 @@ function buildMenuItems(items: MenuTreeItem[]): AntdMenuItems {
     return {
       key: item.id,
       label,
+      icon,
       disabled: !item.path,
     };
   });
