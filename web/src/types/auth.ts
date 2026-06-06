@@ -615,6 +615,84 @@ export type TowerProfileDetail = {
   update_user: string | null;
 };
 
+export type FlAnalysisRunSummary = {
+  id: string;
+  job_id: string;
+  status: string;
+  runner_kind: string;
+  engine_command: string | null;
+  working_dir: string | null;
+  error_message: string | null;
+  snapshot_tower_count: number;
+  result_tower_count: number;
+  duration_ms: number | null;
+  started_at: string | null;
+  finished_at: string | null;
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
+};
+
+export type FlAnalysisJobSummary = {
+  id: string;
+  line_id: string;
+  line_code: string | null;
+  line_name: string | null;
+  job_name: string | null;
+  job_type: string;
+  source_kind: string;
+  status: string;
+  task_id: string | null;
+  latest_run_id: string | null;
+  total_tower_count: number;
+  snapshotted_tower_count: number;
+  result_tower_count: number;
+  external_adapter: string;
+  adapter_config_json: Record<string, unknown>;
+  execution_options_json: Record<string, unknown>;
+  result_summary_json: Record<string, unknown>;
+  error_message: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
+};
+
+export type FlAnalysisJobDetail = FlAnalysisJobSummary & {
+  runs: FlAnalysisRunSummary[];
+};
+
+export type FlAnalysisJobListResponse = {
+  items: FlAnalysisJobSummary[];
+  total: number;
+};
+
+export type FlAnalysisTowerResultSummary = {
+  id: string;
+  job_id: string;
+  run_id: string;
+  snapshot_id: string;
+  tower_id: string;
+  seq_no: number;
+  tower_no: string;
+  tower_model: string | null;
+  tower_type: string | null;
+  status: string;
+  risk_level: string | null;
+  summary_text: string | null;
+  result_json: Record<string, unknown>;
+  create_date: string;
+  update_date: string;
+};
+
+export type FlAnalysisTowerResultListResponse = {
+  items: FlAnalysisTowerResultSummary[];
+  total: number;
+};
+
 export type AtpModelStatus = "enabled" | "disabled";
 export type AtpModelSourceType = "atpdraw" | "atp" | "manual";
 export type AtpModelVersionStatus = "draft" | "released" | "archived";

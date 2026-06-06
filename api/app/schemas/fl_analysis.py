@@ -83,3 +83,26 @@ class FlAnalysisJobCreateResponse(BaseModel):
 class FlAnalysisJobStartResponse(BaseModel):
     job: FlAnalysisJobDetail
     queued: bool = True
+
+
+class FlAnalysisTowerResultSummary(BaseModel):
+    id: str
+    job_id: str
+    run_id: str
+    snapshot_id: str
+    tower_id: str
+    seq_no: int
+    tower_no: str
+    tower_model: str | None = None
+    tower_type: str | None = None
+    status: str
+    risk_level: str | None = None
+    summary_text: str | None = None
+    result_json: dict[str, Any] = Field(default_factory=dict)
+    create_date: datetime
+    update_date: datetime
+
+
+class FlAnalysisTowerResultListResponse(BaseModel):
+    items: list[FlAnalysisTowerResultSummary]
+    total: int

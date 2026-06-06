@@ -11,9 +11,17 @@ from ...schemas.fl_analysis import (
     FlAnalysisJobDetail,
     FlAnalysisJobListResponse,
     FlAnalysisJobStartResponse,
+    FlAnalysisTowerResultListResponse,
 )
 from ...schemas.tower_profile import TowerProfileDetail, TowerProfileUpsertRequest
-from ...services.fl_analysis_service import create_job, get_job_by_id, list_jobs, serialize_job, start_job
+from ...services.fl_analysis_service import (
+    create_job,
+    get_job_by_id,
+    list_jobs,
+    list_tower_results,
+    serialize_job,
+    start_job,
+)
 from ...services.tower_profile_service import get_tower_profile_detail, upsert_tower_profile
 
 router = APIRouter(prefix="/fl-analysis", tags=["fl-analysis"])
@@ -65,6 +73,19 @@ def get_fl_analysis_job_detail(
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="防雷分析任务不存在")
     return serialize_job(item, include_runs=True)
+
+
+@router.get("/jobs/{job_id}/results", response_model=FlAnalysisTowerResultListResponse)
+def get_fl_analysis_job_results(
+    job_id: str,
+    run_id: str | None = Query(default=None),
+    _: CurrentUser = Depends(require_any_permission("line.read", "line.manage")),
+    db: Session = Depends(get_db),
+) -> FlAnalysisTowerResultListResponse:
+    item = get_job_by_id(db, job_id)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="防雷分析任务不存在")
+    return list_tower_results(db, job_id=job_id, run_id=run_id)
 
 
 @router.post("/jobs", response_model=FlAnalysisJobCreateResponse)
