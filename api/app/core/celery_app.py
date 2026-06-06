@@ -13,6 +13,7 @@ celery_app = Celery(
     include=[
         "app.tasks.schedule_tasks",
         "app.tasks.elevation_tasks",
+        "app.tasks.fl_analysis_tasks",
         "app.tasks.worker_registry_tasks",
     ],
 )

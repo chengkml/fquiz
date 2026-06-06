@@ -349,6 +349,7 @@ def init_db() -> None:
         calendar_event,
         elevation,
         file_storage,
+        fl_analysis,
         hot_search,
         lightning_event,
         lightning_sample,
@@ -363,6 +364,7 @@ def init_db() -> None:
         system_param,
         todo,
         tower_model,
+        tower_profile,
         user,
         worker_registry,
     )  # noqa: F401

@@ -5,6 +5,7 @@ from .v1.admin_files import router as admin_files_router
 from .v1.atp_models import router as atp_models_router
 from .v1.auth import router as auth_router
 from .v1.elevation import router as elevation_router
+from .v1.fl_analysis import router as fl_analysis_router
 from .v1.flower_monitor import router as flower_monitor_router
 from .v1.lightning import router as lightning_router
 from .v1.lines import router as lines_router
@@ -25,6 +26,7 @@ v1_router.include_router(atp_models_router)
 v1_router.include_router(task_monitor_router)
 v1_router.include_router(system_params_router)
 v1_router.include_router(elevation_router)
+v1_router.include_router(fl_analysis_router)
 v1_router.include_router(flower_monitor_router)
 v1_router.include_router(lightning_router)
 v1_router.include_router(lines_router)
