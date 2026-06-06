@@ -15,6 +15,7 @@ from ..models.base import utcnow
 from ..models.line import Line
 from ..models.line_tower import LineTower
 from ..models.tower_model import TowerModel
+from ..models.tower_profile import TowerProfile
 from ..schemas.line import (
     LineCreateRequest,
     LineListResponse,
@@ -506,6 +507,13 @@ def import_line_towers_from_csv(
         tower.raw_extra_json = _extract_extra_values(row, extra_headers)
         tower.update_user = actor_user_id
         tower.update_date = utcnow()
+        db.flush()
+        _upsert_tower_profile_from_legacy_row(
+            db,
+            tower=tower,
+            row=row,
+            actor_user_id=actor_user_id,
+        )
 
         tower_by_seq[tower.seq_no] = tower
         tower_by_no[tower.tower_no] = tower
@@ -742,6 +750,58 @@ def _build_lightning_result(row: dict[str, str]) -> dict[str, Any]:
         "shielding_trip_rate": _parse_float(row.get("绕击跳闸率(次/100km.a)")),
         "risk_level": _normalize_str(row.get("雷击风险等级")),
     }
+
+
+def _upsert_tower_profile_from_legacy_row(
+    db: Session,
+    *,
+    tower: LineTower,
+    row: dict[str, str],
+    actor_user_id: str,
+) -> None:
+    profile = db.execute(select(TowerProfile).where(TowerProfile.tower_id == tower.id)).scalar_one_or_none()
+    now = utcnow()
+    if profile is None:
+        profile = TowerProfile(
+            tower_id=tower.id,
+            create_date=now,
+            create_user=actor_user_id,
+            update_date=now,
+            update_user=actor_user_id,
+        )
+        db.add(profile)
+
+    geometry_layers = _build_circuit_geometry(row)
+    extra_profile_json = dict(profile.extra_profile_json or {})
+
+    profile.phase_sequence_1 = _pick_optional_value(_normalize_str(row.get("I回相序")), profile.phase_sequence_1)
+    profile.phase_sequence_2 = _pick_optional_value(_normalize_str(row.get("II回相序")), profile.phase_sequence_2)
+    profile.phase_sequence_3 = _pick_optional_value(_normalize_str(row.get("III回相序")), profile.phase_sequence_3)
+    profile.phase_sequence_4 = _pick_optional_value(_normalize_str(row.get("IV回相序")), profile.phase_sequence_4)
+    profile.arrester_a = _pick_optional_value(_normalize_str(row.get("A相是否安装避雷器")), profile.arrester_a)
+    profile.arrester_b = _pick_optional_value(_normalize_str(row.get("B相是否安装避雷器")), profile.arrester_b)
+    profile.arrester_c = _pick_optional_value(_normalize_str(row.get("C相是否安装避雷器")), profile.arrester_c)
+    profile.protection_angle_left_deg = _pick_optional_value(_parse_float(row.get("左避雷中距m")), profile.protection_angle_left_deg)
+    profile.protection_angle_right_deg = _pick_optional_value(_parse_float(row.get("右避雷中距m")), profile.protection_angle_right_deg)
+    profile.shield_wire_height_m = _pick_optional_value(_parse_float(row.get("避雷线高度m")), profile.shield_wire_height_m)
+    profile.insulator_length_m = _pick_optional_value(_parse_float(row.get("绝缘子串长度mm")), profile.insulator_length_m)
+    profile.call_height_m = _pick_optional_value(_parse_float(row.get("杆塔呼高m")), profile.call_height_m)
+    profile.angle_deg = _pick_optional_value(_parse_float(row.get("电角度")), profile.angle_deg)
+    profile.current_a = _pick_optional_value(_parse_float(row.get("雷电流幅值a")), profile.current_a)
+    profile.current_b = _pick_optional_value(_parse_float(row.get("雷电流幅值b")), profile.current_b)
+    profile.structure_kind = _pick_optional_value(_normalize_str(row.get("直线或耐张杆塔")), profile.structure_kind)
+    profile.stroke_mode = _pick_optional_value(_normalize_str(row.get("绕击反击")), profile.stroke_mode)
+    profile.geometry_layers_json = _pick_dict_value(geometry_layers, profile.geometry_layers_json or {})
+
+    cause_analysis = _normalize_str(row.get("原因分析"))
+    mitigation_recommendation = _normalize_str(row.get("措施推荐"))
+    if cause_analysis is not None:
+        extra_profile_json["cause_analysis"] = cause_analysis
+    if mitigation_recommendation is not None:
+        extra_profile_json["mitigation_recommendation"] = mitigation_recommendation
+    profile.extra_profile_json = extra_profile_json
+    profile.update_date = now
+    profile.update_user = actor_user_id
 
 
 def _extract_extra_values(row: dict[str, str], extra_headers: list[str]) -> dict[str, Any]:

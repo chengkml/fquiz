@@ -578,6 +578,43 @@ export type LineTowerImportResponse = {
   warnings: string[];
 };
 
+export type TowerProfileDetail = {
+  id: string | null;
+  tower_id: string;
+  line_id: string;
+  tower_no: string;
+  seq_no: number;
+  tower_model: string | null;
+  tower_type: string | null;
+  profile_exists: boolean;
+  phase_sequence_1: string | null;
+  phase_sequence_2: string | null;
+  phase_sequence_3: string | null;
+  phase_sequence_4: string | null;
+  arrester_a: string | null;
+  arrester_b: string | null;
+  arrester_c: string | null;
+  protection_angle_left_deg: number | null;
+  protection_angle_right_deg: number | null;
+  shield_wire_height_m: number | null;
+  insulator_length_m: number | null;
+  call_height_m: number | null;
+  angle_deg: number | null;
+  current_a: number | null;
+  current_b: number | null;
+  structure_kind: string | null;
+  stroke_mode: string | null;
+  current_type: string | null;
+  current_head_time_us: number | null;
+  current_tail_time_us: number | null;
+  geometry_layers_json: Record<string, unknown>;
+  extra_profile_json: Record<string, unknown>;
+  create_date: string | null;
+  create_user: string | null;
+  update_date: string | null;
+  update_user: string | null;
+};
+
 export type AtpModelStatus = "enabled" | "disabled";
 export type AtpModelSourceType = "atpdraw" | "atp" | "manual";
 export type AtpModelVersionStatus = "draft" | "released" | "archived";

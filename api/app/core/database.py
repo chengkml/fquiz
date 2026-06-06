@@ -332,6 +332,41 @@ def _ensure_tower_model_column_compatibility() -> None:
             )
 
 
+def _ensure_tower_profile_column_compatibility() -> None:
+    """
+    Keep `tower_profile` columns aligned with the current ORM mapping.
+    """
+    if not database_url.startswith("postgresql"):
+        return
+
+    schema = settings.resolved_db_schema
+    with engine.begin() as connection:
+        db_inspector = inspect(connection)
+        if not db_inspector.has_table("tower_profile", schema=schema):
+            return
+
+        column_names = {
+            column["name"]
+            for column in db_inspector.get_columns("tower_profile", schema=schema)
+        }
+
+        if "structure_kind" not in column_names:
+            connection.execute(
+                text("ALTER TABLE tower_profile ADD COLUMN IF NOT EXISTS structure_kind VARCHAR(64)"),
+            )
+            logger.warning(
+                "Detected missing tower_profile.structure_kind; added nullable structure kind column.",
+            )
+
+        if "stroke_mode" not in column_names:
+            connection.execute(
+                text("ALTER TABLE tower_profile ADD COLUMN IF NOT EXISTS stroke_mode VARCHAR(32)"),
+            )
+            logger.warning(
+                "Detected missing tower_profile.stroke_mode; added nullable stroke mode column.",
+            )
+
+
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
@@ -375,6 +410,7 @@ def init_db() -> None:
     _ensure_user_audit_column_compatibility()
     _ensure_elevation_dataset_column_compatibility()
     _ensure_tower_model_column_compatibility()
+    _ensure_tower_profile_column_compatibility()
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         local_hosts = {"db", "localhost", "127.0.0.1", "::1"}

@@ -43,6 +43,8 @@ def serialize_tower_profile(tower: LineTower, profile: TowerProfile | None) -> T
         angle_deg=profile.angle_deg if profile else None,
         current_a=profile.current_a if profile else None,
         current_b=profile.current_b if profile else None,
+        structure_kind=profile.structure_kind if profile else None,
+        stroke_mode=profile.stroke_mode if profile else None,
         current_type=profile.current_type if profile else None,
         current_head_time_us=profile.current_head_time_us if profile else None,
         current_tail_time_us=profile.current_tail_time_us if profile else None,
@@ -101,6 +103,8 @@ def upsert_tower_profile(
     profile.angle_deg = payload.angle_deg
     profile.current_a = payload.current_a
     profile.current_b = payload.current_b
+    profile.structure_kind = payload.structure_kind
+    profile.stroke_mode = payload.stroke_mode
     profile.current_type = payload.current_type
     profile.current_head_time_us = payload.current_head_time_us
     profile.current_tail_time_us = payload.current_tail_time_us

@@ -30,6 +30,8 @@ class TowerProfileDetail(BaseModel):
     angle_deg: float | None = None
     current_a: float | None = None
     current_b: float | None = None
+    structure_kind: str | None = None
+    stroke_mode: str | None = None
     current_type: str | None = None
     current_head_time_us: float | None = None
     current_tail_time_us: float | None = None
@@ -57,6 +59,8 @@ class TowerProfileUpsertRequest(BaseModel):
     angle_deg: float | None = None
     current_a: float | None = None
     current_b: float | None = None
+    structure_kind: str | None = Field(default=None, max_length=64)
+    stroke_mode: str | None = Field(default=None, max_length=32)
     current_type: str | None = Field(default=None, max_length=32)
     current_head_time_us: float | None = None
     current_tail_time_us: float | None = None

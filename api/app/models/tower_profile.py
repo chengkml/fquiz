@@ -48,6 +48,8 @@ class TowerProfile(Base):
     angle_deg: Mapped[float | None] = mapped_column(Float)
     current_a: Mapped[float | None] = mapped_column(Float)
     current_b: Mapped[float | None] = mapped_column(Float)
+    structure_kind: Mapped[str | None] = mapped_column(String(64), index=True)
+    stroke_mode: Mapped[str | None] = mapped_column(String(32), index=True)
     current_type: Mapped[str | None] = mapped_column(String(32), index=True)
     current_head_time_us: Mapped[float | None] = mapped_column(Float)
     current_tail_time_us: Mapped[float | None] = mapped_column(Float)

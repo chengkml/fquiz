@@ -36,6 +36,7 @@ import type {
   LineTowerListResponse,
   LineTowerSummary,
   TowerModelSummary,
+  TowerProfileDetail,
 } from "@/types/auth";
 
 type LineFormValues = {
@@ -62,6 +63,19 @@ type TowerFormValues = {
   slope_1: number | null;
   slope_2: number | null;
   risk_level: string;
+};
+
+type TowerProfileFormValues = {
+  structure_kind: string;
+  stroke_mode: string;
+  phase_sequence_1: string;
+  phase_sequence_2: string;
+  phase_sequence_3: string;
+  phase_sequence_4: string;
+  arrester_a: string;
+  arrester_b: string;
+  arrester_c: string;
+  geometry_layers_json: string;
 };
 
 const STATUS_OPTIONS = [
@@ -165,6 +179,19 @@ const EMPTY_TOWER_FORM: TowerFormValues = {
   risk_level: "",
 };
 
+const EMPTY_TOWER_PROFILE_FORM: TowerProfileFormValues = {
+  structure_kind: "",
+  stroke_mode: "",
+  phase_sequence_1: "",
+  phase_sequence_2: "",
+  phase_sequence_3: "",
+  phase_sequence_4: "",
+  arrester_a: "",
+  arrester_b: "",
+  arrester_c: "",
+  geometry_layers_json: "{}",
+};
+
 function formatStatus(status: string): string {
   if (status === "enabled") return "启用";
   if (status === "disabled") return "禁用";
@@ -186,6 +213,7 @@ export default function AdminPowerLinesPage() {
   const panelScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const [lineForm] = Form.useForm<LineFormValues>();
   const [towerForm] = Form.useForm<TowerFormValues>();
+  const [towerProfileForm] = Form.useForm<TowerProfileFormValues>();
 
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_OPTIONS)[number]["value"]>("all");
@@ -197,8 +225,10 @@ export default function AdminPowerLinesPage() {
   const [towerPagination, setTowerPagination] = useState({ current: 1, pageSize: TOWER_TABLE_DEFAULT_PAGE_SIZE });
   const [lineModalOpen, setLineModalOpen] = useState(false);
   const [towerModalOpen, setTowerModalOpen] = useState(false);
+  const [towerProfileModalOpen, setTowerProfileModalOpen] = useState(false);
   const [editingLine, setEditingLine] = useState<LineSummary | null>(null);
   const [editingTower, setEditingTower] = useState<LineTowerSummary | null>(null);
+  const [editingTowerProfileTower, setEditingTowerProfileTower] = useState<LineTowerSummary | null>(null);
   const [towerViewMode, setTowerViewMode] = useState<"table" | "map">("map");
   const [error, setError] = useState("");
   const [panelBodyHeight, setPanelBodyHeight] = useState(POWER_LINES_PANEL_MIN_HEIGHT);
@@ -293,6 +323,18 @@ export default function AdminPowerLinesPage() {
     },
   });
 
+  const towerProfileQuery = useQuery({
+    queryKey: ["tower-profile", editingTowerProfileTower?.id],
+    enabled: !!user && !!editingTowerProfileTower && towerProfileModalOpen && canTowerRead,
+    queryFn: async () => {
+      const response = await fetchWithAuth(`/api/v1/tower-profiles/${editingTowerProfileTower?.id}`);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as TowerProfileDetail;
+    },
+  });
+
   const refreshLines = useCallback(async () => {
     await queryClient.invalidateQueries({
       predicate: (query) =>
@@ -310,6 +352,25 @@ export default function AdminPowerLinesPage() {
         && query.queryKey[0].includes("/towers"),
     });
   }, [queryClient]);
+
+  useEffect(() => {
+    const profile = towerProfileQuery.data;
+    if (!profile) {
+      return;
+    }
+    towerProfileForm.setFieldsValue({
+      structure_kind: profile.structure_kind ?? "",
+      stroke_mode: profile.stroke_mode ?? "",
+      phase_sequence_1: profile.phase_sequence_1 ?? "",
+      phase_sequence_2: profile.phase_sequence_2 ?? "",
+      phase_sequence_3: profile.phase_sequence_3 ?? "",
+      phase_sequence_4: profile.phase_sequence_4 ?? "",
+      arrester_a: profile.arrester_a ?? "",
+      arrester_b: profile.arrester_b ?? "",
+      arrester_c: profile.arrester_c ?? "",
+      geometry_layers_json: JSON.stringify(profile.geometry_layers_json ?? {}, null, 2),
+    });
+  }, [towerProfileForm, towerProfileQuery.data]);
 
   useTopicSubscription("admin.power-lines", useCallback(() => {
     void refreshLines();
@@ -531,6 +592,48 @@ export default function AdminPowerLinesPage() {
     },
   });
 
+  const saveTowerProfileMutation = useMutation({
+    mutationFn: async (values: TowerProfileFormValues) => {
+      if (!editingTowerProfileTower) {
+        throw new Error("未选择杆塔");
+      }
+      const geometryLayers = values.geometry_layers_json.trim()
+        ? JSON.parse(values.geometry_layers_json)
+        : {};
+      const response = await fetchWithAuth(`/api/v1/tower-profiles/${editingTowerProfileTower.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          structure_kind: values.structure_kind.trim() || null,
+          stroke_mode: values.stroke_mode.trim() || null,
+          phase_sequence_1: values.phase_sequence_1.trim() || null,
+          phase_sequence_2: values.phase_sequence_2.trim() || null,
+          phase_sequence_3: values.phase_sequence_3.trim() || null,
+          phase_sequence_4: values.phase_sequence_4.trim() || null,
+          arrester_a: values.arrester_a.trim() || null,
+          arrester_b: values.arrester_b.trim() || null,
+          arrester_c: values.arrester_c.trim() || null,
+          geometry_layers_json: geometryLayers,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as TowerProfileDetail;
+    },
+    onSuccess: async () => {
+      setError("");
+      messageApi.success("专业参数已保存");
+      setTowerProfileModalOpen(false);
+      setEditingTowerProfileTower(null);
+      towerProfileForm.resetFields();
+      await queryClient.invalidateQueries({ queryKey: ["tower-profile"] });
+    },
+    onError: (candidate) => {
+      setError(candidate instanceof Error ? candidate.message : "保存专业参数失败");
+    },
+  });
+
   const importMutation = useMutation({
     mutationFn: async (file: File) => {
       if (!effectiveSelectedLineId) {
@@ -646,6 +749,12 @@ export default function AdminPowerLinesPage() {
     setTowerModalOpen(true);
   };
 
+  const openTowerProfileModal = (item: LineTowerSummary) => {
+    setEditingTowerProfileTower(item);
+    towerProfileForm.setFieldsValue(EMPTY_TOWER_PROFILE_FORM);
+    setTowerProfileModalOpen(true);
+  };
+
   const lineCards = lines.map((line) => {
     const selected = line.id === effectiveSelectedLineId;
     return (
@@ -755,6 +864,11 @@ export default function AdminPowerLinesPage() {
           {canTowerManage && (
             <Button size="small" onClick={() => openEditTowerModal(row)}>
               编辑
+            </Button>
+          )}
+          {canTowerManage && (
+            <Button size="small" onClick={() => openTowerProfileModal(row)}>
+              专业参数
             </Button>
           )}
           {canTowerManage && (
@@ -1197,6 +1311,70 @@ export default function AdminPowerLinesPage() {
               <Input />
             </Form.Item>
           </div>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={editingTowerProfileTower ? `专业参数 - ${editingTowerProfileTower.tower_no}` : "专业参数"}
+        open={towerProfileModalOpen}
+        width={920}
+        okText="保存"
+        confirmLoading={saveTowerProfileMutation.isPending}
+        onCancel={() => {
+          if (saveTowerProfileMutation.isPending) return;
+          setTowerProfileModalOpen(false);
+          setEditingTowerProfileTower(null);
+        }}
+        onOk={async () => {
+          const values = await towerProfileForm.validateFields();
+          saveTowerProfileMutation.mutate(values);
+        }}
+      >
+        <Form<TowerProfileFormValues> form={towerProfileForm} layout="vertical" initialValues={EMPTY_TOWER_PROFILE_FORM}>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Form.Item name="structure_kind" label="直线/耐张">
+              <Input />
+            </Form.Item>
+            <Form.Item name="stroke_mode" label="绕击/反击模式">
+              <Input />
+            </Form.Item>
+            <Form.Item name="phase_sequence_1" label="I回相序">
+              <Input />
+            </Form.Item>
+            <Form.Item name="phase_sequence_2" label="II回相序">
+              <Input />
+            </Form.Item>
+            <Form.Item name="phase_sequence_3" label="III回相序">
+              <Input />
+            </Form.Item>
+            <Form.Item name="phase_sequence_4" label="IV回相序">
+              <Input />
+            </Form.Item>
+            <Form.Item name="arrester_a" label="A相避雷器">
+              <Input />
+            </Form.Item>
+            <Form.Item name="arrester_b" label="B相避雷器">
+              <Input />
+            </Form.Item>
+            <Form.Item name="arrester_c" label="C相避雷器">
+              <Input />
+            </Form.Item>
+          </div>
+          <Form.Item
+            name="geometry_layers_json"
+            label="回路几何 JSON"
+            rules={[{
+              validator: async (_, value) => {
+                if (!value || !String(value).trim()) {
+                  return;
+                }
+                JSON.parse(String(value));
+              },
+              message: "请输入合法 JSON",
+            }]}
+          >
+            <Input.TextArea rows={12} spellCheck={false} />
+          </Form.Item>
         </Form>
       </Modal>
     </>
