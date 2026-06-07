@@ -1180,14 +1180,6 @@ export default function AdminPowerLinesPage() {
         }}
       >
         <Form<LineFormValues> form={lineForm} layout="vertical" initialValues={EMPTY_LINE_FORM}>
-          {!editingLine ? (
-            <Alert
-              showIcon
-              type="info"
-              className="mb-4"
-              message="线路编码将由系统自动生成"
-            />
-          ) : null}
           {editingLine ? (
             <Form.Item label="线路编码">
               <Input value={editingLine.code} disabled />
@@ -1200,9 +1192,12 @@ export default function AdminPowerLinesPage() {
           >
             <Input />
           </Form.Item>
-          <Form.Item name="voltage_level" label="电压等级">
+          <Form.Item
+            name="voltage_level"
+            label="电压等级"
+            rules={[{ required: true, message: "请选择电压等级" }]}
+          >
             <Select
-              allowClear
               placeholder="请选择电压等级"
               options={[...LINE_VOLTAGE_OPTIONS].map((item) => ({ value: item.value, label: item.label }))}
             />
