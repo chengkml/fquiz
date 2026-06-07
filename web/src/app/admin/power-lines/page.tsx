@@ -18,6 +18,7 @@ import {
   Table,
   Typography,
 } from "antd";
+import type { DefaultOptionType } from "antd/es/select";
 import type { ColumnsType } from "antd/es/table";
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -91,10 +92,10 @@ const TOWER_TYPE_OPTIONS = [
   { value: "耐张", label: "耐张" },
 ] as const;
 
-const ARRESTER_INSTALL_OPTIONS = [
+const ARRESTER_INSTALL_OPTIONS: DefaultOptionType[] = [
   { value: "是", label: "是" },
   { value: "否", label: "否" },
-] as const;
+];
 
 const LINE_VOLTAGE_OPTIONS = [
   { value: "dc_500", label: "直流500kV", voltage_kv: 500 },
