@@ -15,17 +15,23 @@ from sqlalchemy.orm import Session
 from ..models.base import utcnow
 from ..models.lightning_event import LightningCurrentEvent
 from ..models.lightning_sample import LightningCurrentSample
+from ..models.line import Line
 from ..models.line_tower import LineTower
+from ..models.tower_profile import TowerProfile
 from ..schemas.lightning import (
     LightningCurrentEventListResponse,
     LightningCurrentEventSummary,
     LightningCurrentEventUpdateRequest,
+    LightningCurrentPreparationRequest,
+    LightningCurrentPreparationResponse,
     LightningDistributionEventBrief,
     LightningDistributionGridCell,
     LightningDistributionImportResponse,
     LightningDistributionScatterPoint,
     LightningDistributionStatsResponse,
     LightningDistributionSummary,
+    LightningDensityPreparationRequest,
+    LightningDensityPreparationResponse,
     LightningDistributionReportResponse,
     LightningCurrentExceedancePoint,
     LightningCurrentExceedanceResponse,
@@ -43,9 +49,12 @@ from ..schemas.lightning import (
     LightningTowerTerrainComputeResponse,
     LightningTowerTerrainMetrics,
 )
+from .line_preparation_service import record_line_preparation_source, summarize_line_preparation
+from .line_service import serialize_line
 from .push_service import publish_topic
 
 LIGHTNING_TOPIC = "admin.lightning-currents"
+POWER_LINES_TOPIC = "admin.power-lines"
 TEXT_ENCODINGS = ("utf-8-sig", "utf-8", "gbk", "latin-1")
 MAX_SAMPLES = 2_000_000
 INSERT_CHUNK_SIZE = 5_000
@@ -1298,6 +1307,268 @@ def get_peak_exceedance_curve(
     return LightningCurrentExceedanceResponse(total_events=total, thresholds=points)
 
 
+def prepare_line_lightning_current(
+    db: Session,
+    payload: LightningCurrentPreparationRequest,
+    *,
+    actor_user_id: str,
+) -> LightningCurrentPreparationResponse:
+    line = db.execute(select(Line).where(Line.id == payload.line_id)).scalar_one_or_none()
+    if not line:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="线路不存在")
+
+    towers = db.execute(
+        select(LineTower)
+        .where(LineTower.line_id == line.id)
+        .order_by(LineTower.seq_no.asc(), LineTower.id.asc())
+    ).scalars().all()
+    if not towers:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前线路没有可回填的杆塔数据")
+
+    filters: list[Any] = [LightningCurrentEvent.peak_abs_current_ka.is_not(None)]
+    normalized_region = _normalize_str(payload.region_id)
+    if normalized_region:
+        filters.append(LightningCurrentEvent.region_id == normalized_region)
+    if payload.is_synthetic is not None:
+        filters.append(LightningCurrentEvent.is_synthetic == payload.is_synthetic)
+
+    peaks = [
+        float(item)
+        for item in db.execute(select(LightningCurrentEvent.peak_abs_current_ka).where(*filters)).scalars().all()
+        if item is not None and float(item) > 0
+    ]
+    if not peaks:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="未找到可用于线路雷电流拟合的幅值样本")
+
+    current_a, current_b, warnings = _fit_line_current_parameters(peaks)
+    now = utcnow()
+    tower_ids = [tower.id for tower in towers]
+    existing_profiles = db.execute(select(TowerProfile).where(TowerProfile.tower_id.in_(tower_ids))).scalars().all()
+    profile_map = {item.tower_id: item for item in existing_profiles}
+    created_profile_count = 0
+
+    for tower in towers:
+        profile = profile_map.get(tower.id)
+        if profile is None:
+            profile = TowerProfile(
+                tower_id=tower.id,
+                geometry_layers_json={},
+                extra_profile_json={},
+                create_date=now,
+                create_user=actor_user_id,
+                update_date=now,
+                update_user=actor_user_id,
+            )
+            db.add(profile)
+            profile_map[tower.id] = profile
+            created_profile_count += 1
+
+        extra_profile = dict(profile.extra_profile_json or {})
+        extra_profile["lightning_current_preparation"] = {
+            "line_id": line.id,
+            "line_code": line.code,
+            "current_a": current_a,
+            "current_b": current_b,
+            "sampled_event_count": len(peaks),
+            "region_id": normalized_region,
+            "is_synthetic": payload.is_synthetic,
+            "prepared_at": now.isoformat(),
+        }
+        profile.current_a = current_a
+        profile.current_b = current_b
+        profile.current_type = "line_prepared"
+        profile.extra_profile_json = extra_profile
+        profile.update_date = now
+        profile.update_user = actor_user_id
+
+    line_params = dict(line.lightning_param_json or {})
+    line_params["雷电流幅值a"] = current_a
+    line_params["雷电流幅值b"] = current_b
+    line.lightning_param_json = line_params
+    line.update_date = now
+    line.update_user = actor_user_id
+    record_line_preparation_source(
+        line,
+        component="lightning_current",
+        payload={
+            "prepared_at": now.isoformat(),
+            "prepared_by_user_id": actor_user_id,
+            "sampled_event_count": len(peaks),
+            "region_id": normalized_region,
+            "is_synthetic": payload.is_synthetic,
+            "current_a": current_a,
+            "current_b": current_b,
+        },
+    )
+    db.commit()
+
+    preparation_json = summarize_line_preparation(db, line, tower_count=len(towers))
+    _publish_line_change(
+        "power-lines.lightning-current.prepared",
+        {"action": "lightning_current_prepared", "line_id": line.id},
+    )
+    return LightningCurrentPreparationResponse(
+        line=serialize_line(line, tower_count=len(towers), preparation_json=preparation_json),
+        current_a=current_a,
+        current_b=current_b,
+        sampled_event_count=len(peaks),
+        updated_tower_count=len(towers),
+        created_profile_count=created_profile_count,
+        warning_count=len(warnings),
+        warnings=warnings,
+    )
+
+
+def prepare_line_lightning_density(
+    db: Session,
+    payload: LightningDensityPreparationRequest,
+    *,
+    actor_user_id: str,
+) -> LightningDensityPreparationResponse:
+    line = db.execute(select(Line).where(Line.id == payload.line_id)).scalar_one_or_none()
+    if not line:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="线路不存在")
+
+    towers = db.execute(
+        select(LineTower)
+        .where(LineTower.line_id == line.id)
+        .order_by(LineTower.seq_no.asc(), LineTower.id.asc())
+    ).scalars().all()
+    if not towers:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前线路没有可回填的杆塔数据")
+
+    geo_towers = [tower for tower in towers if tower.longitude is not None and tower.latitude is not None]
+    if not geo_towers:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前线路缺少杆塔经纬度，无法计算地闪密度")
+
+    lat_delta = payload.radius_km / DEGREE_TO_KM
+    lon_deltas = [
+        payload.radius_km / _safe_km_per_lon(float(tower.latitude))
+        for tower in geo_towers
+        if tower.latitude is not None
+    ]
+    lon_delta = max(lon_deltas) if lon_deltas else lat_delta
+    min_lat = min(float(tower.latitude) for tower in geo_towers) - lat_delta
+    max_lat = max(float(tower.latitude) for tower in geo_towers) + lat_delta
+    min_lon = min(float(tower.longitude) for tower in geo_towers) - lon_delta
+    max_lon = max(float(tower.longitude) for tower in geo_towers) + lon_delta
+
+    filters = _build_distribution_filters(
+        min_lat=min_lat,
+        max_lat=max_lat,
+        min_lon=min_lon,
+        max_lon=max_lon,
+        region_id=payload.region_id,
+        city=None,
+        location_tag=None,
+        polarity=None,
+        is_synthetic=payload.is_synthetic,
+    )
+    candidate_rows = db.execute(
+        select(
+            LightningCurrentEvent.longitude,
+            LightningCurrentEvent.latitude,
+            LightningCurrentEvent.event_time,
+        ).where(*filters)
+    ).all()
+    if not candidate_rows:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="未找到可用于地闪密度计算的雷击分布数据")
+
+    now = utcnow()
+    area_km2 = math.pi * (payload.radius_km ** 2)
+    updated_tower_count = 0
+    missing_geo_count = 0
+    density_values: list[float] = []
+    all_event_times = [row.event_time for row in candidate_rows if row.event_time is not None]
+    source_years = payload.years if payload.years is not None else _resolve_data_years_from_timestamps(all_event_times)
+    warnings: list[str] = []
+
+    for tower in towers:
+        if tower.longitude is None or tower.latitude is None:
+            missing_geo_count += 1
+            continue
+
+        tower_times: list[datetime] = []
+        strike_count = 0
+        for row in candidate_rows:
+            if row.longitude is None or row.latitude is None:
+                continue
+            distance_km = _haversine_km(
+                float(tower.latitude),
+                float(tower.longitude),
+                float(row.latitude),
+                float(row.longitude),
+            )
+            if distance_km > payload.radius_km:
+                continue
+            strike_count += 1
+            if row.event_time is not None:
+                tower_times.append(row.event_time)
+
+        tower_years = payload.years if payload.years is not None else _resolve_data_years_from_timestamps(tower_times)
+        tower_years = max(tower_years, 1e-6)
+        density = strike_count / (area_km2 * tower_years) if strike_count > 0 else 0.0
+        tower.lightning_density = round(density, 6)
+        tower.update_date = now
+        tower.update_user = actor_user_id
+        raw_extra = dict(tower.raw_extra_json or {})
+        raw_extra["lightning_density"] = {
+            "line_id": line.id,
+            "line_code": line.code,
+            "radius_km": payload.radius_km,
+            "data_years": round(tower_years, 6),
+            "strike_count": strike_count,
+            "region_id": _normalize_str(payload.region_id),
+            "is_synthetic": payload.is_synthetic,
+            "prepared_at": now.isoformat(),
+        }
+        tower.raw_extra_json = raw_extra
+        density_values.append(float(tower.lightning_density))
+        updated_tower_count += 1
+
+    if missing_geo_count > 0:
+        warnings.append(f"{missing_geo_count} 座杆塔缺少经纬度，未能回填地闪密度")
+
+    line.update_date = now
+    line.update_user = actor_user_id
+    record_line_preparation_source(
+        line,
+        component="lightning_density",
+        payload={
+            "prepared_at": now.isoformat(),
+            "prepared_by_user_id": actor_user_id,
+            "region_id": _normalize_str(payload.region_id),
+            "is_synthetic": payload.is_synthetic,
+            "radius_km": payload.radius_km,
+            "data_years": round(source_years, 6),
+            "updated_tower_count": updated_tower_count,
+            "missing_geo_count": missing_geo_count,
+            "avg_density": round(sum(density_values) / len(density_values), 6) if density_values else None,
+            "min_density": round(min(density_values), 6) if density_values else None,
+            "max_density": round(max(density_values), 6) if density_values else None,
+        },
+    )
+    db.commit()
+
+    preparation_json = summarize_line_preparation(db, line, tower_count=len(towers))
+    _publish_line_change(
+        "power-lines.lightning-density.prepared",
+        {"action": "lightning_density_prepared", "line_id": line.id},
+    )
+    return LightningDensityPreparationResponse(
+        line=serialize_line(line, tower_count=len(towers), preparation_json=preparation_json),
+        updated_tower_count=updated_tower_count,
+        missing_geo_count=missing_geo_count,
+        radius_km=payload.radius_km,
+        data_years=round(source_years, 6),
+        avg_density=round(sum(density_values) / len(density_values), 6) if density_values else None,
+        min_density=round(min(density_values), 6) if density_values else None,
+        max_density=round(max(density_values), 6) if density_values else None,
+        warning_count=len(warnings),
+        warnings=warnings,
+    )
+
+
 def _build_distribution_filters(
     *,
     min_lat: float | None,
@@ -2085,6 +2356,83 @@ def _parse_float(value: Any) -> float | None:
         return None
 
 
+def _fit_line_current_parameters(values: list[float]) -> tuple[float, float, list[str]]:
+    cleaned = sorted(float(item) for item in values if item > 0)
+    if not cleaned:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="雷电流幅值样本为空")
+
+    warnings: list[str] = []
+    unique_values = {round(item, 6) for item in cleaned}
+    if len(unique_values) == 1:
+        return round(cleaned[0], 3), 2.6, ["样本幅值单一，已使用默认 b=2.6"]
+
+    peak_max = max(cleaned)
+    peak_min = min(cleaned)
+    thresholds = [peak_max]
+    probabilities = [1.0 / len(cleaned)]
+    current = peak_max
+    while current > peak_min:
+        current = round(current - 0.1, 10)
+        thresholds.append(current)
+        exceedance_count = sum(1 for item in cleaned if item >= current)
+        probabilities.append(exceedance_count / len(cleaned))
+
+    lower_index: int | None = None
+    upper_index: int | None = None
+    best_lower = -1.0
+    best_upper = 1.0
+    for index, probability in enumerate(probabilities):
+        delta = probability - 0.5
+        if delta < 0:
+            if delta > best_lower:
+                best_lower = delta
+                lower_index = index
+        else:
+            if delta < best_upper:
+                best_upper = delta
+                upper_index = index
+
+    if lower_index is None or upper_index is None or lower_index == upper_index:
+        current_a = _median(cleaned)
+        warnings.append("样本分布不足以插值求解 a，已回退到中位数")
+    else:
+        upper_probability = probabilities[upper_index]
+        lower_probability = probabilities[lower_index]
+        upper_threshold = thresholds[upper_index]
+        lower_threshold = thresholds[lower_index]
+        denominator = lower_probability - upper_probability
+        if abs(denominator) < 1e-9:
+            current_a = _median(cleaned)
+            warnings.append("样本概率分布异常，已回退到中位数")
+        else:
+            current_a = (0.5 - upper_probability) * (lower_threshold - upper_threshold) / denominator + upper_threshold
+
+    exponent_values: list[float] = []
+    if current_a <= 0:
+        current_a = _median(cleaned)
+        warnings.append("样本拟合得到的 a 非法，已回退到中位数")
+    for threshold, probability in zip(thresholds[:-1], probabilities[:-1], strict=False):
+        if probability <= 0 or probability >= 1:
+            continue
+        if threshold <= current_a:
+            continue
+        denominator = math.log(threshold / current_a)
+        if abs(denominator) < 1e-9:
+            continue
+        numerator = math.log(1.0 / probability - 1.0)
+        exponent = numerator / denominator
+        if math.isfinite(exponent):
+            exponent_values.append(exponent)
+
+    if exponent_values:
+        current_b = sum(exponent_values) / len(exponent_values)
+    else:
+        current_b = 2.6
+        warnings.append("样本分布不足以稳定拟合 b，已使用默认 b=2.6")
+
+    return round(current_a, 3), round(current_b, 3), warnings
+
+
 def _normalize_str(value: Any) -> str | None:
     if value is None:
         return None
@@ -2108,6 +2456,18 @@ def _median(values: list[float]) -> float:
 def _generate_event_id() -> str:
     now = datetime.now().strftime("%Y%m%d%H%M%S")
     return f"LC-{now}-{uuid4().hex[:6]}"
+
+
+def _publish_line_change(event_name: str, payload: dict[str, Any]) -> None:
+    _fire_and_forget(
+        publish_topic(
+            POWER_LINES_TOPIC,
+            name=event_name,
+            payload=payload,
+            requires_refetch=["/api/v1/lines"],
+            dedupe_key=f"{event_name}:{payload.get('line_id', 'unknown')}",
+        )
+    )
 
 
 def _publish_lightning_change(event_name: str, payload: dict[str, Any]) -> None:

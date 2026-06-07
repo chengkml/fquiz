@@ -8,13 +8,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.database import Base
 from app.models.line import Line
 from app.models.line_tower import LineTower
+from app.models.tower_profile import TowerProfile
 from app.schemas.line import LineCreateRequest
 from app.services import line_service
 
 
 def _build_session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    Base.metadata.create_all(bind=engine, tables=[Line.__table__, LineTower.__table__])
+    Base.metadata.create_all(bind=engine, tables=[Line.__table__, LineTower.__table__, TowerProfile.__table__])
     testing_session = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False)
     return testing_session()
 

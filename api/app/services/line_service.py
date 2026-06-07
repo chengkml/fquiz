@@ -29,6 +29,7 @@ from ..schemas.line import (
     LineTowerUpdateRequest,
     LineUpdateRequest,
 )
+from .line_preparation_service import summarize_line_preparation, summarize_line_preparations
 from .push_service import publish_topic
 
 LINE_TOPIC = "admin.power-lines"
@@ -48,7 +49,12 @@ class CsvImportStats:
             self.warnings = []
 
 
-def serialize_line(line: Line, *, tower_count: int = 0) -> LineSummary:
+def serialize_line(
+    line: Line,
+    *,
+    tower_count: int = 0,
+    preparation_json: dict[str, Any] | None = None,
+) -> LineSummary:
     return LineSummary(
         id=line.id,
         code=line.code,
@@ -57,6 +63,7 @@ def serialize_line(line: Line, *, tower_count: int = 0) -> LineSummary:
         phase_sequence_json=line.phase_sequence_json or {},
         arrester_install_json=line.arrester_install_json or {},
         lightning_param_json=line.lightning_param_json or {},
+        preparation_json=preparation_json or {},
         tower_count=tower_count,
         create_date=line.create_date,
         create_user=line.create_user,
@@ -113,9 +120,17 @@ def list_lines(
     items = db.execute(stmt.order_by(Line.update_date.desc(), Line.code.asc())).scalars().all()
     line_ids = [item.id for item in items]
     tower_count_map = _load_tower_counts(db, line_ids)
+    preparation_map = summarize_line_preparations(db, items, tower_count_map=tower_count_map)
 
     return LineListResponse(
-        items=[serialize_line(item, tower_count=tower_count_map.get(item.id, 0)) for item in items],
+        items=[
+            serialize_line(
+                item,
+                tower_count=tower_count_map.get(item.id, 0),
+                preparation_json=preparation_map.get(item.id, {}),
+            )
+            for item in items
+        ],
         total=total,
     )
 
@@ -165,7 +180,7 @@ def create_line(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created line")
 
         _publish_line_change("power-lines.created", {"action": "created", "line_id": saved.id})
-        return serialize_line(saved, tower_count=0)
+        return serialize_line(saved, tower_count=0, preparation_json=summarize_line_preparation(db, saved, tower_count=0))
 
     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate unique line code")
 
@@ -203,7 +218,11 @@ def update_line(
 
     tower_count = int(db.scalar(select(func.count()).select_from(LineTower).where(LineTower.line_id == line_id)) or 0)
     _publish_line_change("power-lines.updated", {"action": "updated", "line_id": line_id})
-    return serialize_line(saved, tower_count=tower_count)
+    return serialize_line(
+        saved,
+        tower_count=tower_count,
+        preparation_json=summarize_line_preparation(db, saved, tower_count=tower_count),
+    )
 
 
 def delete_line(db: Session, line_id: str) -> tuple[bool, int]:
@@ -539,7 +558,11 @@ def import_line_towers_from_csv(
     )
 
     return LineTowerImportResponse(
-        line=serialize_line(line, tower_count=tower_count),
+        line=serialize_line(
+            line,
+            tower_count=tower_count,
+            preparation_json=summarize_line_preparation(db, line, tower_count=tower_count),
+        ),
         imported_count=stats.imported_count,
         updated_count=stats.updated_count,
         skipped_count=stats.skipped_count,

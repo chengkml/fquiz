@@ -13,6 +13,7 @@ class LineSummary(BaseModel):
     phase_sequence_json: dict[str, Any] = Field(default_factory=dict)
     arrester_install_json: dict[str, Any] = Field(default_factory=dict)
     lightning_param_json: dict[str, Any] = Field(default_factory=dict)
+    preparation_json: dict[str, Any] = Field(default_factory=dict)
     tower_count: int = 0
     create_date: datetime
     create_user: str | None = None

@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from .line import LineSummary
+
 LightningPolarity = Literal["positive", "negative", "mixed", "unknown"]
 
 
@@ -294,3 +296,41 @@ class LightningDistributionReportResponse(BaseModel):
     positive_ratio: float = 0.0
     ng_per_km2_year: float = 0.0
     most_severe_event: LightningDistributionEventBrief | None = None
+
+
+class LightningCurrentPreparationRequest(BaseModel):
+    line_id: str = Field(min_length=1, max_length=64)
+    region_id: str | None = Field(default=None, max_length=64)
+    is_synthetic: bool | None = None
+
+
+class LightningCurrentPreparationResponse(BaseModel):
+    line: LineSummary
+    current_a: float
+    current_b: float
+    sampled_event_count: int
+    updated_tower_count: int
+    created_profile_count: int = 0
+    warning_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
+
+
+class LightningDensityPreparationRequest(BaseModel):
+    line_id: str = Field(min_length=1, max_length=64)
+    region_id: str | None = Field(default=None, max_length=64)
+    is_synthetic: bool | None = None
+    radius_km: float = Field(default=3.0, gt=0.05, le=50.0)
+    years: float | None = Field(default=None, gt=0)
+
+
+class LightningDensityPreparationResponse(BaseModel):
+    line: LineSummary
+    updated_tower_count: int
+    missing_geo_count: int = 0
+    radius_km: float
+    data_years: float
+    avg_density: float | None = None
+    min_density: float | None = None
+    max_density: float | None = None
+    warning_count: int = 0
+    warnings: list[str] = Field(default_factory=list)

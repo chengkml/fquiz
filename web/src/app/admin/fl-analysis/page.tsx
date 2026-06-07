@@ -25,6 +25,7 @@ import type { ColumnsType } from "antd/es/table";
 import { useAuth } from "@/components/auth-provider";
 import { Card } from "@/components/ui-antd";
 import { readApiError } from "@/lib/api";
+import { readLinePreparation } from "@/lib/line-preparation";
 import type {
   AtpEngineStatusResponse,
   AtpModelListResponse,
@@ -279,6 +280,10 @@ function readOptionalString(record: Record<string, unknown>, key: string): strin
 function readOptionalNumber(record: Record<string, unknown>, key: string): number | null {
   const value = record[key];
   return typeof value === "number" ? value : null;
+}
+
+function preparationColor(ready: boolean): string {
+  return ready ? "green" : "red";
 }
 
 function readDownloadFilename(headerValue: string | null, fallback: string): string {
@@ -1064,6 +1069,7 @@ export default function AdminFlAnalysisPage() {
   const selectedLine = useMemo(() => {
     return linesQuery.data?.items.find((item) => item.id === selectedLineId) ?? null;
   }, [linesQuery.data?.items, selectedLineId]);
+  const selectedLinePreparation = useMemo(() => readLinePreparation(selectedLine), [selectedLine]);
   const externalAdapterActive = selectedExternalAdapter === "atp" || selectedExternalAdapter === "wine";
   const engineMode = engineQuery.data?.mode;
   const adapterOptions = [
@@ -1192,11 +1198,47 @@ export default function AdminFlAnalysisPage() {
                     />
                   </Form.Item>
                   <Form.Item label=" ">
-                    <Button type="primary" htmlType="submit" loading={createJobMutation.isPending} className="w-full">
+                    <Button
+                      type="primary"
+                      htmlType="submit"
+                      loading={createJobMutation.isPending}
+                      disabled={!selectedLine || !selectedLinePreparation.all_ready}
+                      className="w-full"
+                    >
                       创建并启动{formatJobType(selectedCreateJobType)}任务
                     </Button>
                   </Form.Item>
                 </div>
+
+                {selectedLine ? (
+                  <Alert
+                    type={selectedLinePreparation.all_ready ? "success" : "warning"}
+                    showIcon
+                    message={selectedLinePreparation.all_ready ? "参数准备已完成" : `当前线路缺少：${selectedLinePreparation.missing_items.join("、")}`}
+                    description={
+                      <Space size={[8, 8]} wrap>
+                        {[
+                          selectedLinePreparation.lightning_current,
+                          selectedLinePreparation.lightning_density,
+                          selectedLinePreparation.ground_slope,
+                        ].map((item) => {
+                          const source = readObject(item.source);
+                          const preparedAt = readOptionalString(source, "prepared_at");
+                          const currentA = readOptionalNumber(readObject(item.values), "current_a");
+                          const currentB = readOptionalNumber(readObject(item.values), "current_b");
+                          const suffix = item.key === "lightning_current" && currentA !== null && currentB !== null
+                            ? ` (${currentA.toFixed(3)} / ${currentB.toFixed(3)})`
+                            : "";
+                          return (
+                            <Tag key={item.key} color={preparationColor(item.ready)}>
+                              {`${item.label}${suffix} ${item.tower_ready_count}/${item.tower_total_count}${preparedAt ? ` @ ${formatDateTime(preparedAt)}` : ""}`}
+                            </Tag>
+                          );
+                        })}
+                      </Space>
+                    }
+                  />
+                ) : null}
 
                 {selectedCreateJobType === "normal" || selectedCreateJobType === "tongtiao" ? (
                   <>

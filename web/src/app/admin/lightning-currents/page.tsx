@@ -20,20 +20,25 @@ import {
   Typography,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { LightningDistributionMap } from "@/components/lightning-distribution-map";
 import { Card } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
+import { readLinePreparation } from "@/lib/line-preparation";
 import type {
+  LineListResponse,
+  LineSummary,
   LightningCurrentEventListResponse,
   LightningCurrentEventSummary,
   LightningCurrentExceedanceResponse,
   LightningCurrentImportResponse,
+  LightningCurrentPreparationResponse,
   LightningCurrentSampleListResponse,
   LightningCurrentSampleItem,
+  LightningDensityPreparationResponse,
   LightningDistributionImportResponse,
   LightningDistributionReportResponse,
   LightningDistributionStatsResponse,
@@ -174,6 +179,9 @@ export default function AdminLightningCurrentsPage() {
   const [towerBufferValues, setTowerBufferValues] = useState<TowerBufferFormValues>(INITIAL_TOWER_BUFFER_VALUES);
   const [reportPeriod, setReportPeriod] = useState<"week" | "month">("week");
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [selectedLineId, setSelectedLineId] = useState("");
+  const [prepareDensityRadiusKm, setPrepareDensityRadiusKm] = useState(3);
+  const [prepareDensityYears, setPrepareDensityYears] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -199,13 +207,6 @@ export default function AdminLightningCurrentsPage() {
     params.set("offset", "0");
     return `/api/v1/lightning-currents?${params.toString()}`;
   }, [keyword, regionFilter, polarityFilter, syntheticFilter]);
-
-  const samplePath = useMemo(() => {
-    if (!selectedEventId) {
-      return "";
-    }
-    return `/api/v1/lightning-currents/${selectedEventId}/samples?limit=200&offset=0`;
-  }, [selectedEventId]);
 
   const exceedancePath = useMemo(() => {
     const params = new URLSearchParams();
@@ -280,6 +281,18 @@ export default function AdminLightningCurrentsPage() {
     if (syntheticFilter !== "all") params.set("is_synthetic", syntheticFilter);
     return `/api/v1/lightning-currents/reports/distribution?${params.toString()}`;
   }, [distributionFilters, keyword, regionFilter, reportPeriod, syntheticFilter]);
+  const linesQuery = useQuery({
+    queryKey: ["/api/v1/lines"],
+    enabled: !!user && canRead,
+    queryFn: async () => {
+      const response = await fetchWithAuth("/api/v1/lines");
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as LineListResponse;
+    },
+  });
+  const activeSelectedLineId = selectedLineId || linesQuery.data?.items[0]?.id || "";
 
   const eventsQuery = useQuery({
     queryKey: [eventListPath],
@@ -292,10 +305,20 @@ export default function AdminLightningCurrentsPage() {
       return (await response.json()) as LightningCurrentEventListResponse;
     },
   });
+  const events = useMemo(() => eventsQuery.data?.items ?? [], [eventsQuery.data?.items]);
+  const activeSelectedEventId = selectedEventId && events.some((item) => item.id === selectedEventId)
+    ? selectedEventId
+    : (events[0]?.id ?? null);
+  const samplePath = useMemo(() => {
+    if (!activeSelectedEventId) {
+      return "";
+    }
+    return `/api/v1/lightning-currents/${activeSelectedEventId}/samples?limit=200&offset=0`;
+  }, [activeSelectedEventId]);
 
   const samplesQuery = useQuery({
     queryKey: [samplePath],
-    enabled: !!user && canRead && !isDistributionOnly && !!selectedEventId,
+    enabled: !!user && canRead && !isDistributionOnly && !!activeSelectedEventId,
     queryFn: async () => {
       if (!samplePath) {
         return { items: [], total: 0, limit: 0, offset: 0 } satisfies LightningCurrentSampleListResponse;
@@ -378,7 +401,10 @@ export default function AdminLightningCurrentsPage() {
       predicate: (query) =>
         Array.isArray(query.queryKey)
         && typeof query.queryKey[0] === "string"
-        && query.queryKey[0].startsWith("/api/v1/lightning-currents"),
+        && (
+          query.queryKey[0].startsWith("/api/v1/lightning-currents")
+          || query.queryKey[0].startsWith("/api/v1/lines")
+        ),
     });
   }, [queryClient]);
 
@@ -389,11 +415,10 @@ export default function AdminLightningCurrentsPage() {
     }, [refreshAll]),
   );
 
-  const events = eventsQuery.data?.items ?? [];
   const samples = samplesQuery.data?.items ?? [];
   const exceedance = exceedanceQuery.data?.thresholds ?? [];
   const distributionStats = distributionStatsQuery.data;
-  const distributionGridCells = distributionStats?.grid_cells ?? [];
+  const distributionGridCells = useMemo(() => distributionStats?.grid_cells ?? [], [distributionStats?.grid_cells]);
   const distributionScatterPoints = distributionStats?.scatter_points ?? [];
   const distributionPCurve = distributionStats?.p_curve ?? [];
   const towerBufferStats = towerBufferQuery.data;
@@ -401,19 +426,14 @@ export default function AdminLightningCurrentsPage() {
   const syntheticCompare = syntheticCompareQuery.data;
   const distributionReport = reportQuery.data;
   const selectedEvent = useMemo(
-    () => events.find((item) => item.id === selectedEventId) ?? null,
-    [events, selectedEventId],
+    () => events.find((item) => item.id === activeSelectedEventId) ?? null,
+    [activeSelectedEventId, events],
   );
-
-  useEffect(() => {
-    if (!selectedEventId && events.length > 0) {
-      setSelectedEventId(events[0].id);
-      return;
-    }
-    if (selectedEventId && !events.some((item) => item.id === selectedEventId)) {
-      setSelectedEventId(events.length > 0 ? events[0].id : null);
-    }
-  }, [events, selectedEventId]);
+  const selectedLine = useMemo(
+    () => linesQuery.data?.items.find((item) => item.id === activeSelectedLineId) ?? null,
+    [activeSelectedLineId, linesQuery.data?.items],
+  );
+  const selectedLinePreparation = useMemo(() => readLinePreparation(selectedLine), [selectedLine]);
 
   const importMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -516,6 +536,70 @@ export default function AdminLightningCurrentsPage() {
     onError: (candidate) => {
       setSuccess("");
       setError(candidate instanceof Error ? candidate.message : "删除失败");
+    },
+  });
+
+  const prepareCurrentMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeSelectedLineId) {
+        throw new Error("请选择线路");
+      }
+      const response = await fetchWithAuth("/api/v1/lightning-currents/prepare-current", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          line_id: activeSelectedLineId,
+          region_id: regionFilter.trim() || null,
+          is_synthetic: syntheticFilter === "all" ? null : syntheticFilter === "true",
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as LightningCurrentPreparationResponse;
+    },
+    onSuccess: async (payload) => {
+      setError("");
+      setSuccess(`已为 ${payload.line.name || payload.line.code} 回填雷电流幅值 a/b = ${payload.current_a} / ${payload.current_b}`);
+      await refreshAll();
+    },
+    onError: (candidate) => {
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "线路雷电流回填失败");
+    },
+  });
+
+  const prepareDensityMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeSelectedLineId) {
+        throw new Error("请选择线路");
+      }
+      const response = await fetchWithAuth("/api/v1/lightning-currents/prepare-density", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          line_id: activeSelectedLineId,
+          region_id: regionFilter.trim() || null,
+          is_synthetic: syntheticFilter === "all" ? null : syntheticFilter === "true",
+          radius_km: prepareDensityRadiusKm,
+          years: prepareDensityYears,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as LightningDensityPreparationResponse;
+    },
+    onSuccess: async (payload) => {
+      setError("");
+      setSuccess(
+        `已为 ${payload.line.name || payload.line.code} 回填地闪密度，平均值 ${formatNumber(payload.avg_density, 6)} Ng/km²·年`,
+      );
+      await refreshAll();
+    },
+    onError: (candidate) => {
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "线路地闪密度回填失败");
     },
   });
 
@@ -741,6 +825,92 @@ export default function AdminLightningCurrentsPage() {
         />
       )}
       {success && <Alert type="success" showIcon message="操作成功" description={success} />}
+
+      <Card title="线路参数准备">
+        <Space direction="vertical" size={12} className="w-full">
+          <Typography.Text type="secondary">
+            将当前雷电数据筛选结果按线路回填为“雷电流幅值”和“地闪密度”准备项；创建防雷分析任务前会使用这里的就绪状态做校验。
+          </Typography.Text>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <Select
+              showSearch
+              optionFilterProp="label"
+              value={activeSelectedLineId || undefined}
+              onChange={setSelectedLineId}
+              placeholder="选择线路"
+              loading={linesQuery.isLoading}
+              options={(linesQuery.data?.items ?? []).map((item: LineSummary) => ({
+                value: item.id,
+                label: `${item.name || item.code} / ${item.code}`,
+              }))}
+            />
+            <InputNumber
+              min={0.05}
+              max={50}
+              step={0.5}
+              value={prepareDensityRadiusKm}
+              onChange={(value) => setPrepareDensityRadiusKm(typeof value === "number" ? value : 3)}
+              addonAfter="km"
+              placeholder="密度半径"
+              className="w-full"
+            />
+            <InputNumber
+              min={0.1}
+              max={100}
+              step={0.5}
+              value={prepareDensityYears}
+              onChange={(value) => setPrepareDensityYears(typeof value === "number" ? value : null)}
+              addonAfter="年"
+              placeholder="数据年限(可选)"
+              className="w-full"
+            />
+            <Space.Compact block>
+              <Button
+                type="primary"
+                onClick={() => prepareCurrentMutation.mutate()}
+                loading={prepareCurrentMutation.isPending}
+                disabled={!canManage || !activeSelectedLineId}
+              >
+                回填雷电流幅值
+              </Button>
+              <Button
+                onClick={() => prepareDensityMutation.mutate()}
+                loading={prepareDensityMutation.isPending}
+                disabled={!canManage || !activeSelectedLineId}
+              >
+                回填地闪密度
+              </Button>
+            </Space.Compact>
+          </div>
+          {selectedLine ? (
+            <Alert
+              type={selectedLinePreparation.all_ready ? "success" : "warning"}
+              showIcon
+              message={selectedLinePreparation.all_ready ? "当前线路准备已齐备" : `缺少：${selectedLinePreparation.missing_items.join("、")}`}
+              description={
+                <Space size={[8, 8]} wrap>
+                  {[
+                    selectedLinePreparation.lightning_current,
+                    selectedLinePreparation.lightning_density,
+                    selectedLinePreparation.ground_slope,
+                  ].map((item) => {
+                    const source = item.source;
+                    const preparedAt = typeof source.prepared_at === "string" ? source.prepared_at : null;
+                    const values = item.values;
+                    const currentA = typeof values.current_a === "number" ? values.current_a : null;
+                    const currentB = typeof values.current_b === "number" ? values.current_b : null;
+                    return (
+                      <Tag key={item.key} color={item.ready ? "green" : "red"}>
+                        {`${item.label}${currentA !== null && currentB !== null ? ` (${formatNumber(currentA, 3)} / ${formatNumber(currentB, 3)})` : ""} ${item.tower_ready_count}/${item.tower_total_count}${preparedAt ? ` @ ${new Date(preparedAt).toLocaleString("zh-CN", { hour12: false })}` : ""}`}
+                      </Tag>
+                    );
+                  })}
+                </Space>
+              }
+            />
+          ) : null}
+        </Space>
+      </Card>
 
       {!isDistributionOnly && (
         <Card title="雷电幅值统计导入与事件管理">
@@ -1109,7 +1279,7 @@ export default function AdminLightningCurrentsPage() {
             loading={eventsQuery.isFetching}
             pagination={false}
             scroll={{ x: 1700 }}
-            rowClassName={(row) => (row.id === selectedEventId ? "fquiz-row-selected" : "")}
+            rowClassName={(row) => (row.id === activeSelectedEventId ? "fquiz-row-selected" : "")}
             onRow={(row) => ({
               onClick: () => setSelectedEventId(row.id),
             })}

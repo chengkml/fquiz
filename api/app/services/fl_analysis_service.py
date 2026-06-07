@@ -36,6 +36,7 @@ from .fl_analysis_rules import (
     grade_snapshot_payload,
     grade_tongtiao_snapshot_payload,
 )
+from .line_preparation_service import summarize_line_preparation
 from .push_service import publish_topic
 
 FL_ANALYSIS_TOPIC = "admin.fl-analysis"
@@ -169,6 +170,16 @@ def create_job(
     line = db.execute(select(Line).where(Line.id == payload.line_id)).scalar_one_or_none()
     if not line:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="线路不存在")
+
+    if payload.job_type in {"normal", "tongtiao", "risk"}:
+        preparation = summarize_line_preparation(db, line)
+        missing_items = [str(item) for item in preparation.get("missing_items") or []]
+        if missing_items:
+            missing_text = "、".join(missing_items)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"线路参数准备未完成：{missing_text}。请先完成相关回填后再创建任务。",
+            )
 
     execution_options = _normalize_execution_options(payload.job_type, payload.execution_options_json or {})
     if payload.job_type == "mitigation":

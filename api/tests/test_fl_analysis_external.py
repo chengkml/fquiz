@@ -66,7 +66,12 @@ def test_execute_job_runs_external_adapter_and_backfills_results(monkeypatch, tm
         monkeypatch.setattr(fl_analysis_external, "_resolve_engine_workdir", lambda: tmp_path)
         monkeypatch.setattr(fl_analysis_external, "_resolve_native_engine_executable", lambda: ("/bin/sh", None))
 
-        line = Line(code="L-001", name="示例线路", voltage_kv=220, lightning_param_json={})
+        line = Line(
+            code="L-001",
+            name="示例线路",
+            voltage_kv=220,
+            lightning_param_json={"雷电流幅值a": 31.0, "雷电流幅值b": 2.6},
+        )
         session.add(line)
         session.flush()
 
@@ -108,6 +113,8 @@ def test_execute_job_runs_external_adapter_and_backfills_results(monkeypatch, tm
                 arrester_c="是",
                 shield_wire_height_m=41.0,
                 insulator_length_m=4200.0,
+                current_a=31.0,
+                current_b=2.6,
                 current_type="Heidler",
                 current_head_time_us=2.6,
                 current_tail_time_us=50.0,

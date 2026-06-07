@@ -521,6 +521,7 @@ export type LineSummary = {
   phase_sequence_json: Record<string, unknown>;
   arrester_install_json: Record<string, unknown>;
   lightning_param_json: Record<string, unknown>;
+  preparation_json: Record<string, unknown>;
   tower_count: number;
   create_date: string;
   create_user: string | null;
@@ -874,6 +875,30 @@ export type LightningCurrentEventListResponse = {
 
 export type LightningCurrentImportResponse = {
   event: LightningCurrentEventSummary;
+  warning_count: number;
+  warnings: string[];
+};
+
+export type LightningCurrentPreparationResponse = {
+  line: LineSummary;
+  current_a: number;
+  current_b: number;
+  sampled_event_count: number;
+  updated_tower_count: number;
+  created_profile_count: number;
+  warning_count: number;
+  warnings: string[];
+};
+
+export type LightningDensityPreparationResponse = {
+  line: LineSummary;
+  updated_tower_count: number;
+  missing_geo_count: number;
+  radius_km: number;
+  data_years: number;
+  avg_density: number | null;
+  min_density: number | null;
+  max_density: number | null;
   warning_count: number;
   warnings: string[];
 };

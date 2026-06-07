@@ -41,6 +41,7 @@ from ..schemas.elevation import (
     ElevationDatasetUpdateRequest,
 )
 from .file_service import _build_driver_or_400, _require_mount, list_enabled_mounts
+from .line_preparation_service import record_line_preparation_source
 from .push_service import publish_topic
 from .storage_driver import StorageDriverError, StorageInvalidPathError, StoragePathNotFoundError, join_virtual_path, normalize_virtual_path
 
@@ -934,6 +935,23 @@ def execute_apply_job(job_id: str) -> None:
         job.error_message = warning_note
         job.finished_at = utcnow()
         job.update_date = utcnow()
+        line.update_date = utcnow()
+        line.update_user = actor_user_id
+        record_line_preparation_source(
+            line,
+            component="ground_slope",
+            payload={
+                "prepared_at": utcnow().isoformat(),
+                "prepared_by_user_id": actor_user_id,
+                "dataset_id": dataset.id,
+                "dataset_code": dataset.code,
+                "job_id": job.id,
+                "mode": job.mode,
+                "updated_tower_count": job.updated_tower_count,
+                "missing_geo_count": job.missing_geo_count,
+                "unmatched_count": job.unmatched_count,
+            },
+        )
         db.commit()
         _refresh_dataset_usage_status(db, dataset_id=job.dataset_id)
 
@@ -1326,12 +1344,16 @@ def _apply_points_to_line_towers(
     skipped_tower_count = 0
     missing_geo_count = 0
     unmatched_count = 0
+    point_sampler = _build_points_sampler(points)
 
-    for tower in towers:
+    for index, tower in enumerate(towers):
         if tower.longitude is None or tower.latitude is None:
             missing_geo_count += 1
             continue
-        if mode == "fill_null_only" and tower.altitude_m is not None:
+
+        skip_altitude_update = mode == "fill_null_only" and tower.altitude_m is not None
+        skip_slope_update = mode == "fill_null_only" and tower.slope_1 is not None and tower.slope_2 is not None
+        if skip_altitude_update and skip_slope_update:
             skipped_tower_count += 1
             continue
 
@@ -1349,7 +1371,23 @@ def _apply_points_to_line_towers(
             unmatched_count += 1
             continue
 
-        tower.altitude_m = round(altitude, 3)
+        changed = False
+        sampled_altitude = round(float(altitude), 3)
+        if not skip_altitude_update:
+            tower.altitude_m = sampled_altitude
+            changed = True
+
+        slope_pair = _compute_tower_slope_pair(
+            towers=towers,
+            tower_index=index,
+            center_altitude=sampled_altitude,
+            sample_altitude=point_sampler,
+        )
+        if slope_pair is not None and not skip_slope_update:
+            tower.slope_1 = round(slope_pair[0], 3)
+            tower.slope_2 = round(slope_pair[1], 3)
+            changed = True
+
         raw_extra = dict(tower.raw_extra_json or {})
         raw_extra["elevation"] = {
             "dataset_id": dataset.id,
@@ -1361,7 +1399,10 @@ def _apply_points_to_line_towers(
         }
         tower.raw_extra_json = raw_extra
         tower.update_date = utcnow()
-        updated_tower_count += 1
+        if changed:
+            updated_tower_count += 1
+        else:
+            skipped_tower_count += 1
 
     db.commit()
     return {
@@ -1395,6 +1436,146 @@ def _find_nearest_point(
     if best_altitude is None or best_distance is None:
         return None
     return best_altitude, best_distance
+
+
+def _build_points_sampler(points: list[ElevationSamplePoint]):
+    def sample(lon: float, lat: float) -> float | None:
+        match = _find_nearest_point(lon=lon, lat=lat, points=points)
+        if match is None:
+            return None
+        altitude, distance_m = match
+        if distance_m > NEAREST_MATCH_MAX_DISTANCE_M:
+            return None
+        return float(altitude)
+
+    return sample
+
+
+def _build_raster_sampler(*, rasterio: Any, src: Any, src_crs: Any, band_nodata: Any):
+    def sample(lon: float, lat: float) -> float | None:
+        transformed_lon = lon
+        transformed_lat = lat
+
+        if src_crs and str(src_crs) not in {"EPSG:4326", "OGC:CRS84"}:
+            try:
+                xs, ys = rasterio.warp.transform(
+                    "EPSG:4326",
+                    src_crs,
+                    [lon],
+                    [lat],
+                )
+                transformed_lon = float(xs[0])
+                transformed_lat = float(ys[0])
+            except Exception:
+                return None
+
+        if not _is_point_within_bounds(
+            x=transformed_lon,
+            y=transformed_lat,
+            left=float(src.bounds.left),
+            right=float(src.bounds.right),
+            bottom=float(src.bounds.bottom),
+            top=float(src.bounds.top),
+        ):
+            return None
+
+        try:
+            sampled = next(src.sample([(transformed_lon, transformed_lat)], masked=True), None)
+        except Exception:
+            sampled = None
+
+        if sampled is None or len(sampled) == 0:
+            return None
+
+        value = sampled[0]
+        if _is_masked_value(value):
+            return None
+        if band_nodata is not None and _almost_equal(float(value), float(band_nodata)):
+            return None
+        altitude = float(value)
+        if not _is_finite_number(altitude):
+            return None
+        return altitude
+
+    return sample
+
+
+def _compute_tower_slope_pair(
+    *,
+    towers: list[LineTower],
+    tower_index: int,
+    center_altitude: float,
+    sample_altitude: Any,
+) -> tuple[float, float] | None:
+    import math
+
+    if len(towers) < 2:
+        return None
+
+    tower = towers[tower_index]
+    if tower.longitude is None or tower.latitude is None:
+        return None
+
+    neighbor = _resolve_direction_neighbor(towers=towers, tower_index=tower_index)
+    if neighbor is None or neighbor.longitude is None or neighbor.latitude is None:
+        return None
+
+    dx_m = _longitude_distance_m(
+        lon_from=float(tower.longitude),
+        lon_to=float(neighbor.longitude),
+        latitude=float(tower.latitude),
+    )
+    dy_m = (float(neighbor.latitude) - float(tower.latitude)) * 111_320.0
+    vector_length = math.hypot(dx_m, dy_m)
+    if vector_length < 1e-6:
+        return None
+
+    unit_x = dx_m / vector_length
+    unit_y = dy_m / vector_length
+    negative_samples: list[float] = []
+    positive_samples: list[float] = []
+    for offset_m in (-200.0, -150.0, -100.0, -50.0, 50.0, 100.0, 150.0, 200.0):
+        sample_lon = _offset_longitude(
+            lon=float(tower.longitude),
+            latitude=float(tower.latitude),
+            offset_m=offset_m * unit_x,
+        )
+        sample_lat = _offset_latitude(lat=float(tower.latitude), offset_m=offset_m * unit_y)
+        altitude = sample_altitude(sample_lon, sample_lat)
+        if altitude is None:
+            return None
+        if offset_m < 0:
+            negative_samples.append(float(altitude))
+        else:
+            positive_samples.append(float(altitude))
+
+    slope_1 = sum(math.degrees(math.atan((center_altitude - altitude) / 50.0)) for altitude in negative_samples) / 4.0
+    slope_2 = sum(math.degrees(math.atan((center_altitude - altitude) / 50.0)) for altitude in positive_samples) / 4.0
+    return slope_1, slope_2
+
+
+def _resolve_direction_neighbor(*, towers: list[LineTower], tower_index: int) -> LineTower | None:
+    if tower_index >= len(towers) - 1:
+        return towers[tower_index - 1] if tower_index > 0 else None
+    return towers[tower_index + 1]
+
+
+def _longitude_distance_m(*, lon_from: float, lon_to: float, latitude: float) -> float:
+    import math
+
+    km_per_degree = max(111.32 * abs(math.cos(math.radians(latitude))), 1e-6)
+    return (lon_to - lon_from) * km_per_degree * 1000.0
+
+
+def _offset_longitude(*, lon: float, latitude: float, offset_m: float) -> float:
+    import math
+
+    km_per_degree = max(111.32 * abs(math.cos(math.radians(latitude))), 1e-6)
+    return lon + offset_m / (km_per_degree * 1000.0)
+
+
+def _offset_latitude(*, lat: float, offset_m: float) -> float:
+    return lat + offset_m / 111_320.0
 
 
 def _haversine_distance_m(
@@ -1801,68 +1982,43 @@ def _apply_raster_to_line_towers(
             warnings.append(warning_text)
         src_crs = src.crs
         band_nodata = src.nodatavals[0] if src.nodatavals else None
+        raster_sampler = _build_raster_sampler(rasterio=rasterio, src=src, src_crs=src_crs, band_nodata=band_nodata)
 
-        for tower in towers:
+        for index, tower in enumerate(towers):
             if tower.longitude is None or tower.latitude is None:
                 missing_geo_count += 1
                 continue
-            if mode == "fill_null_only" and tower.altitude_m is not None:
+
+            skip_altitude_update = mode == "fill_null_only" and tower.altitude_m is not None
+            skip_slope_update = mode == "fill_null_only" and tower.slope_1 is not None and tower.slope_2 is not None
+            if skip_altitude_update and skip_slope_update:
                 skipped_tower_count += 1
                 continue
 
             lon = float(tower.longitude)
             lat = float(tower.latitude)
-            transformed_lon = lon
-            transformed_lat = lat
-
-            if src_crs and str(src_crs) not in {"EPSG:4326", "OGC:CRS84"}:
-                try:
-                    xs, ys = rasterio.warp.transform(
-                        "EPSG:4326",
-                        src_crs,
-                        [lon],
-                        [lat],
-                    )
-                    transformed_lon = float(xs[0])
-                    transformed_lat = float(ys[0])
-                except Exception:
-                    unmatched_count += 1
-                    continue
-
-            if not _is_point_within_bounds(
-                x=transformed_lon,
-                y=transformed_lat,
-                left=float(src.bounds.left),
-                right=float(src.bounds.right),
-                bottom=float(src.bounds.bottom),
-                top=float(src.bounds.top),
-            ):
+            altitude = raster_sampler(lon, lat)
+            if altitude is None:
                 unmatched_count += 1
                 continue
 
-            try:
-                sampled = next(src.sample([(transformed_lon, transformed_lat)], masked=True), None)
-            except Exception:
-                sampled = None
+            changed = False
+            sampled_altitude = round(float(altitude), 3)
+            if not skip_altitude_update:
+                tower.altitude_m = sampled_altitude
+                changed = True
 
-            if sampled is None or len(sampled) == 0:
-                unmatched_count += 1
-                continue
+            slope_pair = _compute_tower_slope_pair(
+                towers=towers,
+                tower_index=index,
+                center_altitude=sampled_altitude,
+                sample_altitude=raster_sampler,
+            )
+            if slope_pair is not None and not skip_slope_update:
+                tower.slope_1 = round(slope_pair[0], 3)
+                tower.slope_2 = round(slope_pair[1], 3)
+                changed = True
 
-            value = sampled[0]
-            if _is_masked_value(value):
-                unmatched_count += 1
-                continue
-            if band_nodata is not None and _almost_equal(float(value), float(band_nodata)):
-                unmatched_count += 1
-                continue
-
-            altitude = float(value)
-            if not _is_finite_number(altitude):
-                unmatched_count += 1
-                continue
-
-            tower.altitude_m = round(altitude, 3)
             raw_extra = dict(tower.raw_extra_json or {})
             raw_extra["elevation"] = {
                 "dataset_id": dataset.id,
@@ -1874,7 +2030,10 @@ def _apply_raster_to_line_towers(
             }
             tower.raw_extra_json = raw_extra
             tower.update_date = utcnow()
-            updated_tower_count += 1
+            if changed:
+                updated_tower_count += 1
+            else:
+                skipped_tower_count += 1
 
     db.commit()
     return (

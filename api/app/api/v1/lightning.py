@@ -11,8 +11,12 @@ from ...schemas.lightning import (
     LightningCurrentEventListResponse,
     LightningCurrentEventSummary,
     LightningCurrentEventUpdateRequest,
+    LightningCurrentPreparationRequest,
+    LightningCurrentPreparationResponse,
     LightningCurrentExceedanceResponse,
     LightningCurrentImportResponse,
+    LightningDensityPreparationRequest,
+    LightningDensityPreparationResponse,
     LightningCurrentSampleListResponse,
     LightningDistributionImportResponse,
     LightningDistributionReportResponse,
@@ -35,6 +39,8 @@ from ...services.lightning_service import (
     import_lightning_event_from_file,
     list_lightning_events,
     list_lightning_samples,
+    prepare_line_lightning_current,
+    prepare_line_lightning_density,
     serialize_lightning_event,
     update_lightning_event,
 )
@@ -167,6 +173,24 @@ def import_lightning_distribution_file(
         is_synthetic=is_synthetic,
         notes=notes,
     )
+
+
+@router.post("/prepare-current", response_model=LightningCurrentPreparationResponse)
+def prepare_lightning_current_for_line(
+    payload: LightningCurrentPreparationRequest,
+    current_user: CurrentUser = Depends(require_permission("lightning.manage")),
+    db: Session = Depends(get_db),
+) -> LightningCurrentPreparationResponse:
+    return prepare_line_lightning_current(db, payload, actor_user_id=current_user.user.id)
+
+
+@router.post("/prepare-density", response_model=LightningDensityPreparationResponse)
+def prepare_lightning_density_for_line(
+    payload: LightningDensityPreparationRequest,
+    current_user: CurrentUser = Depends(require_permission("lightning.manage")),
+    db: Session = Depends(get_db),
+) -> LightningDensityPreparationResponse:
+    return prepare_line_lightning_density(db, payload, actor_user_id=current_user.user.id)
 
 
 @router.get("/{event_id}", response_model=LightningCurrentEventSummary)

@@ -29,6 +29,7 @@ import { ElevationPreviewCesiumMap } from "@/components/elevation-preview-cesium
 import { Card } from "@/components/ui-antd";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { getApiBaseUrl, readApiError } from "@/lib/api";
+import { readLinePreparation } from "@/lib/line-preparation";
 import type {
   ElevationApplyJobCreateResponse,
   ElevationApplyJobListResponse,
@@ -156,6 +157,7 @@ export default function AdminElevationPage() {
 
   const [datasetForm] = Form.useForm<DatasetFormValues>();
   const [applyForm] = Form.useForm<ApplyFormValues>();
+  const selectedApplyLineId = Form.useWatch("line_id", applyForm);
 
   const canRead = hasPermission("elevation.read") || hasPermission("elevation.manage");
   const canManage = hasPermission("elevation.manage");
@@ -370,7 +372,7 @@ export default function AdminElevationPage() {
     },
     onSuccess: async () => {
       setError("");
-      messageApi.success("高程回填任务已提交");
+      messageApi.success("高程与地面倾角回填任务已提交");
       setApplyModalOpen(false);
       applyForm.resetFields();
       await refreshElevationData();
@@ -443,9 +445,9 @@ export default function AdminElevationPage() {
     staleTime: 0,
   });
 
-  const datasets = datasetsQuery.data?.items ?? [];
+  const datasets = useMemo(() => datasetsQuery.data?.items ?? [], [datasetsQuery.data?.items]);
   const jobs = jobsQuery.data?.items ?? [];
-  const lines = linesQuery.data?.items ?? [];
+  const lines = useMemo(() => linesQuery.data?.items ?? [], [linesQuery.data?.items]);
 
   const lineOptions = useMemo(
     () =>
@@ -455,6 +457,11 @@ export default function AdminElevationPage() {
       })),
     [lines],
   );
+  const selectedApplyLine = useMemo(
+    () => lines.find((item) => item.id === selectedApplyLineId) ?? null,
+    [lines, selectedApplyLineId],
+  );
+  const selectedApplyPreparation = useMemo(() => readLinePreparation(selectedApplyLine), [selectedApplyLine]);
   const datasetOptions = useMemo(
     () =>
       datasets
@@ -1123,6 +1130,27 @@ export default function AdminElevationPage() {
           <Form.Item name="line_id" label="线路" rules={[{ required: true, message: "请选择线路" }]}> 
             <Select showSearch options={lineOptions} optionFilterProp="label" placeholder="选择线路" />
           </Form.Item>
+          {selectedApplyLine ? (
+            <Alert
+              type={selectedApplyPreparation.ground_slope.ready ? "success" : "info"}
+              showIcon
+              className="mb-4"
+              message={selectedApplyPreparation.ground_slope.ready ? "该线路已具备地面倾角准备记录" : "本次任务会同时补高程与地面倾角"}
+              description={
+                <Space size={[8, 8]} wrap>
+                  {[
+                    selectedApplyPreparation.lightning_current,
+                    selectedApplyPreparation.lightning_density,
+                    selectedApplyPreparation.ground_slope,
+                  ].map((item) => (
+                    <Tag key={item.key} color={item.ready ? "green" : "red"}>
+                      {`${item.label} ${item.tower_ready_count}/${item.tower_total_count}`}
+                    </Tag>
+                  ))}
+                </Space>
+              }
+            />
+          ) : null}
           <Form.Item name="dataset_id" label="高程数据集" rules={[{ required: true, message: "请选择高程数据集" }]}> 
             <Select showSearch options={datasetOptions} optionFilterProp="label" placeholder="选择高程数据集" />
           </Form.Item>
