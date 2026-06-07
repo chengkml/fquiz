@@ -819,6 +819,13 @@ def _prepare_report_payload(
 
     source_job = get_job_by_id(db, str(execution_options.get("source_job_id") or ""))
     line = risk_job.line or job.line
+    mitigation_execution_options = mitigation_job.execution_options_json or {} if mitigation_job is not None else {}
+    non_construction = bool(
+        execution_options.get("non_construction")
+        or mitigation_execution_options.get("non_construction")
+        or mitigation_execution_options.get("mitigation_mode") == "non_construction"
+        or any(bool(_safe_dict(item.get("result_json")).get("non_construction")) for item in selected_mitigation_rows)
+    )
 
     return {
         "line": {
@@ -846,6 +853,7 @@ def _prepare_report_payload(
                 if scenario_job is not None
                 else None
             ),
+            "non_construction": non_construction,
         },
         "risk_rows": risk_rows,
         "selected_risk_rows": selected_risk_rows,
@@ -862,6 +870,8 @@ def _serialize_report_row(item: FlAnalysisTowerResult) -> dict[str, Any]:
         "tower_no": snapshot.tower_no if snapshot else None,
         "tower_model": snapshot.tower_model if snapshot else None,
         "tower_type": snapshot.tower_type if snapshot else None,
+        "base_tower_json": snapshot.base_tower_json if snapshot else {},
+        "profile_json": snapshot.profile_json if snapshot else {},
         "risk_level": item.risk_level,
         "summary_text": item.summary_text,
         "result_json": item.result_json or {},
