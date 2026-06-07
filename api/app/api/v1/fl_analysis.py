@@ -17,6 +17,7 @@ from ...schemas.fl_analysis import (
 from ...schemas.tower_profile import TowerProfileDetail, TowerProfileUpsertRequest
 from ...services.fl_analysis_service import (
     create_job,
+    download_result_csv,
     download_report_document,
     get_job_by_id,
     list_jobs,
@@ -88,6 +89,18 @@ def get_fl_analysis_job_results(
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="防雷分析任务不存在")
     return list_tower_results(db, job_id=job_id, run_id=run_id or item.latest_run_id)
+
+
+@router.get("/jobs/{job_id}/results/download")
+def download_fl_analysis_results(
+    job_id: str,
+    run_id: str | None = Query(default=None),
+    _: CurrentUser = Depends(require_any_permission("line.read", "line.manage")),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    filename, content = download_result_csv(db, job_id=job_id, run_id=run_id)
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(iter([content]), media_type="text/csv", headers=headers)
 
 
 @router.get("/jobs/{job_id}/report/download")

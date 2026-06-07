@@ -761,6 +761,39 @@ export default function AdminFlAnalysisPage() {
     },
   });
 
+  const downloadResultsMutation = useMutation({
+    mutationFn: async ({ jobId, runId, jobType }: { jobId: string; runId?: string | null; jobType: string }) => {
+      const params = new URLSearchParams();
+      if (runId) {
+        params.set("run_id", runId);
+      }
+      const suffix = params.size > 0 ? `?${params.toString()}` : "";
+      const response = await fetchWithAuth(`/api/v1/fl-analysis/jobs/${jobId}/results/download${suffix}`);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      const blob = await response.blob();
+      const filename = readDownloadFilename(
+        response.headers.get("content-disposition"),
+        `防雷分析-${jobType}-结果.csv`,
+      );
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    },
+    onSuccess: () => {
+      messageApi.success("结果导出成功");
+    },
+    onError: (error) => {
+      messageApi.error(error instanceof Error ? error.message : "结果导出失败");
+    },
+  });
+
   const resultColumns = useMemo<ColumnsType<FlAnalysisTowerResultSummary>>(() => {
     const columns: ColumnsType<FlAnalysisTowerResultSummary> = [
       {
@@ -1126,6 +1159,9 @@ export default function AdminFlAnalysisPage() {
   const reportSourceJobName = readOptionalString(selectedJobSummary, "source_job_name");
   const reportMitigationJobName = readOptionalString(selectedJobSummary, "mitigation_job_name");
   const reportDocumentName = readOptionalString(selectedJobSummary, "document_filename");
+  const canDownloadResults = selectedJob?.job_type !== "report"
+    && selectedJob?.status === "success"
+    && (towerResultsQuery.data?.items.length ?? 0) > 0;
 
   return (
     <>
@@ -1483,6 +1519,21 @@ export default function AdminFlAnalysisPage() {
                             onClick={openReportJobModal}
                           >
                             生成报告任务
+                          </Button>
+                        ) : null}
+                        {selectedJob.job_type !== "report" ? (
+                          <Button
+                            onClick={() => {
+                              downloadResultsMutation.mutate({
+                                jobId: selectedJob.id,
+                                runId: selectedJobDetail?.latest_run_id ?? selectedJob.latest_run_id,
+                                jobType: selectedJob.job_type,
+                              });
+                            }}
+                            loading={downloadResultsMutation.isPending}
+                            disabled={!canDownloadResults}
+                          >
+                            导出当前结果
                           </Button>
                         ) : null}
                         {selectedJob.job_type === "report" ? (
