@@ -1021,9 +1021,6 @@ export default function AdminPowerLinesPage() {
             ) : null}
           >
             <Space direction="vertical" size={12} className="w-full">
-              <Typography.Text type="secondary">
-                左侧选择线路，右侧查看线路分布图或塔杆列表。
-              </Typography.Text>
               <Input
                 value={keyword}
                 allowClear
