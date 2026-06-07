@@ -28,25 +28,28 @@ import type {
   FaultRecurrenceStrokeMode,
 } from "@/types/auth";
 
-
 type FaultRecurrenceFormValues = {
   curve_no: number;
   stroke_mode: FaultRecurrenceStrokeMode;
   withstand_level_ka: number;
 };
 
-
-const CURVE_OPTIONS = [
+const CURVE_OPTIONS: Array<{
+  value: FaultRecurrenceFormValues["curve_no"];
+  label: string;
+}> = [
   { value: 1, label: "Heidler" },
   { value: 2, label: "双斜角" },
   { value: 3, label: "双指数" },
-] as const;
+];
 
-const STROKE_OPTIONS = [
+const STROKE_OPTIONS: Array<{
+  value: FaultRecurrenceFormValues["stroke_mode"];
+  label: string;
+}> = [
   { value: "counterstroke", label: "反击" },
   { value: "shielding", label: "绕击" },
-] as const;
-
+];
 
 function formatNumber(value: number | null | undefined, digits = 6): string {
   if (value === null || value === undefined || Number.isNaN(value)) {
