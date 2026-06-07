@@ -315,7 +315,7 @@ def execute_job(job_id: str) -> None:
                 latitude=tower.latitude,
                 altitude_m=tower.altitude_m,
                 terrain=tower.terrain,
-                base_tower_json=_build_base_tower_json(tower),
+                base_tower_json=_build_base_tower_json(tower, job.line),
                 profile_json=_build_profile_json(profile),
                 create_date=utcnow(),
             )
@@ -497,11 +497,15 @@ def _mark_job_failed_without_run(db: Session, *, job_id: str, error_message: str
     )
 
 
-def _build_base_tower_json(tower: LineTower) -> dict[str, Any]:
+def _build_base_tower_json(tower: LineTower, line: Line | None) -> dict[str, Any]:
     return {
         "tower_id": tower.id,
         "line_id": tower.line_id,
-        "line_voltage_kv": tower.line.voltage_kv if tower.line else None,
+        "line_name": line.name if line else None,
+        "line_voltage_kv": line.voltage_kv if line else None,
+        "line_phase_sequence_json": (line.phase_sequence_json or {}) if line else {},
+        "line_arrester_install_json": (line.arrester_install_json or {}) if line else {},
+        "line_lightning_param_json": (line.lightning_param_json or {}) if line else {},
         "seq_no": tower.seq_no,
         "tower_no": tower.tower_no,
         "tower_model": tower.tower_model,
@@ -550,6 +554,10 @@ def _build_profile_json(profile: TowerProfile | None) -> dict[str, Any]:
         "geometry_layers_json": profile.geometry_layers_json or {},
         "extra_profile_json": profile.extra_profile_json or {},
     }
+
+
+def _grade_snapshot_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return grade_snapshot_payload(payload)
 
 
 def _new_result_summary() -> dict[str, Any]:
@@ -686,6 +694,16 @@ def _resolve_source_run_id(job: FlAnalysisJob) -> str | None:
     if job.runs:
         return job.runs[0].id
     return None
+
+
+def _as_int(value: Any) -> int | None:
+    parsed = _as_float(value)
+    if parsed is None:
+        return None
+    try:
+        return int(parsed)
+    except (TypeError, ValueError):
+        return None
 
 
 def _placeholder_message_for_adapter(adapter: str) -> str:
