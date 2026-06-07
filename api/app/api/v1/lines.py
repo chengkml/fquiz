@@ -52,10 +52,7 @@ def create_line_endpoint(
     current_user: CurrentUser = Depends(require_permission("line.manage")),
     db: Session = Depends(get_db),
 ) -> LineSummary:
-    created = create_line(db, payload, actor_user_id=current_user.user.id)
-    if not created:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Line code already exists")
-    return created
+    return create_line(db, payload, actor_user_id=current_user.user.id)
 
 
 @router.get("/{line_id}", response_model=LineSummary)

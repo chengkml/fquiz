@@ -38,7 +38,6 @@ import type {
 } from "@/types/auth";
 
 type LineFormValues = {
-  code: string;
   name: string;
   voltage_level: string | null;
 };
@@ -139,7 +138,6 @@ const POWER_LINES_MAP_MIN_HEIGHT = 240;
 const POWER_LINES_TABLE_MIN_SCROLL_Y = 180;
 
 const EMPTY_LINE_FORM: LineFormValues = {
-  code: "",
   name: "",
   voltage_level: null,
 };
@@ -381,7 +379,12 @@ export default function AdminPowerLinesPage() {
   );
   useEffect(() => {
     if (selectedLineId !== effectiveSelectedLineId) {
-      setSelectedLineId(effectiveSelectedLineId);
+      const frameId = window.requestAnimationFrame(() => {
+        setSelectedLineId(effectiveSelectedLineId);
+      });
+      return () => {
+        window.cancelAnimationFrame(frameId);
+      };
     }
   }, [selectedLineId, effectiveSelectedLineId]);
 
@@ -413,7 +416,6 @@ export default function AdminPowerLinesPage() {
         throw new Error("缺少 line.manage 权限");
       }
       const payload = {
-        code: values.code.trim(),
         name: values.name.trim(),
         voltage_kv: values.voltage_level ? LINE_VOLTAGE_VALUE_TO_KV[values.voltage_level] : null,
       };
@@ -674,7 +676,6 @@ export default function AdminPowerLinesPage() {
   const openEditLineModal = (line: LineSummary) => {
     setEditingLine(line);
     lineForm.setFieldsValue({
-      code: line.code,
       name: line.name,
       voltage_level: resolveVoltageOptionFromKv(line.voltage_kv),
     });
@@ -886,7 +887,10 @@ export default function AdminPowerLinesPage() {
   }, []);
 
   useEffect(() => {
-    updatePanelBodyHeight();
+    const frameId = window.requestAnimationFrame(updatePanelBodyHeight);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
   }, [
     lineCards.length,
     towerViewMode,
@@ -1161,13 +1165,19 @@ export default function AdminPowerLinesPage() {
         }}
       >
         <Form<LineFormValues> form={lineForm} layout="vertical" initialValues={EMPTY_LINE_FORM}>
-          <Form.Item
-            name="code"
-            label="线路编码"
-            rules={[{ required: true, message: "请输入线路编码" }]}
-          >
-            <Input disabled={!!editingLine} />
-          </Form.Item>
+          {!editingLine ? (
+            <Alert
+              showIcon
+              type="info"
+              className="mb-4"
+              message="线路编码将由系统自动生成"
+            />
+          ) : null}
+          {editingLine ? (
+            <Form.Item label="线路编码">
+              <Input value={editingLine.code} disabled />
+            </Form.Item>
+          ) : null}
           <Form.Item
             name="name"
             label="线路名称"

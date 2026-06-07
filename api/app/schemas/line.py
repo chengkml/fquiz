@@ -26,7 +26,6 @@ class LineListResponse(BaseModel):
 
 
 class LineCreateRequest(BaseModel):
-    code: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=255)
     voltage_kv: int | None = Field(default=None, ge=1, le=2000)
     phase_sequence_json: dict[str, Any] = Field(default_factory=dict)

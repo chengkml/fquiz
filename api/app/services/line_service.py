@@ -6,9 +6,11 @@ import io
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..models.base import utcnow
@@ -28,10 +30,10 @@ from ..schemas.line import (
     LineUpdateRequest,
 )
 from .push_service import publish_topic
-from .tower_model_service import derive_tower_model_code_from_legacy, derive_tower_model_default_values_from_legacy_row
 
 LINE_TOPIC = "admin.power-lines"
 CSV_ENCODINGS = ("utf-8-sig", "utf-8", "gbk", "latin-1")
+LINE_CODE_PREFIX = "PL"
 
 
 @dataclass
@@ -134,33 +136,38 @@ def create_line(
     payload: LineCreateRequest,
     *,
     actor_user_id: str,
-) -> LineSummary | None:
-    if get_line_by_code(db, payload.code):
-        return None
+) -> LineSummary:
+    for _ in range(20):
+        now = utcnow()
+        line = Line(
+            code=_generate_line_code(db),
+            name=payload.name.strip(),
+            voltage_kv=payload.voltage_kv,
+            phase_sequence_json=payload.phase_sequence_json,
+            arrester_install_json=payload.arrester_install_json,
+            lightning_param_json=payload.lightning_param_json,
+            create_user=actor_user_id,
+            update_user=actor_user_id,
+            create_date=now,
+            update_date=now,
+        )
+        db.add(line)
+        try:
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            if get_line_by_code(db, line.code):
+                continue
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create line") from exc
 
-    now = utcnow()
-    line = Line(
-        code=payload.code.strip(),
-        name=payload.name.strip(),
-        voltage_kv=payload.voltage_kv,
-        phase_sequence_json=payload.phase_sequence_json,
-        arrester_install_json=payload.arrester_install_json,
-        lightning_param_json=payload.lightning_param_json,
-        status="enabled",
-        create_user=actor_user_id,
-        update_user=actor_user_id,
-        create_date=now,
-        update_date=now,
-    )
-    db.add(line)
-    db.commit()
+        saved = get_line_by_id(db, line.id)
+        if not saved:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created line")
 
-    saved = get_line_by_id(db, line.id)
-    if not saved:
-        return None
+        _publish_line_change("power-lines.created", {"action": "created", "line_id": saved.id})
+        return serialize_line(saved, tower_count=0)
 
-    _publish_line_change("power-lines.created", {"action": "created", "line_id": saved.id})
-    return serialize_line(saved, tower_count=0)
+    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate unique line code")
 
 
 def update_line(
@@ -942,6 +949,8 @@ def _load_tower_model_defaults_from_row(
     source_row: dict[str, str],
     source_model_name: str | None,
 ) -> dict[str, Any] | None:
+    from .tower_model_service import derive_tower_model_code_from_legacy, derive_tower_model_default_values_from_legacy_row
+
     model_code = derive_tower_model_code_from_legacy(source_model_name or "")
     model_defaults = _load_tower_model_defaults(db, model_code)
     if model_defaults:
@@ -975,3 +984,12 @@ def _fire_and_forget(coro: object) -> None:
     except RuntimeError:
         return
     loop.create_task(coro)
+
+
+def _generate_line_code(db: Session) -> str:
+    date_part = utcnow().strftime("%Y%m%d")
+    for _ in range(20):
+        candidate = f"{LINE_CODE_PREFIX}-{date_part}-{uuid4().hex[:6].upper()}"
+        if not get_line_by_code(db, candidate):
+            return candidate
+    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate unique line code")
