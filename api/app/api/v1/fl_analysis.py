@@ -85,7 +85,7 @@ def get_fl_analysis_job_results(
     item = get_job_by_id(db, job_id)
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="防雷分析任务不存在")
-    return list_tower_results(db, job_id=job_id, run_id=run_id)
+    return list_tower_results(db, job_id=job_id, run_id=run_id or item.latest_run_id)
 
 
 @router.post("/jobs", response_model=FlAnalysisJobCreateResponse)

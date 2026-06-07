@@ -26,6 +26,7 @@ from ..schemas.fl_analysis import (
     FlAnalysisTowerResultListResponse,
     FlAnalysisTowerResultSummary,
 )
+from .fl_analysis_rules import grade_mitigation_snapshot_payload, grade_snapshot_payload
 from .push_service import publish_topic
 
 FL_ANALYSIS_TOPIC = "admin.fl-analysis"
@@ -160,12 +161,16 @@ def create_job(
     if not line:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="线路不存在")
 
-    total_tower_count = int(
-        db.scalar(
-            select(func.count()).select_from(LineTower).where(LineTower.line_id == line.id)
+    execution_options = _normalize_execution_options(payload.job_type, payload.execution_options_json or {})
+    if payload.job_type == "mitigation":
+        total_tower_count = _validate_mitigation_options(db, line_id=line.id, execution_options=execution_options)
+    else:
+        total_tower_count = int(
+            db.scalar(
+                select(func.count()).select_from(LineTower).where(LineTower.line_id == line.id)
+            )
+            or 0
         )
-        or 0
-    )
     if total_tower_count <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前线路没有可分析的杆塔数据")
 
@@ -179,7 +184,7 @@ def create_job(
         total_tower_count=total_tower_count,
         external_adapter=payload.external_adapter,
         adapter_config_json=payload.adapter_config_json or {},
-        execution_options_json=payload.execution_options_json or {},
+        execution_options_json=execution_options,
         result_summary_json={},
         create_date=now,
         create_user=actor.id,
@@ -278,11 +283,13 @@ def execute_job(job_id: str) -> None:
             {"action": "job_running", "job_id": job.id, "line_id": job.line_id, "run_id": run.id},
         )
 
-        towers = db.execute(
-            select(LineTower).where(LineTower.line_id == job.line_id).order_by(LineTower.seq_no.asc())
-        ).scalars().all()
+        execution_options = _normalize_execution_options(job.job_type, job.execution_options_json or {})
+        towers = _load_job_towers(db, job=job, execution_options=execution_options)
         if not towers:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前线路没有可分析的杆塔数据")
+        source_result_map = _load_source_result_map(db, execution_options=execution_options) if job.job_type == "mitigation" else {}
+        if job.job_type == "mitigation" and not source_result_map:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="前驱风险任务结果已失效，请重新生成措施推荐任务")
 
         tower_ids = [tower.id for tower in towers]
         profile_rows = db.execute(select(TowerProfile).where(TowerProfile.tower_id.in_(tower_ids))).scalars().all()
@@ -322,11 +329,20 @@ def execute_job(job_id: str) -> None:
         summary = _new_result_summary()
         tower_map = {tower.id: tower for tower in towers}
         for snapshot in snapshots:
-            graded = _grade_snapshot_payload(
-                {
-                    "base_tower_json": snapshot.base_tower_json or {},
-                    "profile_json": snapshot.profile_json or {},
-                }
+            payload = {
+                "base_tower_json": snapshot.base_tower_json or {},
+                "profile_json": snapshot.profile_json or {},
+            }
+            source_result = source_result_map.get(snapshot.tower_id)
+            if source_result:
+                payload["source_result_json"] = source_result
+            graded = (
+                grade_mitigation_snapshot_payload(
+                    payload,
+                    non_construction=bool(execution_options.get("non_construction")),
+                )
+                if job.job_type == "mitigation"
+                else grade_snapshot_payload(payload)
             )
             db.add(
                 FlAnalysisTowerResult(
@@ -345,7 +361,7 @@ def execute_job(job_id: str) -> None:
             _accumulate_result_summary(summary, graded)
 
             tower = tower_map.get(snapshot.tower_id)
-            if tower is not None:
+            if tower is not None and job.job_type != "mitigation":
                 tower.risk_level = graded["risk_level"]
                 tower.update_date = utcnow()
                 tower.update_user = job.update_user or job.create_user
@@ -355,6 +371,11 @@ def execute_job(job_id: str) -> None:
         job.total_tower_count = len(towers)
         job.snapshotted_tower_count = snapshot_count
         job.result_tower_count = result_count
+        if job.job_type == "mitigation":
+            summary["selected_tower_count"] = len(towers)
+            summary["source_job_id"] = execution_options.get("source_job_id")
+            summary["source_run_id"] = execution_options.get("source_run_id")
+            summary["non_construction"] = bool(execution_options.get("non_construction"))
         db.commit()
 
         _finish_rule_based_run(
@@ -480,6 +501,7 @@ def _build_base_tower_json(tower: LineTower) -> dict[str, Any]:
     return {
         "tower_id": tower.id,
         "line_id": tower.line_id,
+        "line_voltage_kv": tower.line.voltage_kv if tower.line else None,
         "seq_no": tower.seq_no,
         "tower_no": tower.tower_no,
         "tower_model": tower.tower_model,
@@ -530,101 +552,14 @@ def _build_profile_json(profile: TowerProfile | None) -> dict[str, Any]:
     }
 
 
-def _grade_snapshot_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    base = payload.get("base_tower_json") or {}
-    profile = payload.get("profile_json") or {}
-
-    score = 0
-    causes: list[str] = []
-    recommendations: list[str] = []
-
-    ground_resistance = _as_float(base.get("ground_resistance_ohm"))
-    lightning_density = _as_float(base.get("lightning_density"))
-    span_large = _as_float(base.get("span_large_m"))
-    tower_type = str(base.get("tower_type") or profile.get("structure_kind") or "")
-    stroke_mode = str(profile.get("stroke_mode") or "")
-    arrester_values = [profile.get("arrester_a"), profile.get("arrester_b"), profile.get("arrester_c")]
-
-    if ground_resistance is not None:
-        if ground_resistance >= 30:
-            score += 35
-            causes.append("接地电阻偏高")
-            recommendations.append("优先降低接地电阻，复核接地网与冲击接地通道")
-        elif ground_resistance >= 15:
-            score += 18
-            causes.append("接地电阻偏高趋势明显")
-
-    if lightning_density is not None:
-        if lightning_density >= 6:
-            score += 25
-            causes.append("地闪密度较高")
-            recommendations.append("按高雷区口径校核绝缘与屏蔽配置")
-        elif lightning_density >= 3:
-            score += 12
-            causes.append("地闪密度中等偏高")
-
-    if span_large is not None:
-        if span_large >= 500:
-            score += 20
-            causes.append("大号侧档距过大")
-            recommendations.append("复核大跨距杆塔绝缘配合与防雷保护")
-        elif span_large >= 300:
-            score += 10
-            causes.append("档距偏大")
-
-    if "耐张" in tower_type:
-        score += 10
-        causes.append("耐张杆塔参数更敏感")
-
-    if "反击" in stroke_mode:
-        score += 10
-        causes.append("当前以反击风险为主")
-        recommendations.append("优先关注反击耐雷水平与接地改造")
-
-    if any(str(value or "").strip() in {"否", "无", "未装", "0"} for value in arrester_values):
-        score += 15
-        causes.append("避雷器配置不足")
-        recommendations.append("补充关键相避雷器并复核安装位置")
-
-    score = min(score, 100)
-    if score >= 80:
-        risk_level = "high"
-    elif score >= 45:
-        risk_level = "medium"
-    else:
-        risk_level = "low"
-
-    if not causes:
-        causes.append("主要输入参数处于低风险区间")
-    if not recommendations:
-        recommendations.append("维持现有防雷配置并保持常规巡检")
-
-    cause_analysis = "；".join(dict.fromkeys(causes))
-    mitigation_recommendation = "；".join(dict.fromkeys(recommendations))
-    tower_no = str(base.get("tower_no") or "")
-    summary_text = f"{tower_no or '当前杆塔'}评估为{risk_level}风险，综合得分{score}"
-
-    return {
-        "risk_level": risk_level,
-        "score": score,
-        "cause_analysis": cause_analysis,
-        "mitigation_recommendation": mitigation_recommendation,
-        "summary_text": summary_text,
-        "inputs": {
-            "ground_resistance_ohm": ground_resistance,
-            "lightning_density": lightning_density,
-            "span_large_m": span_large,
-            "tower_type": tower_type,
-            "stroke_mode": stroke_mode,
-        },
-    }
-
-
 def _new_result_summary() -> dict[str, Any]:
     return {
         "risk_counts": {"high": 0, "medium": 0, "low": 0},
+        "baseline_risk_counts": {"high": 0, "medium": 0, "low": 0},
         "score_total": 0,
         "score_average": 0,
+        "arrester_required_count": 0,
+        "action_total": 0,
     }
 
 
@@ -632,20 +567,125 @@ def _accumulate_result_summary(summary: dict[str, Any], graded: dict[str, Any]) 
     risk_counts = summary.setdefault("risk_counts", {"high": 0, "medium": 0, "low": 0})
     risk_level = str(graded.get("risk_level") or "low")
     risk_counts[risk_level] = int(risk_counts.get(risk_level, 0)) + 1
+    current_risk_level = str(graded.get("current_risk_level") or "")
+    if current_risk_level:
+        baseline_counts = summary.setdefault("baseline_risk_counts", {"high": 0, "medium": 0, "low": 0})
+        baseline_counts[current_risk_level] = int(baseline_counts.get(current_risk_level, 0)) + 1
 
     score = int(graded.get("score") or 0)
     summary["score_total"] = int(summary.get("score_total", 0)) + score
     total_count = sum(int(value) for value in risk_counts.values())
     summary["score_average"] = round(summary["score_total"] / total_count, 2) if total_count else 0
+    summary["action_total"] = int(summary.get("action_total", 0)) + len(graded.get("mitigation_actions") or [])
+    if graded.get("recommendation_result") == "需要安装避雷器":
+        summary["arrester_required_count"] = int(summary.get("arrester_required_count", 0)) + 1
 
 
-def _as_float(value: Any) -> float | None:
-    if value is None or value == "":
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+def _normalize_execution_options(job_type: str, execution_options: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(execution_options or {})
+    selected_ids = normalized.get("selected_tower_ids") or normalized.get("tower_ids") or []
+    if isinstance(selected_ids, list):
+        normalized["selected_tower_ids"] = list(dict.fromkeys(str(item).strip() for item in selected_ids if str(item).strip()))
+    else:
+        normalized["selected_tower_ids"] = []
+    source_job_id = str(normalized.get("source_job_id") or "").strip()
+    if source_job_id:
+        normalized["source_job_id"] = source_job_id
+    else:
+        normalized.pop("source_job_id", None)
+    source_run_id = str(normalized.get("source_run_id") or "").strip()
+    if source_run_id:
+        normalized["source_run_id"] = source_run_id
+    else:
+        normalized.pop("source_run_id", None)
+    normalized["non_construction"] = bool(
+        normalized.get("non_construction")
+        or normalized.get("mitigation_mode") == "non_construction"
+    )
+    if job_type != "mitigation":
+        normalized.pop("selected_tower_ids", None)
+        normalized.pop("source_job_id", None)
+        normalized.pop("source_run_id", None)
+        normalized.pop("non_construction", None)
+    return normalized
+
+
+def _validate_mitigation_options(db: Session, *, line_id: str, execution_options: dict[str, Any]) -> int:
+    source_job_id = str(execution_options.get("source_job_id") or "")
+    if not source_job_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="措施推荐任务缺少前驱风险任务")
+    selected_tower_ids = execution_options.get("selected_tower_ids") or []
+    if not selected_tower_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="措施推荐任务至少需要选择一座高风险杆塔")
+
+    source_job = get_job_by_id(db, source_job_id)
+    if not source_job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="前驱风险任务不存在")
+    if source_job.line_id != line_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="前驱风险任务与当前线路不匹配")
+    if source_job.job_type != "risk":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="前驱任务必须为风险评估任务")
+    if source_job.status != "success":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="前驱风险任务尚未成功完成")
+
+    source_run_id = _resolve_source_run_id(source_job)
+    if not source_run_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="前驱风险任务缺少可复用结果")
+    allowed_tower_ids = _load_result_tower_ids(db, job_id=source_job.id, run_id=source_run_id)
+    if not allowed_tower_ids:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="前驱风险任务暂无可复用杆塔结果")
+    invalid_ids = [tower_id for tower_id in selected_tower_ids if tower_id not in allowed_tower_ids]
+    if invalid_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="措施推荐任务包含无效的杆塔选择")
+    execution_options["source_run_id"] = source_run_id
+    return len(selected_tower_ids)
+
+
+def _load_job_towers(db: Session, *, job: FlAnalysisJob, execution_options: dict[str, Any]) -> list[LineTower]:
+    towers = db.execute(
+        select(LineTower).where(LineTower.line_id == job.line_id).order_by(LineTower.seq_no.asc())
+    ).scalars().all()
+    if job.job_type != "mitigation":
+        return towers
+    selected_ids = set(execution_options.get("selected_tower_ids") or [])
+    scoped_towers = [tower for tower in towers if tower.id in selected_ids]
+    if len(scoped_towers) != len(selected_ids):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="措施推荐任务的杆塔范围已失效，请重新生成任务")
+    return scoped_towers
+
+
+def _load_source_result_map(db: Session, *, execution_options: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    source_job_id = str(execution_options.get("source_job_id") or "")
+    source_run_id = str(execution_options.get("source_run_id") or "")
+    if not source_job_id or not source_run_id:
+        return {}
+    rows = db.execute(
+        select(FlAnalysisTowerResult)
+        .where(FlAnalysisTowerResult.job_id == source_job_id, FlAnalysisTowerResult.run_id == source_run_id)
+    ).scalars().all()
+    result: dict[str, dict[str, Any]] = {}
+    for item in rows:
+        if item.snapshot and item.snapshot.tower_id:
+            result[item.snapshot.tower_id] = item.result_json or {}
+    return result
+
+
+def _load_result_tower_ids(db: Session, *, job_id: str, run_id: str) -> set[str]:
+    rows = db.execute(
+        select(FlAnalysisTowerSnapshot.tower_id).where(
+            FlAnalysisTowerSnapshot.job_id == job_id,
+            FlAnalysisTowerSnapshot.run_id == run_id,
+        )
+    ).scalars().all()
+    return {str(item) for item in rows if item}
+
+
+def _resolve_source_run_id(job: FlAnalysisJob) -> str | None:
+    if job.latest_run_id:
+        return job.latest_run_id
+    if job.runs:
+        return job.runs[0].id
+    return None
 
 
 def _placeholder_message_for_adapter(adapter: str) -> str:
