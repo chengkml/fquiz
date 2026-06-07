@@ -70,13 +70,30 @@ type TowerProfileFormValues = {
   arrester_a: string;
   arrester_b: string;
   arrester_c: string;
+  protection_angle_left_deg: number | null;
+  protection_angle_right_deg: number | null;
+  shield_wire_height_m: number | null;
+  insulator_length_m: number | null;
+  call_height_m: number | null;
+  angle_deg: number | null;
+  current_a: number | null;
+  current_b: number | null;
+  current_type: string;
+  current_head_time_us: number | null;
+  current_tail_time_us: number | null;
   geometry_layers_json: string;
+  extra_profile_json: string;
 };
 
 const TOWER_TYPE_OPTIONS = [
   { value: "", label: "全部塔型" },
   { value: "直线", label: "直线" },
   { value: "耐张", label: "耐张" },
+] as const;
+
+const ARRESTER_INSTALL_OPTIONS = [
+  { value: "是", label: "是" },
+  { value: "否", label: "否" },
 ] as const;
 
 const LINE_VOLTAGE_OPTIONS = [
@@ -170,7 +187,19 @@ const EMPTY_TOWER_PROFILE_FORM: TowerProfileFormValues = {
   arrester_a: "",
   arrester_b: "",
   arrester_c: "",
+  protection_angle_left_deg: null,
+  protection_angle_right_deg: null,
+  shield_wire_height_m: null,
+  insulator_length_m: null,
+  call_height_m: null,
+  angle_deg: null,
+  current_a: null,
+  current_b: null,
+  current_type: "",
+  current_head_time_us: null,
+  current_tail_time_us: null,
   geometry_layers_json: "{}",
+  extra_profile_json: "{}",
 };
 
 function resolveVoltageOptionFromKv(voltageKv: number | null): LineFormValues["voltage_level"] {
@@ -178,6 +207,25 @@ function resolveVoltageOptionFromKv(voltageKv: number | null): LineFormValues["v
     return null;
   }
   return LINE_VOLTAGE_KV_TO_DEFAULT_OPTION[voltageKv] ?? null;
+}
+
+function formatJsonText(value: unknown): string {
+  if (!value || Array.isArray(value) || typeof value !== "object") {
+    return "{}";
+  }
+  return JSON.stringify(value, null, 2);
+}
+
+function parseJsonObjectText(value: string, label: string): Record<string, unknown> {
+  const normalized = value.trim();
+  if (!normalized) {
+    return {};
+  }
+  const parsed: unknown = JSON.parse(normalized);
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+    throw new Error(`${label} 需要是 JSON 对象`);
+  }
+  return parsed as Record<string, unknown>;
 }
 
 export default function AdminPowerLinesPage() {
@@ -349,7 +397,19 @@ export default function AdminPowerLinesPage() {
       arrester_a: profile.arrester_a ?? "",
       arrester_b: profile.arrester_b ?? "",
       arrester_c: profile.arrester_c ?? "",
-      geometry_layers_json: JSON.stringify(profile.geometry_layers_json ?? {}, null, 2),
+      protection_angle_left_deg: profile.protection_angle_left_deg ?? null,
+      protection_angle_right_deg: profile.protection_angle_right_deg ?? null,
+      shield_wire_height_m: profile.shield_wire_height_m ?? null,
+      insulator_length_m: profile.insulator_length_m ?? null,
+      call_height_m: profile.call_height_m ?? null,
+      angle_deg: profile.angle_deg ?? null,
+      current_a: profile.current_a ?? null,
+      current_b: profile.current_b ?? null,
+      current_type: profile.current_type ?? "",
+      current_head_time_us: profile.current_head_time_us ?? null,
+      current_tail_time_us: profile.current_tail_time_us ?? null,
+      geometry_layers_json: formatJsonText(profile.geometry_layers_json),
+      extra_profile_json: formatJsonText(profile.extra_profile_json),
     });
   }, [towerProfileForm, towerProfileQuery.data]);
 
@@ -583,23 +643,34 @@ export default function AdminPowerLinesPage() {
       if (!editingTowerProfileTower) {
         throw new Error("未选择杆塔");
       }
-      const geometryLayers = values.geometry_layers_json.trim()
-        ? JSON.parse(values.geometry_layers_json)
-        : {};
+      const geometryLayers = parseJsonObjectText(values.geometry_layers_json, "回路几何 JSON");
+      const extraProfile = parseJsonObjectText(values.extra_profile_json, "额外字段 JSON");
       const response = await fetchWithAuth(`/api/v1/tower-profiles/${editingTowerProfileTower.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          structure_kind: values.structure_kind.trim() || null,
-          stroke_mode: values.stroke_mode.trim() || null,
-          phase_sequence_1: values.phase_sequence_1.trim() || null,
-          phase_sequence_2: values.phase_sequence_2.trim() || null,
-          phase_sequence_3: values.phase_sequence_3.trim() || null,
-          phase_sequence_4: values.phase_sequence_4.trim() || null,
-          arrester_a: values.arrester_a.trim() || null,
-          arrester_b: values.arrester_b.trim() || null,
-          arrester_c: values.arrester_c.trim() || null,
+          structure_kind: (values.structure_kind ?? "").trim() || null,
+          stroke_mode: (values.stroke_mode ?? "").trim() || null,
+          phase_sequence_1: (values.phase_sequence_1 ?? "").trim() || null,
+          phase_sequence_2: (values.phase_sequence_2 ?? "").trim() || null,
+          phase_sequence_3: (values.phase_sequence_3 ?? "").trim() || null,
+          phase_sequence_4: (values.phase_sequence_4 ?? "").trim() || null,
+          arrester_a: (values.arrester_a ?? "").trim() || null,
+          arrester_b: (values.arrester_b ?? "").trim() || null,
+          arrester_c: (values.arrester_c ?? "").trim() || null,
+          protection_angle_left_deg: values.protection_angle_left_deg ?? null,
+          protection_angle_right_deg: values.protection_angle_right_deg ?? null,
+          shield_wire_height_m: values.shield_wire_height_m ?? null,
+          insulator_length_m: values.insulator_length_m ?? null,
+          call_height_m: values.call_height_m ?? null,
+          angle_deg: values.angle_deg ?? null,
+          current_a: values.current_a ?? null,
+          current_b: values.current_b ?? null,
+          current_type: (values.current_type ?? "").trim() || null,
+          current_head_time_us: values.current_head_time_us ?? null,
+          current_tail_time_us: values.current_tail_time_us ?? null,
           geometry_layers_json: geometryLayers,
+          extra_profile_json: extraProfile,
         }),
       });
       if (!response.ok) {
@@ -1302,12 +1373,12 @@ export default function AdminPowerLinesPage() {
         }}
       >
         <Form<TowerProfileFormValues> form={towerProfileForm} layout="vertical" initialValues={EMPTY_TOWER_PROFILE_FORM}>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             <Form.Item name="structure_kind" label="直线/耐张">
-              <Input />
+              <Input placeholder="如：直线、耐张、直线杆塔" />
             </Form.Item>
             <Form.Item name="stroke_mode" label="绕击/反击模式">
-              <Input />
+              <Input placeholder="如：绕击、反击" />
             </Form.Item>
             <Form.Item name="phase_sequence_1" label="I回相序">
               <Input />
@@ -1322,30 +1393,80 @@ export default function AdminPowerLinesPage() {
               <Input />
             </Form.Item>
             <Form.Item name="arrester_a" label="A相避雷器">
-              <Input />
+              <Select allowClear options={ARRESTER_INSTALL_OPTIONS} />
             </Form.Item>
             <Form.Item name="arrester_b" label="B相避雷器">
-              <Input />
+              <Select allowClear options={ARRESTER_INSTALL_OPTIONS} />
             </Form.Item>
             <Form.Item name="arrester_c" label="C相避雷器">
-              <Input />
+              <Select allowClear options={ARRESTER_INSTALL_OPTIONS} />
+            </Form.Item>
+            <Form.Item name="protection_angle_left_deg" label="左保护角">
+              <InputNumber className="w-full" precision={4} />
+            </Form.Item>
+            <Form.Item name="protection_angle_right_deg" label="右保护角">
+              <InputNumber className="w-full" precision={4} />
+            </Form.Item>
+            <Form.Item name="shield_wire_height_m" label="避雷线高度(m)">
+              <InputNumber className="w-full" precision={4} />
+            </Form.Item>
+            <Form.Item name="insulator_length_m" label="绝缘子串长度(mm)">
+              <InputNumber className="w-full" precision={4} />
+            </Form.Item>
+            <Form.Item name="call_height_m" label="杆塔呼高(m)">
+              <InputNumber className="w-full" precision={4} />
+            </Form.Item>
+            <Form.Item name="angle_deg" label="电角度">
+              <InputNumber className="w-full" precision={4} />
+            </Form.Item>
+            <Form.Item name="current_a" label="雷电流幅值 a">
+              <InputNumber className="w-full" precision={4} />
+            </Form.Item>
+            <Form.Item name="current_b" label="雷电流幅值 b">
+              <InputNumber className="w-full" precision={4} />
+            </Form.Item>
+            <Form.Item name="current_type" label="雷电流波形">
+              <Input placeholder="如：Heidler、双指数" />
+            </Form.Item>
+            <Form.Item name="current_head_time_us" label="波头时间(us)">
+              <InputNumber className="w-full" precision={4} />
+            </Form.Item>
+            <Form.Item name="current_tail_time_us" label="波尾时间(us)">
+              <InputNumber className="w-full" precision={4} />
             </Form.Item>
           </div>
-          <Form.Item
-            name="geometry_layers_json"
-            label="回路几何 JSON"
-            rules={[{
-              validator: async (_, value) => {
-                if (!value || !String(value).trim()) {
-                  return;
-                }
-                JSON.parse(String(value));
-              },
-              message: "请输入合法 JSON",
-            }]}
-          >
-            <Input.TextArea rows={12} spellCheck={false} />
-          </Form.Item>
+          <div className="grid gap-3 xl:grid-cols-2">
+            <Form.Item
+              name="geometry_layers_json"
+              label="回路几何 JSON"
+              rules={[{
+                validator: async (_, value) => {
+                  if (!value || !String(value).trim()) {
+                    return;
+                  }
+                  parseJsonObjectText(String(value), "回路几何 JSON");
+                },
+                message: "请输入合法 JSON 对象",
+              }]}
+            >
+              <Input.TextArea rows={12} spellCheck={false} />
+            </Form.Item>
+            <Form.Item
+              name="extra_profile_json"
+              label="额外字段 JSON"
+              rules={[{
+                validator: async (_, value) => {
+                  if (!value || !String(value).trim()) {
+                    return;
+                  }
+                  parseJsonObjectText(String(value), "额外字段 JSON");
+                },
+                message: "请输入合法 JSON 对象",
+              }]}
+            >
+              <Input.TextArea rows={12} spellCheck={false} />
+            </Form.Item>
+          </div>
         </Form>
       </Modal>
     </>
