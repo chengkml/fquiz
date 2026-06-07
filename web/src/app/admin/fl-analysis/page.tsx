@@ -10,6 +10,7 @@ import {
   Empty,
   Form,
   Input,
+  InputNumber,
   Modal,
   Select,
   Space,
@@ -34,9 +35,20 @@ import type {
   LineSummary,
 } from "@/types/auth";
 
-type RiskJobFormValues = {
+type CreateJobFormValues = {
   job_name: string;
   line_id: string;
+  job_type: "normal" | "tongtiao" | "risk";
+  current_waveform: "heidler" | "double_slope" | "double_exponential";
+  flashover_method: "guideline" | "intersection" | "leader_development";
+  altitude_correction: "none" | "formula1" | "formula2";
+  induced_voltage_formula: "formula1" | "formula2";
+  head_time_min_us: number;
+  head_time_max_us: number;
+  head_time_step_us: number;
+  tail_time_min_us: number;
+  tail_time_max_us: number;
+  tail_time_step_us: number;
 };
 
 type MitigationFormValues = {
@@ -67,6 +79,77 @@ type MitigationAction = {
   phases?: string[];
 };
 
+type WorkflowRange = {
+  min?: number | null;
+  max?: number | null;
+  step?: number | null;
+};
+
+type WorkflowSummary = {
+  current_waveform?: string;
+  flashover_method?: string;
+  altitude_correction?: string;
+  induced_voltage_formula?: string;
+  head_time_range_us?: WorkflowRange;
+  tail_time_range_us?: WorkflowRange;
+  scan_point_count?: number;
+};
+
+type ScanPoint = {
+  head_time_us?: number | null;
+  tail_time_us?: number | null;
+  risk_level?: string | null;
+  score?: number | null;
+  counterstrike_withstand_ka?: number | null;
+  counterstrike_trip_rate?: number | null;
+  shielding_withstand_ka?: number | null;
+  shielding_trip_rate?: number | null;
+  flashover_phase?: string | null;
+  dominant_phase_set?: string | null;
+};
+
+type SelectedCase = {
+  head_time_us?: number | null;
+  tail_time_us?: number | null;
+  risk_level?: string | null;
+  score?: number | null;
+  flashover_phase?: string | null;
+  dominant_phase_set?: string | null;
+};
+
+type PhaseResult = {
+  phase: string;
+  circuit?: string | null;
+  shielding_withstand_ka?: number | null;
+  shielding_trip_rate?: number | null;
+  counterstrike_withstand_ka?: number | null;
+  counterstrike_trip_rate?: number | null;
+};
+
+type MultiPhaseResult = {
+  phase_count: number;
+  label: string;
+  flashover_phase?: string | null;
+  counterstrike_withstand_ka?: number | null;
+  trip_rate?: number | null;
+};
+
+const CREATE_JOB_DEFAULTS: CreateJobFormValues = {
+  job_name: "",
+  line_id: "",
+  job_type: "normal",
+  current_waveform: "heidler",
+  flashover_method: "intersection",
+  altitude_correction: "none",
+  induced_voltage_formula: "formula1",
+  head_time_min_us: 2.6,
+  head_time_max_us: 2.6,
+  head_time_step_us: 0.1,
+  tail_time_min_us: 50,
+  tail_time_max_us: 50,
+  tail_time_step_us: 1,
+};
+
 function formatRiskLevel(value: string | null | undefined): string {
   if (value === "high") return "高风险";
   if (value === "medium") return "中风险";
@@ -78,10 +161,37 @@ function formatJobType(jobType: string, nonConstruction = false): string {
   if (jobType === "risk") return "风险评估";
   if (jobType === "mitigation") return nonConstruction ? "措施推荐(非建线)" : "措施推荐";
   if (jobType === "normal") return "普通计算";
-  if (jobType === "tongtiao") return "统跳计算";
+  if (jobType === "tongtiao") return "同跳计算";
   if (jobType === "report") return "报告";
   if (jobType === "scenario") return "场景分析";
   return jobType || "-";
+}
+
+function formatCurrentWaveform(value: string | null | undefined): string {
+  if (value === "heidler") return "Heidler";
+  if (value === "double_slope") return "双斜角";
+  if (value === "double_exponential") return "双指数";
+  return value || "-";
+}
+
+function formatFlashoverMethod(value: string | null | undefined): string {
+  if (value === "guideline") return "规程法";
+  if (value === "intersection") return "相交法";
+  if (value === "leader_development") return "先导发展法";
+  return value || "-";
+}
+
+function formatAltitudeCorrection(value: string | null | undefined): string {
+  if (value === "none") return "无";
+  if (value === "formula1") return "推荐公式1";
+  if (value === "formula2") return "推荐公式2";
+  return value || "-";
+}
+
+function formatInducedVoltageFormula(value: string | null | undefined): string {
+  if (value === "formula1") return "公式1";
+  if (value === "formula2") return "公式2";
+  return value || "-";
 }
 
 function riskColor(value: string | null | undefined): string {
@@ -168,14 +278,38 @@ function readDownloadFilename(headerValue: string | null, fallback: string): str
   return matched?.[1] ?? fallback;
 }
 
+function readArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
 function readReasonDetails(row: FlAnalysisTowerResultSummary | null): ReasonDetail[] {
   const value = row ? readObject(row.result_json).reason_details : null;
-  return Array.isArray(value) ? (value as ReasonDetail[]) : [];
+  return readArray<ReasonDetail>(value);
 }
 
 function readMitigationActions(row: FlAnalysisTowerResultSummary | null): MitigationAction[] {
   const value = row ? readObject(row.result_json).mitigation_actions : null;
-  return Array.isArray(value) ? (value as MitigationAction[]) : [];
+  return readArray<MitigationAction>(value);
+}
+
+function readWorkflow(row: FlAnalysisTowerResultSummary | null): WorkflowSummary {
+  return readObject(row ? readObject(row.result_json).workflow : null) as WorkflowSummary;
+}
+
+function readSelectedCase(row: FlAnalysisTowerResultSummary | null): SelectedCase {
+  return readObject(row ? readObject(row.result_json).selected_case : null) as SelectedCase;
+}
+
+function readScanPoints(row: FlAnalysisTowerResultSummary | null): ScanPoint[] {
+  return readArray<ScanPoint>(row ? readObject(row.result_json).scan_points : null);
+}
+
+function readPhaseResults(row: FlAnalysisTowerResultSummary | null): PhaseResult[] {
+  return readArray<PhaseResult>(row ? readObject(row.result_json).phase_results : null);
+}
+
+function readMultiPhaseResults(row: FlAnalysisTowerResultSummary | null): MultiPhaseResult[] {
+  return readArray<MultiPhaseResult>(row ? readObject(row.result_json).multi_phase_results : null);
 }
 
 function readCurrentRisk(row: FlAnalysisTowerResultSummary): string | null {
@@ -204,6 +338,19 @@ function selectedTowerCount(job: FlAnalysisJobDetail | null): number {
   return Array.isArray(value) ? value.length : 0;
 }
 
+function formatRangeSummary(range: WorkflowRange | undefined): string {
+  if (!range) {
+    return "-";
+  }
+  const min = typeof range.min === "number" ? range.min : null;
+  const max = typeof range.max === "number" ? range.max : null;
+  const step = typeof range.step === "number" ? range.step : null;
+  if (min === null || max === null || step === null) {
+    return "-";
+  }
+  return `${min} ~ ${max} / 步长 ${step}`;
+}
+
 export default function AdminFlAnalysisPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
@@ -214,11 +361,12 @@ export default function AdminFlAnalysisPage() {
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedMitigationTowerIds, setSelectedMitigationTowerIds] = useState<string[]>([]);
   const [selectedReportTowerIds, setSelectedReportTowerIds] = useState<string[]>([]);
-  const [riskJobForm] = Form.useForm<RiskJobFormValues>();
+  const [createJobForm] = Form.useForm<CreateJobFormValues>();
   const [mitigationForm] = Form.useForm<MitigationFormValues>();
   const [reportForm] = Form.useForm<ReportFormValues>();
   const [messageApi, contextHolder] = message.useMessage();
-  const selectedLineId = Form.useWatch("line_id", riskJobForm);
+  const selectedLineId = Form.useWatch("line_id", createJobForm);
+  const selectedCreateJobType = Form.useWatch("job_type", createJobForm) ?? CREATE_JOB_DEFAULTS.job_type;
 
   const canRead = hasPermission("line.read") || hasPermission("line.manage");
   const canManage = hasPermission("line.manage") || hasPermission("tower.manage");
@@ -293,10 +441,10 @@ export default function AdminFlAnalysisPage() {
 
   useEffect(() => {
     const firstLine = linesQuery.data?.items[0];
-    if (firstLine && !riskJobForm.getFieldValue("line_id")) {
-      riskJobForm.setFieldsValue({ line_id: firstLine.id });
+    if (firstLine && !createJobForm.getFieldValue("line_id")) {
+      createJobForm.setFieldsValue({ line_id: firstLine.id });
     }
-  }, [linesQuery.data?.items, riskJobForm]);
+  }, [createJobForm, linesQuery.data?.items]);
 
   async function invalidateFlAnalysisQueries(): Promise<void> {
     await queryClient.invalidateQueries({
@@ -353,22 +501,40 @@ export default function AdminFlAnalysisPage() {
     setReportModalOpen(true);
   }
 
-  const createRiskJobMutation = useMutation({
-    mutationFn: async (values: RiskJobFormValues) =>
-      createAndStartJob({
-        line_id: values.line_id,
-        job_name: values.job_name.trim() || null,
-        job_type: "risk",
-        external_adapter: "placeholder",
-      }),
+  function buildCreateJobPayload(values: CreateJobFormValues): Record<string, unknown> {
+    const payload: Record<string, unknown> = {
+      line_id: values.line_id,
+      job_name: values.job_name.trim() || null,
+      job_type: values.job_type,
+      external_adapter: "placeholder",
+    };
+    if (values.job_type === "normal" || values.job_type === "tongtiao") {
+      payload.execution_options_json = {
+        current_waveform: values.current_waveform,
+        flashover_method: values.flashover_method,
+        altitude_correction: values.altitude_correction,
+        induced_voltage_formula: values.induced_voltage_formula,
+        head_time_min_us: values.head_time_min_us,
+        head_time_max_us: values.head_time_max_us,
+        head_time_step_us: values.head_time_step_us,
+        tail_time_min_us: values.tail_time_min_us,
+        tail_time_max_us: values.tail_time_max_us,
+        tail_time_step_us: values.tail_time_step_us,
+      };
+    }
+    return payload;
+  }
+
+  const createJobMutation = useMutation({
+    mutationFn: async (values: CreateJobFormValues) => createAndStartJob(buildCreateJobPayload(values)),
     onSuccess: async (job) => {
       await invalidateFlAnalysisQueries();
       setSelectedJobId(job.id);
-      messageApi.success("风险评估任务已创建并启动");
-      riskJobForm.setFieldsValue({ job_name: "" });
+      messageApi.success(`${formatJobType(job.job_type, mitigationMode(job))}任务已创建并启动`);
+      createJobForm.setFieldsValue({ job_name: "" });
     },
     onError: (error) => {
-      messageApi.error(error instanceof Error ? error.message : "风险评估任务创建失败");
+      messageApi.error(error instanceof Error ? error.message : "分析任务创建失败");
     },
   });
 
@@ -530,6 +696,77 @@ export default function AdminFlAnalysisPage() {
       });
     }
 
+    if (selectedJob?.job_type === "normal" || selectedJob?.job_type === "tongtiao") {
+      columns.push(
+        {
+          title: "最不利点(μs)",
+          key: "selected_case",
+          width: 160,
+          render: (_value, row) => {
+            const selectedCase = readSelectedCase(row);
+            const head = selectedCase.head_time_us;
+            const tail = selectedCase.tail_time_us;
+            if (typeof head !== "number" || typeof tail !== "number") {
+              return "-";
+            }
+            return `${head}/${tail}`;
+          },
+        },
+      );
+    }
+
+    if (selectedJob?.job_type === "normal") {
+      columns.push(
+        {
+          title: "反击耐雷水平(kA)",
+          key: "counterstrike_withstand_ka",
+          width: 140,
+          render: (_value, row) => readOptionalNumber(readObject(row.result_json), "counterstrike_withstand_ka") ?? "-",
+        },
+        {
+          title: "反击跳闸率",
+          key: "counterstrike_trip_rate",
+          width: 120,
+          render: (_value, row) => readOptionalNumber(readObject(row.result_json), "counterstrike_trip_rate") ?? "-",
+        },
+        {
+          title: "绕击耐雷水平(kA)",
+          key: "shielding_withstand_ka",
+          width: 140,
+          render: (_value, row) => readOptionalNumber(readObject(row.result_json), "shielding_withstand_ka") ?? "-",
+        },
+        {
+          title: "绕击跳闸率",
+          key: "shielding_trip_rate",
+          width: 120,
+          render: (_value, row) => readOptionalNumber(readObject(row.result_json), "shielding_trip_rate") ?? "-",
+        },
+      );
+    }
+
+    if (selectedJob?.job_type === "tongtiao") {
+      columns.push(
+        {
+          title: "主导相组",
+          key: "dominant_phase_set",
+          width: 120,
+          render: (_value, row) => readOptionalString(readObject(row.result_json), "dominant_phase_set") ?? "-",
+        },
+        {
+          title: "闪络相",
+          key: "flashover_phase",
+          width: 160,
+          render: (_value, row) => readOptionalString(readObject(row.result_json), "flashover_phase") ?? "-",
+        },
+        {
+          title: "同跳跳闸率",
+          key: "counterstrike_trip_rate",
+          width: 120,
+          render: (_value, row) => readOptionalNumber(readObject(row.result_json), "counterstrike_trip_rate") ?? "-",
+        },
+      );
+    }
+
     columns.push(
       {
         title: "综合结论",
@@ -592,7 +829,7 @@ export default function AdminFlAnalysisPage() {
               setDetailModalOpen(true);
             }}
           >
-            查看原因
+            查看详情
           </Button>
         ),
       },
@@ -644,6 +881,82 @@ export default function AdminFlAnalysisPage() {
     },
   ];
 
+  const scanPointColumns: ColumnsType<ScanPoint> = [
+    { title: "波头(μs)", dataIndex: "head_time_us", width: 100, render: (value: number | null | undefined) => value ?? "-" },
+    { title: "波尾(μs)", dataIndex: "tail_time_us", width: 100, render: (value: number | null | undefined) => value ?? "-" },
+    {
+      title: "风险",
+      dataIndex: "risk_level",
+      width: 100,
+      render: (value: string | null | undefined) => <Tag color={riskColor(value)}>{formatRiskLevel(value)}</Tag>,
+    },
+    { title: "得分", dataIndex: "score", width: 90, render: (value: number | null | undefined) => value ?? "-" },
+    {
+      title: "反击跳闸率",
+      dataIndex: "counterstrike_trip_rate",
+      width: 120,
+      render: (value: number | null | undefined) => value ?? "-",
+    },
+    {
+      title: "绕击跳闸率",
+      dataIndex: "shielding_trip_rate",
+      width: 120,
+      render: (value: number | null | undefined) => value ?? "-",
+    },
+    {
+      title: "闪络相",
+      dataIndex: "flashover_phase",
+      width: 160,
+      render: (value: string | null | undefined) => value || "-",
+    },
+  ];
+
+  const phaseResultColumns: ColumnsType<PhaseResult> = [
+    { title: "相别", dataIndex: "phase", width: 120 },
+    { title: "回路", dataIndex: "circuit", width: 90, render: (value: string | null | undefined) => value || "-" },
+    {
+      title: "A/B/C绕击耐雷水平(kA)",
+      dataIndex: "shielding_withstand_ka",
+      width: 180,
+      render: (value: number | null | undefined) => value ?? "-",
+    },
+    {
+      title: "A/B/C绕击跳闸率",
+      dataIndex: "shielding_trip_rate",
+      width: 140,
+      render: (value: number | null | undefined) => value ?? "-",
+    },
+    {
+      title: "反击耐雷水平(kA)",
+      dataIndex: "counterstrike_withstand_ka",
+      width: 140,
+      render: (value: number | null | undefined) => value ?? "-",
+    },
+    {
+      title: "反击跳闸率",
+      dataIndex: "counterstrike_trip_rate",
+      width: 120,
+      render: (value: number | null | undefined) => value ?? "-",
+    },
+  ];
+
+  const multiPhaseColumns: ColumnsType<MultiPhaseResult> = [
+    { title: "相数组合", dataIndex: "label", width: 100 },
+    { title: "闪络相", dataIndex: "flashover_phase", render: (value: string | null | undefined) => value || "-" },
+    {
+      title: "反击耐雷水平(kA)",
+      dataIndex: "counterstrike_withstand_ka",
+      width: 140,
+      render: (value: number | null | undefined) => value ?? "-",
+    },
+    {
+      title: "跳闸率",
+      dataIndex: "trip_rate",
+      width: 120,
+      render: (value: number | null | undefined) => value ?? "-",
+    },
+  ];
+
   const selectedLine = useMemo(() => {
     return linesQuery.data?.items.find((item) => item.id === selectedLineId) ?? null;
   }, [linesQuery.data?.items, selectedLineId]);
@@ -660,8 +973,14 @@ export default function AdminFlAnalysisPage() {
   const detailResultObject = readObject(detailRow?.result_json);
   const reasonDetails = readReasonDetails(detailRow);
   const mitigationActions = readMitigationActions(detailRow);
+  const scanPoints = readScanPoints(detailRow);
+  const phaseResults = readPhaseResults(detailRow);
+  const multiPhaseResults = readMultiPhaseResults(detailRow);
+  const detailWorkflow = readWorkflow(detailRow);
+  const detailSelectedCase = readSelectedCase(detailRow);
   const selectedJobExecutionOptions = readObject(selectedJobDetail?.execution_options_json);
   const selectedJobSummary = readObject(selectedJobDetail?.result_summary_json);
+  const selectedJobWorkflow = readObject(selectedJobDetail?.result_summary_json).workflow as WorkflowSummary | undefined;
   const sourceJobId = readOptionalString(selectedJobExecutionOptions, "source_job_id");
   const canCreateMitigation = selectedJob?.job_type === "risk";
   const canCreateReport = selectedJob?.job_type === "risk" || selectedJob?.job_type === "mitigation";
@@ -681,7 +1000,7 @@ export default function AdminFlAnalysisPage() {
                 防雷分析与改造
               </Typography.Title>
               <Typography.Text type="secondary">
-                迁移源端“风险评估 + 措施推荐 + 报告生成”工作流：先生成风险结果，再按需派生措施任务或报告任务，并直接下载 Word 兼容报告。
+                支持源端“普通计算 / 同跳计算 / 风险评估 / 措施推荐 / 报告生成”工作流。普通计算和同跳计算当前为规则近似版，ATP/Wine 外部链路仍保留为后续接入点；报告任务可基于风险或措施结果直接导出 Word 兼容文档。
               </Typography.Text>
             </div>
 
@@ -690,38 +1009,118 @@ export default function AdminFlAnalysisPage() {
             ) : null}
 
             {canManage ? (
-              <Form<RiskJobFormValues>
-                form={riskJobForm}
-                layout="inline"
+              <Form<CreateJobFormValues>
+                form={createJobForm}
+                layout="vertical"
+                initialValues={CREATE_JOB_DEFAULTS}
                 onFinish={(values) => {
-                  createRiskJobMutation.mutate(values);
+                  createJobMutation.mutate(values);
                 }}
               >
-                <Form.Item
-                  name="line_id"
-                  label="线路"
-                  rules={[{ required: true, message: "请选择线路" }]}
-                >
-                  <Select
-                    showSearch
-                    optionFilterProp="label"
-                    placeholder="选择线路"
-                    loading={linesQuery.isLoading}
-                    style={{ minWidth: 280 }}
-                    options={(linesQuery.data?.items ?? []).map((item: LineSummary) => ({
-                      value: item.id,
-                      label: `${item.name || item.code} / ${item.code}`,
-                    }))}
-                  />
-                </Form.Item>
-                <Form.Item name="job_name" label="任务名">
-                  <Input placeholder={selectedLine ? `${selectedLine.name || selectedLine.code}-风险评估` : "风险评估任务"} style={{ width: 260 }} />
-                </Form.Item>
-                <Form.Item>
-                  <Button type="primary" htmlType="submit" loading={createRiskJobMutation.isPending}>
-                    创建并启动风险任务
-                  </Button>
-                </Form.Item>
+                <div className="grid gap-3 md:grid-cols-4">
+                  <Form.Item
+                    name="line_id"
+                    label="线路"
+                    rules={[{ required: true, message: "请选择线路" }]}
+                  >
+                    <Select
+                      showSearch
+                      optionFilterProp="label"
+                      placeholder="选择线路"
+                      loading={linesQuery.isLoading}
+                      options={(linesQuery.data?.items ?? []).map((item: LineSummary) => ({
+                        value: item.id,
+                        label: `${item.name || item.code} / ${item.code}`,
+                      }))}
+                    />
+                  </Form.Item>
+                  <Form.Item name="job_type" label="任务类型" rules={[{ required: true, message: "请选择任务类型" }]}>
+                    <Select
+                      options={[
+                        { value: "normal", label: "普通计算" },
+                        { value: "tongtiao", label: "同跳计算" },
+                        { value: "risk", label: "风险评估" },
+                      ]}
+                    />
+                  </Form.Item>
+                  <Form.Item name="job_name" label="任务名">
+                    <Input
+                      placeholder={selectedLine
+                        ? `${selectedLine.name || selectedLine.code}-${formatJobType(selectedCreateJobType)}`
+                        : `${formatJobType(selectedCreateJobType)}任务`}
+                    />
+                  </Form.Item>
+                  <Form.Item label=" ">
+                    <Button type="primary" htmlType="submit" loading={createJobMutation.isPending} className="w-full">
+                      创建并启动{formatJobType(selectedCreateJobType)}任务
+                    </Button>
+                  </Form.Item>
+                </div>
+
+                {selectedCreateJobType === "normal" || selectedCreateJobType === "tongtiao" ? (
+                  <>
+                    <Alert
+                      type="info"
+                      showIcon
+                      message={`当前按${formatJobType(selectedCreateJobType)}口径生成波头/波尾扫描结果，并在最不利点输出结果。`}
+                    />
+                    <div className="grid gap-3 md:grid-cols-4">
+                      <Form.Item name="current_waveform" label="雷电流波形">
+                        <Select
+                          options={[
+                            { value: "heidler", label: "Heidler" },
+                            { value: "double_slope", label: "双斜角" },
+                            { value: "double_exponential", label: "双指数" },
+                          ]}
+                        />
+                      </Form.Item>
+                      <Form.Item name="flashover_method" label="闪络判据">
+                        <Select
+                          options={[
+                            { value: "guideline", label: "规程法" },
+                            { value: "intersection", label: "相交法" },
+                            { value: "leader_development", label: "先导发展法" },
+                          ]}
+                        />
+                      </Form.Item>
+                      <Form.Item name="altitude_correction" label="海拔修正">
+                        <Select
+                          options={[
+                            { value: "none", label: "无" },
+                            { value: "formula1", label: "推荐公式1" },
+                            { value: "formula2", label: "推荐公式2" },
+                          ]}
+                        />
+                      </Form.Item>
+                      <Form.Item name="induced_voltage_formula" label="感应电压公式">
+                        <Select
+                          options={[
+                            { value: "formula1", label: "公式1" },
+                            { value: "formula2", label: "公式2" },
+                          ]}
+                        />
+                      </Form.Item>
+                      <Form.Item name="head_time_min_us" label="波头时间最小(μs)">
+                        <InputNumber min={0.1} step={0.1} precision={2} className="w-full" />
+                      </Form.Item>
+                      <Form.Item name="head_time_max_us" label="波头时间最大(μs)">
+                        <InputNumber min={0.1} step={0.1} precision={2} className="w-full" />
+                      </Form.Item>
+                      <Form.Item name="head_time_step_us" label="波头步长(μs)">
+                        <InputNumber min={0.05} step={0.05} precision={2} className="w-full" />
+                      </Form.Item>
+                      <Form.Item name="tail_time_min_us" label="波尾时间最小(μs)">
+                        <InputNumber min={1} step={1} precision={2} className="w-full" />
+                      </Form.Item>
+                      <Form.Item name="tail_time_max_us" label="波尾时间最大(μs)">
+                        <InputNumber min={1} step={1} precision={2} className="w-full" />
+                      </Form.Item>
+                      <Form.Item name="tail_time_step_us" label="波尾步长(μs)">
+                        <InputNumber min={0.5} step={0.5} precision={2} className="w-full" />
+                      </Form.Item>
+                    </div>
+                  </>
+                ) : null}
               </Form>
             ) : null}
 
@@ -794,6 +1193,17 @@ export default function AdminFlAnalysisPage() {
                           </Descriptions.Item>
                           <Descriptions.Item label="关联措施任务">{reportMitigationJobName || "未关联"}</Descriptions.Item>
                           <Descriptions.Item label="文档名">{reportDocumentName || "-"}</Descriptions.Item>
+                        </>
+                      ) : selectedJobDetail.job_type === "normal" || selectedJobDetail.job_type === "tongtiao" ? (
+                        <>
+                          <Descriptions.Item label="平均得分">{String(selectedJobDetail.result_summary_json?.score_average ?? "-")}</Descriptions.Item>
+                          <Descriptions.Item label="平均扫描点">{String(readObject(selectedJobDetail.result_summary_json).scan_point_average ?? "-")}</Descriptions.Item>
+                          <Descriptions.Item label="雷电流波形">{formatCurrentWaveform(selectedJobWorkflow?.current_waveform)}</Descriptions.Item>
+                          <Descriptions.Item label="闪络判据">{formatFlashoverMethod(selectedJobWorkflow?.flashover_method)}</Descriptions.Item>
+                          <Descriptions.Item label="海拔修正">{formatAltitudeCorrection(selectedJobWorkflow?.altitude_correction)}</Descriptions.Item>
+                          <Descriptions.Item label="感应电压公式">{formatInducedVoltageFormula(selectedJobWorkflow?.induced_voltage_formula)}</Descriptions.Item>
+                          <Descriptions.Item label="波头范围">{formatRangeSummary(selectedJobWorkflow?.head_time_range_us)}</Descriptions.Item>
+                          <Descriptions.Item label="波尾范围">{formatRangeSummary(selectedJobWorkflow?.tail_time_range_us)}</Descriptions.Item>
                         </>
                       ) : (
                         <>
@@ -881,7 +1291,7 @@ export default function AdminFlAnalysisPage() {
       </Space>
 
       <Modal
-        title={detailRow ? `高风险原因 - ${detailRow.tower_no}` : "高风险原因"}
+        title={detailRow ? `${selectedJob?.job_type === "mitigation" ? "高风险原因" : "计算详情"} - ${detailRow.tower_no}` : "计算详情"}
         open={detailModalOpen}
         onCancel={() => {
           setDetailModalOpen(false);
@@ -896,7 +1306,7 @@ export default function AdminFlAnalysisPage() {
           <Space direction="vertical" size={16} className="flex w-full">
             <Descriptions bordered size="small" column={2}>
               <Descriptions.Item label="当前结论">{detailRow.summary_text || "-"}</Descriptions.Item>
-              <Descriptions.Item label="预期风险/风险等级">
+              <Descriptions.Item label={selectedJob?.job_type === "mitigation" ? "预期风险/风险等级" : "风险等级"}>
                 <Tag color={riskColor(detailRow.risk_level)}>{formatRiskLevel(detailRow.risk_level)}</Tag>
               </Descriptions.Item>
               {selectedJob?.job_type === "mitigation" ? (
@@ -905,6 +1315,27 @@ export default function AdminFlAnalysisPage() {
                     <Tag color={riskColor(readCurrentRisk(detailRow))}>{formatRiskLevel(readCurrentRisk(detailRow))}</Tag>
                   </Descriptions.Item>
                   <Descriptions.Item label="改造结论">{readString(detailResultObject, "recommendation_result")}</Descriptions.Item>
+                </>
+              ) : selectedJob?.job_type === "normal" || selectedJob?.job_type === "tongtiao" ? (
+                <>
+                  <Descriptions.Item label="最不利点(μs)">
+                    {typeof detailSelectedCase.head_time_us === "number" && typeof detailSelectedCase.tail_time_us === "number"
+                      ? `${detailSelectedCase.head_time_us}/${detailSelectedCase.tail_time_us}`
+                      : "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="扫描点数">{String(detailWorkflow.scan_point_count ?? "-")}</Descriptions.Item>
+                  <Descriptions.Item label="雷电流波形">{formatCurrentWaveform(detailWorkflow.current_waveform)}</Descriptions.Item>
+                  <Descriptions.Item label="闪络判据">{formatFlashoverMethod(detailWorkflow.flashover_method)}</Descriptions.Item>
+                  <Descriptions.Item label="海拔修正">{formatAltitudeCorrection(detailWorkflow.altitude_correction)}</Descriptions.Item>
+                  <Descriptions.Item label="感应电压公式">{formatInducedVoltageFormula(detailWorkflow.induced_voltage_formula)}</Descriptions.Item>
+                  <Descriptions.Item label="波头范围">{formatRangeSummary(detailWorkflow.head_time_range_us)}</Descriptions.Item>
+                  <Descriptions.Item label="波尾范围">{formatRangeSummary(detailWorkflow.tail_time_range_us)}</Descriptions.Item>
+                  {selectedJob?.job_type === "tongtiao" ? (
+                    <>
+                      <Descriptions.Item label="主导相组">{readOptionalString(detailResultObject, "dominant_phase_set") ?? "-"}</Descriptions.Item>
+                      <Descriptions.Item label="闪络相">{readOptionalString(detailResultObject, "flashover_phase") ?? "-"}</Descriptions.Item>
+                    </>
+                  ) : null}
                 </>
               ) : null}
               <Descriptions.Item label="原因分析" span={2}>
@@ -939,6 +1370,62 @@ export default function AdminFlAnalysisPage() {
                 size="small"
               />
             )}
+
+            {selectedJob?.job_type === "normal" || selectedJob?.job_type === "tongtiao" ? (
+              <>
+                <Typography.Title level={5} style={{ margin: 0 }}>
+                  波形扫描
+                </Typography.Title>
+                {scanPoints.length === 0 ? (
+                  <Empty description="当前结果未生成扫描点" />
+                ) : (
+                  <Table<ScanPoint>
+                    rowKey={(row) => `${row.head_time_us ?? "-"}-${row.tail_time_us ?? "-"}`}
+                    columns={scanPointColumns}
+                    dataSource={scanPoints}
+                    pagination={false}
+                    size="small"
+                    scroll={{ x: 1000 }}
+                  />
+                )}
+              </>
+            ) : null}
+
+            {selectedJob?.job_type === "tongtiao" ? (
+              <>
+                <Typography.Title level={5} style={{ margin: 0 }}>
+                  相别结果
+                </Typography.Title>
+                {phaseResults.length === 0 ? (
+                  <Empty description="当前结果未生成相别结果" />
+                ) : (
+                  <Table<PhaseResult>
+                    rowKey="phase"
+                    columns={phaseResultColumns}
+                    dataSource={phaseResults}
+                    pagination={false}
+                    size="small"
+                    scroll={{ x: 1200 }}
+                  />
+                )}
+
+                <Typography.Title level={5} style={{ margin: 0 }}>
+                  多相结果
+                </Typography.Title>
+                {multiPhaseResults.length === 0 ? (
+                  <Empty description="当前结果未生成多相结果" />
+                ) : (
+                  <Table<MultiPhaseResult>
+                    rowKey="label"
+                    columns={multiPhaseColumns}
+                    dataSource={multiPhaseResults}
+                    pagination={false}
+                    size="small"
+                    scroll={{ x: 900 }}
+                  />
+                )}
+              </>
+            ) : null}
 
             <Typography.Title level={5} style={{ margin: 0 }}>
               改造动作

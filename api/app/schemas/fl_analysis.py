@@ -10,6 +10,23 @@ FlAnalysisJobType = Literal["normal", "tongtiao", "risk", "mitigation", "report"
 FlAnalysisJobStatus = Literal["pending", "queued", "running", "blocked", "success", "failed"]
 FlAnalysisRunStatus = Literal["pending", "running", "blocked", "success", "failed"]
 FlAnalysisAdapter = Literal["placeholder", "wine", "atp", "custom"]
+FlAnalysisCurrentWaveform = Literal["heidler", "double_slope", "double_exponential"]
+FlAnalysisFlashoverMethod = Literal["guideline", "intersection", "leader_development"]
+FlAnalysisAltitudeCorrection = Literal["none", "formula1", "formula2"]
+FlAnalysisInducedVoltageFormula = Literal["formula1", "formula2"]
+
+
+class FlAnalysisWaveformExecutionOptions(BaseModel):
+    current_waveform: FlAnalysisCurrentWaveform = "heidler"
+    flashover_method: FlAnalysisFlashoverMethod = "intersection"
+    altitude_correction: FlAnalysisAltitudeCorrection = "none"
+    induced_voltage_formula: FlAnalysisInducedVoltageFormula = "formula1"
+    head_time_min_us: float = 2.6
+    head_time_max_us: float = 2.6
+    head_time_step_us: float = 0.1
+    tail_time_min_us: float = 50.0
+    tail_time_max_us: float = 50.0
+    tail_time_step_us: float = 1.0
 
 
 class FlAnalysisRunSummary(BaseModel):
@@ -73,7 +90,10 @@ class FlAnalysisJobCreateRequest(BaseModel):
     job_type: FlAnalysisJobType = "normal"
     external_adapter: FlAnalysisAdapter = "placeholder"
     adapter_config_json: dict[str, Any] = Field(default_factory=dict)
-    execution_options_json: dict[str, Any] = Field(default_factory=dict)
+    execution_options_json: dict[str, Any] = Field(
+        default_factory=dict,
+        description="normal/tongtiao 任务可传波形、闪络判据以及波头/波尾扫描参数；mitigation 任务可传 source_job_id、selected_tower_ids、non_construction。",
+    )
 
 
 class FlAnalysisJobCreateResponse(BaseModel):

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.fl_analysis_rules import grade_mitigation_snapshot_payload, grade_snapshot_payload
+from app.services.fl_analysis_rules import (
+    grade_mitigation_snapshot_payload,
+    grade_normal_snapshot_payload,
+    grade_snapshot_payload,
+    grade_tongtiao_snapshot_payload,
+)
 
 
 def _build_circuit_geometry(
@@ -368,3 +373,137 @@ def test_grade_snapshot_payload_falls_back_to_legacy_result_when_geometry_is_mis
     assert result["counterstrike_withstand_ka"] == pytest.approx(52.3)
     assert result["shielding_trip_rate"] == pytest.approx(0.03)
     assert "历史结果" in result["cause_analysis"]
+
+
+def test_grade_normal_snapshot_payload_builds_waveform_scan_and_selected_case() -> None:
+    geometry = _build_circuit_geometry(
+        shield_left_m=9.0,
+        shield_right_m=9.0,
+        shield_height_m=41.0,
+        insulator_length_mm=4200.0,
+        circuit_i_upper_m=9.0,
+        circuit_i_middle_m=4.5,
+        circuit_i_lower_m=8.5,
+        circuit_i_upper_h_m=29.0,
+        circuit_i_middle_h_m=31.0,
+        circuit_i_lower_h_m=25.0,
+    )
+    payload = {
+        "base_tower_json": {
+            "tower_no": "N1",
+            "tower_type": "直线",
+            "tower_model": "220-TEST-ZX",
+            "line_name": "交流220kV示例线",
+            "line_voltage_kv": 220,
+            "ground_resistance_ohm": 12.0,
+            "lightning_density": 3.2,
+            "altitude_m": 1680.0,
+            "slope_1": 3.0,
+            "slope_2": 1.5,
+            "circuit_geometry_json": geometry,
+            "lightning_result_json": {},
+        },
+        "profile_json": {
+            "structure_kind": "直线",
+            "arrester_a": "是",
+            "arrester_b": "否",
+            "arrester_c": "是",
+            "shield_wire_height_m": 41.0,
+            "insulator_length_m": 4200.0,
+            "current_type": "Heidler",
+        },
+    }
+
+    result = grade_normal_snapshot_payload(
+        payload,
+        execution_options={
+            "current_waveform": "double_slope",
+            "flashover_method": "intersection",
+            "altitude_correction": "formula1",
+            "induced_voltage_formula": "formula2",
+            "head_time_min_us": 2.4,
+            "head_time_max_us": 2.6,
+            "head_time_step_us": 0.2,
+            "tail_time_min_us": 45.0,
+            "tail_time_max_us": 50.0,
+            "tail_time_step_us": 5.0,
+        },
+    )
+
+    assert result["job_type"] == "normal"
+    assert result["workflow"]["scan_point_count"] == 4
+    assert len(result["scan_points"]) == 4
+    assert result["selected_case"]["head_time_us"] is not None
+    assert result["selected_case"]["tail_time_us"] is not None
+    assert any(item["code"] == "current_head_time" for item in result["reason_details"])
+    assert any(item["code"] == "current_tail_time" for item in result["reason_details"])
+    assert "普通计算" in result["summary_text"]
+
+
+def test_grade_tongtiao_snapshot_payload_builds_phase_and_multi_phase_results() -> None:
+    geometry = _build_circuit_geometry(
+        shield_left_m=11.0,
+        shield_right_m=11.0,
+        shield_height_m=72.0,
+        insulator_length_mm=5600.0,
+        circuit_i_upper_m=14.0,
+        circuit_i_middle_m=11.0,
+        circuit_i_lower_m=9.0,
+        circuit_i_upper_h_m=54.0,
+        circuit_i_middle_h_m=50.0,
+        circuit_i_lower_h_m=46.0,
+        circuit_ii_upper_m=14.0,
+        circuit_ii_middle_m=11.0,
+        circuit_ii_lower_m=9.0,
+        circuit_ii_upper_h_m=53.0,
+        circuit_ii_middle_h_m=49.0,
+        circuit_ii_lower_h_m=45.0,
+    )
+    payload = {
+        "base_tower_json": {
+            "tower_no": "TT1",
+            "tower_type": "耐张",
+            "tower_model": "500-GUXING",
+            "line_name": "交流500kV双回示例线",
+            "line_voltage_kv": 500,
+            "ground_resistance_ohm": 18.0,
+            "lightning_density": 4.6,
+            "altitude_m": 1220.0,
+            "slope_1": 8.0,
+            "slope_2": 3.0,
+            "circuit_geometry_json": geometry,
+            "lightning_result_json": {},
+        },
+        "profile_json": {
+            "structure_kind": "耐张",
+            "phase_sequence_1": "ABC",
+            "phase_sequence_2": "CAB",
+            "arrester_a": "否",
+            "arrester_b": "否",
+            "arrester_c": "是",
+            "shield_wire_height_m": 72.0,
+            "insulator_length_m": 5600.0,
+            "current_type": "Heidler",
+        },
+    }
+
+    result = grade_tongtiao_snapshot_payload(
+        payload,
+        execution_options={
+            "current_waveform": "heidler",
+            "flashover_method": "leader_development",
+            "head_time_min_us": 2.6,
+            "head_time_max_us": 2.6,
+            "head_time_step_us": 0.1,
+            "tail_time_min_us": 50.0,
+            "tail_time_max_us": 50.0,
+            "tail_time_step_us": 1.0,
+        },
+    )
+
+    assert result["job_type"] == "tongtiao"
+    assert result["phase_results"]
+    assert result["multi_phase_results"]
+    assert result["dominant_phase_set"] in {"单相", "双相", "三相", "四相", "五相", "六相"}
+    assert result["flashover_phase"]
+    assert result["workflow"]["current_waveform"] == "heidler"

@@ -28,7 +28,12 @@ from ..schemas.fl_analysis import (
     FlAnalysisTowerResultSummary,
 )
 from .fl_analysis_report import build_report_document, build_report_summary_payload
-from .fl_analysis_rules import grade_mitigation_snapshot_payload, grade_snapshot_payload
+from .fl_analysis_rules import (
+    grade_mitigation_snapshot_payload,
+    grade_normal_snapshot_payload,
+    grade_snapshot_payload,
+    grade_tongtiao_snapshot_payload,
+)
 from .push_service import publish_topic
 
 FL_ANALYSIS_TOPIC = "admin.fl-analysis"
@@ -365,14 +370,17 @@ def execute_job(job_id: str) -> None:
             source_result = source_result_map.get(snapshot.tower_id)
             if source_result:
                 payload["source_result_json"] = source_result
-            graded = (
-                grade_mitigation_snapshot_payload(
+            if job.job_type == "mitigation":
+                graded = grade_mitigation_snapshot_payload(
                     payload,
                     non_construction=bool(execution_options.get("non_construction")),
                 )
-                if job.job_type == "mitigation"
-                else grade_snapshot_payload(payload)
-            )
+            elif job.job_type == "normal":
+                graded = grade_normal_snapshot_payload(payload, execution_options=execution_options)
+            elif job.job_type == "tongtiao":
+                graded = grade_tongtiao_snapshot_payload(payload, execution_options=execution_options)
+            else:
+                graded = grade_snapshot_payload(payload)
             db.add(
                 FlAnalysisTowerResult(
                     job_id=job.id,
@@ -405,6 +413,8 @@ def execute_job(job_id: str) -> None:
             summary["source_job_id"] = execution_options.get("source_job_id")
             summary["source_run_id"] = execution_options.get("source_run_id")
             summary["non_construction"] = bool(execution_options.get("non_construction"))
+        elif job.job_type in {"normal", "tongtiao"}:
+            summary["workflow"] = _workflow_summary_from_execution_options(execution_options)
         db.commit()
 
         _finish_rule_based_run(
@@ -805,6 +815,8 @@ def _new_result_summary() -> dict[str, Any]:
         "score_average": 0,
         "arrester_required_count": 0,
         "action_total": 0,
+        "scan_point_total": 0,
+        "scan_point_average": 0,
     }
 
 
@@ -824,6 +836,11 @@ def _accumulate_result_summary(summary: dict[str, Any], graded: dict[str, Any]) 
     summary["action_total"] = int(summary.get("action_total", 0)) + len(graded.get("mitigation_actions") or [])
     if graded.get("recommendation_result") == "需要安装避雷器":
         summary["arrester_required_count"] = int(summary.get("arrester_required_count", 0)) + 1
+    workflow = graded.get("workflow") or {}
+    scan_point_count = _as_int((workflow or {}).get("scan_point_count")) or 0
+    if scan_point_count > 0:
+        summary["scan_point_total"] = int(summary.get("scan_point_total", 0)) + scan_point_count
+        summary["scan_point_average"] = round(summary["scan_point_total"] / total_count, 2) if total_count else 0
 
 
 def _normalize_execution_options(job_type: str, execution_options: dict[str, Any]) -> dict[str, Any]:
@@ -872,7 +889,80 @@ def _normalize_execution_options(job_type: str, execution_options: dict[str, Any
         normalized.get("non_construction")
         or normalized.get("mitigation_mode") == "non_construction"
     )
-    if job_type not in {"mitigation", "report"}:
+    if job_type == "mitigation":
+        normalized.pop("current_waveform", None)
+        normalized.pop("flashover_method", None)
+        normalized.pop("altitude_correction", None)
+        normalized.pop("induced_voltage_formula", None)
+        normalized.pop("head_time_min_us", None)
+        normalized.pop("head_time_max_us", None)
+        normalized.pop("head_time_step_us", None)
+        normalized.pop("tail_time_min_us", None)
+        normalized.pop("tail_time_max_us", None)
+        normalized.pop("tail_time_step_us", None)
+        normalized.pop("mitigation_job_id", None)
+        normalized.pop("mitigation_run_id", None)
+        normalized.pop("risk_job_id", None)
+        normalized.pop("risk_run_id", None)
+        normalized.pop("source_job_type", None)
+    elif job_type == "report":
+        normalized.pop("current_waveform", None)
+        normalized.pop("flashover_method", None)
+        normalized.pop("altitude_correction", None)
+        normalized.pop("induced_voltage_formula", None)
+        normalized.pop("head_time_min_us", None)
+        normalized.pop("head_time_max_us", None)
+        normalized.pop("head_time_step_us", None)
+        normalized.pop("tail_time_min_us", None)
+        normalized.pop("tail_time_max_us", None)
+        normalized.pop("tail_time_step_us", None)
+        normalized.pop("non_construction", None)
+    elif job_type in {"normal", "tongtiao"}:
+        normalized["current_waveform"] = _normalize_choice(
+            normalized.get("current_waveform") or normalized.get("current_type"),
+            allowed={"heidler", "double_slope", "double_exponential"},
+            aliases={
+                "Heidler": "heidler",
+                "双斜角": "double_slope",
+                "双指数": "double_exponential",
+            },
+            default="heidler",
+        )
+        normalized["flashover_method"] = _normalize_choice(
+            normalized.get("flashover_method"),
+            allowed={"guideline", "intersection", "leader_development"},
+            aliases={
+                "规程法": "guideline",
+                "相交法": "intersection",
+                "先导发展法": "leader_development",
+            },
+            default="intersection",
+        )
+        normalized["altitude_correction"] = _normalize_choice(
+            normalized.get("altitude_correction"),
+            allowed={"none", "formula1", "formula2"},
+            aliases={
+                "无": "none",
+                "推荐公式1": "formula1",
+                "推荐公式2": "formula2",
+            },
+            default="none",
+        )
+        normalized["induced_voltage_formula"] = _normalize_choice(
+            normalized.get("induced_voltage_formula"),
+            allowed={"formula1", "formula2"},
+            aliases={
+                "公式1": "formula1",
+                "公式2": "formula2",
+            },
+            default="formula1",
+        )
+        normalized["head_time_min_us"] = _normalize_positive_number(normalized.get("head_time_min_us"), default=2.6)
+        normalized["head_time_max_us"] = _normalize_positive_number(normalized.get("head_time_max_us"), default=2.6)
+        normalized["head_time_step_us"] = _normalize_positive_number(normalized.get("head_time_step_us"), default=0.1)
+        normalized["tail_time_min_us"] = _normalize_positive_number(normalized.get("tail_time_min_us"), default=50.0)
+        normalized["tail_time_max_us"] = _normalize_positive_number(normalized.get("tail_time_max_us"), default=50.0)
+        normalized["tail_time_step_us"] = _normalize_positive_number(normalized.get("tail_time_step_us"), default=1.0)
         normalized.pop("selected_tower_ids", None)
         normalized.pop("source_job_id", None)
         normalized.pop("source_run_id", None)
@@ -882,7 +972,25 @@ def _normalize_execution_options(job_type: str, execution_options: dict[str, Any
         normalized.pop("risk_run_id", None)
         normalized.pop("source_job_type", None)
         normalized.pop("non_construction", None)
-    elif job_type != "mitigation":
+    else:
+        normalized.pop("current_waveform", None)
+        normalized.pop("flashover_method", None)
+        normalized.pop("altitude_correction", None)
+        normalized.pop("induced_voltage_formula", None)
+        normalized.pop("head_time_min_us", None)
+        normalized.pop("head_time_max_us", None)
+        normalized.pop("head_time_step_us", None)
+        normalized.pop("tail_time_min_us", None)
+        normalized.pop("tail_time_max_us", None)
+        normalized.pop("tail_time_step_us", None)
+        normalized.pop("selected_tower_ids", None)
+        normalized.pop("source_job_id", None)
+        normalized.pop("source_run_id", None)
+        normalized.pop("mitigation_job_id", None)
+        normalized.pop("mitigation_run_id", None)
+        normalized.pop("risk_job_id", None)
+        normalized.pop("risk_run_id", None)
+        normalized.pop("source_job_type", None)
         normalized.pop("non_construction", None)
     return normalized
 
@@ -1136,6 +1244,46 @@ def _placeholder_message_for_adapter(adapter: str) -> str:
     if adapter == "custom":
         return "自定义外部程序适配器已预留，真实执行链路尚未接入"
     return "外部分析适配器尚未接入，当前仅完成任务骨架与快照链路"
+
+
+def _workflow_summary_from_execution_options(execution_options: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "current_waveform": execution_options.get("current_waveform"),
+        "flashover_method": execution_options.get("flashover_method"),
+        "altitude_correction": execution_options.get("altitude_correction"),
+        "induced_voltage_formula": execution_options.get("induced_voltage_formula"),
+        "head_time_range_us": {
+            "min": execution_options.get("head_time_min_us"),
+            "max": execution_options.get("head_time_max_us"),
+            "step": execution_options.get("head_time_step_us"),
+        },
+        "tail_time_range_us": {
+            "min": execution_options.get("tail_time_min_us"),
+            "max": execution_options.get("tail_time_max_us"),
+            "step": execution_options.get("tail_time_step_us"),
+        },
+    }
+
+
+def _normalize_choice(
+    value: Any,
+    *,
+    allowed: set[str],
+    aliases: dict[str, str],
+    default: str,
+) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return default
+    normalized = aliases.get(text, aliases.get(text.lower(), text.lower()))
+    return normalized if normalized in allowed else default
+
+
+def _normalize_positive_number(value: Any, *, default: float) -> float:
+    parsed = _as_float(value)
+    if parsed is None or parsed <= 0:
+        return default
+    return round(parsed, 4)
 
 
 def _publish_change(event_name: str, payload: dict[str, Any]) -> None:

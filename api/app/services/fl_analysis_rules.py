@@ -40,6 +40,40 @@ _DC_RISK_THRESHOLDS = {
     660: 0.1,
     800: 0.1,
 }
+_CURRENT_WAVEFORM_ALIASES = {
+    "heidler": "heidler",
+    "双斜角": "double_slope",
+    "double_slope": "double_slope",
+    "双指数": "double_exponential",
+    "double_exponential": "double_exponential",
+}
+_FLASHOVER_METHOD_ALIASES = {
+    "规程法": "guideline",
+    "guideline": "guideline",
+    "相交法": "intersection",
+    "intersection": "intersection",
+    "先导发展法": "leader_development",
+    "leader_development": "leader_development",
+}
+_ALTITUDE_CORRECTION_ALIASES = {
+    "无": "none",
+    "none": "none",
+    "推荐公式1": "formula1",
+    "formula1": "formula1",
+    "推荐公式2": "formula2",
+    "formula2": "formula2",
+}
+_INDUCED_VOLTAGE_FORMULA_ALIASES = {
+    "公式1": "formula1",
+    "formula1": "formula1",
+    "公式2": "formula2",
+    "formula2": "formula2",
+}
+_DEFAULT_HEAD_TIME_US = 2.6
+_DEFAULT_TAIL_TIME_US = 50.0
+_DEFAULT_HEAD_STEP_US = 0.1
+_DEFAULT_TAIL_STEP_US = 1.0
+_MAX_SCAN_AXIS_POINTS = 5
 
 
 @dataclass(frozen=True)
@@ -72,6 +106,29 @@ class _NormalizedLightningInputs:
     shielding_phase: _PhasePoint | None
     all_arresters_installed: bool
     synthetic_signed_geometry: bool
+
+
+@dataclass(frozen=True)
+class _WaveformExecutionProfile:
+    job_type: str
+    current_waveform: str
+    flashover_method: str
+    altitude_correction: str
+    induced_voltage_formula: str
+    head_time_min_us: float
+    head_time_max_us: float
+    head_time_step_us: float
+    tail_time_min_us: float
+    tail_time_max_us: float
+    tail_time_step_us: float
+
+
+@dataclass(frozen=True)
+class _PhaseExposure:
+    phase: str
+    circuit: str
+    x_m: float
+    height_m: float
 
 
 def grade_snapshot_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -242,6 +299,630 @@ def grade_mitigation_snapshot_payload(payload: Mapping[str, Any], *, non_constru
         "non_construction": non_construction,
         "inputs": current["inputs"],
     }
+
+
+def grade_normal_snapshot_payload(
+    payload: Mapping[str, Any],
+    *,
+    execution_options: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    execution = _build_waveform_execution_profile(payload, execution_options, job_type="normal")
+    scan_cases = _evaluate_waveform_scan(payload, execution)
+    selected = _select_waveform_case(scan_cases)
+    workflow = _serialize_waveform_workflow(execution, scan_point_count=len(scan_cases))
+    selected_case = _serialize_selected_case(selected)
+    summary_text = _build_waveform_result_summary(
+        tower_no=str((payload.get("base_tower_json") or {}).get("tower_no") or ""),
+        execution=execution,
+        selected_case=selected_case,
+        selected_result=selected["graded"],
+        multi_phase_results=[],
+    )
+
+    return {
+        **selected["graded"],
+        "job_type": "normal",
+        "summary_text": summary_text,
+        "workflow": workflow,
+        "selected_case": selected_case,
+        "scan_points": [_serialize_scan_point(case) for case in scan_cases],
+        "phase_results": [],
+        "multi_phase_results": [],
+    }
+
+
+def grade_tongtiao_snapshot_payload(
+    payload: Mapping[str, Any],
+    *,
+    execution_options: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    execution = _build_waveform_execution_profile(payload, execution_options, job_type="tongtiao")
+    scan_cases = _evaluate_waveform_scan(payload, execution)
+    selected = _select_waveform_case(scan_cases)
+    selected_case = _serialize_selected_case(selected)
+    workflow = _serialize_waveform_workflow(execution, scan_point_count=len(scan_cases))
+    summary_text = _build_waveform_result_summary(
+        tower_no=str((payload.get("base_tower_json") or {}).get("tower_no") or ""),
+        execution=execution,
+        selected_case=selected_case,
+        selected_result=selected["graded"],
+        multi_phase_results=selected["multi_phase_results"],
+    )
+
+    return {
+        **selected["graded"],
+        "job_type": "tongtiao",
+        "summary_text": summary_text,
+        "workflow": workflow,
+        "selected_case": selected_case,
+        "scan_points": [_serialize_scan_point(case) for case in scan_cases],
+        "phase_results": selected["phase_results"],
+        "multi_phase_results": selected["multi_phase_results"],
+    }
+
+
+def _evaluate_waveform_scan(payload: Mapping[str, Any], execution: _WaveformExecutionProfile) -> list[dict[str, Any]]:
+    head_values = _build_scan_values(
+        execution.head_time_min_us,
+        execution.head_time_max_us,
+        execution.head_time_step_us,
+    )
+    tail_values = _build_scan_values(
+        execution.tail_time_min_us,
+        execution.tail_time_max_us,
+        execution.tail_time_step_us,
+    )
+    scan_cases: list[dict[str, Any]] = []
+    for head_time_us in head_values:
+        for tail_time_us in tail_values:
+            scan_cases.append(
+                _evaluate_waveform_case(
+                    payload,
+                    execution,
+                    head_time_us=head_time_us,
+                    tail_time_us=tail_time_us,
+                )
+            )
+    return scan_cases
+
+
+def _evaluate_waveform_case(
+    payload: Mapping[str, Any],
+    execution: _WaveformExecutionProfile,
+    *,
+    head_time_us: float,
+    tail_time_us: float,
+) -> dict[str, Any]:
+    base_result = grade_snapshot_payload(payload)
+    normalized = _normalize_lightning_inputs(payload)
+    severity = _build_waveform_severity(
+        payload,
+        execution,
+        head_time_us=head_time_us,
+        tail_time_us=tail_time_us,
+    )
+
+    counterstrike_withstand_ka = _scaled_inverse(
+        _as_float(base_result.get("counterstrike_withstand_ka")),
+        severity["counterstrike"],
+        digits=4,
+    )
+    shielding_withstand_ka = _scaled_inverse(
+        _as_float(base_result.get("shielding_withstand_ka")),
+        severity["shielding"],
+        digits=4,
+    )
+    counterstrike_trip_rate = _scaled_forward(
+        _as_float(base_result.get("counterstrike_trip_rate")),
+        severity["counterstrike"],
+        digits=6,
+    )
+    shielding_trip_rate = _scaled_forward(
+        _as_float(base_result.get("shielding_trip_rate")),
+        severity["shielding"],
+        digits=6,
+    )
+
+    phase_results = (
+        _build_phase_results(
+            payload,
+            counterstrike_withstand_ka=counterstrike_withstand_ka,
+            counterstrike_trip_rate=counterstrike_trip_rate,
+            shielding_withstand_ka=shielding_withstand_ka,
+            shielding_trip_rate=shielding_trip_rate,
+        )
+        if execution.job_type == "tongtiao"
+        else []
+    )
+    multi_phase_results = (
+        _build_multi_phase_results(phase_results)
+        if execution.job_type == "tongtiao"
+        else []
+    )
+    dominant_counterstrike_trip_rate = counterstrike_trip_rate
+    dominant_counterstrike_withstand_ka = counterstrike_withstand_ka
+    dominant_flashover_phase: str | None = None
+    dominant_phase_set: str | None = None
+    if multi_phase_results:
+        dominant = max(
+            multi_phase_results,
+            key=lambda item: (
+                _as_float(item.get("trip_rate")) or 0.0,
+                -(_as_float(item.get("counterstrike_withstand_ka")) or 0.0),
+            ),
+        )
+        dominant_counterstrike_trip_rate = _as_float(dominant.get("trip_rate"))
+        dominant_counterstrike_withstand_ka = _as_float(dominant.get("counterstrike_withstand_ka"))
+        dominant_flashover_phase = str(dominant.get("flashover_phase") or "").strip() or None
+        dominant_phase_set = str(dominant.get("label") or "").strip() or None
+
+    risk_index, risk_threshold, risk_grade = _calculate_risk_grade(
+        normalized,
+        dominant_counterstrike_trip_rate,
+        shielding_trip_rate,
+    )
+    severity_ratio = (
+        round(risk_index / risk_threshold, 6)
+        if risk_index is not None and risk_threshold not in {None, 0}
+        else None
+    )
+    risk_level = _risk_level_from_grade(risk_grade) or _normalize_risk_level(base_result.get("risk_level")) or "low"
+    score = _score_from_result(severity_ratio, risk_grade, int(base_result.get("score") or 0))
+
+    reason_details = list(base_result.get("reason_details") or [])
+    reason_details.extend(
+        _build_waveform_reason_details(
+            execution,
+            head_time_us=head_time_us,
+            tail_time_us=tail_time_us,
+        )
+    )
+
+    cause_analysis = _merge_semicolon_text(
+        base_result.get("cause_analysis"),
+        _build_waveform_case_cause(execution, head_time_us=head_time_us, tail_time_us=tail_time_us),
+    )
+    mitigation_recommendation = _merge_semicolon_text(
+        base_result.get("mitigation_recommendation"),
+        _build_waveform_case_recommendation(execution),
+    )
+    inputs = dict(base_result.get("inputs") or {})
+    inputs.update(
+        {
+            "current_waveform": execution.current_waveform,
+            "flashover_method": execution.flashover_method,
+            "altitude_correction": execution.altitude_correction,
+            "induced_voltage_formula": execution.induced_voltage_formula,
+            "head_time_us": head_time_us,
+            "tail_time_us": tail_time_us,
+        }
+    )
+
+    graded = {
+        **base_result,
+        "risk_level": risk_level,
+        "risk_grade": risk_grade if risk_grade is not None else base_result.get("risk_grade"),
+        "score": score,
+        "counterstrike_withstand_ka": dominant_counterstrike_withstand_ka,
+        "counterstrike_trip_rate": dominant_counterstrike_trip_rate,
+        "shielding_withstand_ka": shielding_withstand_ka,
+        "shielding_trip_rate": shielding_trip_rate,
+        "cause_analysis": cause_analysis,
+        "mitigation_recommendation": mitigation_recommendation,
+        "reason_details": reason_details,
+        "inputs": inputs,
+        "flashover_phase": dominant_flashover_phase,
+        "dominant_phase_set": dominant_phase_set,
+    }
+
+    ranking_trip_rate = max(
+        dominant_counterstrike_trip_rate or 0.0,
+        shielding_trip_rate or 0.0,
+    )
+    return {
+        "head_time_us": head_time_us,
+        "tail_time_us": tail_time_us,
+        "graded": graded,
+        "phase_results": phase_results,
+        "multi_phase_results": multi_phase_results,
+        "ranking_trip_rate": ranking_trip_rate,
+    }
+
+
+def _build_waveform_execution_profile(
+    payload: Mapping[str, Any],
+    execution_options: Mapping[str, Any] | None,
+    *,
+    job_type: str,
+) -> _WaveformExecutionProfile:
+    options = dict(execution_options or {})
+    profile = dict(payload.get("profile_json") or {})
+    default_head = _coalesce_positive_float(
+        options.get("current_head_time_us"),
+        profile.get("current_head_time_us"),
+        _DEFAULT_HEAD_TIME_US,
+    )
+    default_tail = _coalesce_positive_float(
+        options.get("current_tail_time_us"),
+        profile.get("current_tail_time_us"),
+        _DEFAULT_TAIL_TIME_US,
+    )
+
+    return _WaveformExecutionProfile(
+        job_type=job_type,
+        current_waveform=_normalize_choice(
+            options.get("current_waveform") or profile.get("current_type"),
+            aliases=_CURRENT_WAVEFORM_ALIASES,
+            default="heidler",
+        ),
+        flashover_method=_normalize_choice(
+            options.get("flashover_method"),
+            aliases=_FLASHOVER_METHOD_ALIASES,
+            default="intersection",
+        ),
+        altitude_correction=_normalize_choice(
+            options.get("altitude_correction"),
+            aliases=_ALTITUDE_CORRECTION_ALIASES,
+            default="none",
+        ),
+        induced_voltage_formula=_normalize_choice(
+            options.get("induced_voltage_formula"),
+            aliases=_INDUCED_VOLTAGE_FORMULA_ALIASES,
+            default="formula1",
+        ),
+        head_time_min_us=_normalize_positive_number(
+            options.get("head_time_min_us"),
+            default=default_head,
+        ),
+        head_time_max_us=_normalize_positive_number(
+            options.get("head_time_max_us"),
+            default=default_head,
+        ),
+        head_time_step_us=_normalize_positive_number(
+            options.get("head_time_step_us"),
+            default=_DEFAULT_HEAD_STEP_US,
+        ),
+        tail_time_min_us=_normalize_positive_number(
+            options.get("tail_time_min_us"),
+            default=default_tail,
+        ),
+        tail_time_max_us=_normalize_positive_number(
+            options.get("tail_time_max_us"),
+            default=default_tail,
+        ),
+        tail_time_step_us=_normalize_positive_number(
+            options.get("tail_time_step_us"),
+            default=_DEFAULT_TAIL_STEP_US,
+        ),
+    )
+
+
+def _build_waveform_severity(
+    payload: Mapping[str, Any],
+    execution: _WaveformExecutionProfile,
+    *,
+    head_time_us: float,
+    tail_time_us: float,
+) -> dict[str, float]:
+    base = dict(payload.get("base_tower_json") or {})
+    altitude_m = _as_float(base.get("altitude_m")) or 0.0
+    waveform_factor = {
+        "heidler": 1.0,
+        "double_slope": 1.05,
+        "double_exponential": 0.97,
+    }.get(execution.current_waveform, 1.0)
+    flashover_factor = {
+        "guideline": 1.0,
+        "intersection": 1.06,
+        "leader_development": 1.12,
+    }.get(execution.flashover_method, 1.0)
+    induced_voltage_factor = 1.0 if execution.induced_voltage_formula == "formula1" else 1.04
+    if execution.altitude_correction == "formula1":
+        altitude_factor = 1.0 + max(altitude_m - 1000.0, 0.0) / 1000.0 * 0.03
+    elif execution.altitude_correction == "formula2":
+        altitude_factor = 1.0 + max(altitude_m - 1000.0, 0.0) / 1000.0 * 0.05
+    else:
+        altitude_factor = 1.0
+
+    head_factor = _clamp(
+        math.pow(_DEFAULT_HEAD_TIME_US / max(head_time_us, 0.2), 0.22),
+        minimum=0.85,
+        maximum=1.25,
+    )
+    tail_factor = _clamp(
+        math.pow(_DEFAULT_TAIL_TIME_US / max(tail_time_us, 1.0), 0.08),
+        minimum=0.92,
+        maximum=1.12,
+    )
+    counterstrike = waveform_factor * flashover_factor * altitude_factor * head_factor * tail_factor
+    shielding = waveform_factor * induced_voltage_factor * altitude_factor * math.pow(head_factor, 0.9) * tail_factor
+    if execution.job_type == "tongtiao":
+        counterstrike *= 1.08
+        shielding *= 1.05
+    return {
+        "counterstrike": round(counterstrike, 6),
+        "shielding": round(shielding, 6),
+    }
+
+
+def _build_phase_results(
+    payload: Mapping[str, Any],
+    *,
+    counterstrike_withstand_ka: float | None,
+    counterstrike_trip_rate: float | None,
+    shielding_withstand_ka: float | None,
+    shielding_trip_rate: float | None,
+) -> list[dict[str, Any]]:
+    exposures = _extract_phase_exposures(payload)
+    if not exposures:
+        return []
+
+    average_height = sum(item.height_m for item in exposures) / len(exposures)
+    results: list[dict[str, Any]] = []
+    for exposure in exposures[:6]:
+        height_factor = 1.0 + max(exposure.height_m - average_height, 0.0) / 40.0
+        lateral_factor = 1.0 + abs(exposure.x_m) / 30.0
+        shielding_factor = (height_factor * 0.6) + (lateral_factor * 0.4)
+        counterstrike_factor = (height_factor * 0.7) + 0.3
+        results.append(
+            {
+                "phase": exposure.phase,
+                "circuit": exposure.circuit,
+                "shielding_withstand_ka": _scaled_inverse(
+                    shielding_withstand_ka,
+                    shielding_factor,
+                    digits=4,
+                ),
+                "shielding_trip_rate": _scaled_forward(
+                    shielding_trip_rate,
+                    shielding_factor,
+                    digits=6,
+                ),
+                "counterstrike_withstand_ka": _scaled_inverse(
+                    counterstrike_withstand_ka,
+                    counterstrike_factor,
+                    digits=4,
+                ),
+                "counterstrike_trip_rate": _scaled_forward(
+                    counterstrike_trip_rate,
+                    counterstrike_factor,
+                    digits=6,
+                ),
+            }
+        )
+    return results
+
+
+def _build_multi_phase_results(phase_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ordered = sorted(
+        phase_results,
+        key=lambda item: (
+            _as_float(item.get("counterstrike_trip_rate")) or 0.0,
+            -(_as_float(item.get("counterstrike_withstand_ka")) or 0.0),
+        ),
+        reverse=True,
+    )
+    limit = min(6, len(ordered))
+    results: list[dict[str, Any]] = []
+    for index in range(limit):
+        selected = ordered[: index + 1]
+        trip_values = [_as_float(item.get("counterstrike_trip_rate")) or 0.0 for item in selected]
+        withstand_values = [
+            _as_float(item.get("counterstrike_withstand_ka"))
+            for item in selected
+            if _as_float(item.get("counterstrike_withstand_ka")) is not None
+        ]
+        average_trip_rate = sum(trip_values) / len(trip_values) if trip_values else 0.0
+        trip_rate = round(average_trip_rate * (1.0 + 0.12 * index), 6)
+        withstand = round(max(min(withstand_values) * (1.0 - 0.06 * index), 0.0), 4) if withstand_values else None
+        results.append(
+            {
+                "phase_count": index + 1,
+                "label": _phase_count_label(index + 1),
+                "flashover_phase": ",".join(str(item.get("phase") or "") for item in selected),
+                "counterstrike_withstand_ka": withstand,
+                "trip_rate": trip_rate,
+            }
+        )
+    return results
+
+
+def _extract_phase_exposures(payload: Mapping[str, Any]) -> list[_PhaseExposure]:
+    base = payload.get("base_tower_json") or {}
+    profile = payload.get("profile_json") or {}
+    geometry = _merge_geometry_layers(base.get("circuit_geometry_json"), profile.get("geometry_layers_json"))
+    exposures: list[_PhaseExposure] = []
+    for circuit_index, circuit_key in enumerate(("I", "II", "III", "IV"), start=1):
+        circuit = geometry.get(circuit_key)
+        if not isinstance(circuit, dict):
+            continue
+        spacing = circuit.get("phase_spacing_m") if isinstance(circuit.get("phase_spacing_m"), dict) else {}
+        heights = circuit.get("phase_height_m") if isinstance(circuit.get("phase_height_m"), dict) else {}
+        label_map = _phase_label_map(profile, circuit_index)
+        for phase_name in ("upper", "middle", "lower"):
+            x_m = _as_geometry_float(spacing.get(phase_name))
+            height_m = _as_geometry_float(heights.get(phase_name))
+            if x_m is None or height_m is None:
+                continue
+            base_label = label_map.get(phase_name, phase_name.upper())
+            phase_label = base_label if circuit_key == "I" else f"{circuit_key}-{base_label}"
+            exposures.append(
+                _PhaseExposure(
+                    phase=phase_label,
+                    circuit=circuit_key,
+                    x_m=x_m,
+                    height_m=height_m,
+                )
+            )
+    return exposures
+
+
+def _phase_label_map(profile: Mapping[str, Any], circuit_index: int) -> dict[str, str]:
+    default = {
+        "upper": "A",
+        "middle": "B",
+        "lower": "C",
+    }
+    sequence_text = str(profile.get(f"phase_sequence_{circuit_index}") or "").strip().upper()
+    sequence = [char for char in sequence_text if char in {"A", "B", "C"}]
+    if len(sequence) < 3:
+        return default
+    return {
+        "upper": sequence[0],
+        "middle": sequence[1],
+        "lower": sequence[2],
+    }
+
+
+def _build_waveform_reason_details(
+    execution: _WaveformExecutionProfile,
+    *,
+    head_time_us: float,
+    tail_time_us: float,
+) -> list[dict[str, Any]]:
+    head_grade = _grade_head_time(head_time_us)
+    tail_grade = _grade_tail_time(tail_time_us)
+    return [
+        {
+            "code": "current_head_time",
+            "label": "波头时间(μs)",
+            "value": head_time_us,
+            "standard_value": _DEFAULT_HEAD_TIME_US,
+            "grade": head_grade,
+            "triggered": head_grade <= 2,
+        },
+        {
+            "code": "current_tail_time",
+            "label": "波尾时间(μs)",
+            "value": tail_time_us,
+            "standard_value": _DEFAULT_TAIL_TIME_US,
+            "grade": tail_grade,
+            "triggered": tail_grade <= 2,
+        },
+        {
+            "code": "current_waveform",
+            "label": "雷电流波形",
+            "value": _waveform_label(execution.current_waveform),
+            "standard_value": _waveform_label("heidler"),
+            "grade": None,
+            "triggered": False,
+        },
+    ]
+
+
+def _serialize_waveform_workflow(
+    execution: _WaveformExecutionProfile,
+    *,
+    scan_point_count: int,
+) -> dict[str, Any]:
+    return {
+        "current_waveform": execution.current_waveform,
+        "flashover_method": execution.flashover_method,
+        "altitude_correction": execution.altitude_correction,
+        "induced_voltage_formula": execution.induced_voltage_formula,
+        "head_time_range_us": {
+            "min": execution.head_time_min_us,
+            "max": execution.head_time_max_us,
+            "step": execution.head_time_step_us,
+        },
+        "tail_time_range_us": {
+            "min": execution.tail_time_min_us,
+            "max": execution.tail_time_max_us,
+            "step": execution.tail_time_step_us,
+        },
+        "scan_point_count": scan_point_count,
+    }
+
+
+def _serialize_selected_case(scan_case: Mapping[str, Any]) -> dict[str, Any]:
+    graded = dict(scan_case.get("graded") or {})
+    return {
+        "head_time_us": _as_float(scan_case.get("head_time_us")),
+        "tail_time_us": _as_float(scan_case.get("tail_time_us")),
+        "risk_level": graded.get("risk_level"),
+        "score": graded.get("score"),
+        "flashover_phase": graded.get("flashover_phase"),
+        "dominant_phase_set": graded.get("dominant_phase_set"),
+    }
+
+
+def _serialize_scan_point(scan_case: Mapping[str, Any]) -> dict[str, Any]:
+    graded = dict(scan_case.get("graded") or {})
+    return {
+        "head_time_us": _as_float(scan_case.get("head_time_us")),
+        "tail_time_us": _as_float(scan_case.get("tail_time_us")),
+        "risk_level": graded.get("risk_level"),
+        "score": graded.get("score"),
+        "counterstrike_withstand_ka": graded.get("counterstrike_withstand_ka"),
+        "counterstrike_trip_rate": graded.get("counterstrike_trip_rate"),
+        "shielding_withstand_ka": graded.get("shielding_withstand_ka"),
+        "shielding_trip_rate": graded.get("shielding_trip_rate"),
+        "flashover_phase": graded.get("flashover_phase"),
+        "dominant_phase_set": graded.get("dominant_phase_set"),
+    }
+
+
+def _select_waveform_case(scan_cases: list[dict[str, Any]]) -> dict[str, Any]:
+    return max(
+        scan_cases,
+        key=lambda item: (
+            _risk_order((item.get("graded") or {}).get("risk_level")),
+            int((item.get("graded") or {}).get("score") or 0),
+            _as_float(item.get("ranking_trip_rate")) or 0.0,
+            -(_as_float(item.get("head_time_us")) or 0.0),
+            -(_as_float(item.get("tail_time_us")) or 0.0),
+        ),
+    )
+
+
+def _build_waveform_result_summary(
+    *,
+    tower_no: str,
+    execution: _WaveformExecutionProfile,
+    selected_case: Mapping[str, Any],
+    selected_result: Mapping[str, Any],
+    multi_phase_results: list[dict[str, Any]],
+) -> str:
+    tower_label = tower_no or "当前杆塔"
+    head_time_us = _as_float(selected_case.get("head_time_us"))
+    tail_time_us = _as_float(selected_case.get("tail_time_us"))
+    risk_label = _risk_level_label(selected_result.get("risk_level"))
+    parts = [
+        f"{tower_label}{'同跳' if execution.job_type == 'tongtiao' else '普通'}计算",
+        f"最不利点 {head_time_us or 0:.2f}/{tail_time_us or 0:.2f} μs",
+        f"{risk_label}风险",
+    ]
+    risk_grade = _as_int(selected_result.get("risk_grade"))
+    if risk_grade is not None:
+        parts.append(f"规程法等级 {risk_grade}")
+    if execution.job_type == "tongtiao" and multi_phase_results:
+        dominant = multi_phase_results[-1]
+        parts.append(
+            f"{dominant.get('label') or '多相'} {dominant.get('flashover_phase') or '-'} 跳闸率 "
+            f"{_as_float(dominant.get('trip_rate')) or 0.0:.4f}"
+        )
+    elif _as_float(selected_result.get("counterstrike_trip_rate")) is not None:
+        parts.append(f"反击跳闸率 {_as_float(selected_result.get('counterstrike_trip_rate')) or 0.0:.4f}")
+    return "，".join(parts)
+
+
+def _build_waveform_case_cause(
+    execution: _WaveformExecutionProfile,
+    *,
+    head_time_us: float,
+    tail_time_us: float,
+) -> str:
+    return (
+        f"按{_waveform_label(execution.current_waveform)}波形、"
+        f"{_flashover_method_label(execution.flashover_method)}口径扫描 "
+        f"{head_time_us:.2f}/{tail_time_us:.2f} μs"
+    )
+
+
+def _build_waveform_case_recommendation(execution: _WaveformExecutionProfile) -> str:
+    if execution.job_type == "tongtiao":
+        return "建议结合多回线路相序、避雷器配置与同跳闪络相再做 ATP 复核"
+    return "建议结合波头/波尾最不利点继续复核绝缘配合与接地参数"
 
 
 def _grade_formula_snapshot_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -1483,6 +2164,129 @@ def _normalize_insulator_length_mm(value: float | None) -> float | None:
     if value is None:
         return None
     return round(value * 1000.0, 2) if value <= 20 else round(value, 2)
+
+
+def _normalize_choice(value: Any, *, aliases: Mapping[str, str], default: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return default
+    return aliases.get(text, aliases.get(text.lower(), default))
+
+
+def _normalize_positive_number(value: Any, *, default: float) -> float:
+    parsed = _as_float(value)
+    if parsed is None or parsed <= 0:
+        return round(default, 4)
+    return round(parsed, 4)
+
+
+def _build_scan_values(start: float, end: float, step: float) -> list[float]:
+    minimum = min(start, end)
+    maximum = max(start, end)
+    normalized_step = max(step, 0.01)
+    values: list[float] = []
+    current = minimum
+    while current <= maximum + 1e-9 and len(values) < _MAX_SCAN_AXIS_POINTS:
+        values.append(round(current, 4))
+        current += normalized_step
+    if values and values[-1] < round(maximum, 4):
+        values[-1] = round(maximum, 4)
+    if not values:
+        values.append(round(minimum, 4))
+    return list(dict.fromkeys(values))
+
+
+def _scaled_inverse(value: float | None, factor: float, *, digits: int) -> float | None:
+    if value is None:
+        return None
+    if math.isclose(factor, 0.0, abs_tol=1e-9):
+        return round(value, digits)
+    return round(max(value / factor, 0.0), digits)
+
+
+def _scaled_forward(value: float | None, factor: float, *, digits: int) -> float | None:
+    if value is None:
+        return None
+    return round(max(value * factor, 0.0), digits)
+
+
+def _clamp(value: float, *, minimum: float, maximum: float) -> float:
+    return max(minimum, min(value, maximum))
+
+
+def _merge_semicolon_text(existing: Any, addition: Any) -> str:
+    values = _split_semicolon_text(existing)
+    values.extend(_split_semicolon_text(addition))
+    return "；".join(dict.fromkeys(item for item in values if item))
+
+
+def _grade_head_time(value: float) -> int:
+    if value <= 2.0:
+        return 1
+    if value <= 2.3:
+        return 2
+    if value <= 2.6:
+        return 3
+    if value <= 3.0:
+        return 4
+    return 5
+
+
+def _grade_tail_time(value: float) -> int:
+    if value <= 30:
+        return 1
+    if value <= 40:
+        return 2
+    if value <= 50:
+        return 3
+    if value <= 60:
+        return 4
+    return 5
+
+
+def _waveform_label(value: str) -> str:
+    return {
+        "heidler": "Heidler",
+        "double_slope": "双斜角",
+        "double_exponential": "双指数",
+    }.get(value, value)
+
+
+def _flashover_method_label(value: str) -> str:
+    return {
+        "guideline": "规程法",
+        "intersection": "相交法",
+        "leader_development": "先导发展法",
+    }.get(value, value)
+
+
+def _phase_count_label(value: int) -> str:
+    return {
+        1: "单相",
+        2: "双相",
+        3: "三相",
+        4: "四相",
+        5: "五相",
+        6: "六相",
+    }.get(value, f"{value}相")
+
+
+def _risk_order(value: Any) -> int:
+    normalized = _normalize_risk_level(value)
+    if normalized == "high":
+        return 3
+    if normalized == "medium":
+        return 2
+    return 1
+
+
+def _risk_level_label(value: Any) -> str:
+    normalized = _normalize_risk_level(value)
+    if normalized == "high":
+        return "高"
+    if normalized == "medium":
+        return "中"
+    return "低"
 
 
 def _max_abs_float(*values: Any) -> float | None:
