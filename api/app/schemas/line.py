@@ -1,23 +1,18 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
-
-LineStatus = Literal["enabled", "disabled"]
-
 
 class LineSummary(BaseModel):
     id: str
     code: str
     name: str
     voltage_kv: int | None = None
-    tower_shape: str | None = None
     phase_sequence_json: dict[str, Any] = Field(default_factory=dict)
     arrester_install_json: dict[str, Any] = Field(default_factory=dict)
     lightning_param_json: dict[str, Any] = Field(default_factory=dict)
-    status: LineStatus
     tower_count: int = 0
     create_date: datetime
     create_user: str | None = None
@@ -34,21 +29,17 @@ class LineCreateRequest(BaseModel):
     code: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=255)
     voltage_kv: int | None = Field(default=None, ge=1, le=2000)
-    tower_shape: str | None = Field(default=None, max_length=64)
     phase_sequence_json: dict[str, Any] = Field(default_factory=dict)
     arrester_install_json: dict[str, Any] = Field(default_factory=dict)
     lightning_param_json: dict[str, Any] = Field(default_factory=dict)
-    status: LineStatus = "enabled"
 
 
 class LineUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     voltage_kv: int | None = Field(default=None, ge=1, le=2000)
-    tower_shape: str | None = Field(default=None, max_length=64)
     phase_sequence_json: dict[str, Any] | None = None
     arrester_install_json: dict[str, Any] | None = None
     lightning_param_json: dict[str, Any] | None = None
-    status: LineStatus | None = None
 
 
 class LineTowerSummary(BaseModel):

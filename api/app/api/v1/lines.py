@@ -40,11 +40,10 @@ router = APIRouter(prefix="/lines", tags=["lines"])
 @router.get("", response_model=LineListResponse)
 def get_line_list(
     keyword: str | None = Query(default=None),
-    status_filter: str | None = Query(default=None, alias="status"),
     _: CurrentUser = Depends(require_any_permission("line.read", "line.manage", "tower.read", "tower.manage")),
     db: Session = Depends(get_db),
 ) -> LineListResponse:
-    return list_lines(db, keyword=keyword, status_filter=status_filter)
+    return list_lines(db, keyword=keyword)
 
 
 @router.post("", response_model=LineSummary)

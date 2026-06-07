@@ -16,7 +16,6 @@ import {
   Select,
   Space,
   Table,
-  Tag,
   Typography,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -30,7 +29,6 @@ import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type {
   LineListResponse,
-  LineStatus,
   LineSummary,
   LineTowerImportResponse,
   LineTowerListResponse,
@@ -43,8 +41,6 @@ type LineFormValues = {
   code: string;
   name: string;
   voltage_level: string | null;
-  tower_shape: string;
-  status: LineStatus;
 };
 
 type TowerFormValues = {
@@ -77,17 +73,6 @@ type TowerProfileFormValues = {
   arrester_c: string;
   geometry_layers_json: string;
 };
-
-const STATUS_OPTIONS = [
-  { value: "all", label: "全部状态" },
-  { value: "enabled", label: "启用" },
-  { value: "disabled", label: "禁用" },
-] as const;
-
-const LINE_STATUS_OPTIONS = [
-  { value: "enabled", label: "启用" },
-  { value: "disabled", label: "禁用" },
-] as const;
 
 const TOWER_TYPE_OPTIONS = [
   { value: "", label: "全部塔型" },
@@ -157,8 +142,6 @@ const EMPTY_LINE_FORM: LineFormValues = {
   code: "",
   name: "",
   voltage_level: null,
-  tower_shape: "",
-  status: "enabled",
 };
 
 const EMPTY_TOWER_FORM: TowerFormValues = {
@@ -192,12 +175,6 @@ const EMPTY_TOWER_PROFILE_FORM: TowerProfileFormValues = {
   geometry_layers_json: "{}",
 };
 
-function formatStatus(status: string): string {
-  if (status === "enabled") return "启用";
-  if (status === "disabled") return "禁用";
-  return status || "-";
-}
-
 function resolveVoltageOptionFromKv(voltageKv: number | null): LineFormValues["voltage_level"] {
   if (voltageKv === null) {
     return null;
@@ -216,7 +193,6 @@ export default function AdminPowerLinesPage() {
   const [towerProfileForm] = Form.useForm<TowerProfileFormValues>();
 
   const [keyword, setKeyword] = useState("");
-  const [statusFilter, setStatusFilter] = useState<(typeof STATUS_OPTIONS)[number]["value"]>("all");
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const [selectedLineTouched, setSelectedLineTouched] = useState(false);
   const [towerKeyword, setTowerKeyword] = useState("");
@@ -244,12 +220,9 @@ export default function AdminPowerLinesPage() {
     if (keyword.trim()) {
       params.set("keyword", keyword.trim());
     }
-    if (statusFilter !== "all") {
-      params.set("status", statusFilter);
-    }
     const query = params.toString();
     return `/api/v1/lines${query ? `?${query}` : ""}`;
-  }, [keyword, statusFilter]);
+  }, [keyword]);
 
   const towerListPath = useMemo(() => {
     if (!selectedLineId) {
@@ -443,8 +416,6 @@ export default function AdminPowerLinesPage() {
         code: values.code.trim(),
         name: values.name.trim(),
         voltage_kv: values.voltage_level ? LINE_VOLTAGE_VALUE_TO_KV[values.voltage_level] : null,
-        tower_shape: values.tower_shape.trim() || null,
-        status: values.status,
       };
 
       if (editingLine) {
@@ -454,8 +425,6 @@ export default function AdminPowerLinesPage() {
           body: JSON.stringify({
             name: payload.name,
             voltage_kv: payload.voltage_kv,
-            tower_shape: payload.tower_shape,
-            status: payload.status,
           }),
         });
         if (!response.ok) {
@@ -708,8 +677,6 @@ export default function AdminPowerLinesPage() {
       code: line.code,
       name: line.name,
       voltage_level: resolveVoltageOptionFromKv(line.voltage_kv),
-      tower_shape: line.tower_shape ?? "",
-      status: line.status,
     });
     setLineModalOpen(true);
   };
@@ -775,7 +742,6 @@ export default function AdminPowerLinesPage() {
         title={(
           <Space size={8} wrap>
             <Typography.Text strong>{line.name}</Typography.Text>
-            <Tag color={line.status === "enabled" ? "success" : "default"}>{formatStatus(line.status)}</Tag>
           </Space>
         )}
         extra={canLineManage ? (
@@ -816,7 +782,6 @@ export default function AdminPowerLinesPage() {
             编码：<Typography.Text code>{line.code}</Typography.Text>
           </Typography.Text>
           <Typography.Text type="secondary">电压等级：{line.voltage_kv ?? "-"} kV</Typography.Text>
-          <Typography.Text type="secondary">塔形：{line.tower_shape || "-"}</Typography.Text>
           <Typography.Text type="secondary">杆塔总数：{line.tower_count}</Typography.Text>
           <Typography.Text type="secondary">
             更新时间：{new Date(line.update_date).toLocaleString()}
@@ -1046,11 +1011,6 @@ export default function AdminPowerLinesPage() {
                 onChange={(event) => setKeyword(event.target.value)}
                 placeholder="按线路编码/名称筛选"
               />
-              <Select
-                value={statusFilter}
-                options={[...STATUS_OPTIONS]}
-                onChange={(value) => setStatusFilter(value)}
-              />
               <Space direction="vertical" size={10} className="w-full overflow-y-auto pr-1" style={{ height: leftListHeight }}>
                 {lines.length === 0 ? (
                   <Empty description="暂无线路数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -1221,12 +1181,6 @@ export default function AdminPowerLinesPage() {
               placeholder="请选择电压等级"
               options={[...LINE_VOLTAGE_OPTIONS].map((item) => ({ value: item.value, label: item.label }))}
             />
-          </Form.Item>
-          <Form.Item name="tower_shape" label="塔形">
-            <Input />
-          </Form.Item>
-          <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
-            <Select options={[...LINE_STATUS_OPTIONS]} />
           </Form.Item>
         </Form>
       </Modal>

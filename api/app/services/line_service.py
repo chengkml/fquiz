@@ -52,11 +52,9 @@ def serialize_line(line: Line, *, tower_count: int = 0) -> LineSummary:
         code=line.code,
         name=line.name,
         voltage_kv=line.voltage_kv,
-        tower_shape=line.tower_shape,
         phase_sequence_json=line.phase_sequence_json or {},
         arrester_install_json=line.arrester_install_json or {},
         lightning_param_json=line.lightning_param_json or {},
-        status=line.status,  # type: ignore[arg-type]
         tower_count=tower_count,
         create_date=line.create_date,
         create_user=line.create_user,
@@ -98,7 +96,6 @@ def list_lines(
     db: Session,
     *,
     keyword: str | None,
-    status_filter: str | None,
 ) -> LineListResponse:
     stmt = select(Line)
     total_stmt = select(func.count()).select_from(Line)
@@ -109,10 +106,6 @@ def list_lines(
         predicate = or_(Line.code.ilike(like), Line.name.ilike(like))
         stmt = stmt.where(predicate)
         total_stmt = total_stmt.where(predicate)
-
-    if status_filter in {"enabled", "disabled"}:
-        stmt = stmt.where(Line.status == status_filter)
-        total_stmt = total_stmt.where(Line.status == status_filter)
 
     total = int(db.scalar(total_stmt) or 0)
     items = db.execute(stmt.order_by(Line.update_date.desc(), Line.code.asc())).scalars().all()
@@ -150,11 +143,10 @@ def create_line(
         code=payload.code.strip(),
         name=payload.name.strip(),
         voltage_kv=payload.voltage_kv,
-        tower_shape=_normalize_str(payload.tower_shape),
         phase_sequence_json=payload.phase_sequence_json,
         arrester_install_json=payload.arrester_install_json,
         lightning_param_json=payload.lightning_param_json,
-        status=payload.status,
+        status="enabled",
         create_user=actor_user_id,
         update_user=actor_user_id,
         create_date=now,
@@ -187,16 +179,12 @@ def update_line(
         line.name = str(update_data["name"]).strip()
     if "voltage_kv" in update_data:
         line.voltage_kv = update_data["voltage_kv"]
-    if "tower_shape" in update_data:
-        line.tower_shape = _normalize_str(update_data["tower_shape"])
     if "phase_sequence_json" in update_data and update_data["phase_sequence_json"] is not None:
         line.phase_sequence_json = dict(update_data["phase_sequence_json"])
     if "arrester_install_json" in update_data and update_data["arrester_install_json"] is not None:
         line.arrester_install_json = dict(update_data["arrester_install_json"])
     if "lightning_param_json" in update_data and update_data["lightning_param_json"] is not None:
         line.lightning_param_json = dict(update_data["lightning_param_json"])
-    if "status" in update_data and update_data["status"] is not None:
-        line.status = str(update_data["status"])
 
     line.update_user = actor_user_id
     line.update_date = utcnow()
@@ -564,7 +552,6 @@ def export_line_towers_to_csv(db: Session, *, line: Line) -> tuple[str, bytes]:
         "线路编号",
         "线路名称",
         "电压等级",
-        "塔形",
         "序号",
         "塔号",
         "杆塔模型",
@@ -595,7 +582,6 @@ def export_line_towers_to_csv(db: Session, *, line: Line) -> tuple[str, bytes]:
                 line.code,
                 line.name,
                 line.voltage_kv or "",
-                line.tower_shape or "",
                 tower.seq_no,
                 tower.tower_no,
                 tower.tower_model or "",
@@ -653,10 +639,6 @@ def _apply_line_metadata_from_csv(
     voltage = _parse_int(row.get("电压等级"))
     if voltage is not None:
         line.voltage_kv = voltage
-
-    tower_shape = _normalize_str(row.get("塔形"))
-    if tower_shape:
-        line.tower_shape = tower_shape
 
     line.phase_sequence_json = {
         "I": _normalize_str(row.get("I回相序")),

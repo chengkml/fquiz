@@ -513,18 +513,14 @@ export type ElevationApplyJobCreateResponse = {
   queued: boolean;
 };
 
-export type LineStatus = "enabled" | "disabled";
-
 export type LineSummary = {
   id: string;
   code: string;
   name: string;
   voltage_kv: number | null;
-  tower_shape: string | null;
   phase_sequence_json: Record<string, unknown>;
   arrester_install_json: Record<string, unknown>;
   lightning_param_json: Record<string, unknown>;
-  status: LineStatus;
   tower_count: number;
   create_date: string;
   create_user: string | null;
