@@ -26,6 +26,7 @@ from ...services.fl_analysis_service import (
     start_job,
 )
 from ...services.tower_profile_service import get_tower_profile_detail, upsert_tower_profile
+from ...services.tower_topology import TowerGeometryValidationError
 
 router = APIRouter(prefix="/fl-analysis", tags=["fl-analysis"])
 
@@ -49,7 +50,10 @@ def put_professional_tower_profile(
     current_user: CurrentUser = Depends(require_any_permission("tower.manage", "line.manage")),
     db: Session = Depends(get_db),
 ) -> TowerProfileDetail:
-    updated = upsert_tower_profile(db, tower_id, payload, actor=current_user.user)
+    try:
+        updated = upsert_tower_profile(db, tower_id, payload, actor=current_user.user)
+    except TowerGeometryValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="杆塔不存在")
     return updated

@@ -7,6 +7,7 @@ from ...core.database import get_db
 from ...core.dependencies import CurrentUser, require_any_permission, require_permission
 from ...schemas.tower_profile import TowerProfileDetail, TowerProfileUpsertRequest
 from ...services.tower_profile_service import get_tower_profile_detail, upsert_tower_profile
+from ...services.tower_topology import TowerGeometryValidationError
 
 router = APIRouter(prefix="/tower-profiles", tags=["tower-profiles"])
 
@@ -30,7 +31,10 @@ def put_tower_profile_endpoint(
     current_user: CurrentUser = Depends(require_permission("tower.manage")),
     db: Session = Depends(get_db),
 ) -> TowerProfileDetail:
-    item = upsert_tower_profile(db, tower_id, payload, actor=current_user.user)
+    try:
+        item = upsert_tower_profile(db, tower_id, payload, actor=current_user.user)
+    except TowerGeometryValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tower not found")
     return item

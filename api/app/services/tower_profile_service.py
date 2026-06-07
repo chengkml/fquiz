@@ -8,6 +8,7 @@ from ..models.line_tower import LineTower
 from ..models.tower_profile import TowerProfile
 from ..models.user import User
 from ..schemas.tower_profile import TowerProfileDetail, TowerProfileUpsertRequest
+from .tower_topology import normalize_profile_geometry_layers
 
 
 def get_tower_by_id(db: Session, tower_id: str) -> LineTower | None:
@@ -108,7 +109,15 @@ def upsert_tower_profile(
     profile.current_type = payload.current_type
     profile.current_head_time_us = payload.current_head_time_us
     profile.current_tail_time_us = payload.current_tail_time_us
-    profile.geometry_layers_json = payload.geometry_layers_json or {}
+    profile.geometry_layers_json = normalize_profile_geometry_layers(
+        payload.geometry_layers_json or {},
+        tower_model=tower.tower_model,
+        tower_type=tower.tower_type,
+        structure_kind=payload.structure_kind,
+        shield_wire_height_m=payload.shield_wire_height_m,
+        insulator_length_m=payload.insulator_length_m,
+        call_height_m=payload.call_height_m,
+    )
     profile.extra_profile_json = payload.extra_profile_json or {}
     profile.update_date = now
     profile.update_user = actor.id

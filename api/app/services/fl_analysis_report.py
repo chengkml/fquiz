@@ -5,6 +5,9 @@ from datetime import datetime
 from html import escape
 from typing import Any, Mapping, Sequence
 
+from .tower_topology import infer_line_kind as infer_topology_line_kind
+from .tower_topology import infer_structure_count as infer_topology_structure_count
+
 
 _RISK_LEVEL_LABELS = {
     "high": "高风险",
@@ -1184,16 +1187,13 @@ def _classify_lightning_zone_code(value: float | None) -> str | None:
 
 
 def _infer_line_kind(base: Mapping[str, Any], profile: Mapping[str, Any]) -> str:
-    marker = "|".join(
-        [
-            str(base.get("tower_model") or ""),
-            str(base.get("tower_type") or ""),
-            str(profile.get("structure_kind") or ""),
-        ]
-    ).lower()
-    if "直流" in marker or "zhiliu" in marker or marker.startswith("dc"):
-        return "dc"
-    return "ac"
+    geometry_layers = profile.get("geometry_layers_json") if isinstance(profile.get("geometry_layers_json"), Mapping) else {}
+    return infer_topology_line_kind(
+        tower_model=base.get("tower_model"),
+        tower_type=base.get("tower_type"),
+        structure_kind=profile.get("structure_kind"),
+        geometry_topology=geometry_layers.get("topology_kind") if isinstance(geometry_layers, Mapping) else None,
+    )
 
 
 def _infer_voltage_kv(base: Mapping[str, Any], profile: Mapping[str, Any], fallback_voltage: int | None) -> int | None:
@@ -1221,18 +1221,13 @@ def _infer_voltage_kv(base: Mapping[str, Any], profile: Mapping[str, Any], fallb
 
 
 def _infer_structure_count(base: Mapping[str, Any], profile: Mapping[str, Any]) -> int:
-    marker = "|".join(
-        [
-            str(base.get("tower_model") or ""),
-            str(base.get("tower_type") or ""),
-            str(profile.get("structure_kind") or ""),
-        ]
-    ).lower()
-    if "sihuita" in marker or "四回" in marker:
-        return 4
-    if "guxing" in marker or "双回" in marker:
-        return 2
-    return 1
+    geometry_layers = profile.get("geometry_layers_json") if isinstance(profile.get("geometry_layers_json"), Mapping) else {}
+    return infer_topology_structure_count(
+        tower_model=base.get("tower_model"),
+        tower_type=base.get("tower_type"),
+        structure_kind=profile.get("structure_kind"),
+        geometry_topology=geometry_layers.get("topology_kind") if isinstance(geometry_layers, Mapping) else None,
+    )
 
 
 def _standard_values_for_line(*, is_dc: bool, voltage_kv: int, structure_count: int) -> tuple[float, float]:

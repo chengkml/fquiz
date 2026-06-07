@@ -229,6 +229,292 @@ function parseJsonObjectText(value: string, label: string): Record<string, unkno
   return parsed as Record<string, unknown>;
 }
 
+type TowerTopologyKind = "single" | "double" | "quad" | "dc";
+type TowerCircuitKey = "I" | "II" | "III" | "IV";
+type TowerPhaseKey = "upper" | "middle" | "lower";
+type TowerGeometryMetricKey = "phase_spacing_m" | "phase_height_m";
+type TowerArresterField = "arrester_a" | "arrester_b" | "arrester_c";
+type TowerProfileGeometryEditorMode = "structured" | "advanced";
+type TowerTopologySpec = {
+  kind: TowerTopologyKind;
+  label: string;
+  description: string;
+  circuitKeys: TowerCircuitKey[];
+  phaseKeys: TowerPhaseKey[];
+  phaseLabels: Record<TowerPhaseKey, string>;
+  phaseSequenceFields: Array<1 | 2 | 3 | 4>;
+  arresterFields: Array<{ field: TowerArresterField; label: string }>;
+};
+
+const ALL_TOWER_CIRCUIT_KEYS: TowerCircuitKey[] = ["I", "II", "III", "IV"];
+const TOWER_TOPOLOGY_KIND_OPTIONS: Array<{ label: string; value: TowerTopologyKind }> = [
+  { label: "单回", value: "single" },
+  { label: "双回", value: "double" },
+  { label: "四回", value: "quad" },
+  { label: "直流", value: "dc" },
+];
+const TOWER_PROFILE_EDITOR_MODE_OPTIONS: Array<{ label: string; value: TowerProfileGeometryEditorMode }> = [
+  { label: "专用编辑器", value: "structured" },
+  { label: "高级 JSON", value: "advanced" },
+];
+const TOWER_TOPOLOGY_SPECS: Record<TowerTopologyKind, TowerTopologySpec> = {
+  single: {
+    kind: "single",
+    label: "单回路交流塔",
+    description: "按 I 回上中下三层导线录入，适合源端单回杆塔窗体。",
+    circuitKeys: ["I"],
+    phaseKeys: ["upper", "middle", "lower"],
+    phaseLabels: { upper: "上相", middle: "中相", lower: "下相" },
+    phaseSequenceFields: [1],
+    arresterFields: [
+      { field: "arrester_a", label: "A相避雷器" },
+      { field: "arrester_b", label: "B相避雷器" },
+      { field: "arrester_c", label: "C相避雷器" },
+    ],
+  },
+  double: {
+    kind: "double",
+    label: "双回路交流塔",
+    description: "按 I / II 回分别录入上中下三层导线几何。",
+    circuitKeys: ["I", "II"],
+    phaseKeys: ["upper", "middle", "lower"],
+    phaseLabels: { upper: "上相", middle: "中相", lower: "下相" },
+    phaseSequenceFields: [1, 2],
+    arresterFields: [
+      { field: "arrester_a", label: "A相避雷器" },
+      { field: "arrester_b", label: "B相避雷器" },
+      { field: "arrester_c", label: "C相避雷器" },
+    ],
+  },
+  quad: {
+    kind: "quad",
+    label: "四回路交流塔",
+    description: "按 I / II / III / IV 回分别录入上中下三层导线几何。",
+    circuitKeys: ["I", "II", "III", "IV"],
+    phaseKeys: ["upper", "middle", "lower"],
+    phaseLabels: { upper: "上相", middle: "中相", lower: "下相" },
+    phaseSequenceFields: [1, 2, 3, 4],
+    arresterFields: [
+      { field: "arrester_a", label: "A相避雷器" },
+      { field: "arrester_b", label: "B相避雷器" },
+      { field: "arrester_c", label: "C相避雷器" },
+    ],
+  },
+  dc: {
+    kind: "dc",
+    label: "直流塔",
+    description: "按左极 / 右极两侧导线录入，内部映射到 I 回几何结构。",
+    circuitKeys: ["I"],
+    phaseKeys: ["upper", "lower"],
+    phaseLabels: { upper: "左极", middle: "中极", lower: "右极" },
+    phaseSequenceFields: [],
+    arresterFields: [
+      { field: "arrester_a", label: "左极避雷器" },
+      { field: "arrester_c", label: "右极避雷器" },
+    ],
+  },
+};
+
+function asObjectRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || Array.isArray(value) || typeof value !== "object") {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function parseTowerTopologyOverride(value: unknown): TowerTopologyKind | null {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (["single", "single_circuit", "1", "1h", "1hui", "1回", "单回"].includes(normalized)) {
+    return "single";
+  }
+  if (["double", "double_circuit", "2", "2h", "2hui", "2回", "双回"].includes(normalized)) {
+    return "double";
+  }
+  if (["quad", "four", "four_circuit", "4", "4h", "4hui", "4回", "四回"].includes(normalized)) {
+    return "quad";
+  }
+  if (["dc", "hvdc", "zhiliu", "vzhiliu", "直流"].includes(normalized)) {
+    return "dc";
+  }
+  return null;
+}
+
+function inferTowerTopology(values: {
+  towerModel?: string | null;
+  towerType?: string | null;
+  structureKind?: string | null;
+  geometryLayers?: Record<string, unknown>;
+}): TowerTopologyKind {
+  const override = parseTowerTopologyOverride(values.geometryLayers?.topology_kind);
+  if (override) {
+    return override;
+  }
+  const marker = [
+    values.towerModel ?? "",
+    values.towerType ?? "",
+    values.structureKind ?? "",
+  ].join("|").toLowerCase();
+  if (
+    marker.includes("直流")
+    || marker.includes("zhiliu")
+    || marker.includes("vzhiliu")
+    || marker.startsWith("dc")
+    || marker.includes("|dc")
+    || marker.includes("dc_")
+  ) {
+    return "dc";
+  }
+  if (marker.includes("sihuita") || marker.includes("四回") || marker.includes("4回")) {
+    return "quad";
+  }
+  if (marker.includes("guxing") || marker.includes("双回") || marker.includes("2回")) {
+    return "double";
+  }
+  return "single";
+}
+
+function toGeometryNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function normalizeGeometryForTopology(
+  geometryLayers: Record<string, unknown>,
+  topology: TowerTopologyKind,
+): Record<string, unknown> {
+  const spec = TOWER_TOPOLOGY_SPECS[topology];
+  const next: Record<string, unknown> = {};
+
+  Object.entries(geometryLayers).forEach(([key, value]) => {
+    if (!ALL_TOWER_CIRCUIT_KEYS.includes(key as TowerCircuitKey)) {
+      next[key] = value;
+    }
+  });
+
+  next.topology_kind = topology;
+  spec.circuitKeys.forEach((circuitKey) => {
+    const rawCircuit = asObjectRecord(geometryLayers[circuitKey]);
+    const nextCircuit: Record<string, unknown> = { ...(rawCircuit ?? {}) };
+    const spacing = { ...(asObjectRecord(rawCircuit?.phase_spacing_m) ?? {}) };
+    const height = { ...(asObjectRecord(rawCircuit?.phase_height_m) ?? {}) };
+
+    if (topology === "dc") {
+      delete spacing.middle;
+      delete height.middle;
+    }
+
+    nextCircuit.phase_spacing_m = spacing;
+    nextCircuit.phase_height_m = height;
+    next[circuitKey] = nextCircuit;
+  });
+
+  return next;
+}
+
+function getCircuitGeometryMetric(
+  geometryLayers: Record<string, unknown>,
+  circuitKey: TowerCircuitKey,
+  metricKey: TowerGeometryMetricKey,
+  phaseKey: TowerPhaseKey,
+): number | null {
+  const circuit = asObjectRecord(geometryLayers[circuitKey]);
+  const metric = asObjectRecord(circuit?.[metricKey]);
+  return toGeometryNumber(metric?.[phaseKey]);
+}
+
+function setCircuitGeometryMetric(
+  geometryLayers: Record<string, unknown>,
+  topology: TowerTopologyKind,
+  circuitKey: TowerCircuitKey,
+  metricKey: TowerGeometryMetricKey,
+  phaseKey: TowerPhaseKey,
+  value: number | null,
+): Record<string, unknown> {
+  const next = normalizeGeometryForTopology(geometryLayers, topology);
+  const circuit = { ...(asObjectRecord(next[circuitKey]) ?? {}) };
+  const metric = { ...(asObjectRecord(circuit[metricKey]) ?? {}) };
+
+  if (value === null) {
+    delete metric[phaseKey];
+  } else {
+    metric[phaseKey] = value;
+  }
+
+  circuit[metricKey] = metric;
+  next[circuitKey] = circuit;
+  return next;
+}
+
+function getLightningWireMetric(
+  geometryLayers: Record<string, unknown>,
+  field: "left_mid_distance_m" | "right_mid_distance_m" | "height_m",
+): number | null {
+  const lightningWire = asObjectRecord(geometryLayers.lightning_wire);
+  return toGeometryNumber(lightningWire?.[field]);
+}
+
+function setLightningWireMetric(
+  geometryLayers: Record<string, unknown>,
+  topology: TowerTopologyKind,
+  field: "left_mid_distance_m" | "right_mid_distance_m" | "height_m",
+  value: number | null,
+): Record<string, unknown> {
+  const next = normalizeGeometryForTopology(geometryLayers, topology);
+  const lightningWire = { ...(asObjectRecord(next.lightning_wire) ?? {}) };
+
+  if (value === null) {
+    delete lightningWire[field];
+  } else {
+    lightningWire[field] = value;
+  }
+
+  next.lightning_wire = lightningWire;
+  return next;
+}
+
+function validateStructuredGeometry(
+  geometryLayers: Record<string, unknown>,
+  topology: TowerTopologyKind,
+): string | null {
+  const spec = TOWER_TOPOLOGY_SPECS[topology];
+  for (const circuitKey of spec.circuitKeys) {
+    for (const phaseKey of spec.phaseKeys) {
+      const phaseLabel = spec.phaseLabels[phaseKey];
+      const spacing = getCircuitGeometryMetric(geometryLayers, circuitKey, "phase_spacing_m", phaseKey);
+      if (spacing === null || Math.abs(spacing) <= Number.EPSILON) {
+        return `${circuitKey}回${phaseLabel}导线中距不能为空`;
+      }
+      const height = getCircuitGeometryMetric(geometryLayers, circuitKey, "phase_height_m", phaseKey);
+      if (height === null || height <= 0) {
+        return `${circuitKey}回${phaseLabel}导线高度必须大于 0`;
+      }
+    }
+  }
+
+  const leftDistance = getLightningWireMetric(geometryLayers, "left_mid_distance_m");
+  if (leftDistance === null || Math.abs(leftDistance) <= Number.EPSILON) {
+    return "左避雷中距不能为空";
+  }
+
+  const rightDistance = getLightningWireMetric(geometryLayers, "right_mid_distance_m");
+  if (rightDistance === null || Math.abs(rightDistance) <= Number.EPSILON) {
+    return "右避雷中距不能为空";
+  }
+
+  return null;
+}
+
 export default function AdminPowerLinesPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
@@ -238,6 +524,9 @@ export default function AdminPowerLinesPage() {
   const [lineForm] = Form.useForm<LineFormValues>();
   const [towerForm] = Form.useForm<TowerFormValues>();
   const [towerProfileForm] = Form.useForm<TowerProfileFormValues>();
+  const watchedTowerProfileStructureKind = Form.useWatch("structure_kind", towerProfileForm) as string | undefined;
+  const watchedTowerProfileGeometryText = (Form.useWatch("geometry_layers_json", towerProfileForm) as string | undefined)
+    ?? EMPTY_TOWER_PROFILE_FORM.geometry_layers_json;
 
   const [keyword, setKeyword] = useState("");
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
@@ -250,6 +539,7 @@ export default function AdminPowerLinesPage() {
   const [lineModalOpen, setLineModalOpen] = useState(false);
   const [towerModalOpen, setTowerModalOpen] = useState(false);
   const [towerProfileModalOpen, setTowerProfileModalOpen] = useState(false);
+  const [towerProfileGeometryEditorMode, setTowerProfileGeometryEditorMode] = useState<TowerProfileGeometryEditorMode>("structured");
   const [editingLine, setEditingLine] = useState<LineSummary | null>(null);
   const [editingTower, setEditingTower] = useState<LineTowerSummary | null>(null);
   const [editingTowerProfileTower, setEditingTowerProfileTower] = useState<LineTowerSummary | null>(null);
@@ -364,6 +654,60 @@ export default function AdminPowerLinesPage() {
       return (await response.json()) as TowerProfileDetail;
     },
   });
+  const towerProfileGeometryParseResult = useMemo(() => {
+    try {
+      return {
+        geometry: parseJsonObjectText(String(watchedTowerProfileGeometryText ?? "{}"), "回路几何 JSON"),
+        error: null as string | null,
+      };
+    } catch (candidate) {
+      return {
+        geometry: {} as Record<string, unknown>,
+        error: candidate instanceof Error ? candidate.message : "回路几何 JSON 解析失败",
+      };
+    }
+  }, [watchedTowerProfileGeometryText]);
+  const towerProfileTopology = useMemo(
+    () => inferTowerTopology({
+      towerModel: editingTowerProfileTower?.tower_model ?? towerProfileQuery.data?.tower_model ?? "",
+      towerType: editingTowerProfileTower?.tower_type ?? towerProfileQuery.data?.tower_type ?? "",
+      structureKind: watchedTowerProfileStructureKind ?? towerProfileQuery.data?.structure_kind ?? "",
+      geometryLayers: towerProfileGeometryParseResult.geometry,
+    }),
+    [
+      editingTowerProfileTower?.tower_model,
+      editingTowerProfileTower?.tower_type,
+      towerProfileGeometryParseResult.geometry,
+      towerProfileQuery.data?.structure_kind,
+      towerProfileQuery.data?.tower_model,
+      towerProfileQuery.data?.tower_type,
+      watchedTowerProfileStructureKind,
+    ],
+  );
+  const towerProfileTopologySpec = TOWER_TOPOLOGY_SPECS[towerProfileTopology];
+
+  const updateTowerProfileGeometryText = useCallback(
+    (updater: (current: Record<string, unknown>) => Record<string, unknown>) => {
+      let currentGeometry: Record<string, unknown> = {};
+      try {
+        currentGeometry = parseJsonObjectText(
+          String(towerProfileForm.getFieldValue("geometry_layers_json") ?? "{}"),
+          "回路几何 JSON",
+        );
+      } catch {
+        currentGeometry = {};
+      }
+      towerProfileForm.setFieldValue("geometry_layers_json", formatJsonText(updater(currentGeometry)));
+    },
+    [towerProfileForm],
+  );
+
+  const handleTowerProfileTopologyChange = useCallback(
+    (nextTopology: TowerTopologyKind) => {
+      updateTowerProfileGeometryText((currentGeometry) => normalizeGeometryForTopology(currentGeometry, nextTopology));
+    },
+    [updateTowerProfileGeometryText],
+  );
 
   const refreshLines = useCallback(async () => {
     await queryClient.invalidateQueries({
@@ -807,6 +1151,7 @@ export default function AdminPowerLinesPage() {
   const openTowerProfileModal = (item: LineTowerSummary) => {
     setEditingTowerProfileTower(item);
     towerProfileForm.setFieldsValue(EMPTY_TOWER_PROFILE_FORM);
+    setTowerProfileGeometryEditorMode("structured");
     setTowerProfileModalOpen(true);
   };
 
@@ -1381,40 +1726,54 @@ export default function AdminPowerLinesPage() {
             <Form.Item name="stroke_mode" label="绕击/反击模式">
               <Input placeholder="如：绕击、反击" />
             </Form.Item>
-            <Form.Item name="phase_sequence_1" label="I回相序">
-              <Input />
-            </Form.Item>
-            <Form.Item name="phase_sequence_2" label="II回相序">
-              <Input />
-            </Form.Item>
-            <Form.Item name="phase_sequence_3" label="III回相序">
-              <Input />
-            </Form.Item>
-            <Form.Item name="phase_sequence_4" label="IV回相序">
-              <Input />
-            </Form.Item>
-            <Form.Item name="arrester_a" label="A相避雷器">
-              <Select allowClear options={ARRESTER_INSTALL_OPTIONS} />
-            </Form.Item>
-            <Form.Item name="arrester_b" label="B相避雷器">
-              <Select allowClear options={ARRESTER_INSTALL_OPTIONS} />
-            </Form.Item>
-            <Form.Item name="arrester_c" label="C相避雷器">
-              <Select allowClear options={ARRESTER_INSTALL_OPTIONS} />
-            </Form.Item>
+            {towerProfileTopologySpec.phaseSequenceFields.map((circuitIndex) => (
+              <Form.Item
+                key={`phase-sequence-${circuitIndex}`}
+                name={`phase_sequence_${circuitIndex}` as "phase_sequence_1" | "phase_sequence_2" | "phase_sequence_3" | "phase_sequence_4"}
+                label={`${["I", "II", "III", "IV"][circuitIndex - 1]}回相序`}
+                rules={towerProfileGeometryEditorMode === "structured"
+                  ? [{ required: true, message: `请输入${["I", "II", "III", "IV"][circuitIndex - 1]}回相序` }]
+                  : undefined}
+              >
+                <Input placeholder="如：ABC、BAC" />
+              </Form.Item>
+            ))}
+            {towerProfileTopologySpec.arresterFields.map((item) => (
+              <Form.Item key={item.field} name={item.field} label={item.label}>
+                <Select allowClear options={ARRESTER_INSTALL_OPTIONS} />
+              </Form.Item>
+            ))}
             <Form.Item name="protection_angle_left_deg" label="左保护角">
               <InputNumber className="w-full" precision={4} />
             </Form.Item>
             <Form.Item name="protection_angle_right_deg" label="右保护角">
               <InputNumber className="w-full" precision={4} />
             </Form.Item>
-            <Form.Item name="shield_wire_height_m" label="避雷线高度(m)">
+            <Form.Item
+              name="shield_wire_height_m"
+              label="避雷线高度(m)"
+              rules={towerProfileGeometryEditorMode === "structured"
+                ? [{ required: true, message: "请输入避雷线高度(m)" }]
+                : undefined}
+            >
               <InputNumber className="w-full" precision={4} />
             </Form.Item>
-            <Form.Item name="insulator_length_m" label="绝缘子串长度(mm)">
+            <Form.Item
+              name="insulator_length_m"
+              label="绝缘子串长度(mm)"
+              rules={towerProfileGeometryEditorMode === "structured"
+                ? [{ required: true, message: "请输入绝缘子串长度(mm)" }]
+                : undefined}
+            >
               <InputNumber className="w-full" precision={4} />
             </Form.Item>
-            <Form.Item name="call_height_m" label="杆塔呼高(m)">
+            <Form.Item
+              name="call_height_m"
+              label="杆塔呼高(m)"
+              rules={towerProfileGeometryEditorMode === "structured"
+                ? [{ required: true, message: "请输入杆塔呼高(m)" }]
+                : undefined}
+            >
               <InputNumber className="w-full" precision={4} />
             </Form.Item>
             <Form.Item name="angle_deg" label="电角度">
@@ -1436,21 +1795,170 @@ export default function AdminPowerLinesPage() {
               <InputNumber className="w-full" precision={4} />
             </Form.Item>
           </div>
+          <div className="space-y-3">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+              <div className="space-y-2">
+                <Typography.Text strong>专用编辑器类型</Typography.Text>
+                <Segmented<TowerTopologyKind>
+                  block
+                  options={TOWER_TOPOLOGY_KIND_OPTIONS}
+                  value={towerProfileTopology}
+                  onChange={(value) => {
+                    handleTowerProfileTopologyChange(value);
+                  }}
+                />
+              </div>
+              <div className="space-y-2 xl:min-w-[240px]">
+                <Typography.Text strong>录入模式</Typography.Text>
+                <Segmented<TowerProfileGeometryEditorMode>
+                  block
+                  options={TOWER_PROFILE_EDITOR_MODE_OPTIONS}
+                  value={towerProfileGeometryEditorMode}
+                  onChange={(value) => {
+                    setTowerProfileGeometryEditorMode(value);
+                  }}
+                />
+              </div>
+            </div>
+            <Alert
+              showIcon
+              type="info"
+              message={`当前使用 ${towerProfileTopologySpec.label}`}
+              description={towerProfileTopologySpec.description}
+            />
+            {towerProfileGeometryEditorMode === "structured" ? (
+              <>
+                {towerProfileGeometryParseResult.error ? (
+                  <Alert
+                    showIcon
+                    type="warning"
+                    message="当前几何 JSON 无法解析"
+                    description={`${towerProfileGeometryParseResult.error}。继续编辑将以当前拓扑的空白结构重新生成几何。`}
+                  />
+                ) : null}
+                <Typography.Text type="secondary">
+                  相序用于标识上/中/下层导线对应的 A/B/C 顺序；直流模式会把左极/右极映射到 I 回几何。
+                </Typography.Text>
+                <div className="grid gap-3 xl:grid-cols-2">
+                  {towerProfileTopologySpec.circuitKeys.map((circuitKey) => (
+                    <div key={circuitKey} className="rounded-lg border border-slate-200 p-4">
+                      <Typography.Text strong>
+                        {towerProfileTopology === "dc" ? "直流极导线几何" : `${circuitKey}回导线几何`}
+                      </Typography.Text>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        {towerProfileTopologySpec.phaseKeys.map((phaseKey) => (
+                          <Form.Item
+                            key={`${circuitKey}-${phaseKey}-spacing`}
+                            label={`${towerProfileTopologySpec.phaseLabels[phaseKey]}导线中距(m)`}
+                          >
+                            <InputNumber
+                              className="w-full"
+                              precision={4}
+                              value={getCircuitGeometryMetric(
+                                towerProfileGeometryParseResult.geometry,
+                                circuitKey,
+                                "phase_spacing_m",
+                                phaseKey,
+                              )}
+                              onChange={(value) => {
+                                updateTowerProfileGeometryText((currentGeometry) => setCircuitGeometryMetric(
+                                  currentGeometry,
+                                  towerProfileTopology,
+                                  circuitKey,
+                                  "phase_spacing_m",
+                                  phaseKey,
+                                  value,
+                                ));
+                              }}
+                            />
+                          </Form.Item>
+                        ))}
+                        {towerProfileTopologySpec.phaseKeys.map((phaseKey) => (
+                          <Form.Item
+                            key={`${circuitKey}-${phaseKey}-height`}
+                            label={`${towerProfileTopologySpec.phaseLabels[phaseKey]}导线高度(m)`}
+                          >
+                            <InputNumber
+                              className="w-full"
+                              precision={4}
+                              value={getCircuitGeometryMetric(
+                                towerProfileGeometryParseResult.geometry,
+                                circuitKey,
+                                "phase_height_m",
+                                phaseKey,
+                              )}
+                              onChange={(value) => {
+                                updateTowerProfileGeometryText((currentGeometry) => setCircuitGeometryMetric(
+                                  currentGeometry,
+                                  towerProfileTopology,
+                                  circuitKey,
+                                  "phase_height_m",
+                                  phaseKey,
+                                  value,
+                                ));
+                              }}
+                            />
+                          </Form.Item>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <Form.Item label="左避雷中距(m)">
+                    <InputNumber
+                      className="w-full"
+                      precision={4}
+                      value={getLightningWireMetric(towerProfileGeometryParseResult.geometry, "left_mid_distance_m")}
+                      onChange={(value) => {
+                        updateTowerProfileGeometryText((currentGeometry) => setLightningWireMetric(
+                          currentGeometry,
+                          towerProfileTopology,
+                          "left_mid_distance_m",
+                          value,
+                        ));
+                      }}
+                    />
+                  </Form.Item>
+                  <Form.Item label="右避雷中距(m)">
+                    <InputNumber
+                      className="w-full"
+                      precision={4}
+                      value={getLightningWireMetric(towerProfileGeometryParseResult.geometry, "right_mid_distance_m")}
+                      onChange={(value) => {
+                        updateTowerProfileGeometryText((currentGeometry) => setLightningWireMetric(
+                          currentGeometry,
+                          towerProfileTopology,
+                          "right_mid_distance_m",
+                          value,
+                        ));
+                      }}
+                    />
+                  </Form.Item>
+                  <Form.Item label="几何拓扑标记">
+                    <Input value={towerProfileTopology} disabled />
+                  </Form.Item>
+                </div>
+              </>
+            ) : null}
+          </div>
           <div className="grid gap-3 xl:grid-cols-2">
             <Form.Item
               name="geometry_layers_json"
-              label="回路几何 JSON"
+              label={towerProfileGeometryEditorMode === "structured" ? "回路几何 JSON（自动生成）" : "回路几何 JSON"}
               rules={[{
                 validator: async (_, value) => {
-                  if (!value || !String(value).trim()) {
-                    return;
+                  const parsed = parseJsonObjectText(String(value ?? "{}"), "回路几何 JSON");
+                  if (towerProfileGeometryEditorMode === "structured") {
+                    const errorMessage = validateStructuredGeometry(parsed, towerProfileTopology);
+                    if (errorMessage) {
+                      throw new Error(errorMessage);
+                    }
                   }
-                  parseJsonObjectText(String(value), "回路几何 JSON");
                 },
-                message: "请输入合法 JSON 对象",
               }]}
             >
-              <Input.TextArea rows={12} spellCheck={false} />
+              <Input.TextArea rows={12} spellCheck={false} readOnly={towerProfileGeometryEditorMode === "structured"} />
             </Form.Item>
             <Form.Item
               name="extra_profile_json"
