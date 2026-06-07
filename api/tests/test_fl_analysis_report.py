@@ -22,6 +22,9 @@ def _sample_report_data() -> dict[str, object]:
             "risk_job_name": "示例线路-风险评估",
             "mitigation_job_id": "mit-job-1",
             "mitigation_job_name": "示例线路-措施推荐",
+            "scenario_job_id": "scenario-job-1",
+            "scenario_job_name": "示例线路-加装避雷器复算",
+            "scenario_base_job_type": "normal",
         },
         "risk_rows": [
             {
@@ -108,6 +111,19 @@ def _sample_report_data() -> dict[str, object]:
                 },
             }
         ],
+        "selected_scenario_rows": [
+            {
+                "tower_id": "tower-1",
+                "tower_no": "001",
+                "risk_level": "low",
+                "result_json": {
+                    "counterstrike_withstand_ka": 112.45,
+                    "counterstrike_trip_rate": 0.0215,
+                    "shielding_withstand_ka": 136.2,
+                    "shielding_trip_rate": 0.0085,
+                },
+            }
+        ],
     }
 
 
@@ -124,6 +140,9 @@ def test_build_report_summary_payload_counts_risk_and_actions() -> None:
     assert summary["mitigation_action_counts"]["接地治理"] == 1
     assert summary["mitigation_action_counts"]["安装避雷器"] == 1
     assert summary["has_mitigation_data"] is True
+    assert summary["scenario_row_count"] == 1
+    assert summary["post_recalc_risk_counts"] == {"high": 0, "medium": 0, "low": 1}
+    assert summary["has_scenario_data"] is True
 
 
 def test_build_report_document_renders_word_compatible_html() -> None:
@@ -136,4 +155,6 @@ def test_build_report_document_renders_word_compatible_html() -> None:
     assert "雷害风险评估结果" in html
     assert "差异化防雷措施与预期效果" in html
     assert "安装避雷器" in html
+    assert "表14 采取措施后的计算结果表" in html
+    assert "反击耐雷水平(kA)" in html
     assert "001" in html

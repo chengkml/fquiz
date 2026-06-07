@@ -186,10 +186,18 @@ def create_job(
             )
 
     execution_options = _normalize_execution_options(payload.job_type, payload.execution_options_json or {})
+    external_adapter = payload.external_adapter
+    adapter_config_json = payload.adapter_config_json or {}
     if payload.job_type == "mitigation":
         total_tower_count = _validate_mitigation_options(db, line_id=line.id, execution_options=execution_options)
     elif payload.job_type == "report":
         total_tower_count = _validate_report_options(db, line_id=line.id, execution_options=execution_options)
+    elif payload.job_type == "scenario":
+        scenario_config = _validate_scenario_options(db, line_id=line.id, execution_options=execution_options)
+        total_tower_count = int(scenario_config["total_tower_count"])
+        execution_options = dict(scenario_config["execution_options"])
+        external_adapter = str(scenario_config["external_adapter"])
+        adapter_config_json = dict(scenario_config["adapter_config_json"])
     else:
         total_tower_count = int(
             db.scalar(
@@ -198,16 +206,16 @@ def create_job(
             or 0
         )
     if payload.job_type in {"normal", "tongtiao"}:
-        if payload.external_adapter in {"atp", "wine"}:
+        if external_adapter in {"atp", "wine"}:
             try:
                 resolve_external_waveform_job(
                     db,
-                    external_adapter=payload.external_adapter,
-                    adapter_config_json=payload.adapter_config_json or {},
+                    external_adapter=external_adapter,
+                    adapter_config_json=adapter_config_json,
                 )
             except RuntimeError as exc:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-        elif payload.external_adapter != "placeholder":
+        elif external_adapter != "placeholder":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="普通计算和同跳计算仅支持 placeholder/atp/wine 适配器",
@@ -223,8 +231,8 @@ def create_job(
         source_kind="line",
         status="pending",
         total_tower_count=total_tower_count,
-        external_adapter=payload.external_adapter,
-        adapter_config_json=payload.adapter_config_json or {},
+        external_adapter=external_adapter,
+        adapter_config_json=adapter_config_json,
         execution_options_json=execution_options,
         result_summary_json={},
         create_date=now,
@@ -379,6 +387,7 @@ def execute_job(job_id: str) -> None:
             )
             return
 
+        waveform_job_type = _resolve_waveform_job_type(job_type=job.job_type, execution_options=execution_options)
         towers = _load_job_towers(db, job=job, execution_options=execution_options)
         if not towers:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前线路没有可分析的杆塔数据")
@@ -426,7 +435,7 @@ def execute_job(job_id: str) -> None:
         external_job = None
         stdout_chunks: list[str] = []
         stderr_chunks: list[str] = []
-        if job.job_type in {"normal", "tongtiao"} and job.external_adapter in {"atp", "wine"}:
+        if waveform_job_type in {"normal", "tongtiao"} and job.external_adapter in {"atp", "wine"}:
             external_job = resolve_external_waveform_job(
                 db,
                 external_adapter=job.external_adapter,
@@ -442,6 +451,8 @@ def execute_job(job_id: str) -> None:
                 "base_tower_json": snapshot.base_tower_json or {},
                 "profile_json": snapshot.profile_json or {},
             }
+            if job.job_type == "scenario":
+                payload["profile_json"] = _apply_scenario_profile_json_overrides(snapshot.profile_json or {})
             source_result = source_result_map.get(snapshot.tower_id)
             if source_result:
                 payload["source_result_json"] = source_result
@@ -450,7 +461,7 @@ def execute_job(job_id: str) -> None:
                     payload,
                     non_construction=bool(execution_options.get("non_construction")),
                 )
-            elif job.job_type == "normal":
+            elif waveform_job_type == "normal":
                 baseline_result = grade_normal_snapshot_payload(payload, execution_options=execution_options)
                 if external_job is not None:
                     execution = execute_external_waveform_tower_analysis(
@@ -469,7 +480,7 @@ def execute_job(job_id: str) -> None:
                         stderr_chunks.append(f"[{snapshot.tower_no}] {execution.stderr_text}")
                 else:
                     graded = baseline_result
-            elif job.job_type == "tongtiao":
+            elif waveform_job_type == "tongtiao":
                 baseline_result = grade_tongtiao_snapshot_payload(payload, execution_options=execution_options)
                 if external_job is not None:
                     execution = execute_external_waveform_tower_analysis(
@@ -507,7 +518,7 @@ def execute_job(job_id: str) -> None:
             _accumulate_result_summary(summary, graded)
 
             tower = tower_map.get(snapshot.tower_id)
-            if tower is not None and job.job_type != "mitigation":
+            if tower is not None and job.job_type not in {"mitigation", "scenario"}:
                 tower.risk_level = graded["risk_level"]
                 tower.update_date = utcnow()
                 tower.update_user = job.update_user or job.create_user
@@ -522,7 +533,22 @@ def execute_job(job_id: str) -> None:
             summary["source_job_id"] = execution_options.get("source_job_id")
             summary["source_run_id"] = execution_options.get("source_run_id")
             summary["non_construction"] = bool(execution_options.get("non_construction"))
-        elif job.job_type in {"normal", "tongtiao"}:
+        elif job.job_type == "scenario":
+            summary["selected_tower_count"] = len(towers)
+            summary["source_job_id"] = execution_options.get("source_job_id")
+            summary["source_run_id"] = execution_options.get("source_run_id")
+            summary["source_job_type"] = execution_options.get("source_job_type")
+            summary["mitigation_job_id"] = execution_options.get("mitigation_job_id")
+            summary["mitigation_job_name"] = execution_options.get("mitigation_job_name")
+            summary["risk_job_id"] = execution_options.get("risk_job_id")
+            summary["risk_job_name"] = execution_options.get("risk_job_name")
+            summary["base_job_id"] = execution_options.get("base_job_id")
+            summary["base_job_name"] = execution_options.get("base_job_name")
+            summary["base_job_type"] = waveform_job_type
+            summary["workflow"] = _workflow_summary_from_execution_options(execution_options)
+            if external_job is not None:
+                summary["external_engine_adapter"] = job.external_adapter
+        elif waveform_job_type in {"normal", "tongtiao"}:
             summary["workflow"] = _workflow_summary_from_execution_options(execution_options)
             if external_job is not None:
                 summary["external_engine_adapter"] = job.external_adapter
@@ -780,6 +806,17 @@ def _prepare_report_payload(
         ]
         selected_mitigation_rows = _filter_rows_by_tower_ids(mitigation_rows, selected_tower_ids)
 
+    scenario_job_id = str(execution_options.get("scenario_job_id") or "")
+    scenario_run_id = str(execution_options.get("scenario_run_id") or "")
+    scenario_job = get_job_by_id(db, scenario_job_id) if scenario_job_id else None
+    selected_scenario_rows: list[dict[str, Any]] = []
+    if scenario_job is not None and scenario_run_id:
+        scenario_rows = [
+            _serialize_report_row(item)
+            for item in _load_result_rows(db, job_id=scenario_job_id, run_id=scenario_run_id)
+        ]
+        selected_scenario_rows = _filter_rows_by_tower_ids(scenario_rows, selected_tower_ids)
+
     source_job = get_job_by_id(db, str(execution_options.get("source_job_id") or ""))
     line = risk_job.line or job.line
 
@@ -799,10 +836,21 @@ def _prepare_report_payload(
             "risk_job_name": risk_job.job_name,
             "mitigation_job_id": mitigation_job.id if mitigation_job else None,
             "mitigation_job_name": mitigation_job.job_name if mitigation_job else None,
+            "scenario_job_id": scenario_job.id if scenario_job else None,
+            "scenario_job_name": scenario_job.job_name if scenario_job else None,
+            "scenario_base_job_type": (
+                _resolve_waveform_job_type(
+                    job_type=scenario_job.job_type,
+                    execution_options=scenario_job.execution_options_json or {},
+                )
+                if scenario_job is not None
+                else None
+            ),
         },
         "risk_rows": risk_rows,
         "selected_risk_rows": selected_risk_rows,
         "selected_mitigation_rows": selected_mitigation_rows,
+        "selected_scenario_rows": selected_scenario_rows,
     }
 
 
@@ -1217,6 +1265,37 @@ def _normalize_execution_options(job_type: str, execution_options: dict[str, Any
         normalized["risk_run_id"] = risk_run_id
     else:
         normalized.pop("risk_run_id", None)
+    scenario_job_id = str(normalized.get("scenario_job_id") or "").strip()
+    if scenario_job_id:
+        normalized["scenario_job_id"] = scenario_job_id
+    else:
+        normalized.pop("scenario_job_id", None)
+    scenario_run_id = str(normalized.get("scenario_run_id") or "").strip()
+    if scenario_run_id:
+        normalized["scenario_run_id"] = scenario_run_id
+    else:
+        normalized.pop("scenario_run_id", None)
+    base_job_id = str(normalized.get("base_job_id") or "").strip()
+    if base_job_id:
+        normalized["base_job_id"] = base_job_id
+    else:
+        normalized.pop("base_job_id", None)
+    base_run_id = str(normalized.get("base_run_id") or "").strip()
+    if base_run_id:
+        normalized["base_run_id"] = base_run_id
+    else:
+        normalized.pop("base_run_id", None)
+    base_job_type = str(normalized.get("base_job_type") or "").strip()
+    if base_job_type:
+        normalized["base_job_type"] = base_job_type
+    else:
+        normalized.pop("base_job_type", None)
+    for text_key in ("base_job_name", "mitigation_job_name", "risk_job_name"):
+        text_value = str(normalized.get(text_key) or "").strip()
+        if text_value:
+            normalized[text_key] = text_value
+        else:
+            normalized.pop(text_key, None)
     source_job_type = str(normalized.get("source_job_type") or "").strip()
     if source_job_type:
         normalized["source_job_type"] = source_job_type
@@ -1241,6 +1320,14 @@ def _normalize_execution_options(job_type: str, execution_options: dict[str, Any
         normalized.pop("mitigation_run_id", None)
         normalized.pop("risk_job_id", None)
         normalized.pop("risk_run_id", None)
+        normalized.pop("scenario_job_id", None)
+        normalized.pop("scenario_run_id", None)
+        normalized.pop("base_job_id", None)
+        normalized.pop("base_run_id", None)
+        normalized.pop("base_job_type", None)
+        normalized.pop("base_job_name", None)
+        normalized.pop("mitigation_job_name", None)
+        normalized.pop("risk_job_name", None)
         normalized.pop("source_job_type", None)
     elif job_type == "report":
         normalized.pop("current_waveform", None)
@@ -1253,6 +1340,61 @@ def _normalize_execution_options(job_type: str, execution_options: dict[str, Any
         normalized.pop("tail_time_min_us", None)
         normalized.pop("tail_time_max_us", None)
         normalized.pop("tail_time_step_us", None)
+        normalized.pop("non_construction", None)
+        normalized.pop("base_job_id", None)
+        normalized.pop("base_run_id", None)
+        normalized.pop("base_job_type", None)
+        normalized.pop("base_job_name", None)
+        normalized.pop("mitigation_job_name", None)
+        normalized.pop("risk_job_name", None)
+    elif job_type == "scenario":
+        normalized["current_waveform"] = _normalize_choice(
+            normalized.get("current_waveform") or normalized.get("current_type"),
+            allowed={"heidler", "double_slope", "double_exponential"},
+            aliases={
+                "Heidler": "heidler",
+                "双斜角": "double_slope",
+                "双指数": "double_exponential",
+            },
+            default="heidler",
+        )
+        normalized["flashover_method"] = _normalize_choice(
+            normalized.get("flashover_method"),
+            allowed={"guideline", "intersection", "leader_development"},
+            aliases={
+                "规程法": "guideline",
+                "相交法": "intersection",
+                "先导发展法": "leader_development",
+            },
+            default="intersection",
+        )
+        normalized["altitude_correction"] = _normalize_choice(
+            normalized.get("altitude_correction"),
+            allowed={"none", "formula1", "formula2"},
+            aliases={
+                "无": "none",
+                "推荐公式1": "formula1",
+                "推荐公式2": "formula2",
+            },
+            default="none",
+        )
+        normalized["induced_voltage_formula"] = _normalize_choice(
+            normalized.get("induced_voltage_formula"),
+            allowed={"formula1", "formula2"},
+            aliases={
+                "公式1": "formula1",
+                "公式2": "formula2",
+            },
+            default="formula1",
+        )
+        normalized["head_time_min_us"] = _normalize_positive_number(normalized.get("head_time_min_us"), default=2.6)
+        normalized["head_time_max_us"] = _normalize_positive_number(normalized.get("head_time_max_us"), default=2.6)
+        normalized["head_time_step_us"] = _normalize_positive_number(normalized.get("head_time_step_us"), default=0.1)
+        normalized["tail_time_min_us"] = _normalize_positive_number(normalized.get("tail_time_min_us"), default=50.0)
+        normalized["tail_time_max_us"] = _normalize_positive_number(normalized.get("tail_time_max_us"), default=50.0)
+        normalized["tail_time_step_us"] = _normalize_positive_number(normalized.get("tail_time_step_us"), default=1.0)
+        normalized.pop("scenario_job_id", None)
+        normalized.pop("scenario_run_id", None)
         normalized.pop("non_construction", None)
     elif job_type in {"normal", "tongtiao"}:
         normalized["current_waveform"] = _normalize_choice(
@@ -1307,6 +1449,14 @@ def _normalize_execution_options(job_type: str, execution_options: dict[str, Any
         normalized.pop("mitigation_run_id", None)
         normalized.pop("risk_job_id", None)
         normalized.pop("risk_run_id", None)
+        normalized.pop("scenario_job_id", None)
+        normalized.pop("scenario_run_id", None)
+        normalized.pop("base_job_id", None)
+        normalized.pop("base_run_id", None)
+        normalized.pop("base_job_type", None)
+        normalized.pop("base_job_name", None)
+        normalized.pop("mitigation_job_name", None)
+        normalized.pop("risk_job_name", None)
         normalized.pop("source_job_type", None)
         normalized.pop("non_construction", None)
     else:
@@ -1327,6 +1477,14 @@ def _normalize_execution_options(job_type: str, execution_options: dict[str, Any
         normalized.pop("mitigation_run_id", None)
         normalized.pop("risk_job_id", None)
         normalized.pop("risk_run_id", None)
+        normalized.pop("scenario_job_id", None)
+        normalized.pop("scenario_run_id", None)
+        normalized.pop("base_job_id", None)
+        normalized.pop("base_run_id", None)
+        normalized.pop("base_job_type", None)
+        normalized.pop("base_job_name", None)
+        normalized.pop("mitigation_job_name", None)
+        normalized.pop("risk_job_name", None)
         normalized.pop("source_job_type", None)
         normalized.pop("non_construction", None)
     return normalized
@@ -1420,6 +1578,11 @@ def _validate_report_options(db: Session, *, line_id: str, execution_options: di
         else:
             execution_options.pop("mitigation_job_id", None)
             execution_options.pop("mitigation_run_id", None)
+        scenario_job = (
+            _find_latest_success_scenario_job(db, line_id=line_id, mitigation_job_id=mitigation_job.id)
+            if mitigation_job is not None
+            else None
+        )
     else:
         mitigation_job = source_job
         risk_job_id = str((mitigation_job.execution_options_json or {}).get("source_job_id") or "")
@@ -1447,9 +1610,20 @@ def _validate_report_options(db: Session, *, line_id: str, execution_options: di
             run_id=source_run_id,
             exclude_low_risk=False,
         )
+        scenario_job = _find_latest_success_scenario_job(db, line_id=line_id, mitigation_job_id=mitigation_job.id)
 
     if not allowed_tower_ids:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="报告来源任务暂无可复用杆塔结果")
+
+    if scenario_job is not None:
+        scenario_run_id = _resolve_source_run_id(scenario_job)
+        if not scenario_run_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="关联复算任务缺少可复用结果")
+        execution_options["scenario_job_id"] = scenario_job.id
+        execution_options["scenario_run_id"] = scenario_run_id
+    else:
+        execution_options.pop("scenario_job_id", None)
+        execution_options.pop("scenario_run_id", None)
 
     invalid_ids = [tower_id for tower_id in selected_tower_ids if tower_id not in allowed_tower_ids]
     if invalid_ids:
@@ -1495,11 +1669,27 @@ def _find_latest_success_mitigation_job(db: Session, *, line_id: str, source_job
     return None
 
 
+def _find_latest_success_scenario_job(db: Session, *, line_id: str, mitigation_job_id: str) -> FlAnalysisJob | None:
+    rows = db.execute(
+        select(FlAnalysisJob)
+        .where(
+            FlAnalysisJob.line_id == line_id,
+            FlAnalysisJob.job_type == "scenario",
+            FlAnalysisJob.status == "success",
+        )
+        .order_by(FlAnalysisJob.update_date.desc(), FlAnalysisJob.id.desc())
+    ).scalars().all()
+    for item in rows:
+        if str((item.execution_options_json or {}).get("mitigation_job_id") or "") == mitigation_job_id:
+            return item
+    return None
+
+
 def _load_job_towers(db: Session, *, job: FlAnalysisJob, execution_options: dict[str, Any]) -> list[LineTower]:
     towers = db.execute(
         select(LineTower).where(LineTower.line_id == job.line_id).order_by(LineTower.seq_no.asc())
     ).scalars().all()
-    if job.job_type not in {"mitigation", "report"}:
+    if job.job_type not in {"mitigation", "report", "scenario"}:
         return towers
     selected_ids = set(execution_options.get("selected_tower_ids") or [])
     scoped_towers = [tower for tower in towers if tower.id in selected_ids]
@@ -1507,8 +1697,103 @@ def _load_job_towers(db: Session, *, job: FlAnalysisJob, execution_options: dict
         detail = "措施推荐任务的杆塔范围已失效，请重新生成任务"
         if job.job_type == "report":
             detail = "报告任务的杆塔范围已失效，请重新生成任务"
+        elif job.job_type == "scenario":
+            detail = "加装避雷器复算任务的杆塔范围已失效，请重新生成任务"
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
     return scoped_towers
+
+
+def _validate_scenario_options(db: Session, *, line_id: str, execution_options: dict[str, Any]) -> dict[str, Any]:
+    mitigation_job_id = str(execution_options.get("source_job_id") or "")
+    if not mitigation_job_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="加装避雷器复算任务缺少前驱措施任务")
+    selected_tower_ids = execution_options.get("selected_tower_ids") or []
+    if not selected_tower_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="加装避雷器复算任务至少需要选择一座杆塔")
+    base_job_id = str(execution_options.get("base_job_id") or "")
+    if not base_job_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="加装避雷器复算任务缺少复用的计算任务")
+
+    mitigation_job = get_job_by_id(db, mitigation_job_id)
+    if not mitigation_job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="前驱措施任务不存在")
+    if mitigation_job.line_id != line_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="前驱措施任务与当前线路不匹配")
+    if mitigation_job.job_type != "mitigation":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="前驱任务必须为措施推荐任务")
+    if mitigation_job.status != "success":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="前驱措施任务尚未成功完成")
+    mitigation_run_id = _resolve_source_run_id(mitigation_job)
+    if not mitigation_run_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="前驱措施任务缺少可复用结果")
+    allowed_tower_ids = _load_report_candidate_tower_ids(
+        db,
+        job_id=mitigation_job.id,
+        run_id=mitigation_run_id,
+        exclude_low_risk=True,
+    )
+    if not allowed_tower_ids:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="前驱措施任务没有可复算的中高风险杆塔")
+    invalid_ids = [tower_id for tower_id in selected_tower_ids if tower_id not in allowed_tower_ids]
+    if invalid_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="加装避雷器复算任务包含无效的杆塔选择")
+
+    risk_job_id = str((mitigation_job.execution_options_json or {}).get("source_job_id") or "")
+    if not risk_job_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="前驱措施任务缺少关联风险任务")
+    risk_job = get_job_by_id(db, risk_job_id)
+    if not risk_job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="关联风险任务不存在")
+    if risk_job.line_id != line_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="关联风险任务与当前线路不匹配")
+    if risk_job.job_type != "risk" or risk_job.status != "success":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="关联风险任务尚未成功完成")
+    risk_run_id = _resolve_source_run_id(risk_job)
+    if not risk_run_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="关联风险任务缺少可复用结果")
+
+    base_job = get_job_by_id(db, base_job_id)
+    if not base_job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="复用计算任务不存在")
+    if base_job.line_id != line_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="复用计算任务与当前线路不匹配")
+    if base_job.job_type not in {"normal", "tongtiao"}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="仅普通计算或同跳计算任务可作为复算基线")
+    if base_job.status != "success":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="复用计算任务尚未成功完成")
+    base_run_id = _resolve_source_run_id(base_job)
+    if not base_run_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="复用计算任务缺少可复用结果")
+    base_tower_ids = _load_result_tower_ids(db, job_id=base_job.id, run_id=base_run_id)
+    missing_from_base = [tower_id for tower_id in selected_tower_ids if tower_id not in base_tower_ids]
+    if missing_from_base:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="复算杆塔不在所选基线计算结果中")
+
+    scenario_options = _normalize_execution_options(base_job.job_type, base_job.execution_options_json or {})
+    scenario_options.update(
+        {
+            "selected_tower_ids": list(selected_tower_ids),
+            "source_job_id": mitigation_job.id,
+            "source_run_id": mitigation_run_id,
+            "source_job_type": mitigation_job.job_type,
+            "mitigation_job_id": mitigation_job.id,
+            "mitigation_job_name": mitigation_job.job_name,
+            "mitigation_run_id": mitigation_run_id,
+            "risk_job_id": risk_job.id,
+            "risk_job_name": risk_job.job_name,
+            "risk_run_id": risk_run_id,
+            "base_job_id": base_job.id,
+            "base_job_name": base_job.job_name,
+            "base_job_type": base_job.job_type,
+            "base_run_id": base_run_id,
+        }
+    )
+    return {
+        "total_tower_count": len(selected_tower_ids),
+        "execution_options": scenario_options,
+        "external_adapter": base_job.external_adapter or "placeholder",
+        "adapter_config_json": base_job.adapter_config_json or {},
+    }
 
 
 def _load_source_result_map(db: Session, *, execution_options: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -1553,6 +1838,22 @@ def _load_report_candidate_tower_ids(
             continue
         tower_ids.add(str(item.snapshot.tower_id))
     return tower_ids
+
+
+def _resolve_waveform_job_type(*, job_type: str, execution_options: dict[str, Any]) -> str:
+    if job_type == "scenario":
+        base_job_type = str(execution_options.get("base_job_type") or "").strip()
+        if base_job_type in {"normal", "tongtiao"}:
+            return base_job_type
+    return job_type
+
+
+def _apply_scenario_profile_json_overrides(profile_json: dict[str, Any]) -> dict[str, Any]:
+    profile = dict(profile_json or {})
+    profile["arrester_a"] = "是"
+    profile["arrester_b"] = "是"
+    profile["arrester_c"] = "是"
+    return profile
 
 
 def _resolve_source_run_id(job: FlAnalysisJob) -> str | None:

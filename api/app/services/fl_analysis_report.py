@@ -29,6 +29,7 @@ def build_report_summary_payload(report_data: Mapping[str, Any]) -> dict[str, An
     risk_rows = _read_rows(report_data, "risk_rows")
     selected_risk_rows = _read_rows(report_data, "selected_risk_rows")
     selected_mitigation_rows = _read_rows(report_data, "selected_mitigation_rows")
+    selected_scenario_rows = _read_rows(report_data, "selected_scenario_rows")
 
     factor_counts: Counter[str] = Counter()
     cause_counts: Counter[str] = Counter()
@@ -72,15 +73,20 @@ def build_report_summary_payload(report_data: Mapping[str, Any]) -> dict[str, An
         "risk_job_name": _as_optional_str(report.get("risk_job_name")),
         "mitigation_job_id": _as_optional_str(report.get("mitigation_job_id")),
         "mitigation_job_name": _as_optional_str(report.get("mitigation_job_name")),
+        "scenario_job_id": _as_optional_str(report.get("scenario_job_id")),
+        "scenario_job_name": _as_optional_str(report.get("scenario_job_name")),
         "selected_tower_count": len(selected_risk_rows),
         "report_row_count": len(selected_mitigation_rows),
+        "scenario_row_count": len(selected_scenario_rows),
         "risk_counts": _count_risk_levels(risk_rows),
         "selected_risk_counts": _count_risk_levels(selected_risk_rows),
         "post_mitigation_risk_counts": _count_risk_levels(selected_mitigation_rows),
+        "post_recalc_risk_counts": _count_risk_levels(selected_scenario_rows),
         "selected_factor_trigger_counts": dict(factor_counts.most_common()),
         "selected_cause_counts": dict(cause_counts.most_common()),
         "mitigation_action_counts": dict(action_counts.most_common()),
         "has_mitigation_data": bool(selected_mitigation_rows),
+        "has_scenario_data": bool(selected_scenario_rows),
     }
 
 
@@ -90,6 +96,7 @@ def build_report_document(report_data: Mapping[str, Any]) -> tuple[str, bytes]:
     risk_rows = _read_rows(report_data, "risk_rows")
     selected_risk_rows = _read_rows(report_data, "selected_risk_rows")
     selected_mitigation_rows = _read_rows(report_data, "selected_mitigation_rows")
+    selected_scenario_rows = _read_rows(report_data, "selected_scenario_rows")
     summary = build_report_summary_payload(report_data)
 
     generated_at = report.get("generated_at")
@@ -101,6 +108,10 @@ def build_report_document(report_data: Mapping[str, Any]) -> tuple[str, bytes]:
     source_job_type = _format_job_type(_as_optional_str(report.get("source_job_type")))
     source_job_name = _as_optional_str(report.get("source_job_name")) or "-"
     mitigation_job_name = _as_optional_str(report.get("mitigation_job_name")) or "未关联措施任务"
+    scenario_job_name = _as_optional_str(report.get("scenario_job_name")) or "未关联复算任务"
+    scenario_base_job_type = _format_job_type(_as_optional_str(report.get("scenario_base_job_type")))
+    if scenario_base_job_type == "-":
+        scenario_base_job_type = "原计算任务"
 
     factor_rows = [
         [label, str(count)]
@@ -135,6 +146,21 @@ def build_report_document(report_data: Mapping[str, Any]) -> tuple[str, bytes]:
                 _format_risk_level(result_json.get("expected_risk_level") or row.get("risk_level")),
                 _join_action_summaries(result_json),
                 _display(result_json.get("recommendation_result")),
+            ]
+        )
+
+    scenario_table_rows = []
+    for row in selected_scenario_rows:
+        result_json = _read_mapping(row, "result_json")
+        scenario_table_rows.append(
+            [
+                _display(row.get("tower_no")),
+                _format_number(result_json.get("counterstrike_withstand_ka")),
+                _format_number(result_json.get("counterstrike_trip_rate")),
+                _format_number(result_json.get("shielding_withstand_ka")),
+                _format_number(result_json.get("shielding_trip_rate")),
+                _format_total_trip_rate(result_json),
+                _format_risk_level(row.get("risk_level")),
             ]
         )
 
@@ -218,7 +244,7 @@ def build_report_document(report_data: Mapping[str, Any]) -> tuple[str, bytes]:
     <tr>
       <td><strong>生成时间</strong><br />{escape(generated_at_text)}</td>
       <td><strong>报告来源</strong><br />{escape(source_job_type)} / {escape(source_job_name)}</td>
-      <td><strong>关联措施任务</strong><br />{escape(mitigation_job_name)}</td>
+      <td><strong>关联任务</strong><br />措施：{escape(mitigation_job_name)}<br />复算：{escape(scenario_job_name)}</td>
     </tr>
   </table>
 
@@ -239,6 +265,10 @@ def build_report_document(report_data: Mapping[str, Any]) -> tuple[str, bytes]:
   <h2>四、差异化防雷措施与预期效果</h2>
   <p>若已存在关联的措施推荐任务，则下表展示当前风险、建议后风险以及推荐动作；若尚未生成措施任务，则报告保留风险原因与通用治理建议。</p>
   {_render_table(["杆塔号", "当前风险", "建议后风险", "改造动作", "措施结论"], mitigation_table_rows or [["-", "-", "-", "当前未关联成功的措施推荐任务", "-"]])}
+
+  <h3>表14 采取措施后的计算结果表</h3>
+  <p>若已生成与措施任务关联的加装避雷器复算任务，则下表按 {escape(scenario_base_job_type)} 口径展示补装避雷器后的耐雷水平、跳闸率与风险等级；若未生成复算任务，则此表保留为空。</p>
+  {_render_table(["杆塔号", "反击耐雷水平(kA)", "反击跳闸率", "绕击耐雷水平(kA)", "绕击跳闸率", "总雷击跳闸率", "风险等级"], scenario_table_rows or [["-", "-", "-", "-", "-", "-", "当前未关联成功的加装避雷器复算任务"]])}
 
   <p class="muted">说明：本报告为可直接下载的 Word 兼容文档，内容按风险评估结果和已关联的措施推荐结果动态生成。</p>
 </body>
@@ -267,6 +297,14 @@ def _format_job_type(value: str | None) -> str:
         return "风险评估任务"
     if value == "mitigation":
         return "措施推荐任务"
+    if value == "normal":
+        return "普通计算任务"
+    if value == "tongtiao":
+        return "同跳计算任务"
+    if value == "scenario":
+        return "加装避雷器复算任务"
+    if value == "report":
+        return "报告任务"
     return value or "-"
 
 
@@ -351,11 +389,33 @@ def _display(value: Any) -> str:
     return text or "-"
 
 
+def _format_number(value: Any) -> str:
+    parsed = _as_optional_float(value)
+    if parsed is None:
+        return "-"
+    return f"{parsed:.4f}".rstrip("0").rstrip(".")
+
+
+def _format_total_trip_rate(result_json: Mapping[str, Any]) -> str:
+    counterstrike_value = _as_optional_float(result_json.get("counterstrike_trip_rate"))
+    shielding_value = _as_optional_float(result_json.get("shielding_trip_rate"))
+    if counterstrike_value is None and shielding_value is None:
+        return "-"
+    return _format_number((counterstrike_value or 0.0) + (shielding_value or 0.0))
+
+
 def _as_optional_str(value: Any) -> str | None:
     if value is None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _as_optional_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _as_int(value: Any) -> int | None:

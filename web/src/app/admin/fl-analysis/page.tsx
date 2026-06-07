@@ -65,6 +65,11 @@ type MitigationFormValues = {
   non_construction: boolean;
 };
 
+type ScenarioFormValues = {
+  job_name: string;
+  base_job_id: string;
+};
+
 type ReportFormValues = {
   job_name: string;
 };
@@ -175,7 +180,7 @@ function formatJobType(jobType: string, nonConstruction = false): string {
   if (jobType === "normal") return "普通计算";
   if (jobType === "tongtiao") return "同跳计算";
   if (jobType === "report") return "报告";
-  if (jobType === "scenario") return "场景分析";
+  if (jobType === "scenario") return "加装避雷器复算";
   return jobType || "-";
 }
 
@@ -354,6 +359,20 @@ function mitigationMode(job: FlAnalysisJobDetail | FlAnalysisJobSummary | null):
   return Boolean(options.non_construction);
 }
 
+function waveformJobType(job: FlAnalysisJobDetail | FlAnalysisJobSummary | null): "normal" | "tongtiao" | null {
+  if (!job) {
+    return null;
+  }
+  if (job.job_type === "normal" || job.job_type === "tongtiao") {
+    return job.job_type;
+  }
+  if (job.job_type === "scenario") {
+    const baseJobType = readOptionalString(readObject(job.execution_options_json), "base_job_type");
+    return baseJobType === "tongtiao" ? "tongtiao" : "normal";
+  }
+  return null;
+}
+
 function selectedTowerCount(job: FlAnalysisJobDetail | null): number {
   if (!job) {
     return 0;
@@ -381,12 +400,15 @@ export default function AdminFlAnalysisPage() {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [detailRow, setDetailRow] = useState<FlAnalysisTowerResultSummary | null>(null);
   const [mitigationModalOpen, setMitigationModalOpen] = useState(false);
+  const [scenarioModalOpen, setScenarioModalOpen] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedMitigationTowerIds, setSelectedMitigationTowerIds] = useState<string[]>([]);
+  const [selectedScenarioTowerIds, setSelectedScenarioTowerIds] = useState<string[]>([]);
   const [selectedReportTowerIds, setSelectedReportTowerIds] = useState<string[]>([]);
   const [createJobForm] = Form.useForm<CreateJobFormValues>();
   const [mitigationForm] = Form.useForm<MitigationFormValues>();
+  const [scenarioForm] = Form.useForm<ScenarioFormValues>();
   const [reportForm] = Form.useForm<ReportFormValues>();
   const [messageApi, contextHolder] = message.useMessage();
   const selectedLineId = Form.useWatch("line_id", createJobForm);
@@ -465,6 +487,7 @@ export default function AdminFlAnalysisPage() {
     }
     return jobsQuery.data?.items.find((item) => item.id === selectedJobId) ?? null;
   }, [jobsQuery.data?.items, selectedJobId]);
+  const selectedWaveformJobType = waveformJobType(selectedJob);
 
   const selectedJobDetailQuery = useQuery({
     queryKey: ["/api/v1/fl-analysis/jobs/detail", selectedJob?.id ?? ""],
@@ -495,6 +518,13 @@ export default function AdminFlAnalysisPage() {
     [towerResultsQuery.data?.items],
   );
 
+  const candidateScenarioRows = useMemo(() => {
+    if (selectedJob?.job_type !== "mitigation") {
+      return [];
+    }
+    return (towerResultsQuery.data?.items ?? []).filter((item) => item.risk_level !== "low");
+  }, [selectedJob?.job_type, towerResultsQuery.data?.items]);
+
   const candidateReportRows = useMemo(() => {
     const rows = towerResultsQuery.data?.items ?? [];
     if (selectedJob?.job_type === "mitigation") {
@@ -502,6 +532,15 @@ export default function AdminFlAnalysisPage() {
     }
     return rows.filter((item) => item.risk_level !== "low");
   }, [selectedJob?.job_type, towerResultsQuery.data?.items]);
+
+  const candidateScenarioBaseJobs = useMemo(() => {
+    if (!selectedJob) {
+      return [];
+    }
+    return (jobsQuery.data?.items ?? []).filter(
+      (item) => item.line_id === selectedJob.line_id && item.status === "success" && ["normal", "tongtiao"].includes(item.job_type),
+    );
+  }, [jobsQuery.data?.items, selectedJob]);
 
   const atpModels = useMemo(() => atpModelsQuery.data?.items ?? [], [atpModelsQuery.data]);
   const selectedAtpModel = useMemo(
@@ -588,6 +627,19 @@ export default function AdminFlAnalysisPage() {
       non_construction: false,
     });
     setMitigationModalOpen(true);
+  }
+
+  function openScenarioJobModal(): void {
+    if (!selectedJob) {
+      return;
+    }
+    const baseName = selectedJob.job_name || selectedJob.line_name || selectedJob.line_code || "防雷任务";
+    setSelectedScenarioTowerIds(candidateScenarioRows.map((item) => item.tower_id));
+    scenarioForm.setFieldsValue({
+      job_name: `${baseName}-加装避雷器复算`,
+      base_job_id: candidateScenarioBaseJobs[0]?.id ?? "",
+    });
+    setScenarioModalOpen(true);
   }
 
   function openReportJobModal(): void {
@@ -697,6 +749,43 @@ export default function AdminFlAnalysisPage() {
     },
     onError: (error) => {
       messageApi.error(error instanceof Error ? error.message : "措施推荐任务创建失败");
+    },
+  });
+
+  const createScenarioMutation = useMutation({
+    mutationFn: async (values: ScenarioFormValues) => {
+      if (!selectedJob) {
+        throw new Error("缺少前驱措施任务");
+      }
+      if (selectedJob.job_type !== "mitigation") {
+        throw new Error("仅措施推荐任务可生成加装避雷器复算");
+      }
+      if (selectedScenarioTowerIds.length === 0) {
+        throw new Error("请至少选择一座需要复算的杆塔");
+      }
+      if (!values.base_job_id) {
+        throw new Error("请选择复用的普通计算或同跳计算任务");
+      }
+      return createAndStartJob({
+        line_id: selectedJob.line_id,
+        job_name: values.job_name.trim() || null,
+        job_type: "scenario",
+        external_adapter: "placeholder",
+        execution_options_json: {
+          source_job_id: selectedJob.id,
+          base_job_id: values.base_job_id,
+          selected_tower_ids: selectedScenarioTowerIds,
+        },
+      });
+    },
+    onSuccess: async (job) => {
+      await invalidateFlAnalysisQueries();
+      setScenarioModalOpen(false);
+      setSelectedJobId(job.id);
+      messageApi.success("加装避雷器复算任务已创建并启动");
+    },
+    onError: (error) => {
+      messageApi.error(error instanceof Error ? error.message : "加装避雷器复算任务创建失败");
     },
   });
 
@@ -838,7 +927,7 @@ export default function AdminFlAnalysisPage() {
       });
     }
 
-    if (selectedJob?.job_type === "normal" || selectedJob?.job_type === "tongtiao") {
+    if (selectedWaveformJobType === "normal" || selectedWaveformJobType === "tongtiao") {
       columns.push(
         {
           title: "最不利点(μs)",
@@ -857,7 +946,7 @@ export default function AdminFlAnalysisPage() {
       );
     }
 
-    if (selectedJob?.job_type === "normal") {
+    if (selectedWaveformJobType === "normal") {
       columns.push(
         {
           title: "反击耐雷水平(kA)",
@@ -886,7 +975,7 @@ export default function AdminFlAnalysisPage() {
       );
     }
 
-    if (selectedJob?.job_type === "tongtiao") {
+    if (selectedWaveformJobType === "tongtiao") {
       columns.push(
         {
           title: "主导相组",
@@ -978,7 +1067,7 @@ export default function AdminFlAnalysisPage() {
     );
 
     return columns;
-  }, [selectedJob?.job_type]);
+  }, [selectedJob?.job_type, selectedWaveformJobType]);
 
   const reasonDetailColumns: ColumnsType<ReasonDetail> = [
     { title: "因子", dataIndex: "label", width: 180 },
@@ -1145,6 +1234,7 @@ export default function AdminFlAnalysisPage() {
   const multiPhaseResults = readMultiPhaseResults(detailRow);
   const detailWorkflow = readWorkflow(detailRow);
   const detailSelectedCase = readSelectedCase(detailRow);
+  const selectedJobDetailWaveformType = waveformJobType(selectedJobDetail ?? selectedJob);
   const selectedJobExecutionOptions = readObject(selectedJobDetail?.execution_options_json);
   const selectedJobSummary = readObject(selectedJobDetail?.result_summary_json);
   const selectedJobWorkflow = readObject(selectedJobDetail?.result_summary_json).workflow as WorkflowSummary | undefined;
@@ -1153,11 +1243,15 @@ export default function AdminFlAnalysisPage() {
   const selectedJobExternalVersionNo = readOptionalNumber(selectedJobSummary, "external_version_no");
   const detailExternalExecution = readObject(detailResultObject.external_execution);
   const sourceJobId = readOptionalString(selectedJobExecutionOptions, "source_job_id");
+  const scenarioBaseJobName = readOptionalString(selectedJobExecutionOptions, "base_job_name");
+  const scenarioBaseJobType = readOptionalString(selectedJobExecutionOptions, "base_job_type");
   const canCreateMitigation = selectedJob?.job_type === "risk";
+  const canCreateScenario = selectedJob?.job_type === "mitigation";
   const canCreateReport = selectedJob?.job_type === "risk" || selectedJob?.job_type === "mitigation";
   const reportSourceJobType = readOptionalString(selectedJobSummary, "source_job_type");
   const reportSourceJobName = readOptionalString(selectedJobSummary, "source_job_name");
   const reportMitigationJobName = readOptionalString(selectedJobSummary, "mitigation_job_name");
+  const reportScenarioJobName = readOptionalString(selectedJobSummary, "scenario_job_name");
   const reportDocumentName = readOptionalString(selectedJobSummary, "document_filename");
   const canDownloadResults = selectedJob?.job_type !== "report"
     && selectedJob?.status === "success"
@@ -1174,7 +1268,7 @@ export default function AdminFlAnalysisPage() {
                 防雷分析与改造
               </Typography.Title>
               <Typography.Text type="secondary">
-                支持源端“普通计算 / 同跳计算 / 风险评估 / 措施推荐 / 报告生成”工作流。普通计算和同跳计算可按 ATP/Wine 外部链路执行，也可退回规则近似版；报告任务可基于风险或措施结果直接导出 Word 兼容文档。
+                支持源端“普通计算 / 同跳计算 / 风险评估 / 措施推荐 / 加装避雷器复算 / 报告生成”工作流。普通计算和同跳计算可按 ATP/Wine 外部链路执行，也可退回规则近似版；报告任务会自动并入已关联的复算结果表。
               </Typography.Text>
             </div>
 
@@ -1451,6 +1545,15 @@ export default function AdminFlAnalysisPage() {
                             {String(readObject(selectedJobDetail.result_summary_json).arrester_required_count ?? "-")}
                           </Descriptions.Item>
                         </>
+                      ) : selectedJobDetail.job_type === "scenario" ? (
+                        <>
+                          <Descriptions.Item label="前驱措施任务">{sourceJobId || "-"}</Descriptions.Item>
+                          <Descriptions.Item label="选塔数">{String(selectedTowerCount(selectedJobDetail) || "-")}</Descriptions.Item>
+                          <Descriptions.Item label="复用计算口径">
+                            {scenarioBaseJobType ? formatJobType(scenarioBaseJobType) : "-"}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="基线计算任务">{scenarioBaseJobName || "-"}</Descriptions.Item>
+                        </>
                       ) : selectedJobDetail.job_type === "report" ? (
                         <>
                           <Descriptions.Item label="报告来源">
@@ -1461,9 +1564,10 @@ export default function AdminFlAnalysisPage() {
                             {String(readObject(selectedJobDetail.result_summary_json).selected_tower_count ?? "-")}
                           </Descriptions.Item>
                           <Descriptions.Item label="关联措施任务">{reportMitigationJobName || "未关联"}</Descriptions.Item>
-                          <Descriptions.Item label="文档名">{reportDocumentName || "-"}</Descriptions.Item>
+                          <Descriptions.Item label="关联复算任务">{reportScenarioJobName || "未关联"}</Descriptions.Item>
+                          <Descriptions.Item label="文档名" span={2}>{reportDocumentName || "-"}</Descriptions.Item>
                         </>
-                      ) : selectedJobDetail.job_type === "normal" || selectedJobDetail.job_type === "tongtiao" ? (
+                      ) : selectedJobDetailWaveformType === "normal" || selectedJobDetailWaveformType === "tongtiao" ? (
                         <>
                           <Descriptions.Item label="适配器">{formatExternalAdapter(selectedJobDetail.external_adapter)}</Descriptions.Item>
                           <Descriptions.Item label="ATP模型">
@@ -1511,6 +1615,14 @@ export default function AdminFlAnalysisPage() {
                             onClick={openMitigationJobModal}
                           >
                             生成措施推荐任务
+                          </Button>
+                        ) : null}
+                        {canManage && canCreateScenario ? (
+                          <Button
+                            disabled={candidateScenarioRows.length === 0 || candidateScenarioBaseJobs.length === 0}
+                            onClick={openScenarioJobModal}
+                          >
+                            生成加装避雷器复算任务
                           </Button>
                         ) : null}
                         {canManage && canCreateReport ? (
@@ -1608,7 +1720,7 @@ export default function AdminFlAnalysisPage() {
                   </Descriptions.Item>
                   <Descriptions.Item label="改造结论">{readString(detailResultObject, "recommendation_result")}</Descriptions.Item>
                 </>
-              ) : selectedJob?.job_type === "normal" || selectedJob?.job_type === "tongtiao" ? (
+              ) : selectedJobDetailWaveformType === "normal" || selectedJobDetailWaveformType === "tongtiao" ? (
                 <>
                   <Descriptions.Item label="最不利点(μs)">
                     {typeof detailSelectedCase.head_time_us === "number" && typeof detailSelectedCase.tail_time_us === "number"
@@ -1633,7 +1745,7 @@ export default function AdminFlAnalysisPage() {
                       ? `v${readOptionalNumber(detailExternalExecution, "version_no")}`
                       : "-"}
                   </Descriptions.Item>
-                  {selectedJob?.job_type === "tongtiao" ? (
+                  {selectedJobDetailWaveformType === "tongtiao" ? (
                     <>
                       <Descriptions.Item label="主导相组">{readOptionalString(detailResultObject, "dominant_phase_set") ?? "-"}</Descriptions.Item>
                       <Descriptions.Item label="闪络相">{readOptionalString(detailResultObject, "flashover_phase") ?? "-"}</Descriptions.Item>
@@ -1674,7 +1786,7 @@ export default function AdminFlAnalysisPage() {
               />
             )}
 
-            {selectedJob?.job_type === "normal" || selectedJob?.job_type === "tongtiao" ? (
+            {selectedJobDetailWaveformType === "normal" || selectedJobDetailWaveformType === "tongtiao" ? (
               <>
                 <Typography.Title level={5} style={{ margin: 0 }}>
                   波形扫描
@@ -1694,7 +1806,7 @@ export default function AdminFlAnalysisPage() {
               </>
             ) : null}
 
-            {selectedJob?.job_type === "tongtiao" ? (
+            {selectedJobDetailWaveformType === "tongtiao" ? (
               <>
                 <Typography.Title level={5} style={{ margin: 0 }}>
                   相别结果
@@ -1835,6 +1947,109 @@ export default function AdminFlAnalysisPage() {
       </Modal>
 
       <Modal
+        title={selectedJob ? `加装避雷器复算 - ${selectedJob.job_name || selectedJob.line_name || selectedJob.line_code}` : "加装避雷器复算"}
+        open={scenarioModalOpen}
+        width={1080}
+        confirmLoading={createScenarioMutation.isPending}
+        okText="创建并启动复算任务"
+        onCancel={() => {
+          if (createScenarioMutation.isPending) {
+            return;
+          }
+          setScenarioModalOpen(false);
+        }}
+        onOk={() => {
+          scenarioForm.submit();
+        }}
+      >
+        <Space direction="vertical" size={16} className="flex w-full">
+          <Alert
+            type="info"
+            showIcon
+            message="源端迁移口径：仅允许从措施推荐结果中继续选择仍为中高风险的杆塔，并复用一次已完成的普通/同跳计算链路，执行“补装避雷器后”的独立复算。"
+          />
+          <Form<ScenarioFormValues>
+            form={scenarioForm}
+            layout="vertical"
+            onFinish={(values) => {
+              createScenarioMutation.mutate(values);
+            }}
+          >
+            <Form.Item
+              name="job_name"
+              label="任务名称"
+              rules={[{ required: true, message: "请输入任务名称" }]}
+            >
+              <Input placeholder="加装避雷器复算任务名称" />
+            </Form.Item>
+            <Form.Item
+              name="base_job_id"
+              label="复用计算任务"
+              rules={[{ required: true, message: "请选择复用的普通计算或同跳计算任务" }]}
+            >
+              <Select
+                placeholder="选择已成功完成的普通计算或同跳计算任务"
+                options={candidateScenarioBaseJobs.map((item) => ({
+                  value: item.id,
+                  label: `${item.job_name || item.line_name || item.line_code || item.id} / ${formatJobType(item.job_type)} / ${formatDateTime(item.finished_at)}`,
+                }))}
+              />
+            </Form.Item>
+          </Form>
+
+          {candidateScenarioBaseJobs.length === 0 ? (
+            <Alert
+              type="warning"
+              showIcon
+              message="当前线路还没有可复用的普通计算或同跳计算成功任务。请先完成一次基线计算，再创建加装避雷器复算任务。"
+            />
+          ) : null}
+
+          {(candidateScenarioRows.length ?? 0) === 0 ? (
+            <Empty description="当前措施任务没有仍需复算的中高风险杆塔" />
+          ) : (
+            <>
+              <Typography.Text type="secondary">
+                已命中 {candidateScenarioRows.length} 座仍为中高风险的杆塔。默认全选，可按需缩小复算范围。
+              </Typography.Text>
+              <Table<FlAnalysisTowerResultSummary>
+                rowKey="tower_id"
+                size="small"
+                pagination={{ pageSize: 8, showSizeChanger: false }}
+                rowSelection={{
+                  selectedRowKeys: selectedScenarioTowerIds,
+                  onChange: (keys) => {
+                    setSelectedScenarioTowerIds(keys.map((item) => String(item)));
+                  },
+                }}
+                columns={[
+                  { title: "杆塔号", dataIndex: "tower_no", width: 120 },
+                  {
+                    title: "预期风险",
+                    dataIndex: "risk_level",
+                    width: 120,
+                    render: (value: string | null) => <Tag color={riskColor(value)}>{formatRiskLevel(value)}</Tag>,
+                  },
+                  {
+                    title: "高风险原因",
+                    key: "cause_analysis",
+                    render: (_value, row) => readString(readObject(row.result_json), "cause_analysis"),
+                  },
+                  {
+                    title: "当前动作",
+                    key: "mitigation_recommendation",
+                    render: (_value, row) => readString(readObject(row.result_json), "mitigation_recommendation"),
+                  },
+                ]}
+                dataSource={candidateScenarioRows}
+                scroll={{ x: 1000 }}
+              />
+            </>
+          )}
+        </Space>
+      </Modal>
+
+      <Modal
         title={selectedJob ? `报告生成 - ${selectedJob.job_name || selectedJob.line_name || selectedJob.line_code}` : "报告生成"}
         open={reportModalOpen}
         width={1080}
@@ -1854,7 +2069,7 @@ export default function AdminFlAnalysisPage() {
           <Alert
             type="info"
             showIcon
-            message="源端迁移口径：报告任务挂靠在已完成的风险评估或措施推荐结果上，并允许按杆塔缩小纳入报告的范围。"
+            message="源端迁移口径：报告任务挂靠在已完成的风险评估或措施推荐结果上，并允许按杆塔缩小纳入报告的范围；若已存在关联的加装避雷器复算任务，报告会自动并入“采取措施后的计算结果表”。"
           />
           <Form<ReportFormValues>
             form={reportForm}
