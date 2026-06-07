@@ -254,7 +254,9 @@ def test_build_report_document_renders_word_compatible_html() -> None:
     assert "示例线路-报告" in filename
     assert "示例线路" in html
     assert "2.3线路杆塔高度" in html
-    assert "图7 线路杆塔地闪密度雷区分布图（表格替代）" in html
+    assert "图7 线路杆塔地闪密度雷区分布图" in html
+    assert "图7 线路杆塔地闪密度雷区分布图（表格替代）" not in html
+    assert 'src="data:image/png;base64,' in html
     assert "图8 线路杆塔避雷线保护角信息统计图" in html
     assert "表10 输电线路雷击风险等级划分规则" in html
     assert "表13 高风险杆塔差异化防雷措施" in html
@@ -263,3 +265,16 @@ def test_build_report_document_renders_word_compatible_html() -> None:
     assert "表14 采取措施后的计算结果表" in html
     assert "反击耐雷水平(kA)" in html
     assert "001" in html
+
+
+def test_build_report_document_falls_back_to_table_when_map_points_missing() -> None:
+    report_data = _sample_report_data()
+    for row in report_data["risk_rows"]:
+        row["base_tower_json"]["longitude"] = None
+        row["base_tower_json"]["latitude"] = None
+
+    _, content = build_report_document(report_data)
+    html = content.decode("utf-8")
+
+    assert "图7 线路杆塔地闪密度雷区分布图（表格替代）" in html
+    assert 'src="data:image/png;base64,' not in html
