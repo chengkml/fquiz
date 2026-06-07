@@ -167,6 +167,19 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "permission_code": "line.read",
     },
     {
+        "code": "admin.fault_recurrence",
+        "name": "故障复现",
+        "path": "/admin/fault-recurrence",
+        "icon": "Experiment",
+        "parent_code": None,
+        "type": "menu",
+        "sort_order": 50,
+        "status": "enabled",
+        "visible": True,
+        "cacheable": False,
+        "permission_code": "line.read",
+    },
+    {
         "code": "admin.lightning_currents",
         "name": "雷电幅值统计",
         "path": "/admin/lightning-currents",
@@ -299,7 +312,7 @@ DEFAULT_MENUS: list[dict[str, object]] = [
 ]
 
 ROLE_MENU_BINDINGS: dict[str, list[str]] = {
-    "admin": ["admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.power_lines", "admin.fl_analysis", "admin.lightning_currents", "admin.lightning_distribution", "admin.workers", "admin.task_monitor", "admin.atp_models", "admin.tower_models", "admin.files", "admin.elevation", "admin.syslog", "admin.wine_runner"],
+    "admin": ["admin.users", "admin.roles", "admin.menus", "admin.system_params", "admin.power_lines", "admin.fl_analysis", "admin.fault_recurrence", "admin.lightning_currents", "admin.lightning_distribution", "admin.workers", "admin.task_monitor", "admin.atp_models", "admin.tower_models", "admin.files", "admin.elevation", "admin.syslog", "admin.wine_runner"],
     "user": [],
 }
 

@@ -74,6 +74,7 @@ PROTECTED_MENU_CODES = {
     "admin.filedetector",
     "admin.baidu_pan",
     "admin.power_lines",
+    "admin.fault_recurrence",
     "admin.lightning_currents",
     "admin.lightning_distribution",
     "admin.workers",

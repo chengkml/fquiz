@@ -689,6 +689,41 @@ export type FlAnalysisTowerResultListResponse = {
   total: number;
 };
 
+export type FaultRecurrenceStrokeMode = "counterstroke" | "shielding";
+export type FaultRecurrenceResultStatus = "matched" | "no_need";
+
+export type FaultRecurrenceDataPoint = {
+  head_time_us: number;
+  tail_time_us: number;
+  counterstroke_withstand_ka: number;
+  shielding_withstand_ka: number;
+};
+
+export type FaultRecurrenceResult = {
+  status: FaultRecurrenceResultStatus;
+  message: string;
+  head_time_us: number | null;
+  tail_time_us: number | null;
+  probability_density: number | null;
+};
+
+export type FaultRecurrenceAnalyzeResponse = {
+  curve_no: number;
+  curve_label: string;
+  stroke_mode: FaultRecurrenceStrokeMode;
+  stroke_label: string;
+  withstand_level_ka: number;
+  source_file_name: string;
+  source_mode: string;
+  point_count: number;
+  reference_counterstroke_ka: number;
+  reference_shielding_ka: number;
+  reference_point_found: boolean;
+  warnings: string[];
+  data_points: FaultRecurrenceDataPoint[];
+  result: FaultRecurrenceResult;
+};
+
 export type AtpModelStatus = "enabled" | "disabled";
 export type AtpModelSourceType = "atpdraw" | "atp" | "manual";
 export type AtpModelVersionStatus = "draft" | "released" | "archived";

@@ -1115,3 +1115,19 @@
   - `save ""`
   - `stop-writes-on-bgsave-error no`
 - 目的：规避 RDB 快照失败触发 `MISCONF` 后 Redis 全局拒写，保障 Celery broker/result backend 可持续写入。
+
+## 故障复现工具口径（2026-06-07）
+
+- 新增独立能力入口 `/admin/fault-recurrence`，定位为源端 `FuXian` 的无状态迁移版工具，不挂靠现有 `/admin/fl-analysis` 任务模型。
+- 后端接口统一走 `POST /api/v1/fault-recurrence/analyze`，输入为 `multipart/form-data`：
+  - `file`
+  - `curve_no`
+  - `stroke_mode`
+  - `withstand_level_ka`
+- 输入文件兼容两类口径：
+  - 源端 `<TGanTa>/<XianLu>` 分段文本
+  - 含 `波头时间/μs`、`波尾时间/μs`、`反击耐雷水平kA`、`绕击耐雷水平kA` 列的普通 CSV/TXT
+- 计算逻辑保持源端 `FuXian.LeiDianFuXian2()`：
+  - 先按 `2.6/50` 基准点判断是否 `No need!`
+  - 再按同波头分组做线性插值与概率密度比较，输出最可能的波头/波尾组合
+- 菜单编码为 `admin.fault_recurrence`，默认绑定 `line.read` 口径，并加入 modern seed 与 legacy synthetic menu 双轨兼容。
