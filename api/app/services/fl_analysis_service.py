@@ -27,6 +27,8 @@ from ..schemas.fl_analysis import (
     FlAnalysisTowerResultListResponse,
     FlAnalysisTowerResultSummary,
 )
+from .atp_model_service import _truncate_output
+from .fl_analysis_external import execute_external_waveform_tower_analysis, resolve_external_waveform_job
 from .fl_analysis_report import build_report_document, build_report_summary_payload
 from .fl_analysis_rules import (
     grade_mitigation_snapshot_payload,
@@ -180,6 +182,21 @@ def create_job(
             )
             or 0
         )
+    if payload.job_type in {"normal", "tongtiao"}:
+        if payload.external_adapter in {"atp", "wine"}:
+            try:
+                resolve_external_waveform_job(
+                    db,
+                    external_adapter=payload.external_adapter,
+                    adapter_config_json=payload.adapter_config_json or {},
+                )
+            except RuntimeError as exc:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        elif payload.external_adapter != "placeholder":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="普通计算和同跳计算仅支持 placeholder/atp/wine 适配器",
+            )
     if total_tower_count <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前线路没有可分析的杆塔数据")
 
@@ -362,6 +379,20 @@ def execute_job(job_id: str) -> None:
         result_count = 0
         summary = _new_result_summary()
         tower_map = {tower.id: tower for tower in towers}
+        external_job = None
+        stdout_chunks: list[str] = []
+        stderr_chunks: list[str] = []
+        if job.job_type in {"normal", "tongtiao"} and job.external_adapter in {"atp", "wine"}:
+            external_job = resolve_external_waveform_job(
+                db,
+                external_adapter=job.external_adapter,
+                adapter_config_json=job.adapter_config_json or {},
+            )
+            summary["external_model_id"] = external_job.model.id
+            summary["external_model_code"] = external_job.model.code
+            summary["external_model_name"] = external_job.model.name
+            summary["external_version_id"] = external_job.version.id
+            summary["external_version_no"] = external_job.version.version_no
         for snapshot in snapshots:
             payload = {
                 "base_tower_json": snapshot.base_tower_json or {},
@@ -376,9 +407,43 @@ def execute_job(job_id: str) -> None:
                     non_construction=bool(execution_options.get("non_construction")),
                 )
             elif job.job_type == "normal":
-                graded = grade_normal_snapshot_payload(payload, execution_options=execution_options)
+                baseline_result = grade_normal_snapshot_payload(payload, execution_options=execution_options)
+                if external_job is not None:
+                    execution = execute_external_waveform_tower_analysis(
+                        external_job,
+                        job=job,
+                        snapshot=snapshot,
+                        execution_options=execution_options,
+                        baseline_result=baseline_result,
+                    )
+                    graded = execution.result_json
+                    run.engine_command = run.engine_command or execution.engine_command
+                    run.working_dir = run.working_dir or execution.working_dir
+                    if execution.stdout_text:
+                        stdout_chunks.append(f"[{snapshot.tower_no}] {execution.stdout_text}")
+                    if execution.stderr_text:
+                        stderr_chunks.append(f"[{snapshot.tower_no}] {execution.stderr_text}")
+                else:
+                    graded = baseline_result
             elif job.job_type == "tongtiao":
-                graded = grade_tongtiao_snapshot_payload(payload, execution_options=execution_options)
+                baseline_result = grade_tongtiao_snapshot_payload(payload, execution_options=execution_options)
+                if external_job is not None:
+                    execution = execute_external_waveform_tower_analysis(
+                        external_job,
+                        job=job,
+                        snapshot=snapshot,
+                        execution_options=execution_options,
+                        baseline_result=baseline_result,
+                    )
+                    graded = execution.result_json
+                    run.engine_command = run.engine_command or execution.engine_command
+                    run.working_dir = run.working_dir or execution.working_dir
+                    if execution.stdout_text:
+                        stdout_chunks.append(f"[{snapshot.tower_no}] {execution.stdout_text}")
+                    if execution.stderr_text:
+                        stderr_chunks.append(f"[{snapshot.tower_no}] {execution.stderr_text}")
+                else:
+                    graded = baseline_result
             else:
                 graded = grade_snapshot_payload(payload)
             db.add(
@@ -415,6 +480,12 @@ def execute_job(job_id: str) -> None:
             summary["non_construction"] = bool(execution_options.get("non_construction"))
         elif job.job_type in {"normal", "tongtiao"}:
             summary["workflow"] = _workflow_summary_from_execution_options(execution_options)
+            if external_job is not None:
+                summary["external_engine_adapter"] = job.external_adapter
+        if stdout_chunks:
+            run.stdout_text = _truncate_output("\n\n".join(stdout_chunks))
+        if stderr_chunks:
+            run.stderr_text = _truncate_output("\n\n".join(stderr_chunks))
         db.commit()
 
         _finish_rule_based_run(
@@ -423,6 +494,7 @@ def execute_job(job_id: str) -> None:
             run_id=run.id,
             started_perf=started_perf,
             summary=summary,
+            adapter_status="executed" if external_job is not None else "computed",
         )
 
     except Exception as exc:
@@ -448,6 +520,7 @@ def _finish_rule_based_run(
     run_id: str,
     started_perf: float,
     summary: dict[str, Any],
+    adapter_status: str = "computed",
 ) -> None:
     job = get_job_by_id(db, job_id)
     run = db.execute(select(FlAnalysisRun).where(FlAnalysisRun.id == run_id)).scalar_one_or_none()
@@ -467,7 +540,7 @@ def _finish_rule_based_run(
     job.error_message = None
     job.result_summary_json = {
         **summary,
-        "adapter_status": "computed",
+        "adapter_status": adapter_status,
         "external_adapter": job.external_adapter,
     }
     job.finished_at = now
@@ -1234,6 +1307,14 @@ def _as_int(value: Any) -> int | None:
         return int(parsed)
     except (TypeError, ValueError):
         return None
+
+
+def _as_float(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed
 
 
 def _placeholder_message_for_adapter(adapter: str) -> str:

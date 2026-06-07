@@ -89,7 +89,10 @@ class FlAnalysisJobCreateRequest(BaseModel):
     job_name: str | None = Field(default=None, min_length=1, max_length=255)
     job_type: FlAnalysisJobType = "normal"
     external_adapter: FlAnalysisAdapter = "placeholder"
-    adapter_config_json: dict[str, Any] = Field(default_factory=dict)
+    adapter_config_json: dict[str, Any] = Field(
+        default_factory=dict,
+        description="normal/tongtiao 任务在 external_adapter=atp/wine 时可传 model_id、version_id/version_no、result_file、parameter_bindings 等 ATP 执行配置。",
+    )
     execution_options_json: dict[str, Any] = Field(
         default_factory=dict,
         description="normal/tongtiao 任务可传波形、闪络判据以及波头/波尾扫描参数；mitigation 任务可传 source_job_id、selected_tower_ids、non_construction。",

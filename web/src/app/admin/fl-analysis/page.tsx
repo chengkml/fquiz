@@ -26,6 +26,11 @@ import { useAuth } from "@/components/auth-provider";
 import { Card } from "@/components/ui-antd";
 import { readApiError } from "@/lib/api";
 import type {
+  AtpEngineStatusResponse,
+  AtpModelListResponse,
+  AtpModelSummary,
+  AtpModelVersionListResponse,
+  AtpModelVersionSummary,
   FlAnalysisJobDetail,
   FlAnalysisJobListResponse,
   FlAnalysisJobSummary,
@@ -39,6 +44,9 @@ type CreateJobFormValues = {
   job_name: string;
   line_id: string;
   job_type: "normal" | "tongtiao" | "risk";
+  external_adapter: "placeholder" | "wine" | "atp";
+  atp_model_id: string;
+  atp_version_id: string;
   current_waveform: "heidler" | "double_slope" | "double_exponential";
   flashover_method: "guideline" | "intersection" | "leader_development";
   altitude_correction: "none" | "formula1" | "formula2";
@@ -138,6 +146,9 @@ const CREATE_JOB_DEFAULTS: CreateJobFormValues = {
   job_name: "",
   line_id: "",
   job_type: "normal",
+  external_adapter: "placeholder",
+  atp_model_id: "",
+  atp_version_id: "",
   current_waveform: "heidler",
   flashover_method: "intersection",
   altitude_correction: "none",
@@ -191,6 +202,14 @@ function formatAltitudeCorrection(value: string | null | undefined): string {
 function formatInducedVoltageFormula(value: string | null | undefined): string {
   if (value === "formula1") return "公式1";
   if (value === "formula2") return "公式2";
+  return value || "-";
+}
+
+function formatExternalAdapter(value: string | null | undefined): string {
+  if (value === "wine") return "Wine / ATP";
+  if (value === "atp") return "原生 ATP";
+  if (value === "placeholder") return "规则近似";
+  if (value === "custom") return "自定义";
   return value || "-";
 }
 
@@ -367,9 +386,12 @@ export default function AdminFlAnalysisPage() {
   const [messageApi, contextHolder] = message.useMessage();
   const selectedLineId = Form.useWatch("line_id", createJobForm);
   const selectedCreateJobType = Form.useWatch("job_type", createJobForm) ?? CREATE_JOB_DEFAULTS.job_type;
+  const selectedExternalAdapter = Form.useWatch("external_adapter", createJobForm) ?? CREATE_JOB_DEFAULTS.external_adapter;
+  const selectedAtpModelId = Form.useWatch("atp_model_id", createJobForm) ?? "";
 
   const canRead = hasPermission("line.read") || hasPermission("line.manage");
   const canManage = hasPermission("line.manage") || hasPermission("tower.manage");
+  const canReadAtp = hasPermission("atp.read") || hasPermission("atp.run") || hasPermission("atp.manage");
 
   const linesQuery = useQuery({
     queryKey: ["/api/v1/lines"],
@@ -392,6 +414,43 @@ export default function AdminFlAnalysisPage() {
         throw new Error(await readApiError(response));
       }
       return (await response.json()) as FlAnalysisJobListResponse;
+    },
+  });
+
+  const engineQuery = useQuery({
+    queryKey: ["/api/v1/atp/models/engine/status"],
+    enabled: !!user && canReadAtp,
+    queryFn: async () => {
+      const response = await fetchWithAuth("/api/v1/atp/models/engine/status");
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as AtpEngineStatusResponse;
+    },
+    staleTime: 30_000,
+  });
+
+  const atpModelsQuery = useQuery({
+    queryKey: ["/api/v1/atp/models", "enabled"],
+    enabled: !!user && canReadAtp,
+    queryFn: async () => {
+      const response = await fetchWithAuth("/api/v1/atp/models?status=enabled");
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as AtpModelListResponse;
+    },
+  });
+
+  const atpVersionsQuery = useQuery({
+    queryKey: ["/api/v1/atp/models/versions", selectedAtpModelId],
+    enabled: !!user && canReadAtp && !!selectedAtpModelId,
+    queryFn: async () => {
+      const response = await fetchWithAuth(`/api/v1/atp/models/${selectedAtpModelId}/versions?limit=200&offset=0`);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as AtpModelVersionListResponse;
     },
   });
 
@@ -439,12 +498,49 @@ export default function AdminFlAnalysisPage() {
     return rows.filter((item) => item.risk_level !== "low");
   }, [selectedJob?.job_type, towerResultsQuery.data?.items]);
 
+  const atpModels = useMemo(() => atpModelsQuery.data?.items ?? [], [atpModelsQuery.data]);
+  const selectedAtpModel = useMemo(
+    () => atpModels.find((item) => item.id === selectedAtpModelId) ?? null,
+    [atpModels, selectedAtpModelId],
+  );
+
   useEffect(() => {
     const firstLine = linesQuery.data?.items[0];
     if (firstLine && !createJobForm.getFieldValue("line_id")) {
       createJobForm.setFieldsValue({ line_id: firstLine.id });
     }
   }, [createJobForm, linesQuery.data?.items]);
+
+  useEffect(() => {
+    if (!["normal", "tongtiao"].includes(selectedCreateJobType)) {
+      return;
+    }
+    if (!["atp", "wine"].includes(selectedExternalAdapter)) {
+      return;
+    }
+    if (!atpModels.length || createJobForm.getFieldValue("atp_model_id")) {
+      return;
+    }
+    createJobForm.setFieldValue("atp_model_id", atpModels[0].id);
+  }, [atpModels, createJobForm, selectedCreateJobType, selectedExternalAdapter]);
+
+  useEffect(() => {
+    if (!["atp", "wine"].includes(selectedExternalAdapter)) {
+      return;
+    }
+    const versions = atpVersionsQuery.data?.items ?? [];
+    if (!versions.length) {
+      return;
+    }
+    const currentVersionId = createJobForm.getFieldValue("atp_version_id");
+    if (currentVersionId && versions.some((item) => item.id === currentVersionId)) {
+      return;
+    }
+    const preferredVersion =
+      versions.find((item) => item.version_no === selectedAtpModel?.active_version_no)
+      ?? versions[0];
+    createJobForm.setFieldValue("atp_version_id", preferredVersion.id);
+  }, [atpVersionsQuery.data?.items, createJobForm, selectedAtpModel?.active_version_no, selectedExternalAdapter]);
 
   async function invalidateFlAnalysisQueries(): Promise<void> {
     await queryClient.invalidateQueries({
@@ -506,7 +602,9 @@ export default function AdminFlAnalysisPage() {
       line_id: values.line_id,
       job_name: values.job_name.trim() || null,
       job_type: values.job_type,
-      external_adapter: "placeholder",
+      external_adapter: values.job_type === "normal" || values.job_type === "tongtiao"
+        ? values.external_adapter
+        : "placeholder",
     };
     if (values.job_type === "normal" || values.job_type === "tongtiao") {
       payload.execution_options_json = {
@@ -521,6 +619,12 @@ export default function AdminFlAnalysisPage() {
         tail_time_max_us: values.tail_time_max_us,
         tail_time_step_us: values.tail_time_step_us,
       };
+      if (values.external_adapter !== "placeholder") {
+        payload.adapter_config_json = {
+          model_id: values.atp_model_id,
+          version_id: values.atp_version_id || undefined,
+        };
+      }
     }
     return payload;
   }
@@ -960,6 +1064,30 @@ export default function AdminFlAnalysisPage() {
   const selectedLine = useMemo(() => {
     return linesQuery.data?.items.find((item) => item.id === selectedLineId) ?? null;
   }, [linesQuery.data?.items, selectedLineId]);
+  const externalAdapterActive = selectedExternalAdapter === "atp" || selectedExternalAdapter === "wine";
+  const engineMode = engineQuery.data?.mode;
+  const adapterOptions = [
+    {
+      value: "placeholder",
+      label: "规则近似(占位)",
+      disabled: false,
+    },
+    {
+      value: "atp",
+      label: "原生 ATP",
+      disabled: !canReadAtp || engineMode === "wine" || engineQuery.data?.available === false,
+    },
+    {
+      value: "wine",
+      label: "Wine / ATP",
+      disabled: !canReadAtp || engineMode === "native" || engineQuery.data?.available === false,
+    },
+  ] as const;
+  const workflowExecutionMessage = externalAdapterActive
+    ? engineQuery.data?.available
+      ? `当前将通过 ${formatExternalAdapter(selectedExternalAdapter)} 链路执行 ATP 模型，并把外部结果回填到任务明细。`
+      : `当前已选择 ${formatExternalAdapter(selectedExternalAdapter)}，但 ATP 引擎不可用：${engineQuery.data?.error || "请先检查执行器配置" }`
+    : `当前按 ${formatJobType(selectedCreateJobType)} 口径生成规则近似版结果；切换到 ATP/Wine 适配器后会走真实外部执行链路。`;
 
   if (!initializing && !user) {
     return <Alert type="warning" showIcon message="请先登录后查看防雷分析结果。" />;
@@ -981,6 +1109,10 @@ export default function AdminFlAnalysisPage() {
   const selectedJobExecutionOptions = readObject(selectedJobDetail?.execution_options_json);
   const selectedJobSummary = readObject(selectedJobDetail?.result_summary_json);
   const selectedJobWorkflow = readObject(selectedJobDetail?.result_summary_json).workflow as WorkflowSummary | undefined;
+  const selectedJobExternalModelCode = readOptionalString(selectedJobSummary, "external_model_code");
+  const selectedJobExternalModelName = readOptionalString(selectedJobSummary, "external_model_name");
+  const selectedJobExternalVersionNo = readOptionalNumber(selectedJobSummary, "external_version_no");
+  const detailExternalExecution = readObject(detailResultObject.external_execution);
   const sourceJobId = readOptionalString(selectedJobExecutionOptions, "source_job_id");
   const canCreateMitigation = selectedJob?.job_type === "risk";
   const canCreateReport = selectedJob?.job_type === "risk" || selectedJob?.job_type === "mitigation";
@@ -1000,7 +1132,7 @@ export default function AdminFlAnalysisPage() {
                 防雷分析与改造
               </Typography.Title>
               <Typography.Text type="secondary">
-                支持源端“普通计算 / 同跳计算 / 风险评估 / 措施推荐 / 报告生成”工作流。普通计算和同跳计算当前为规则近似版，ATP/Wine 外部链路仍保留为后续接入点；报告任务可基于风险或措施结果直接导出 Word 兼容文档。
+                支持源端“普通计算 / 同跳计算 / 风险评估 / 措施推荐 / 报告生成”工作流。普通计算和同跳计算可按 ATP/Wine 外部链路执行，也可退回规则近似版；报告任务可基于风险或措施结果直接导出 Word 兼容文档。
               </Typography.Text>
             </div>
 
@@ -1017,7 +1149,7 @@ export default function AdminFlAnalysisPage() {
                   createJobMutation.mutate(values);
                 }}
               >
-                <div className="grid gap-3 md:grid-cols-4">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                   <Form.Item
                     name="line_id"
                     label="线路"
@@ -1043,6 +1175,15 @@ export default function AdminFlAnalysisPage() {
                       ]}
                     />
                   </Form.Item>
+                  {selectedCreateJobType === "normal" || selectedCreateJobType === "tongtiao" ? (
+                    <Form.Item
+                      name="external_adapter"
+                      label="执行适配器"
+                      rules={[{ required: true, message: "请选择执行适配器" }]}
+                    >
+                      <Select options={adapterOptions.map((item) => ({ ...item }))} />
+                    </Form.Item>
+                  ) : null}
                   <Form.Item name="job_name" label="任务名">
                     <Input
                       placeholder={selectedLine
@@ -1060,10 +1201,60 @@ export default function AdminFlAnalysisPage() {
                 {selectedCreateJobType === "normal" || selectedCreateJobType === "tongtiao" ? (
                   <>
                     <Alert
-                      type="info"
+                      type={externalAdapterActive && engineQuery.data?.available === false ? "warning" : "info"}
                       showIcon
-                      message={`当前按${formatJobType(selectedCreateJobType)}口径生成波头/波尾扫描结果，并在最不利点输出结果。`}
+                      message={workflowExecutionMessage}
                     />
+                    {atpModelsQuery.error && externalAdapterActive ? (
+                      <Alert
+                        type="error"
+                        showIcon
+                        message={atpModelsQuery.error instanceof Error ? atpModelsQuery.error.message : "ATP 模型列表加载失败"}
+                      />
+                    ) : null}
+                    {externalAdapterActive ? (
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        <Form.Item
+                          name="atp_model_id"
+                          label="ATP模型"
+                          rules={[{ required: true, message: "请选择 ATP 模型" }]}
+                        >
+                          <Select
+                            showSearch
+                            optionFilterProp="label"
+                            loading={atpModelsQuery.isLoading}
+                            placeholder="选择 ATP 模型"
+                            options={atpModels.map((item: AtpModelSummary) => ({
+                              value: item.id,
+                              label: `${item.name} / ${item.code}`,
+                            }))}
+                          />
+                        </Form.Item>
+                        <Form.Item
+                          name="atp_version_id"
+                          label="模型版本"
+                          rules={[{ required: true, message: "请选择模型版本" }]}
+                        >
+                          <Select
+                            showSearch
+                            optionFilterProp="label"
+                            loading={atpVersionsQuery.isLoading}
+                            placeholder="选择模型版本"
+                            options={(atpVersionsQuery.data?.items ?? []).map((item: AtpModelVersionSummary) => ({
+                              value: item.id,
+                              label: `v${item.version_no}${item.version_tag ? ` / ${item.version_tag}` : ""}`,
+                            }))}
+                          />
+                        </Form.Item>
+                        <Alert
+                          type="info"
+                          showIcon
+                          message={`执行模式：${engineQuery.data ? formatExternalAdapter(engineQuery.data.mode === "wine" ? "wine" : "atp") : "-"}`}
+                          description={selectedAtpModel ? `当前模型：${selectedAtpModel.name} / ${selectedAtpModel.code}` : "从 ATP 模型管理中选择已发布模板版本。"}
+                          className="md:col-span-2"
+                        />
+                      </div>
+                    ) : null}
                     <div className="grid gap-3 md:grid-cols-4">
                       <Form.Item name="current_waveform" label="雷电流波形">
                         <Select
@@ -1196,6 +1387,14 @@ export default function AdminFlAnalysisPage() {
                         </>
                       ) : selectedJobDetail.job_type === "normal" || selectedJobDetail.job_type === "tongtiao" ? (
                         <>
+                          <Descriptions.Item label="适配器">{formatExternalAdapter(selectedJobDetail.external_adapter)}</Descriptions.Item>
+                          <Descriptions.Item label="ATP模型">
+                            {selectedJobExternalModelName || selectedJobExternalModelCode || "-"}
+                            {selectedJobExternalModelName && selectedJobExternalModelCode ? ` / ${selectedJobExternalModelCode}` : ""}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="模型版本">
+                            {typeof selectedJobExternalVersionNo === "number" ? `v${selectedJobExternalVersionNo}` : "-"}
+                          </Descriptions.Item>
                           <Descriptions.Item label="平均得分">{String(selectedJobDetail.result_summary_json?.score_average ?? "-")}</Descriptions.Item>
                           <Descriptions.Item label="平均扫描点">{String(readObject(selectedJobDetail.result_summary_json).scan_point_average ?? "-")}</Descriptions.Item>
                           <Descriptions.Item label="雷电流波形">{formatCurrentWaveform(selectedJobWorkflow?.current_waveform)}</Descriptions.Item>
@@ -1330,6 +1529,17 @@ export default function AdminFlAnalysisPage() {
                   <Descriptions.Item label="感应电压公式">{formatInducedVoltageFormula(detailWorkflow.induced_voltage_formula)}</Descriptions.Item>
                   <Descriptions.Item label="波头范围">{formatRangeSummary(detailWorkflow.head_time_range_us)}</Descriptions.Item>
                   <Descriptions.Item label="波尾范围">{formatRangeSummary(detailWorkflow.tail_time_range_us)}</Descriptions.Item>
+                  <Descriptions.Item label="执行适配器">
+                    {formatExternalAdapter(readOptionalString(detailExternalExecution, "adapter"))}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="ATP模型">
+                    {readOptionalString(detailExternalExecution, "model_name") || readOptionalString(detailExternalExecution, "model_code") || "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="模型版本">
+                    {typeof readOptionalNumber(detailExternalExecution, "version_no") === "number"
+                      ? `v${readOptionalNumber(detailExternalExecution, "version_no")}`
+                      : "-"}
+                  </Descriptions.Item>
                   {selectedJob?.job_type === "tongtiao" ? (
                     <>
                       <Descriptions.Item label="主导相组">{readOptionalString(detailResultObject, "dominant_phase_set") ?? "-"}</Descriptions.Item>
