@@ -192,6 +192,7 @@ export default function AdminPowerLinesPage() {
 
   const [keyword, setKeyword] = useState("");
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const [lineIdPendingDeletion, setLineIdPendingDeletion] = useState<string | null>(null);
   const [selectedLineTouched, setSelectedLineTouched] = useState(false);
   const [towerKeyword, setTowerKeyword] = useState("");
   const [towerTypeFilter, setTowerTypeFilter] = useState("");
@@ -222,8 +223,17 @@ export default function AdminPowerLinesPage() {
     return `/api/v1/lines${query ? `?${query}` : ""}`;
   }, [keyword]);
 
+  const activeTowerLineId = useMemo(() => {
+    if (!selectedLineId || selectedLineId === lineIdPendingDeletion) {
+      return null;
+    }
+    return selectedLineId;
+  }, [lineIdPendingDeletion, selectedLineId]);
+  const towerQueryCurrent = towerPagination.current;
+  const towerQueryPageSize = towerPagination.pageSize;
+
   const towerListPath = useMemo(() => {
-    if (!selectedLineId) {
+    if (!activeTowerLineId) {
       return "";
     }
     const params = new URLSearchParams();
@@ -237,22 +247,22 @@ export default function AdminPowerLinesPage() {
       params.set("risk_level", towerRiskFilter.trim());
     }
     if (towerViewMode === "table") {
-      params.set("limit", String(towerPagination.pageSize));
-      params.set("offset", String((towerPagination.current - 1) * towerPagination.pageSize));
+      params.set("limit", String(towerQueryPageSize));
+      params.set("offset", String((towerQueryCurrent - 1) * towerQueryPageSize));
     } else {
       params.set("limit", String(TOWER_MAP_QUERY_LIMIT));
       params.set("offset", "0");
     }
     const query = params.toString();
-    return `/api/v1/lines/${selectedLineId}/towers?${query}`;
+    return `/api/v1/lines/${activeTowerLineId}/towers?${query}`;
   }, [
-    selectedLineId,
+    activeTowerLineId,
     towerKeyword,
     towerTypeFilter,
     towerRiskFilter,
     towerViewMode,
-    towerPagination.current,
-    towerPagination.pageSize,
+    towerQueryCurrent,
+    towerQueryPageSize,
   ]);
 
   const linesQuery = useQuery({
@@ -269,7 +279,7 @@ export default function AdminPowerLinesPage() {
 
   const towersQuery = useQuery({
     queryKey: [towerListPath],
-    enabled: !!user && !!selectedLineId && canRead,
+    enabled: !!user && !!activeTowerLineId && canRead,
     queryFn: async () => {
       if (!towerListPath) {
         return { items: [], total: 0 } satisfies LineTowerListResponse;
@@ -351,10 +361,9 @@ export default function AdminPowerLinesPage() {
     void queryClient.invalidateQueries({ queryKey: ["/api/v1/tower-models/selector"] });
   }, [queryClient]));
 
-  const lines = linesQuery.data?.items ?? [];
-  const towers = towersQuery.data?.items ?? [];
-
-  const towerModels = towerModelOptionsQuery.data ?? [];
+  const lines = useMemo(() => linesQuery.data?.items ?? [], [linesQuery.data?.items]);
+  const towers = useMemo(() => towersQuery.data?.items ?? [], [towersQuery.data?.items]);
+  const towerModels = useMemo(() => towerModelOptionsQuery.data ?? [], [towerModelOptionsQuery.data]);
   const towerModelOptions = towerModels.map((item) => ({ value: item.code, label: `${item.code} - ${item.name}` }));
   const effectiveSelectedLineId = useMemo(() => {
     if (selectedLineTouched) {
@@ -365,7 +374,6 @@ export default function AdminPowerLinesPage() {
     }
     return selectedLineId ?? (lines.length > 0 ? lines[0].id : null);
   }, [lines, selectedLineId, selectedLineTouched]);
-  const towerQueryCurrent = towerPagination.current;
   const shouldResetTowerPage = towerQueryCurrent !== 1 && (
     selectedLineId !== effectiveSelectedLineId
     || towerKeyword.trim().length > 0
@@ -466,6 +474,11 @@ export default function AdminPowerLinesPage() {
       }
       return lineId;
     },
+    onMutate: (lineId) => {
+      if (effectiveSelectedLineId === lineId) {
+        setLineIdPendingDeletion(lineId);
+      }
+    },
     onSuccess: async (lineId) => {
       if (effectiveSelectedLineId === lineId) {
         setSelectedLineTouched(false);
@@ -474,10 +487,12 @@ export default function AdminPowerLinesPage() {
       setError("");
       messageApi.success("线路已删除");
       await refreshLines();
-      await refreshTowers();
     },
     onError: (candidate) => {
       setError(candidate instanceof Error ? candidate.message : "删除线路失败");
+    },
+    onSettled: () => {
+      setLineIdPendingDeletion(null);
     },
   });
 
