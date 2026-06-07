@@ -44,6 +44,10 @@ type MitigationFormValues = {
   non_construction: boolean;
 };
 
+type ReportFormValues = {
+  job_name: string;
+};
+
 type ReasonDetail = {
   code: string;
   label: string;
@@ -148,6 +152,22 @@ function readOptionalNumber(record: Record<string, unknown>, key: string): numbe
   return typeof value === "number" ? value : null;
 }
 
+function readDownloadFilename(headerValue: string | null, fallback: string): string {
+  if (!headerValue) {
+    return fallback;
+  }
+  const utf8Matched = /filename\*=UTF-8''([^;]+)/i.exec(headerValue);
+  if (utf8Matched?.[1]) {
+    try {
+      return decodeURIComponent(utf8Matched[1]);
+    } catch {
+      return utf8Matched[1];
+    }
+  }
+  const matched = /filename="?([^"]+)"?/i.exec(headerValue);
+  return matched?.[1] ?? fallback;
+}
+
 function readReasonDetails(row: FlAnalysisTowerResultSummary | null): ReasonDetail[] {
   const value = row ? readObject(row.result_json).reason_details : null;
   return Array.isArray(value) ? (value as ReasonDetail[]) : [];
@@ -190,10 +210,13 @@ export default function AdminFlAnalysisPage() {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [detailRow, setDetailRow] = useState<FlAnalysisTowerResultSummary | null>(null);
   const [mitigationModalOpen, setMitigationModalOpen] = useState(false);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedMitigationTowerIds, setSelectedMitigationTowerIds] = useState<string[]>([]);
+  const [selectedReportTowerIds, setSelectedReportTowerIds] = useState<string[]>([]);
   const [riskJobForm] = Form.useForm<RiskJobFormValues>();
   const [mitigationForm] = Form.useForm<MitigationFormValues>();
+  const [reportForm] = Form.useForm<ReportFormValues>();
   const [messageApi, contextHolder] = message.useMessage();
   const selectedLineId = Form.useWatch("line_id", riskJobForm);
 
@@ -260,24 +283,20 @@ export default function AdminFlAnalysisPage() {
     [towerResultsQuery.data?.items],
   );
 
+  const candidateReportRows = useMemo(() => {
+    const rows = towerResultsQuery.data?.items ?? [];
+    if (selectedJob?.job_type === "mitigation") {
+      return rows;
+    }
+    return rows.filter((item) => item.risk_level !== "low");
+  }, [selectedJob?.job_type, towerResultsQuery.data?.items]);
+
   useEffect(() => {
     const firstLine = linesQuery.data?.items[0];
     if (firstLine && !riskJobForm.getFieldValue("line_id")) {
       riskJobForm.setFieldsValue({ line_id: firstLine.id });
     }
   }, [linesQuery.data?.items, riskJobForm]);
-
-  useEffect(() => {
-    if (!mitigationModalOpen) {
-      return;
-    }
-    setSelectedMitigationTowerIds(candidateMitigationRows.map((item) => item.tower_id));
-    const baseName = selectedJob?.job_name || selectedJob?.line_name || selectedJob?.line_code || "防雷任务";
-    mitigationForm.setFieldsValue({
-      job_name: `${baseName}-措施推荐`,
-      non_construction: false,
-    });
-  }, [candidateMitigationRows, mitigationForm, mitigationModalOpen, selectedJob]);
 
   async function invalidateFlAnalysisQueries(): Promise<void> {
     await queryClient.invalidateQueries({
@@ -307,6 +326,31 @@ export default function AdminFlAnalysisPage() {
     }
     const started = (await startResponse.json()) as { job: FlAnalysisJobDetail };
     return started.job;
+  }
+
+  function openMitigationJobModal(): void {
+    if (!selectedJob) {
+      return;
+    }
+    const baseName = selectedJob.job_name || selectedJob.line_name || selectedJob.line_code || "防雷任务";
+    setSelectedMitigationTowerIds(candidateMitigationRows.map((item) => item.tower_id));
+    mitigationForm.setFieldsValue({
+      job_name: `${baseName}-措施推荐`,
+      non_construction: false,
+    });
+    setMitigationModalOpen(true);
+  }
+
+  function openReportJobModal(): void {
+    if (!selectedJob) {
+      return;
+    }
+    const baseName = selectedJob.job_name || selectedJob.line_name || selectedJob.line_code || "防雷任务";
+    setSelectedReportTowerIds(candidateReportRows.map((item) => item.tower_id));
+    reportForm.setFieldsValue({
+      job_name: `${baseName}-报告`,
+    });
+    setReportModalOpen(true);
   }
 
   const createRiskJobMutation = useMutation({
@@ -378,6 +422,67 @@ export default function AdminFlAnalysisPage() {
     },
     onError: (error) => {
       messageApi.error(error instanceof Error ? error.message : "措施推荐任务创建失败");
+    },
+  });
+
+  const createReportMutation = useMutation({
+    mutationFn: async (values: ReportFormValues) => {
+      if (!selectedJob) {
+        throw new Error("缺少报告来源任务");
+      }
+      if (!["risk", "mitigation"].includes(selectedJob.job_type)) {
+        throw new Error("仅风险评估或措施推荐任务可生成报告");
+      }
+      if (selectedReportTowerIds.length === 0) {
+        throw new Error("请至少选择一座纳入报告的杆塔");
+      }
+      return createAndStartJob({
+        line_id: selectedJob.line_id,
+        job_name: values.job_name.trim() || null,
+        job_type: "report",
+        external_adapter: "placeholder",
+        execution_options_json: {
+          source_job_id: selectedJob.id,
+          selected_tower_ids: selectedReportTowerIds,
+        },
+      });
+    },
+    onSuccess: async (job) => {
+      await invalidateFlAnalysisQueries();
+      setReportModalOpen(false);
+      setSelectedJobId(job.id);
+      messageApi.success("报告任务已创建并启动");
+    },
+    onError: (error) => {
+      messageApi.error(error instanceof Error ? error.message : "报告任务创建失败");
+    },
+  });
+
+  const downloadReportMutation = useMutation({
+    mutationFn: async (jobId: string) => {
+      const response = await fetchWithAuth(`/api/v1/fl-analysis/jobs/${jobId}/report/download`);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      const blob = await response.blob();
+      const filename = readDownloadFilename(
+        response.headers.get("content-disposition"),
+        "防雷报告.doc",
+      );
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    },
+    onSuccess: () => {
+      messageApi.success("报告下载成功");
+    },
+    onError: (error) => {
+      messageApi.error(error instanceof Error ? error.message : "报告下载失败");
     },
   });
 
@@ -556,8 +661,14 @@ export default function AdminFlAnalysisPage() {
   const reasonDetails = readReasonDetails(detailRow);
   const mitigationActions = readMitigationActions(detailRow);
   const selectedJobExecutionOptions = readObject(selectedJobDetail?.execution_options_json);
+  const selectedJobSummary = readObject(selectedJobDetail?.result_summary_json);
   const sourceJobId = readOptionalString(selectedJobExecutionOptions, "source_job_id");
   const canCreateMitigation = selectedJob?.job_type === "risk";
+  const canCreateReport = selectedJob?.job_type === "risk" || selectedJob?.job_type === "mitigation";
+  const reportSourceJobType = readOptionalString(selectedJobSummary, "source_job_type");
+  const reportSourceJobName = readOptionalString(selectedJobSummary, "source_job_name");
+  const reportMitigationJobName = readOptionalString(selectedJobSummary, "mitigation_job_name");
+  const reportDocumentName = readOptionalString(selectedJobSummary, "document_filename");
 
   return (
     <>
@@ -570,7 +681,7 @@ export default function AdminFlAnalysisPage() {
                 防雷分析与改造
               </Typography.Title>
               <Typography.Text type="secondary">
-                迁移源端“高风险原因 + 措施推荐”工作流：先创建风险评估任务，再查看高风险原因，最后从高风险杆塔生成措施推荐任务。
+                迁移源端“风险评估 + 措施推荐 + 报告生成”工作流：先生成风险结果，再按需派生措施任务或报告任务，并直接下载 Word 兼容报告。
               </Typography.Text>
             </div>
 
@@ -672,6 +783,18 @@ export default function AdminFlAnalysisPage() {
                             {String(readObject(selectedJobDetail.result_summary_json).arrester_required_count ?? "-")}
                           </Descriptions.Item>
                         </>
+                      ) : selectedJobDetail.job_type === "report" ? (
+                        <>
+                          <Descriptions.Item label="报告来源">
+                            {reportSourceJobType ? formatJobType(reportSourceJobType) : "-"}
+                            {reportSourceJobName ? ` / ${reportSourceJobName}` : ""}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="选塔数">
+                            {String(readObject(selectedJobDetail.result_summary_json).selected_tower_count ?? "-")}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="关联措施任务">{reportMitigationJobName || "未关联"}</Descriptions.Item>
+                          <Descriptions.Item label="文档名">{reportDocumentName || "-"}</Descriptions.Item>
+                        </>
                       ) : (
                         <>
                           <Descriptions.Item label="平均得分">{String(selectedJobDetail.result_summary_json?.score_average ?? "-")}</Descriptions.Item>
@@ -680,27 +803,47 @@ export default function AdminFlAnalysisPage() {
                       )}
                     </Descriptions>
 
-                    {canManage ? (
+                    {canManage || selectedJob.job_type === "report" ? (
                       <Space wrap>
-                        <Button
-                          onClick={() => {
-                            if (selectedJob) {
-                              startJobMutation.mutate(selectedJob.id);
-                            }
-                          }}
-                          loading={startJobMutation.isPending}
-                        >
-                          {selectedJob.status === "success" ? "重新执行任务" : "启动任务"}
-                        </Button>
-                        {canCreateMitigation ? (
+                        {canManage ? (
+                          <Button
+                            onClick={() => {
+                              if (selectedJob) {
+                                startJobMutation.mutate(selectedJob.id);
+                              }
+                            }}
+                            loading={startJobMutation.isPending}
+                          >
+                            {selectedJob.status === "success" ? "重新执行任务" : "启动任务"}
+                          </Button>
+                        ) : null}
+                        {canManage && canCreateMitigation ? (
                           <Button
                             type="primary"
                             disabled={candidateMitigationRows.length === 0}
-                            onClick={() => {
-                              setMitigationModalOpen(true);
-                            }}
+                            onClick={openMitigationJobModal}
                           >
                             生成措施推荐任务
+                          </Button>
+                        ) : null}
+                        {canManage && canCreateReport ? (
+                          <Button
+                            disabled={candidateReportRows.length === 0}
+                            onClick={openReportJobModal}
+                          >
+                            生成报告任务
+                          </Button>
+                        ) : null}
+                        {selectedJob.job_type === "report" ? (
+                          <Button
+                            type="primary"
+                            onClick={() => {
+                              downloadReportMutation.mutate(selectedJob.id);
+                            }}
+                            loading={downloadReportMutation.isPending}
+                            disabled={selectedJob.status !== "success"}
+                          >
+                            下载报告
                           </Button>
                         ) : null}
                       </Space>
@@ -894,6 +1037,88 @@ export default function AdminFlAnalysisPage() {
                   },
                 ]}
                 dataSource={candidateMitigationRows}
+                scroll={{ x: 1000 }}
+              />
+            </>
+          )}
+        </Space>
+      </Modal>
+
+      <Modal
+        title={selectedJob ? `报告生成 - ${selectedJob.job_name || selectedJob.line_name || selectedJob.line_code}` : "报告生成"}
+        open={reportModalOpen}
+        width={1080}
+        confirmLoading={createReportMutation.isPending}
+        okText="创建并启动报告任务"
+        onCancel={() => {
+          if (createReportMutation.isPending) {
+            return;
+          }
+          setReportModalOpen(false);
+        }}
+        onOk={() => {
+          reportForm.submit();
+        }}
+      >
+        <Space direction="vertical" size={16} className="flex w-full">
+          <Alert
+            type="info"
+            showIcon
+            message="源端迁移口径：报告任务挂靠在已完成的风险评估或措施推荐结果上，并允许按杆塔缩小纳入报告的范围。"
+          />
+          <Form<ReportFormValues>
+            form={reportForm}
+            layout="vertical"
+            onFinish={(values) => {
+              createReportMutation.mutate(values);
+            }}
+          >
+            <Form.Item
+              name="job_name"
+              label="任务名称"
+              rules={[{ required: true, message: "请输入任务名称" }]}
+            >
+              <Input placeholder="报告任务名称" />
+            </Form.Item>
+          </Form>
+
+          {(candidateReportRows.length ?? 0) === 0 ? (
+            <Empty description="当前任务没有可纳入报告的杆塔结果" />
+          ) : (
+            <>
+              <Typography.Text type="secondary">
+                已命中 {candidateReportRows.length} 座可纳入报告的杆塔。默认全选，可按需缩小报告范围。
+              </Typography.Text>
+              <Table<FlAnalysisTowerResultSummary>
+                rowKey="tower_id"
+                size="small"
+                pagination={{ pageSize: 8, showSizeChanger: false }}
+                rowSelection={{
+                  selectedRowKeys: selectedReportTowerIds,
+                  onChange: (keys) => {
+                    setSelectedReportTowerIds(keys.map((item) => String(item)));
+                  },
+                }}
+                columns={[
+                  { title: "杆塔号", dataIndex: "tower_no", width: 120 },
+                  {
+                    title: "风险等级",
+                    dataIndex: "risk_level",
+                    width: 120,
+                    render: (value: string | null) => <Tag color={riskColor(value)}>{formatRiskLevel(value)}</Tag>,
+                  },
+                  {
+                    title: "高风险原因",
+                    key: "cause_analysis",
+                    render: (_value, row) => readString(readObject(row.result_json), "cause_analysis"),
+                  },
+                  {
+                    title: "措施建议",
+                    key: "mitigation_recommendation",
+                    render: (_value, row) => readString(readObject(row.result_json), "mitigation_recommendation"),
+                  },
+                ]}
+                dataSource={candidateReportRows}
                 scroll={{ x: 1000 }}
               />
             </>

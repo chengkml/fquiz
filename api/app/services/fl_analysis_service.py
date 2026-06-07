@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -26,6 +27,7 @@ from ..schemas.fl_analysis import (
     FlAnalysisTowerResultListResponse,
     FlAnalysisTowerResultSummary,
 )
+from .fl_analysis_report import build_report_document, build_report_summary_payload
 from .fl_analysis_rules import grade_mitigation_snapshot_payload, grade_snapshot_payload
 from .push_service import publish_topic
 
@@ -164,6 +166,8 @@ def create_job(
     execution_options = _normalize_execution_options(payload.job_type, payload.execution_options_json or {})
     if payload.job_type == "mitigation":
         total_tower_count = _validate_mitigation_options(db, line_id=line.id, execution_options=execution_options)
+    elif payload.job_type == "report":
+        total_tower_count = _validate_report_options(db, line_id=line.id, execution_options=execution_options)
     else:
         total_tower_count = int(
             db.scalar(
@@ -245,6 +249,21 @@ def start_job(
     return FlAnalysisJobStartResponse(job=serialize_job(latest, include_runs=True), queued=True)
 
 
+def download_report_document(db: Session, *, job_id: str) -> tuple[str, bytes]:
+    job = get_job_by_id(db, job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="防雷分析任务不存在")
+    if job.job_type != "report":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="仅报告任务支持文档下载")
+    if job.status != "success":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="报告任务尚未成功完成")
+
+    execution_options = _normalize_execution_options(job.job_type, job.execution_options_json or {})
+    generated_at = _read_report_generated_at(job) or job.finished_at or utcnow()
+    report_data = _prepare_report_payload(db, job=job, execution_options=execution_options, generated_at=generated_at)
+    return build_report_document(report_data)
+
+
 def execute_job(job_id: str) -> None:
     db = SessionLocal()
     started_perf = time.perf_counter()
@@ -284,6 +303,16 @@ def execute_job(job_id: str) -> None:
         )
 
         execution_options = _normalize_execution_options(job.job_type, job.execution_options_json or {})
+        if job.job_type == "report":
+            _execute_report_job(
+                db,
+                job=job,
+                run=run,
+                execution_options=execution_options,
+                started_perf=started_perf,
+            )
+            return
+
         towers = _load_job_towers(db, job=job, execution_options=execution_options)
         if not towers:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前线路没有可分析的杆塔数据")
@@ -497,6 +526,214 @@ def _mark_job_failed_without_run(db: Session, *, job_id: str, error_message: str
     )
 
 
+def _execute_report_job(
+    db: Session,
+    *,
+    job: FlAnalysisJob,
+    run: FlAnalysisRun,
+    execution_options: dict[str, Any],
+    started_perf: float,
+) -> None:
+    source_job_id = str(execution_options.get("source_job_id") or "")
+    source_run_id = str(execution_options.get("source_run_id") or "")
+    selected_tower_ids = list(execution_options.get("selected_tower_ids") or [])
+
+    if not source_job_id or not source_run_id or not selected_tower_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="报告任务缺少来源结果或选塔范围")
+
+    source_rows = _load_result_rows(db, job_id=source_job_id, run_id=source_run_id)
+    source_row_map = {
+        item.snapshot.tower_id: item
+        for item in source_rows
+        if item.snapshot is not None and item.snapshot.tower_id
+    }
+    selected_source_rows: list[FlAnalysisTowerResult] = []
+    for tower_id in selected_tower_ids:
+        item = source_row_map.get(tower_id)
+        if item is None or item.snapshot is None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="报告任务的杆塔范围已失效，请重新生成任务")
+        selected_source_rows.append(item)
+
+    db.execute(delete(FlAnalysisTowerResult).where(FlAnalysisTowerResult.run_id == run.id))
+    db.execute(delete(FlAnalysisTowerSnapshot).where(FlAnalysisTowerSnapshot.run_id == run.id))
+    db.flush()
+
+    snapshot_pairs: list[tuple[FlAnalysisTowerSnapshot, FlAnalysisTowerResult]] = []
+    for source_item in selected_source_rows:
+        source_snapshot = source_item.snapshot
+        snapshot = FlAnalysisTowerSnapshot(
+            job_id=job.id,
+            run_id=run.id,
+            tower_id=source_snapshot.tower_id,
+            seq_no=source_snapshot.seq_no,
+            tower_no=source_snapshot.tower_no,
+            tower_model=source_snapshot.tower_model,
+            tower_type=source_snapshot.tower_type,
+            longitude=source_snapshot.longitude,
+            latitude=source_snapshot.latitude,
+            altitude_m=source_snapshot.altitude_m,
+            terrain=source_snapshot.terrain,
+            base_tower_json=source_snapshot.base_tower_json or {},
+            profile_json=source_snapshot.profile_json or {},
+            create_date=utcnow(),
+        )
+        db.add(snapshot)
+        snapshot_pairs.append((snapshot, source_item))
+
+    db.flush()
+
+    result_count = 0
+    for snapshot, source_item in snapshot_pairs:
+        db.add(
+            FlAnalysisTowerResult(
+                job_id=job.id,
+                run_id=run.id,
+                snapshot_id=snapshot.id,
+                status="success",
+                risk_level=source_item.risk_level,
+                summary_text=source_item.summary_text,
+                result_json=source_item.result_json or {},
+                create_date=utcnow(),
+                update_date=utcnow(),
+            )
+        )
+        result_count += 1
+
+    run.snapshot_tower_count = len(snapshot_pairs)
+    run.result_tower_count = result_count
+    job.total_tower_count = len(snapshot_pairs)
+    job.snapshotted_tower_count = len(snapshot_pairs)
+    job.result_tower_count = result_count
+    db.commit()
+
+    generated_at = utcnow()
+    summary = build_report_summary_payload(
+        _prepare_report_payload(db, job=job, execution_options=execution_options, generated_at=generated_at)
+    )
+
+    _finish_rule_based_run(
+        db,
+        job_id=job.id,
+        run_id=run.id,
+        started_perf=started_perf,
+        summary=summary,
+    )
+
+
+def _prepare_report_payload(
+    db: Session,
+    *,
+    job: FlAnalysisJob,
+    execution_options: dict[str, Any],
+    generated_at: datetime,
+) -> dict[str, Any]:
+    risk_job_id = str(execution_options.get("risk_job_id") or "")
+    risk_run_id = str(execution_options.get("risk_run_id") or "")
+    selected_tower_ids = list(execution_options.get("selected_tower_ids") or [])
+    if not risk_job_id or not risk_run_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="报告任务缺少风险评估来源")
+
+    risk_job = get_job_by_id(db, risk_job_id)
+    if risk_job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="关联风险任务不存在")
+
+    risk_rows = [_serialize_report_row(item) for item in _load_result_rows(db, job_id=risk_job_id, run_id=risk_run_id)]
+    selected_risk_rows = _filter_rows_by_tower_ids(risk_rows, selected_tower_ids)
+    if len(selected_risk_rows) != len(selected_tower_ids):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="报告任务的风险结果已失效，请重新生成任务")
+
+    mitigation_job_id = str(execution_options.get("mitigation_job_id") or "")
+    mitigation_run_id = str(execution_options.get("mitigation_run_id") or "")
+    mitigation_job = get_job_by_id(db, mitigation_job_id) if mitigation_job_id else None
+    selected_mitigation_rows: list[dict[str, Any]] = []
+    if mitigation_job is not None and mitigation_run_id:
+        mitigation_rows = [
+            _serialize_report_row(item)
+            for item in _load_result_rows(db, job_id=mitigation_job_id, run_id=mitigation_run_id)
+        ]
+        selected_mitigation_rows = _filter_rows_by_tower_ids(mitigation_rows, selected_tower_ids)
+
+    source_job = get_job_by_id(db, str(execution_options.get("source_job_id") or ""))
+    line = risk_job.line or job.line
+
+    return {
+        "line": {
+            "name": line.name if line else None,
+            "code": line.code if line else None,
+            "voltage_kv": line.voltage_kv if line else None,
+        },
+        "report": {
+            "job_name": job.job_name,
+            "generated_at": generated_at,
+            "source_job_id": source_job.id if source_job else None,
+            "source_job_type": source_job.job_type if source_job else None,
+            "source_job_name": source_job.job_name if source_job else None,
+            "risk_job_id": risk_job.id,
+            "risk_job_name": risk_job.job_name,
+            "mitigation_job_id": mitigation_job.id if mitigation_job else None,
+            "mitigation_job_name": mitigation_job.job_name if mitigation_job else None,
+        },
+        "risk_rows": risk_rows,
+        "selected_risk_rows": selected_risk_rows,
+        "selected_mitigation_rows": selected_mitigation_rows,
+    }
+
+
+def _serialize_report_row(item: FlAnalysisTowerResult) -> dict[str, Any]:
+    snapshot = item.snapshot
+    return {
+        "tower_id": snapshot.tower_id if snapshot else None,
+        "seq_no": snapshot.seq_no if snapshot else 0,
+        "tower_no": snapshot.tower_no if snapshot else None,
+        "tower_model": snapshot.tower_model if snapshot else None,
+        "tower_type": snapshot.tower_type if snapshot else None,
+        "risk_level": item.risk_level,
+        "summary_text": item.summary_text,
+        "result_json": item.result_json or {},
+    }
+
+
+def _filter_rows_by_tower_ids(rows: list[dict[str, Any]], tower_ids: list[str]) -> list[dict[str, Any]]:
+    row_map = {
+        str(item.get("tower_id")): item
+        for item in rows
+        if item.get("tower_id") is not None
+    }
+    selected_rows: list[dict[str, Any]] = []
+    for tower_id in tower_ids:
+        item = row_map.get(tower_id)
+        if item is not None:
+            selected_rows.append(item)
+    return selected_rows
+
+
+def _load_result_rows(db: Session, *, job_id: str, run_id: str) -> list[FlAnalysisTowerResult]:
+    rows = db.execute(
+        select(FlAnalysisTowerResult).where(
+            FlAnalysisTowerResult.job_id == job_id,
+            FlAnalysisTowerResult.run_id == run_id,
+        )
+    ).scalars().all()
+    return sorted(
+        rows,
+        key=lambda item: (
+            item.snapshot.seq_no if item.snapshot is not None else 0,
+            item.create_date,
+            item.id,
+        ),
+    )
+
+
+def _read_report_generated_at(job: FlAnalysisJob) -> datetime | None:
+    value = (job.result_summary_json or {}).get("generated_at")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
 def _build_base_tower_json(tower: LineTower, line: Line | None) -> dict[str, Any]:
     return {
         "tower_id": tower.id,
@@ -606,14 +843,46 @@ def _normalize_execution_options(job_type: str, execution_options: dict[str, Any
         normalized["source_run_id"] = source_run_id
     else:
         normalized.pop("source_run_id", None)
+    mitigation_job_id = str(normalized.get("mitigation_job_id") or "").strip()
+    if mitigation_job_id:
+        normalized["mitigation_job_id"] = mitigation_job_id
+    else:
+        normalized.pop("mitigation_job_id", None)
+    mitigation_run_id = str(normalized.get("mitigation_run_id") or "").strip()
+    if mitigation_run_id:
+        normalized["mitigation_run_id"] = mitigation_run_id
+    else:
+        normalized.pop("mitigation_run_id", None)
+    risk_job_id = str(normalized.get("risk_job_id") or "").strip()
+    if risk_job_id:
+        normalized["risk_job_id"] = risk_job_id
+    else:
+        normalized.pop("risk_job_id", None)
+    risk_run_id = str(normalized.get("risk_run_id") or "").strip()
+    if risk_run_id:
+        normalized["risk_run_id"] = risk_run_id
+    else:
+        normalized.pop("risk_run_id", None)
+    source_job_type = str(normalized.get("source_job_type") or "").strip()
+    if source_job_type:
+        normalized["source_job_type"] = source_job_type
+    else:
+        normalized.pop("source_job_type", None)
     normalized["non_construction"] = bool(
         normalized.get("non_construction")
         or normalized.get("mitigation_mode") == "non_construction"
     )
-    if job_type != "mitigation":
+    if job_type not in {"mitigation", "report"}:
         normalized.pop("selected_tower_ids", None)
         normalized.pop("source_job_id", None)
         normalized.pop("source_run_id", None)
+        normalized.pop("mitigation_job_id", None)
+        normalized.pop("mitigation_run_id", None)
+        normalized.pop("risk_job_id", None)
+        normalized.pop("risk_run_id", None)
+        normalized.pop("source_job_type", None)
+        normalized.pop("non_construction", None)
+    elif job_type != "mitigation":
         normalized.pop("non_construction", None)
     return normalized
 
@@ -649,16 +918,151 @@ def _validate_mitigation_options(db: Session, *, line_id: str, execution_options
     return len(selected_tower_ids)
 
 
+def _validate_report_options(db: Session, *, line_id: str, execution_options: dict[str, Any]) -> int:
+    source_job_id = str(execution_options.get("source_job_id") or "")
+    if not source_job_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="报告任务缺少来源任务")
+    selected_tower_ids = execution_options.get("selected_tower_ids") or []
+    if not selected_tower_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="报告任务至少需要选择一座杆塔")
+
+    source_job = get_job_by_id(db, source_job_id)
+    if not source_job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="报告来源任务不存在")
+    if source_job.line_id != line_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="报告来源任务与当前线路不匹配")
+    if source_job.status != "success":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="报告来源任务尚未成功完成")
+    if source_job.job_type not in {"risk", "mitigation"}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="仅风险评估或措施推荐任务可生成报告")
+
+    source_run_id = _resolve_source_run_id(source_job)
+    if not source_run_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="报告来源任务缺少可复用结果")
+
+    execution_options["source_job_id"] = source_job.id
+    execution_options["source_job_type"] = source_job.job_type
+    execution_options["source_run_id"] = source_run_id
+
+    if source_job.job_type == "risk":
+        risk_job = source_job
+        mitigation_job = None
+        provided_mitigation_job_id = str(execution_options.get("mitigation_job_id") or "")
+        if provided_mitigation_job_id:
+            mitigation_job = _validate_report_mitigation_job(
+                db,
+                line_id=line_id,
+                risk_job_id=risk_job.id,
+                mitigation_job_id=provided_mitigation_job_id,
+            )
+        else:
+            mitigation_job = _find_latest_success_mitigation_job(db, line_id=line_id, source_job_id=risk_job.id)
+
+        execution_options["risk_job_id"] = risk_job.id
+        execution_options["risk_run_id"] = source_run_id
+        allowed_tower_ids = _load_report_candidate_tower_ids(
+            db,
+            job_id=risk_job.id,
+            run_id=source_run_id,
+            exclude_low_risk=True,
+        )
+        if mitigation_job is not None:
+            mitigation_run_id = _resolve_source_run_id(mitigation_job)
+            if not mitigation_run_id:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="关联措施任务缺少可复用结果")
+            execution_options["mitigation_job_id"] = mitigation_job.id
+            execution_options["mitigation_run_id"] = mitigation_run_id
+        else:
+            execution_options.pop("mitigation_job_id", None)
+            execution_options.pop("mitigation_run_id", None)
+    else:
+        mitigation_job = source_job
+        risk_job_id = str((mitigation_job.execution_options_json or {}).get("source_job_id") or "")
+        if not risk_job_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="措施推荐任务缺少关联风险任务，无法生成报告")
+        risk_job = get_job_by_id(db, risk_job_id)
+        if not risk_job:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="关联风险任务不存在")
+        if risk_job.line_id != line_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="关联风险任务与当前线路不匹配")
+        if risk_job.job_type != "risk" or risk_job.status != "success":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="关联风险任务尚未成功完成")
+
+        risk_run_id = _resolve_source_run_id(risk_job)
+        if not risk_run_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="关联风险任务缺少可复用结果")
+
+        execution_options["risk_job_id"] = risk_job.id
+        execution_options["risk_run_id"] = risk_run_id
+        execution_options["mitigation_job_id"] = mitigation_job.id
+        execution_options["mitigation_run_id"] = source_run_id
+        allowed_tower_ids = _load_report_candidate_tower_ids(
+            db,
+            job_id=mitigation_job.id,
+            run_id=source_run_id,
+            exclude_low_risk=False,
+        )
+
+    if not allowed_tower_ids:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="报告来源任务暂无可复用杆塔结果")
+
+    invalid_ids = [tower_id for tower_id in selected_tower_ids if tower_id not in allowed_tower_ids]
+    if invalid_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="报告任务包含无效的杆塔选择")
+    return len(selected_tower_ids)
+
+
+def _validate_report_mitigation_job(
+    db: Session,
+    *,
+    line_id: str,
+    risk_job_id: str,
+    mitigation_job_id: str,
+) -> FlAnalysisJob:
+    mitigation_job = get_job_by_id(db, mitigation_job_id)
+    if not mitigation_job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="关联措施任务不存在")
+    if mitigation_job.line_id != line_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="关联措施任务与当前线路不匹配")
+    if mitigation_job.job_type != "mitigation":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="仅措施推荐任务可作为报告关联任务")
+    if mitigation_job.status != "success":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="关联措施任务尚未成功完成")
+    source_job_id = str((mitigation_job.execution_options_json or {}).get("source_job_id") or "")
+    if source_job_id != risk_job_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="关联措施任务不属于当前风险评估任务")
+    return mitigation_job
+
+
+def _find_latest_success_mitigation_job(db: Session, *, line_id: str, source_job_id: str) -> FlAnalysisJob | None:
+    rows = db.execute(
+        select(FlAnalysisJob)
+        .where(
+            FlAnalysisJob.line_id == line_id,
+            FlAnalysisJob.job_type == "mitigation",
+            FlAnalysisJob.status == "success",
+        )
+        .order_by(FlAnalysisJob.update_date.desc(), FlAnalysisJob.id.desc())
+    ).scalars().all()
+    for item in rows:
+        if str((item.execution_options_json or {}).get("source_job_id") or "") == source_job_id:
+            return item
+    return None
+
+
 def _load_job_towers(db: Session, *, job: FlAnalysisJob, execution_options: dict[str, Any]) -> list[LineTower]:
     towers = db.execute(
         select(LineTower).where(LineTower.line_id == job.line_id).order_by(LineTower.seq_no.asc())
     ).scalars().all()
-    if job.job_type != "mitigation":
+    if job.job_type not in {"mitigation", "report"}:
         return towers
     selected_ids = set(execution_options.get("selected_tower_ids") or [])
     scoped_towers = [tower for tower in towers if tower.id in selected_ids]
     if len(scoped_towers) != len(selected_ids):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="措施推荐任务的杆塔范围已失效，请重新生成任务")
+        detail = "措施推荐任务的杆塔范围已失效，请重新生成任务"
+        if job.job_type == "report":
+            detail = "报告任务的杆塔范围已失效，请重新生成任务"
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
     return scoped_towers
 
 
@@ -686,6 +1090,24 @@ def _load_result_tower_ids(db: Session, *, job_id: str, run_id: str) -> set[str]
         )
     ).scalars().all()
     return {str(item) for item in rows if item}
+
+
+def _load_report_candidate_tower_ids(
+    db: Session,
+    *,
+    job_id: str,
+    run_id: str,
+    exclude_low_risk: bool,
+) -> set[str]:
+    rows = _load_result_rows(db, job_id=job_id, run_id=run_id)
+    tower_ids: set[str] = set()
+    for item in rows:
+        if item.snapshot is None or not item.snapshot.tower_id:
+            continue
+        if exclude_low_risk and item.risk_level == "low":
+            continue
+        tower_ids.add(str(item.snapshot.tower_id))
+    return tower_ids
 
 
 def _resolve_source_run_id(job: FlAnalysisJob) -> str | None:
