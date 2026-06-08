@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
   App,
   Button,
   Card,
@@ -24,6 +23,7 @@ import type { ColumnsType } from "antd/es/table";
 import type { CSSProperties, ComponentType } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { MenuItem, RoleItem, RoleListResponse } from "@/types/auth";
@@ -65,6 +65,11 @@ export default function AdminRolesPage() {
 
   const canRead = hasPermission("role.read") || hasPermission("role.manage");
   const canManage = hasPermission("role.manage");
+
+  useToastFeedback({
+    errorMessage: error,
+    clearError: () => setError(""),
+  });
 
   const menuOptions = useMemo(
     () => menus.map((menu) => ({ value: menu.id, label: `${menu.name} (${menu.code})` })),
@@ -417,17 +422,6 @@ export default function AdminRolesPage() {
 
   return (
     <div className="space-y-6">
-      {error && (
-        <Alert
-          type="error"
-          showIcon
-          closable
-          message="操作失败"
-          description={<pre className="mb-0 whitespace-pre-wrap break-words">{error}</pre>}
-          onClose={() => setError("")}
-        />
-      )}
-
       <AntCard
         title="角色列表"
         extra={

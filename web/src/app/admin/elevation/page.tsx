@@ -27,6 +27,7 @@ import type { ColumnsType } from "antd/es/table";
 import { useAuth } from "@/components/auth-provider";
 import { ElevationPreviewCesiumMap } from "@/components/elevation-preview-cesium-map";
 import { Card } from "@/components/ui-antd";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { getApiBaseUrl, readApiError } from "@/lib/api";
 import { readLinePreparation } from "@/lib/line-preparation";
@@ -213,6 +214,15 @@ export default function AdminElevationPage() {
         ),
     });
   }, [queryClient]);
+
+  useToastFeedback({
+    errorMessage:
+      error
+      || (datasetsQuery.error instanceof Error ? datasetsQuery.error.message : "")
+      || (jobsQuery.error instanceof Error ? jobsQuery.error.message : "")
+      || (linesQuery.error instanceof Error ? linesQuery.error.message : ""),
+    clearError: () => setError(""),
+  });
 
   const refreshPowerLines = useCallback(async () => {
     await queryClient.invalidateQueries({
@@ -724,20 +734,6 @@ export default function AdminElevationPage() {
   return (
     <div className="space-y-6">
       {messageContextHolder}
-
-      {(error || datasetsQuery.error || jobsQuery.error || linesQuery.error) && (
-        <Alert
-          type="error"
-          showIcon
-          message={error || (datasetsQuery.error instanceof Error
-            ? datasetsQuery.error.message
-            : jobsQuery.error instanceof Error
-              ? jobsQuery.error.message
-              : linesQuery.error instanceof Error
-                ? linesQuery.error.message
-                : "加载失败")}
-        />
-      )}
 
       <Card
         title="高程数据集"

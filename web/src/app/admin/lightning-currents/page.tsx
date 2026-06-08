@@ -25,6 +25,7 @@ import { useCallback, useMemo, useRef, useState, type CSSProperties } from "reac
 import { useAuth } from "@/components/auth-provider";
 import { LightningDistributionMap } from "@/components/lightning-distribution-map";
 import { Card } from "@/components/ui-antd";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import { readLinePreparation } from "@/lib/line-preparation";
@@ -394,6 +395,29 @@ export default function AdminLightningCurrentsPage() {
       }
       return (await response.json()) as LightningDistributionReportResponse;
     },
+  });
+
+  const listError = eventsQuery.error instanceof Error ? eventsQuery.error.message : "";
+  const sampleError = samplesQuery.error instanceof Error ? samplesQuery.error.message : "";
+  const statsError = exceedanceQuery.error instanceof Error ? exceedanceQuery.error.message : "";
+  const distributionError = distributionStatsQuery.error instanceof Error ? distributionStatsQuery.error.message : "";
+  const towerBufferError = towerBufferQuery.error instanceof Error ? towerBufferQuery.error.message : "";
+  const compareError = syntheticCompareQuery.error instanceof Error ? syntheticCompareQuery.error.message : "";
+  const reportError = reportQuery.error instanceof Error ? reportQuery.error.message : "";
+
+  useToastFeedback({
+    errorMessage:
+      error
+      || listError
+      || sampleError
+      || statsError
+      || distributionError
+      || towerBufferError
+      || compareError
+      || reportError,
+    successMessage: success,
+    clearError: () => setError(""),
+    clearSuccess: () => setSuccess(""),
   });
 
   const refreshAll = useCallback(async () => {
@@ -797,35 +821,8 @@ export default function AdminLightningCurrentsPage() {
     );
   }
 
-  const listError = eventsQuery.error instanceof Error ? eventsQuery.error.message : "";
-  const sampleError = samplesQuery.error instanceof Error ? samplesQuery.error.message : "";
-  const statsError = exceedanceQuery.error instanceof Error ? exceedanceQuery.error.message : "";
-  const distributionError = distributionStatsQuery.error instanceof Error ? distributionStatsQuery.error.message : "";
-  const towerBufferError = towerBufferQuery.error instanceof Error ? towerBufferQuery.error.message : "";
-  const compareError = syntheticCompareQuery.error instanceof Error ? syntheticCompareQuery.error.message : "";
-  const reportError = reportQuery.error instanceof Error ? reportQuery.error.message : "";
-
   return (
     <Space direction="vertical" size={16} className="w-full">
-      {(error || listError || sampleError || statsError || distributionError || towerBufferError || compareError || reportError) && (
-        <Alert
-          type="error"
-          showIcon
-          message="操作失败"
-          description={
-            error
-            || listError
-            || sampleError
-            || statsError
-            || distributionError
-            || towerBufferError
-            || compareError
-            || reportError
-          }
-        />
-      )}
-      {success && <Alert type="success" showIcon message="操作成功" description={success} />}
-
       <Card title="线路参数准备">
         <Space direction="vertical" size={12} className="w-full">
           <Typography.Text type="secondary">

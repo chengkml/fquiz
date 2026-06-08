@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { PowerLineCesiumMap } from "@/components/power-line-cesium-map";
 import { Card } from "@/components/ui-antd";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type {
@@ -654,6 +655,14 @@ export default function AdminPowerLinesPage() {
       return (await response.json()) as TowerProfileDetail;
     },
   });
+  const lineError = linesQuery.error instanceof Error ? linesQuery.error.message : "";
+  const towerError = towersQuery.error instanceof Error ? towersQuery.error.message : "";
+
+  useToastFeedback({
+    errorMessage: error || lineError || towerError,
+    clearError: () => setError(""),
+  });
+
   const towerProfileGeometryParseResult = useMemo(() => {
     try {
       return {
@@ -1374,7 +1383,6 @@ export default function AdminPowerLinesPage() {
   );
   const mapHeight = Math.max(POWER_LINES_MAP_MIN_HEIGHT, rightContentHeight - 32);
   const towerTableScrollY = Math.max(POWER_LINES_TABLE_MIN_SCROLL_Y, rightContentHeight - 54);
-
   if (initializing || linesQuery.isLoading) {
     return (
       <Card>
@@ -1409,16 +1417,9 @@ export default function AdminPowerLinesPage() {
     );
   }
 
-  const lineError = linesQuery.error instanceof Error ? linesQuery.error.message : "";
-  const towerError = towersQuery.error instanceof Error ? towersQuery.error.message : "";
-
   return (
     <>
       <Space direction="vertical" size={16} className="w-full">
-        {(error || lineError || towerError) && (
-          <Alert type="error" showIcon message="操作失败" description={error || lineError || towerError} />
-        )}
-
         <div
           ref={panelScrollAnchorRef}
           className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]"

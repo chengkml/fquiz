@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  Alert,
   Button,
   Empty,
   Form,
@@ -20,6 +19,7 @@ import {
 } from "antd";
 
 import { useAuth } from "@/components/auth-provider";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { SystemParamListResponse, SystemParamSummary } from "@/types/auth";
@@ -236,7 +236,13 @@ export default function AdminSystemParamsPage() {
 
   const items = listQuery.data?.items ?? [];
   const listError = listQuery.error instanceof Error ? listQuery.error.message : "";
-  const displayError = error || listError;
+
+  useToastFeedback({
+    errorMessage: error || listError,
+    successMessage: success,
+    clearError: () => setError(""),
+    clearSuccess: () => setSuccess(""),
+  });
 
   const columns = useMemo<TableColumnsType<SystemParamSummary>>(() => {
     const baseColumns: TableColumnsType<SystemParamSummary> = [
@@ -421,27 +427,6 @@ export default function AdminSystemParamsPage() {
 
   return (
     <div className="space-y-6">
-      {displayError && (
-        <Alert
-          type="error"
-          showIcon
-          closable={Boolean(error)}
-          message="操作失败"
-          description={<pre className="mb-0 whitespace-pre-wrap break-words">{displayError}</pre>}
-          onClose={() => setError("")}
-        />
-      )}
-      {success && (
-        <Alert
-          type="success"
-          showIcon
-          closable
-          message="操作成功"
-          description={success}
-          onClose={() => setSuccess("")}
-        />
-      )}
-
       <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--gray-1)] p-4 shadow-sm sm:p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-base font-semibold text-[var(--gray-12)]">参数列表</h2>

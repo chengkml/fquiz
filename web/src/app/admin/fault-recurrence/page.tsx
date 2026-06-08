@@ -21,6 +21,7 @@ import type { ColumnsType } from "antd/es/table";
 
 import { useAuth } from "@/components/auth-provider";
 import { Card } from "@/components/ui-antd";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { readApiError } from "@/lib/api";
 import type {
   FaultRecurrenceAnalyzeResponse,
@@ -91,6 +92,11 @@ export default function AdminFaultRecurrencePage() {
     || hasPermission("line.manage")
     || hasPermission("tower.read")
     || hasPermission("tower.manage");
+
+  useToastFeedback({
+    errorMessage: error,
+    clearError: () => setError(""),
+  });
 
   const analyzeMutation = useMutation({
     mutationFn: async (file: File) => {

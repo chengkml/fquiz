@@ -13,7 +13,6 @@ import {
   Table as AntTable,
   Typography,
   Upload,
-  Alert,
   Progress,
   Dropdown,
   message as antdMessage,
@@ -38,6 +37,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 
 import { useAuth } from "@/components/auth-provider";
 import { Button, Card } from "@/components/ui-antd";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type {
@@ -539,6 +539,11 @@ export default function AdminFilesPage() {
   };
 
   const listError = filesQuery.error instanceof Error ? filesQuery.error.message : "";
+
+  useToastFeedback({
+    errorMessage: errorMessage || listError,
+    clearError: () => setErrorMessage(""),
+  });
   const listData = filesQuery.data;
   const items = listData?.items ?? [];
   const operationBusy =
@@ -819,17 +824,6 @@ export default function AdminFilesPage() {
   return (
     <div className="space-y-6">
       {messageContextHolder}
-
-      {(listError || errorMessage) && (
-        <Alert
-          type="error"
-          showIcon
-          closable
-          message="操作失败"
-          description={listError || errorMessage}
-          onClose={() => setErrorMessage("")}
-        />
-      )}
 
       <Card className="shadow-sm" size="small">
           <div className="flex flex-wrap items-center justify-between gap-3">

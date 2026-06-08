@@ -171,6 +171,22 @@ body {
   min-width: 0;
 }
 
+.ant-message {
+  width: auto !important;
+  max-width: min(420px, calc(100vw - 32px));
+  inset-inline: auto 16px !important;
+}
+
+.ant-message .ant-message-notice-wrapper {
+  padding-inline: 0;
+  text-align: end;
+}
+
+.ant-message .ant-message-notice-content {
+  max-width: min(420px, calc(100vw - 32px));
+  text-align: start;
+}
+
 @media (max-width: 767px) {
   .admin-design-header {
     padding-inline: 16px !important;

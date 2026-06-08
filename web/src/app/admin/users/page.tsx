@@ -2,7 +2,6 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Alert,
   Button,
   Card,
   Checkbox,
@@ -24,6 +23,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { RoleItem, RoleListResponse, UserListResponse, UserPublic } from "@/types/auth";
@@ -435,6 +435,13 @@ export default function AdminUsersPage() {
     || (rolesQuery.error instanceof Error ? rolesQuery.error.message : "");
   const anyError = error || queryError;
 
+  useToastFeedback({
+    errorMessage: anyError,
+    successMessage: success,
+    clearError: () => setError(""),
+    clearSuccess: () => setSuccess(""),
+  });
+
   const updateTableScrollY = useCallback(() => {
     if (typeof window === "undefined") {
       return;
@@ -462,7 +469,10 @@ export default function AdminUsersPage() {
   }, []);
 
   useEffect(() => {
-    updateTableScrollY();
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.requestAnimationFrame(updateTableScrollY);
   }, [anyError, pagination.current, pagination.pageSize, users.length, usersQuery.isFetching, updateTableScrollY]);
 
   useEffect(() => {
@@ -660,18 +670,6 @@ export default function AdminUsersPage() {
 
   return (
     <div className="space-y-6">
-      {anyError && (
-        <Alert
-          type="error"
-          showIcon
-          closable
-          message="操作失败"
-          description={<pre className="mb-0 whitespace-pre-wrap break-words">{anyError}</pre>}
-          onClose={() => setError("")}
-        />
-      )}
-      {success && <Alert type="success" showIcon closable message={success} onClose={() => setSuccess("")} />}
-
       <AntCard
         title="用户列表"
         extra={(

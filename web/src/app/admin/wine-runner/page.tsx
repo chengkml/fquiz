@@ -19,6 +19,7 @@ import type { ComponentType } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { readApiError } from "@/lib/api";
 
 type WineStatusResponse = {
@@ -159,6 +160,14 @@ export default function AdminWineRunnerPage() {
 
   const canRead = hasPermission("wine.read") || hasPermission("wine.manage");
   const canManage = hasPermission("wine.manage");
+
+  useToastFeedback({
+    errorMessage: error,
+    successMessage: success,
+    errorTitle: "执行失败",
+    clearError: () => setError(""),
+    clearSuccess: () => setSuccess(""),
+  });
 
   const loadStatus = useCallback(async () => {
     if (!user || !canRead) {
@@ -308,9 +317,6 @@ export default function AdminWineRunnerPage() {
 
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      {error ? <Alert type="error" showIcon message="操作失败" description={error} /> : null}
-      {success ? <Alert type="success" showIcon message={success} /> : null}
-
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={8}>
           <Card

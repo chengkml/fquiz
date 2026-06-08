@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
   App,
   Button,
   Card,
@@ -26,6 +25,7 @@ import {
 import type { CSSProperties, ComponentType } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import { normalizeAppRoutePath } from "@/lib/app-route-path";
@@ -109,6 +109,11 @@ export default function AdminMenusPage() {
 
   const canRead = hasPermission("menu.read") || hasPermission("menu.manage");
   const canManage = hasPermission("menu.manage");
+
+  useToastFeedback({
+    errorMessage: error,
+    clearError: () => setError(""),
+  });
 
   const parentOptions = useMemo(
     () =>
@@ -496,17 +501,6 @@ export default function AdminMenusPage() {
 
   return (
     <div className="space-y-6">
-      {error && (
-        <Alert
-          type="error"
-          showIcon
-          closable
-          message="操作失败"
-          description={<pre className="mb-0 whitespace-pre-wrap break-words">{error}</pre>}
-          onClose={() => setError("")}
-        />
-      )}
-
       <AntCard
         title="菜单列表"
         extra={

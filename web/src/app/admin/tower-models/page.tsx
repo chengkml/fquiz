@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Alert,
   App,
   Button,
   Empty,
@@ -26,6 +25,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 
 import { useAuth } from "@/components/auth-provider";
 import { Card } from "@/components/ui-antd";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type {
@@ -402,6 +402,11 @@ export default function AdminTowerModelsPage() {
   });
 
   const listError = towerModelsQuery.error instanceof Error ? towerModelsQuery.error.message : "";
+
+  useToastFeedback({
+    errorMessage: error || listError,
+    clearError: () => setError(""),
+  });
   const listData = towerModelsQuery.data;
   const listItems = listData?.items ?? [];
   const totalItems = listData?.total ?? listItems.length;
@@ -771,10 +776,6 @@ export default function AdminTowerModelsPage() {
 
   return (
     <Space direction="vertical" size={16} className="w-full">
-      {(error || listError) && (
-        <Alert type="error" showIcon message="操作失败" description={error || listError} />
-      )}
-
       <Card
         title="杆塔模型管理"
         extra={canManage ? (

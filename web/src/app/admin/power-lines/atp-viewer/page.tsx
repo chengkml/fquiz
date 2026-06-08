@@ -26,6 +26,7 @@ import { useAuth } from "@/components/auth-provider";
 import { withBasePath } from "@/lib/base-path";
 import { AtpX6Viewer } from "@/components/atp-x6-viewer";
 import { Card } from "@/components/ui-antd";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import { parseAtpTextToGraphJson, stringifyAtpGraphJson } from "@/lib/atp/parse-atp-text";
@@ -335,6 +336,18 @@ export default function PowerLinesAtpViewerPage() {
       return (await response.json()) as AtpEngineStatusResponse;
     },
     staleTime: 30_000,
+  });
+
+  const modelError = modelsQuery.error instanceof Error ? modelsQuery.error.message : "";
+  const versionError = versionsQuery.error instanceof Error ? versionsQuery.error.message : "";
+  const runError = runsQuery.error instanceof Error ? runsQuery.error.message : "";
+  const engineError = engineQuery.error instanceof Error ? engineQuery.error.message : "";
+
+  useToastFeedback({
+    errorMessage: error || modelError || versionError || runError || engineError,
+    successMessage: success,
+    clearError: () => setError(""),
+    clearSuccess: () => setSuccess(""),
   });
 
   const refreshModels = useCallback(async () => {
@@ -881,14 +894,8 @@ export default function PowerLinesAtpViewerPage() {
   const versionError = currentVersionQuery.error instanceof Error ? currentVersionQuery.error.message : "";
   const runError = runsQuery.error instanceof Error ? runsQuery.error.message : "";
   const engineError = engineQuery.error instanceof Error ? engineQuery.error.message : "";
-
   return (
     <Space direction="vertical" size={16} className="w-full">
-      {(error || modelError || versionError || runError || engineError) && (
-        <Alert type="error" showIcon message="操作失败" description={error || modelError || versionError || runError || engineError} />
-      )}
-      {success && <Alert type="success" showIcon message="操作成功" description={success} />}
-
       <Card
         title="ATP模型台账"
         extra={(

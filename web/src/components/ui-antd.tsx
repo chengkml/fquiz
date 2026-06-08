@@ -565,7 +565,12 @@ export function Theme({
       }}
     >
       <ConfigProvider locale={zhCN} theme={themeConfig}>
-        <AntApp>
+        <AntApp
+          message={{
+            top: 20,
+            duration: 3,
+          }}
+        >
           <ThemeCssVarsScope>{children}</ThemeCssVarsScope>
         </AntApp>
       </ConfigProvider>
