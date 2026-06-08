@@ -1211,9 +1211,6 @@ export default function AdminPowerLinesPage() {
         ) : null}
       >
         <Space direction="vertical" size={4} className="w-full">
-          <Typography.Text type="secondary">
-            编码：<Typography.Text code>{line.code}</Typography.Text>
-          </Typography.Text>
           <Typography.Text type="secondary">电压等级：{line.voltage_kv ?? "-"} kV</Typography.Text>
           <Typography.Text type="secondary">杆塔总数：{line.tower_count}</Typography.Text>
           <Typography.Text type="secondary">
@@ -1506,9 +1503,6 @@ export default function AdminPowerLinesPage() {
               <Empty description={effectiveSelectedLineId ? "所选线路不存在，请重新选择" : "请先选择一条线路"} />
             ) : (
               <Space direction="vertical" size={12} className="w-full">
-                <Typography.Text type="secondary">
-                  当前线路编码：{selectedLine.code}，杆塔总数：{selectedLine.tower_count ?? 0}，当前视图：{towerViewMode === "table" ? "塔杆列表" : "分布图"}
-                </Typography.Text>
                 <div className="grid gap-3 md:grid-cols-3">
                   <Input
                     value={towerKeyword}
