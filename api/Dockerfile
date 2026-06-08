@@ -13,11 +13,14 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 ENV PIP_DEFAULT_TIMEOUT=${PIP_DEFAULT_TIMEOUT}
 ENV PIP_RETRIES=${PIP_RETRIES}
 
-RUN apt-get update \
+RUN dpkg --add-architecture i386 \
+    && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         libexpat1 \
         wine \
+        wine32:i386 \
     && command -v wine >/dev/null \
+    && dpkg-query -W -f='${Status}' wine32:i386 | grep -q "install ok installed" \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./

@@ -13,6 +13,7 @@ from fastapi import HTTPException, status
 
 from ..core.config import get_settings
 from ..schemas.wine import WineRunRequest, WineStatusResponse
+from .wine_probe import probe_wine_binary_async
 
 
 settings = get_settings()
@@ -106,35 +107,16 @@ async def get_wine_status() -> WineStatusResponse:
             error="Wine binary not found",
         )
 
-    try:
-        process = await asyncio.create_subprocess_exec(
-            resolved,
-            "--version",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        output, _ = await asyncio.wait_for(process.communicate(), timeout=10)
-    except (OSError, asyncio.TimeoutError) as exc:
-        return WineStatusResponse(
-            wine_binary=binary,
-            resolved_binary=resolved,
-            available=False,
-            allowed_root=allowed_root,
-            default_timeout_seconds=settings.wine_default_timeout_seconds,
-            max_timeout_seconds=settings.wine_max_timeout_seconds,
-            error=str(exc),
-        )
-
-    version = output.decode("utf-8", errors="replace").strip() or None
+    probe = await probe_wine_binary_async(resolved)
     return WineStatusResponse(
         wine_binary=binary,
         resolved_binary=resolved,
-        available=process.returncode == 0,
-        version=version,
+        available=probe.available,
+        version=probe.version,
         allowed_root=allowed_root,
         default_timeout_seconds=settings.wine_default_timeout_seconds,
         max_timeout_seconds=settings.wine_max_timeout_seconds,
-        error=None if process.returncode == 0 else version,
+        error=probe.error,
     )
 
 
@@ -154,6 +136,11 @@ async def stream_wine_run(payload: WineRunRequest) -> AsyncGenerator[str, None]:
     resolved_binary = _resolve_binary()
     if not resolved_binary:
         yield _sse_event("error", {"run_id": run_id, "message": "Wine binary not found"})
+        return
+
+    probe = await probe_wine_binary_async(resolved_binary)
+    if not probe.available:
+        yield _sse_event("error", {"run_id": run_id, "message": probe.error or "Wine binary unavailable"})
         return
 
     try:

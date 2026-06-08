@@ -35,6 +35,7 @@ from ..schemas.atp_model import (
     AtpSimulationRunSummary,
 )
 from .push_service import publish_topic
+from .wine_probe import probe_wine_binary
 
 
 settings = get_settings()
@@ -164,7 +165,8 @@ def _resolve_wine_engine_executable() -> tuple[str | None, str | None, str | Non
     if not configured.exists() or not configured.is_file():
         return wine_binary, None, f"ATP engine executable not found: {configured}"
 
-    return wine_binary, str(configured), None
+    probe = probe_wine_binary(wine_binary)
+    return wine_binary, str(configured), None if probe.available else (probe.error or "Wine binary unavailable")
 
 
 def _resolve_native_engine_executable() -> tuple[str | None, str | None]:
