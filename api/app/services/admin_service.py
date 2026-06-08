@@ -53,6 +53,7 @@ REMOVED_MENU_CODES = {
     "admin.baidu_pan",
     "admin.tag",
     "admin.knowledge_point_mgr",
+    "admin.question_bank",
     "admin.cron_task_mgr",
     "admin.todos",
     "admin.job_mgr",

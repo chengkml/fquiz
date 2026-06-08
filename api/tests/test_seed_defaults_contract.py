@@ -14,12 +14,15 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from api.app import models  # noqa: F401
+from api.app.api.router import v1_router
 from api.app.api.v1.admin import router as admin_router
 from api.app.core.database import Base, get_db, init_db
 from api.app.core.dependencies import CurrentUser, get_current_user
 from api.app.models.menu import Menu
 from api.app.models.user import User
-from api.app.services.seed_service import DEFAULT_MENUS, SeedDefaultsResult, seed_defaults
+from api.app.services.legacy_authz_service import DEFAULT_ADMIN_PERMISSION_CODES
+from api.app.services.seed_service import DEFAULT_MENUS, DEFAULT_PERMISSIONS, DEFAULT_ROLES, SeedDefaultsResult, seed_defaults
+from api.app.services.topic_registry import TOPIC_RULES
 
 
 DEFAULT_MENU_BY_CODE = {
@@ -63,6 +66,32 @@ class InitDbContractTest(unittest.TestCase):
 
         create_all.assert_called_once()
         session_local.assert_not_called()
+
+    def test_quiz_legacy_tables_are_not_registered(self) -> None:
+        self.assertNotIn("question_bank", Base.metadata.tables)
+        self.assertNotIn("hot_search_records", Base.metadata.tables)
+        self.assertNotIn("hot_search_follow_topics", Base.metadata.tables)
+
+
+class LegacyQuizCleanupContractTest(unittest.TestCase):
+    def test_quiz_legacy_routes_and_topics_are_removed(self) -> None:
+        paths = {
+            getattr(route, "path", "")
+            for route in v1_router.routes
+        }
+
+        self.assertFalse(any("question-bank" in path for path in paths))
+        self.assertFalse(any("mdresolve" in path for path in paths))
+        self.assertFalse(any("hot-search" in path for path in paths))
+        self.assertNotIn("admin.question_bank", TOPIC_RULES)
+
+    def test_quiz_legacy_permissions_are_not_seeded(self) -> None:
+        self.assertNotIn("question_bank.read", DEFAULT_ADMIN_PERMISSION_CODES)
+        self.assertNotIn("question_bank.manage", DEFAULT_ADMIN_PERMISSION_CODES)
+        self.assertNotIn("question_bank.read", DEFAULT_PERMISSIONS)
+        self.assertNotIn("question_bank.manage", DEFAULT_PERMISSIONS)
+        self.assertNotIn("question_bank.read", DEFAULT_ROLES["admin"]["permissions"])
+        self.assertNotIn("question_bank.manage", DEFAULT_ROLES["admin"]["permissions"])
 
 
 class SeedDefaultsServiceTest(DatabaseFixtureTestCase):

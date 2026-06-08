@@ -37,8 +37,6 @@ DEFAULT_ADMIN_PERMISSION_CODES: set[str] = {
     "celery.manage",
     "wine.read",
     "wine.manage",
-    "question_bank.read",
-    "question_bank.manage",
 }
 
 ADMIN_ROLE_IDS = {

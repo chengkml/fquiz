@@ -10,7 +10,6 @@ from .v1.fl_analysis import router as fl_analysis_router
 from .v1.flower_monitor import router as flower_monitor_router
 from .v1.lightning import router as lightning_router
 from .v1.lines import router as lines_router
-from .v1.question_bank import router as question_bank_router
 from .v1.system_params import router as system_params_router
 from .v1.task_monitor import router as task_monitor_router
 from .v1.tower_models import router as tower_models_router
@@ -35,7 +34,6 @@ v1_router.include_router(lightning_router)
 v1_router.include_router(lines_router)
 v1_router.include_router(tower_models_router)
 v1_router.include_router(tower_profiles_router)
-v1_router.include_router(question_bank_router)
 v1_router.include_router(wine_router)
 v1_router.include_router(ws_router)
 
