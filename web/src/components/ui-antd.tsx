@@ -543,6 +543,10 @@ export function Theme({
         Table: {
           headerBg: visualTokens.tableHeaderBg,
         },
+        Message: {
+          contentBg: visualTokens.shellBg,
+          contentPadding: "14px 18px",
+        },
       },
     }),
     [radius, resolvedAccentColor, themeAlgorithm, visualTokens],
@@ -567,8 +571,8 @@ export function Theme({
       <ConfigProvider locale={zhCN} theme={themeConfig}>
         <AntApp
           message={{
-            top: 20,
-            duration: 3,
+            top: 24,
+            duration: 3.5,
           }}
         >
           <ThemeCssVarsScope>{children}</ThemeCssVarsScope>
