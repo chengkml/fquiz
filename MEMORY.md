@@ -242,7 +242,7 @@
   - `WINE_DEFAULT_TIMEOUT_SECONDS` / `WINE_MAX_TIMEOUT_SECONDS`：默认与最大执行超时。
 - 后端执行必须使用 `asyncio.create_subprocess_exec` 参数数组，不走 shell；EXE 路径与工作目录必须限制在 `WINE_ALLOWED_ROOT` 下。
 - 实时日志通过 `StreamingResponse` + SSE 事件输出；前端使用 `fetchWithAuth` 读取 `ReadableStream`，避免原生 `EventSource` 无法携带现有 Bearer Token 的鉴权问题。
-- Docker API 镜像默认不内置 Wine；部署时需在运行环境安装 Wine 或将 `WINE_BINARY_PATH` 指向可用二进制。
+- `api/Dockerfile` 构建出的共享后端镜像已内置 `wine`；`api/celery-worker/celery-beat/flower` 当前都复用该镜像，若需切换二进制仍可通过 `WINE_BINARY_PATH` 覆盖。
 
 ## 前端菜单交互口径（2026-04-19）
 

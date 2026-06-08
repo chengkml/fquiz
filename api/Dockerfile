@@ -14,7 +14,10 @@ ENV PIP_DEFAULT_TIMEOUT=${PIP_DEFAULT_TIMEOUT}
 ENV PIP_RETRIES=${PIP_RETRIES}
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libexpat1 \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        libexpat1 \
+        wine \
+    && command -v wine >/dev/null \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
