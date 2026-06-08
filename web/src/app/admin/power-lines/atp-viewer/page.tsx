@@ -30,6 +30,7 @@ import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import { parseAtpTextToGraphJson, stringifyAtpGraphJson } from "@/lib/atp/parse-atp-text";
 import { ATP_SAMPLE_TEXT } from "@/lib/atp/sample";
+import { readTextFile } from "@/lib/text-file";
 import type { AtpGraphJson } from "@/lib/atp/types";
 import type {
   AtpEngineStatusResponse,
@@ -611,7 +612,7 @@ export default function PowerLinesAtpViewerPage() {
 
   const handleFileSelected = async (file: File) => {
     try {
-      const content = await file.text();
+      const { text: content } = await readTextFile(file);
       setSourceText(content);
       versionForm.setFieldValue("atp_text", content);
       setParseError("");
