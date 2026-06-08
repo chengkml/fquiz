@@ -42,17 +42,7 @@ type TowerModelFormValues = {
   name: string;
   tower_type: string;
   description: string;
-  is_enabled: boolean;
   sort_order: number;
-  default_altitude_m: number | null;
-  default_terrain: string;
-  default_ground_resistance_ohm: number | null;
-  default_lightning_density: number | null;
-  default_span_small_m: number | null;
-  default_span_large_m: number | null;
-  default_slope_1: number | null;
-  default_slope_2: number | null;
-  default_risk_level: string;
 };
 
 type TowerModelViewMode = "card" | "list";
@@ -62,17 +52,7 @@ const EMPTY_FORM: TowerModelFormValues = {
   name: "",
   tower_type: "",
   description: "",
-  is_enabled: true,
   sort_order: 0,
-  default_altitude_m: null,
-  default_terrain: "",
-  default_ground_resistance_ohm: null,
-  default_lightning_density: null,
-  default_span_small_m: null,
-  default_span_large_m: null,
-  default_slope_1: null,
-  default_slope_2: null,
-  default_risk_level: "",
 };
 
 const TOWER_MODEL_TABLE_MIN_SCROLL_Y = 220;
@@ -88,17 +68,7 @@ function toEditValues(item: TowerModelSummary): TowerModelFormValues {
     name: item.name,
     tower_type: item.tower_type ?? "",
     description: item.description ?? "",
-    is_enabled: item.is_enabled,
     sort_order: item.sort_order,
-    default_altitude_m: item.default_altitude_m,
-    default_terrain: item.default_terrain ?? "",
-    default_ground_resistance_ohm: item.default_ground_resistance_ohm,
-    default_lightning_density: item.default_lightning_density,
-    default_span_small_m: item.default_span_small_m,
-    default_span_large_m: item.default_span_large_m,
-    default_slope_1: item.default_slope_1,
-    default_slope_2: item.default_slope_2,
-    default_risk_level: item.default_risk_level ?? "",
   };
 }
 
@@ -108,17 +78,7 @@ function buildPayload(values: TowerModelFormValues): Record<string, unknown> {
     name: values.name.trim(),
     tower_type: values.tower_type.trim() || null,
     description: values.description.trim() || null,
-    is_enabled: values.is_enabled,
     sort_order: values.sort_order ?? 0,
-    default_altitude_m: values.default_altitude_m ?? null,
-    default_terrain: values.default_terrain.trim() || null,
-    default_ground_resistance_ohm: values.default_ground_resistance_ohm ?? null,
-    default_lightning_density: values.default_lightning_density ?? null,
-    default_span_small_m: values.default_span_small_m ?? null,
-    default_span_large_m: values.default_span_large_m ?? null,
-    default_slope_1: values.default_slope_1 ?? null,
-    default_slope_2: values.default_slope_2 ?? null,
-    default_risk_level: values.default_risk_level.trim() || null,
   };
 }
 
@@ -343,6 +303,7 @@ export default function AdminTowerModelsPage() {
   const seedSettingInputRef = useRef<HTMLInputElement | null>(null);
   const seedGantaInputRef = useRef<HTMLInputElement | null>(null);
   const seedImagesZipInputRef = useRef<HTMLInputElement | null>(null);
+  const [keywordInput, setKeywordInput] = useState("");
   const [keyword, setKeyword] = useState("");
   const [enabledFilter, setEnabledFilter] = useState<"all" | "enabled" | "disabled">("all");
   const [error, setError] = useState("");
@@ -408,12 +369,14 @@ export default function AdminTowerModelsPage() {
     clearError: () => setError(""),
   });
   const listData = towerModelsQuery.data;
-  const listItems = listData?.items ?? [];
+  const listItems = useMemo(() => listData?.items ?? [], [listData?.items]);
   const totalItems = listData?.total ?? listItems.length;
+  const currentPage = pagination.current;
+  const pageSize = pagination.pageSize;
   const pagedItems = useMemo(() => {
-    const start = (pagination.current - 1) * pagination.pageSize;
-    return listItems.slice(start, start + pagination.pageSize);
-  }, [listItems, pagination.current, pagination.pageSize]);
+    const start = (currentPage - 1) * pageSize;
+    return listItems.slice(start, start + pageSize);
+  }, [currentPage, listItems, pageSize]);
 
   const refreshList = useCallback(async () => {
     await queryClient.invalidateQueries({
@@ -429,15 +392,11 @@ export default function AdminTowerModelsPage() {
   }, [refreshList]));
 
   useEffect(() => {
-    setPagination((previous) => (previous.current === 1 ? previous : { ...previous, current: 1 }));
-  }, [keyword, enabledFilter]);
-
-  useEffect(() => {
-    const maxPage = Math.max(1, Math.ceil(totalItems / pagination.pageSize));
-    if (pagination.current > maxPage) {
+    const maxPage = Math.max(1, Math.ceil(totalItems / pageSize));
+    if (currentPage > maxPage) {
       setPagination((previous) => ({ ...previous, current: maxPage }));
     }
-  }, [pagination.current, pagination.pageSize, totalItems]);
+  }, [currentPage, pageSize, totalItems]);
 
   const saveMutation = useMutation({
     mutationFn: async (values: TowerModelFormValues) => {
@@ -592,6 +551,18 @@ export default function AdminTowerModelsPage() {
     }
   };
 
+  const handleSearch = () => {
+    setKeyword(keywordInput);
+    setPagination((previous) => ({ ...previous, current: 1 }));
+  };
+
+  const handleResetFilters = () => {
+    setKeywordInput("");
+    setKeyword("");
+    setEnabledFilter("all");
+    setPagination((previous) => ({ ...previous, current: 1 }));
+  };
+
   const tableColumns = useMemo<ColumnsType<TowerModelSummary>>(
     () => [
       {
@@ -707,7 +678,7 @@ export default function AdminTowerModelsPage() {
 
   useLayoutEffect(() => {
     updateTableScrollY();
-  }, [error, listError, pagination.current, pagination.pageSize, totalItems, towerModelsQuery.isFetching, updateTableScrollY, viewMode]);
+  }, [currentPage, error, listError, pageSize, totalItems, towerModelsQuery.isFetching, updateTableScrollY, viewMode]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -794,23 +765,39 @@ export default function AdminTowerModelsPage() {
         ) : null}
       >
         <Space direction="vertical" size={12} className="w-full">
-          <div className="grid gap-3 md:grid-cols-[1fr_160px]">
-            <Input
-              value={keyword}
-              allowClear
-              onChange={(event) => setKeyword(event.target.value)}
-              placeholder="按模型编码/名称/塔型筛选"
-            />
-            <Select
-              value={enabledFilter}
-              options={[
-                { value: "all", label: "全部状态" },
-                { value: "enabled", label: "启用" },
-                { value: "disabled", label: "禁用" },
-              ]}
-              onChange={(value) => setEnabledFilter(value)}
-            />
-          </div>
+          <Form layout="inline" style={{ rowGap: 12 }}>
+            <Form.Item label="关键词" className="min-w-[260px]">
+              <Input
+                value={keywordInput}
+                allowClear
+                onChange={(event) => setKeywordInput(event.target.value)}
+                onPressEnter={handleSearch}
+                placeholder="按模型编码/名称/塔型搜索"
+              />
+            </Form.Item>
+            <Form.Item label="状态" className="min-w-[170px]">
+              <Select<"all" | "enabled" | "disabled">
+                value={enabledFilter}
+                options={[
+                  { value: "all", label: "全部" },
+                  { value: "enabled", label: "已启用" },
+                  { value: "disabled", label: "已禁用" },
+                ]}
+                onChange={(value) => {
+                  setEnabledFilter(value);
+                  setPagination((previous) => ({ ...previous, current: 1 }));
+                }}
+              />
+            </Form.Item>
+            <Form.Item>
+              <Button type="primary" onClick={handleSearch}>
+                搜索
+              </Button>
+            </Form.Item>
+            <Form.Item>
+              <Button onClick={handleResetFilters}>重置筛选</Button>
+            </Form.Item>
+          </Form>
           <Space size={8} align="center" wrap>
             <Typography.Text type="secondary">展示方式</Typography.Text>
             <Segmented
@@ -907,7 +894,7 @@ export default function AdminTowerModelsPage() {
       <Modal
         title={editingModel ? "编辑杆塔模型" : "新建杆塔模型"}
         open={dialogOpen}
-        width={960}
+        width={720}
         okText={editingModel ? "保存" : "创建"}
         confirmLoading={saveMutation.isPending}
         onCancel={() => {
@@ -938,36 +925,6 @@ export default function AdminTowerModelsPage() {
             </Form.Item>
             <Form.Item name="sort_order" label="排序">
               <InputNumber min={0} max={1_000_000} className="w-full" />
-            </Form.Item>
-            <Form.Item name="default_altitude_m" label="默认海拔(m)">
-              <InputNumber precision={4} className="w-full" />
-            </Form.Item>
-            <Form.Item name="default_terrain" label="默认地形">
-              <Input />
-            </Form.Item>
-            <Form.Item name="default_ground_resistance_ohm" label="默认接地电阻(Ω)">
-              <InputNumber precision={4} className="w-full" />
-            </Form.Item>
-            <Form.Item name="default_lightning_density" label="默认地闪密度">
-              <InputNumber precision={8} className="w-full" />
-            </Form.Item>
-            <Form.Item name="default_span_small_m" label="默认小号侧档距(m)">
-              <InputNumber precision={4} className="w-full" />
-            </Form.Item>
-            <Form.Item name="default_span_large_m" label="默认大号侧档距(m)">
-              <InputNumber precision={4} className="w-full" />
-            </Form.Item>
-            <Form.Item name="default_slope_1" label="默认地面倾角1">
-              <InputNumber precision={8} className="w-full" />
-            </Form.Item>
-            <Form.Item name="default_slope_2" label="默认地面倾角2">
-              <InputNumber precision={8} className="w-full" />
-            </Form.Item>
-            <Form.Item name="default_risk_level" label="默认风险等级">
-              <Input />
-            </Form.Item>
-            <Form.Item name="is_enabled" label="启用状态" valuePropName="checked">
-              <Switch checkedChildren="启用" unCheckedChildren="禁用" />
             </Form.Item>
           </div>
           <Form.Item name="description" label="描述">
