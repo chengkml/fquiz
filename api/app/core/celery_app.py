@@ -11,7 +11,6 @@ celery_app = Celery(
     broker=settings.resolved_celery_broker_url,
     backend=settings.resolved_celery_result_backend,
     include=[
-        "app.tasks.schedule_tasks",
         "app.tasks.elevation_tasks",
         "app.tasks.fl_analysis_tasks",
         "app.tasks.worker_registry_tasks",
@@ -21,10 +20,6 @@ celery_app = Celery(
 celery_app.conf.update(
     accept_content=["json"],
     beat_schedule={
-        "expire-overdue-schedule-items": {
-            "task": "app.tasks.schedule_tasks.expire_overdue_schedule_items",
-            "schedule": settings.scheduler_expire_interval_seconds,
-        },
         "sweep-worker-registry-offline": {
             "task": "app.tasks.worker_registry_tasks.sweep_worker_registry_offline",
             "schedule": 30.0,

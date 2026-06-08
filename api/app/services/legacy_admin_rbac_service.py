@@ -87,13 +87,11 @@ PROTECTED_MENU_CODES = {
     "admin.data_query",
     "admin.hot_search",
     "admin.cron_task_mgr",
-    "admin.todos",
     "admin.mdresolve",
     "admin.tag",
     "admin.knowledge_point_mgr",
     "admin.job_mgr",
     "admin.syslog",
-    "admin.jwt_generator",
     "admin.wine_runner",
     # quiz legacy defaults
     "sys_mgr",
