@@ -30,8 +30,6 @@ import type {
   AtpEngineStatusResponse,
   AtpModelListResponse,
   AtpModelSummary,
-  AtpModelVersionListResponse,
-  AtpModelVersionSummary,
   FlAnalysisJobDetail,
   FlAnalysisJobListResponse,
   FlAnalysisJobSummary,
@@ -47,7 +45,6 @@ type CreateJobFormValues = {
   job_type: "normal" | "tongtiao" | "risk";
   external_adapter: "placeholder" | "wine" | "atp";
   atp_model_id: string;
-  atp_version_id: string;
   current_waveform: "heidler" | "double_slope" | "double_exponential";
   flashover_method: "guideline" | "intersection" | "leader_development";
   altitude_correction: "none" | "formula1" | "formula2";
@@ -154,7 +151,6 @@ const CREATE_JOB_DEFAULTS: CreateJobFormValues = {
   job_type: "normal",
   external_adapter: "placeholder",
   atp_model_id: "",
-  atp_version_id: "",
   current_waveform: "heidler",
   flashover_method: "intersection",
   altitude_correction: "none",
@@ -414,7 +410,6 @@ export default function AdminFlAnalysisPage() {
   const selectedLineId = Form.useWatch("line_id", createJobForm);
   const selectedCreateJobType = Form.useWatch("job_type", createJobForm) ?? CREATE_JOB_DEFAULTS.job_type;
   const selectedExternalAdapter = Form.useWatch("external_adapter", createJobForm) ?? CREATE_JOB_DEFAULTS.external_adapter;
-  const selectedAtpModelId = Form.useWatch("atp_model_id", createJobForm) ?? "";
 
   const canRead = hasPermission("line.read") || hasPermission("line.manage");
   const canManage = hasPermission("line.manage") || hasPermission("tower.manage");
@@ -466,18 +461,6 @@ export default function AdminFlAnalysisPage() {
         throw new Error(await readApiError(response));
       }
       return (await response.json()) as AtpModelListResponse;
-    },
-  });
-
-  const atpVersionsQuery = useQuery({
-    queryKey: ["/api/v1/atp/models/versions", selectedAtpModelId],
-    enabled: !!user && canReadAtp && !!selectedAtpModelId,
-    queryFn: async () => {
-      const response = await fetchWithAuth(`/api/v1/atp/models/${selectedAtpModelId}/versions?limit=200&offset=0`);
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-      return (await response.json()) as AtpModelVersionListResponse;
     },
   });
 
@@ -543,6 +526,7 @@ export default function AdminFlAnalysisPage() {
   }, [jobsQuery.data?.items, selectedJob]);
 
   const atpModels = useMemo(() => atpModelsQuery.data?.items ?? [], [atpModelsQuery.data]);
+  const selectedAtpModelId = Form.useWatch("atp_model_id", createJobForm) ?? "";
   const selectedAtpModel = useMemo(
     () => atpModels.find((item) => item.id === selectedAtpModelId) ?? null,
     [atpModels, selectedAtpModelId],
@@ -567,24 +551,6 @@ export default function AdminFlAnalysisPage() {
     }
     createJobForm.setFieldValue("atp_model_id", atpModels[0].id);
   }, [atpModels, createJobForm, selectedCreateJobType, selectedExternalAdapter]);
-
-  useEffect(() => {
-    if (!["atp", "wine"].includes(selectedExternalAdapter)) {
-      return;
-    }
-    const versions = atpVersionsQuery.data?.items ?? [];
-    if (!versions.length) {
-      return;
-    }
-    const currentVersionId = createJobForm.getFieldValue("atp_version_id");
-    if (currentVersionId && versions.some((item) => item.id === currentVersionId)) {
-      return;
-    }
-    const preferredVersion =
-      versions.find((item) => item.version_no === selectedAtpModel?.active_version_no)
-      ?? versions[0];
-    createJobForm.setFieldValue("atp_version_id", preferredVersion.id);
-  }, [atpVersionsQuery.data?.items, createJobForm, selectedAtpModel?.active_version_no, selectedExternalAdapter]);
 
   async function invalidateFlAnalysisQueries(): Promise<void> {
     await queryClient.invalidateQueries({
@@ -679,7 +645,6 @@ export default function AdminFlAnalysisPage() {
       if (values.external_adapter !== "placeholder") {
         payload.adapter_config_json = {
           model_id: values.atp_model_id,
-          version_id: values.atp_version_id || undefined,
         };
       }
     }
@@ -1385,7 +1350,7 @@ export default function AdminFlAnalysisPage() {
                       />
                     ) : null}
                     {externalAdapterActive ? (
-                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                         <Form.Item
                           name="atp_model_id"
                           label="ATP模型"
@@ -1402,28 +1367,12 @@ export default function AdminFlAnalysisPage() {
                             }))}
                           />
                         </Form.Item>
-                        <Form.Item
-                          name="atp_version_id"
-                          label="模型版本"
-                          rules={[{ required: true, message: "请选择模型版本" }]}
-                        >
-                          <Select
-                            showSearch
-                            optionFilterProp="label"
-                            loading={atpVersionsQuery.isLoading}
-                            placeholder="选择模型版本"
-                            options={(atpVersionsQuery.data?.items ?? []).map((item: AtpModelVersionSummary) => ({
-                              value: item.id,
-                              label: `v${item.version_no}${item.version_tag ? ` / ${item.version_tag}` : ""}`,
-                            }))}
-                          />
-                        </Form.Item>
                         <Alert
                           type="info"
                           showIcon
                           message={`执行模式：${engineQuery.data ? formatExternalAdapter(engineQuery.data.mode === "wine" ? "wine" : "atp") : "-"}`}
-                          description={selectedAtpModel ? `当前模型：${selectedAtpModel.name} / ${selectedAtpModel.code}` : "从 ATP 模型管理中选择已发布模板版本。"}
-                          className="md:col-span-2"
+                          description={selectedAtpModel ? `当前模型：${selectedAtpModel.name} / ${selectedAtpModel.code}。执行时默认使用该模型的当前模板。` : "从 ATP 模型管理中选择可用模板。"}
+                          className="md:col-span-1 xl:col-span-2"
                         />
                       </div>
                     ) : null}

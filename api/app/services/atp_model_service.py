@@ -50,6 +50,9 @@ def _fire_and_forget(coro: Any) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
+        close = getattr(coro, "close", None)
+        if callable(close):
+            close()
         return
     loop.create_task(coro)
 
@@ -442,19 +445,15 @@ def update_model(
     )
 
 
-def delete_model(db: Session, model_id: str) -> tuple[bool, int]:
+def delete_model(db: Session, model_id: str) -> bool:
     item = get_model_by_id(db, model_id)
     if not item:
-        return False, 0
-
-    version_count = int(db.scalar(select(func.count()).select_from(AtpModelVersion).where(AtpModelVersion.model_id == model_id)) or 0)
-    if version_count > 0:
-        return False, version_count
+        return False
 
     db.delete(item)
     db.commit()
     _publish_change("model.deleted", {"action": "deleted", "model_id": model_id})
-    return True, 0
+    return True
 
 
 def list_model_versions(

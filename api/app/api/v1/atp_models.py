@@ -111,15 +111,9 @@ def delete_atp_model_endpoint(
     _: CurrentUser = Depends(require_permission("atp.manage")),
     db: Session = Depends(get_db),
 ) -> dict[str, bool]:
-    deleted, version_count = delete_model(db, model_id)
+    deleted = delete_model(db, model_id)
     if not deleted:
-        item = get_model_by_id(db, model_id)
-        if not item:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Model has {version_count} versions, delete versions first",
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
     return {"success": True}
 
 

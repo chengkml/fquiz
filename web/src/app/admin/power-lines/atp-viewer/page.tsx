@@ -38,8 +38,6 @@ import type {
   AtpModelSummary,
   AtpModelVersionDetail,
   AtpModelVersionListResponse,
-  AtpModelVersionStatus,
-  AtpModelVersionSummary,
   AtpSimulationRunDetail,
   AtpSimulationRunListResponse,
   AtpSimulationRunSummary,
@@ -59,12 +57,6 @@ const MODEL_STATUS_OPTIONS = [
   { value: "disabled", label: "禁用" },
 ] as const;
 
-const VERSION_STATUS_OPTIONS = [
-  { value: "draft", label: "草稿" },
-  { value: "released", label: "已发布" },
-  { value: "archived", label: "已归档" },
-] as const;
-
 const MODEL_ENABLE_STATUS_OPTIONS = [
   { value: "enabled", label: "启用" },
   { value: "disabled", label: "禁用" },
@@ -81,7 +73,6 @@ type ModelFormValues = {
 
 type VersionFormValues = {
   version_tag: string;
-  status: AtpModelVersionStatus;
   entry_file: string;
   change_note: string;
   artifact_manifest_json: string;
@@ -89,7 +80,6 @@ type VersionFormValues = {
 };
 
 type RunFormValues = {
-  version_id?: string;
   timeout_seconds?: number;
   extra_args: string;
   dry_run: boolean;
@@ -106,7 +96,6 @@ const DEFAULT_MODEL_FORM: ModelFormValues = {
 
 const DEFAULT_VERSION_FORM: VersionFormValues = {
   version_tag: "",
-  status: "released",
   entry_file: "",
   change_note: "",
   artifact_manifest_json: "{}",
@@ -114,7 +103,6 @@ const DEFAULT_VERSION_FORM: VersionFormValues = {
 };
 
 const DEFAULT_RUN_FORM: RunFormValues = {
-  version_id: undefined,
   timeout_seconds: undefined,
   extra_args: "",
   dry_run: false,
@@ -137,19 +125,6 @@ function formatModelStatus(status: string): ReactNode {
   }
   if (status === "disabled") {
     return <Tag>禁用</Tag>;
-  }
-  return <Tag>{status || "-"}</Tag>;
-}
-
-function formatVersionStatus(status: string): ReactNode {
-  if (status === "released") {
-    return <Tag color="green">已发布</Tag>;
-  }
-  if (status === "draft") {
-    return <Tag color="orange">草稿</Tag>;
-  }
-  if (status === "archived") {
-    return <Tag>已归档</Tag>;
   }
   return <Tag>{status || "-"}</Tag>;
 }
@@ -185,6 +160,25 @@ function splitExtraArgs(value: string): string[] {
     .slice(0, 32);
 }
 
+function buildDefaultManifest(sourceText: string): string {
+  if (!sourceText.trim()) {
+    return "{}";
+  }
+  return JSON.stringify(
+    {
+      files: [
+        {
+          name: "model.atp",
+          type: "ATP",
+          size: sourceText.length,
+        },
+      ],
+    },
+    null,
+    2,
+  );
+}
+
 export default function PowerLinesAtpViewerPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
@@ -206,6 +200,7 @@ export default function PowerLinesAtpViewerPage() {
   const [versionModalOpen, setVersionModalOpen] = useState(false);
   const [runDetailOpen, setRunDetailOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<AtpModelSummary | null>(null);
+  const [currentVersionDetail, setCurrentVersionDetail] = useState<AtpModelVersionDetail | null>(null);
 
   const [modelForm] = Form.useForm<ModelFormValues>();
   const [versionForm] = Form.useForm<VersionFormValues>();
@@ -266,21 +261,6 @@ export default function PowerLinesAtpViewerPage() {
     },
   });
 
-  const versionsQuery = useQuery({
-    queryKey: ["atp-model-versions", versionListPath],
-    enabled: Boolean(user) && canRead && Boolean(selectedModelId),
-    queryFn: async () => {
-      if (!versionListPath) {
-        return { items: [], total: 0 } satisfies AtpModelVersionListResponse;
-      }
-      const response = await fetchWithAuth(versionListPath);
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-      return (await response.json()) as AtpModelVersionListResponse;
-    },
-  });
-
   const runsQuery = useQuery({
     queryKey: ["atp-model-runs", runListPath],
     enabled: Boolean(user) && canRead && Boolean(selectedModelId),
@@ -293,6 +273,39 @@ export default function PowerLinesAtpViewerPage() {
         throw new Error(await readApiError(response));
       }
       return (await response.json()) as AtpSimulationRunListResponse;
+    },
+  });
+
+  const models = useMemo(() => modelsQuery.data?.items ?? [], [modelsQuery.data]);
+  const runs = useMemo(() => runsQuery.data?.items ?? [], [runsQuery.data]);
+
+  const selectedModel = useMemo(() => models.find((item) => item.id === selectedModelId) ?? null, [models, selectedModelId]);
+
+  const currentVersionQuery = useQuery({
+    queryKey: ["atp-model-current-version", selectedModelId, selectedModel?.active_version_no],
+    enabled: Boolean(user) && canRead && Boolean(selectedModelId),
+    queryFn: async () => {
+      if (!versionListPath || !selectedModelId) {
+        return null;
+      }
+      const response = await fetchWithAuth(versionListPath);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      const payload = (await response.json()) as AtpModelVersionListResponse;
+      const preferred =
+        payload.items.find((item) => item.version_no === selectedModel?.active_version_no)
+        ?? payload.items[0]
+        ?? null;
+      if (!preferred) {
+        return null;
+      }
+
+      const detailResponse = await fetchWithAuth(`/api/v1/atp/models/${selectedModelId}/versions/${preferred.id}`);
+      if (!detailResponse.ok) {
+        throw new Error(await readApiError(detailResponse));
+      }
+      return (await detailResponse.json()) as AtpModelVersionDetail;
     },
   });
 
@@ -338,7 +351,7 @@ export default function PowerLinesAtpViewerPage() {
       predicate: (query) =>
         Array.isArray(query.queryKey)
         && typeof query.queryKey[0] === "string"
-        && query.queryKey[0] === "atp-model-versions",
+        && (query.queryKey[0] === "atp-model-versions" || query.queryKey[0] === "atp-model-current-version"),
     });
   }, [queryClient]);
 
@@ -357,36 +370,49 @@ export default function PowerLinesAtpViewerPage() {
     void refreshRuns();
   }, [refreshModels, refreshRuns, refreshVersions]));
 
-  const models = useMemo(() => modelsQuery.data?.items ?? [], [modelsQuery.data]);
-  const versions = useMemo(() => versionsQuery.data?.items ?? [], [versionsQuery.data]);
-  const runs = useMemo(() => runsQuery.data?.items ?? [], [runsQuery.data]);
-
-  const selectedModel = useMemo(() => models.find((item) => item.id === selectedModelId) ?? null, [models, selectedModelId]);
-
   useEffect(() => {
     if (!selectedModelId && models.length > 0) {
       setSelectedModelId(models[0].id);
-      runForm.setFieldValue("version_id", undefined);
       return;
     }
     if (selectedModelId && !models.some((item) => item.id === selectedModelId)) {
       setSelectedModelId(models.length > 0 ? models[0].id : null);
-      runForm.setFieldValue("version_id", undefined);
     }
-  }, [models, runForm, selectedModelId]);
-
-  useEffect(() => {
-    if (!selectedModel) {
-      runForm.setFieldValue("version_id", undefined);
-      return;
-    }
-    const activeVersion = versions.find((item) => item.version_no === selectedModel.active_version_no);
-    runForm.setFieldValue("version_id", activeVersion?.id ?? undefined);
-  }, [runForm, selectedModel, versions]);
+  }, [models, selectedModelId]);
 
   useEffect(() => {
     runForm.setFieldsValue(DEFAULT_RUN_FORM);
   }, [runForm]);
+
+  useEffect(() => {
+    const detail = currentVersionQuery.data ?? null;
+    setCurrentVersionDetail(detail);
+    if (!detail) {
+      setSourceText("");
+      setGraphJson(null);
+      setParseWarnings([]);
+      setParseError("");
+      versionForm.setFieldsValue(DEFAULT_VERSION_FORM);
+      return;
+    }
+    setSourceText(detail.atp_text);
+    versionForm.setFieldsValue({
+      version_tag: detail.version_tag ?? "",
+      entry_file: detail.entry_file ?? "",
+      change_note: detail.change_note,
+      artifact_manifest_json: JSON.stringify(detail.artifact_manifest_json ?? {}, null, 2),
+      atp_text: detail.atp_text,
+    });
+    const maybeGraph = detail.graph_json as AtpGraphJson;
+    if (maybeGraph && typeof maybeGraph === "object" && maybeGraph.format === "atp-graph-json-v1") {
+      setGraphJson(maybeGraph);
+      setParseWarnings(Array.isArray(maybeGraph.warnings) ? maybeGraph.warnings : []);
+      setParseError("");
+    } else {
+      setGraphJson(null);
+      setParseWarnings([]);
+    }
+  }, [currentVersionQuery.data, versionForm]);
 
   const saveModelMutation = useMutation({
     mutationFn: async (values: ModelFormValues) => {
@@ -487,7 +513,6 @@ export default function PowerLinesAtpViewerPage() {
 
       const payload = {
         version_tag: values.version_tag.trim() || null,
-        status: values.status,
         entry_file: values.entry_file.trim() || null,
         change_note: values.change_note.trim(),
         artifact_manifest_json: manifest,
@@ -495,10 +520,13 @@ export default function PowerLinesAtpViewerPage() {
         atp_text: values.atp_text,
       };
 
-      const response = await fetchWithAuth(`/api/v1/atp/models/${selectedModelId}/versions`, {
-        method: "POST",
+      const requestPath = currentVersionDetail
+        ? `/api/v1/atp/models/${selectedModelId}/versions/${currentVersionDetail.id}`
+        : `/api/v1/atp/models/${selectedModelId}/versions`;
+      const response = await fetchWithAuth(requestPath, {
+        method: currentVersionDetail ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(currentVersionDetail ? payload : { ...payload, status: "released" }),
       });
       if (!response.ok) {
         throw new Error(await readApiError(response));
@@ -507,7 +535,7 @@ export default function PowerLinesAtpViewerPage() {
     },
     onSuccess: async (result) => {
       setError("");
-      setSuccess(`版本 v${result.version_no} 已创建`);
+      setSuccess(currentVersionDetail ? "当前模板已保存" : `模板 v${result.version_no} 已创建`);
       setVersionModalOpen(false);
       versionForm.resetFields();
       await refreshModels();
@@ -519,31 +547,6 @@ export default function PowerLinesAtpViewerPage() {
     },
   });
 
-  const activateVersionMutation = useMutation({
-    mutationFn: async (version: AtpModelVersionSummary) => {
-      if (!selectedModelId) {
-        throw new Error("请先选择模型");
-      }
-      const response = await fetchWithAuth(`/api/v1/atp/models/${selectedModelId}/versions/${version.id}/activate`, {
-        method: "POST",
-      });
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-      return version;
-    },
-    onSuccess: async (version) => {
-      setError("");
-      setSuccess(`已激活版本 v${version.version_no}`);
-      await refreshModels();
-      await refreshVersions();
-    },
-    onError: (candidate) => {
-      setSuccess("");
-      setError(candidate instanceof Error ? candidate.message : "激活版本失败");
-    },
-  });
-
   const runMutation = useMutation({
     mutationFn: async (values: RunFormValues) => {
       if (!selectedModelId) {
@@ -551,7 +554,6 @@ export default function PowerLinesAtpViewerPage() {
       }
 
       const payload = {
-        version_id: values.version_id || null,
         timeout_seconds: values.timeout_seconds ?? null,
         extra_args: splitExtraArgs(values.extra_args),
         dry_run: values.dry_run,
@@ -660,55 +662,19 @@ export default function PowerLinesAtpViewerPage() {
     setModelModalOpen(true);
   }, [modelForm]);
 
-  const openCreateVersionModal = () => {
-    const defaultManifest = sourceText.trim()
-      ? JSON.stringify(
-          {
-            files: [
-              {
-                name: "model.atp",
-                type: "ATP",
-                size: sourceText.length,
-              },
-            ],
-          },
-          null,
-          2,
-        )
-      : "{}";
-
+  const openVersionEditorModal = () => {
     versionForm.setFieldsValue({
       ...DEFAULT_VERSION_FORM,
       atp_text: sourceText,
-      artifact_manifest_json: defaultManifest,
+      artifact_manifest_json: currentVersionDetail
+        ? JSON.stringify(currentVersionDetail.artifact_manifest_json ?? {}, null, 2)
+        : buildDefaultManifest(sourceText),
+      version_tag: currentVersionDetail?.version_tag ?? "",
+      entry_file: currentVersionDetail?.entry_file ?? "",
+      change_note: currentVersionDetail?.change_note ?? "",
     });
     setVersionModalOpen(true);
   };
-
-  const handleLoadVersionToEditor = useCallback(async (item: AtpModelVersionSummary) => {
-    if (!selectedModelId) {
-      return;
-    }
-    const response = await fetchWithAuth(`/api/v1/atp/models/${selectedModelId}/versions/${item.id}`);
-    if (!response.ok) {
-      setSuccess("");
-      setError(await readApiError(response));
-      return;
-    }
-    const detail = (await response.json()) as AtpModelVersionDetail;
-    setSourceText(detail.atp_text);
-    versionForm.setFieldValue("atp_text", detail.atp_text);
-    const maybeGraph = detail.graph_json as AtpGraphJson;
-    if (maybeGraph && typeof maybeGraph === "object" && maybeGraph.format === "atp-graph-json-v1") {
-      setGraphJson(maybeGraph);
-      setParseWarnings(Array.isArray(maybeGraph.warnings) ? maybeGraph.warnings : []);
-      setParseError("");
-    } else {
-      setGraphJson(null);
-    }
-    setSuccess(`已加载版本 v${detail.version_no} 到编辑区`);
-    setError("");
-  }, [fetchWithAuth, selectedModelId, versionForm]);
 
   const modelColumns = useMemo<ColumnsType<AtpModelSummary>>(
     () => [
@@ -735,10 +701,10 @@ export default function PowerLinesAtpViewerPage() {
         render: (value: string) => formatModelStatus(value),
       },
       {
-        title: "版本",
+        title: "模板",
         key: "version_summary",
-        width: 130,
-        render: (_: unknown, row) => `最新 v${row.latest_version_no}${row.active_version_no ? ` / 激活 v${row.active_version_no}` : ""}`,
+        width: 150,
+        render: (_: unknown, row) => row.latest_version_no > 0 ? `当前模板 v${row.active_version_no ?? row.latest_version_no}` : "未配置",
       },
       {
         title: "运行",
@@ -790,81 +756,6 @@ export default function PowerLinesAtpViewerPage() {
       },
     ],
     [canManage, deleteModelMutation, openEditModelModal],
-  );
-
-  const versionColumns = useMemo<ColumnsType<AtpModelVersionSummary>>(
-    () => [
-      {
-        title: "版本",
-        dataIndex: "version_no",
-        width: 90,
-        render: (value: number) => <Typography.Text code>{`v${value}`}</Typography.Text>,
-      },
-      {
-        title: "标签",
-        dataIndex: "version_tag",
-        width: 120,
-        render: (value: string | null) => value || "-",
-      },
-      {
-        title: "状态",
-        dataIndex: "status",
-        width: 90,
-        render: (value: string) => formatVersionStatus(value),
-      },
-      {
-        title: "入口文件",
-        dataIndex: "entry_file",
-        width: 180,
-        render: (value: string | null) => value || "-",
-      },
-      {
-        title: "文本大小",
-        dataIndex: "atp_text_size",
-        width: 100,
-        render: (value: number) => `${value} B`,
-      },
-      {
-        title: "Hash",
-        dataIndex: "content_hash",
-        width: 150,
-        render: (value: string) => <Typography.Text code>{value.slice(0, 10)}</Typography.Text>,
-      },
-      {
-        title: "更新时间",
-        dataIndex: "update_date",
-        width: 170,
-        render: (value: string) => formatDateTime(value),
-      },
-      {
-        title: "操作",
-        key: "actions",
-        width: 250,
-        fixed: "right",
-        render: (_: unknown, row) => (
-          <Space size={8}>
-            <Button size="small" onClick={() => void handleLoadVersionToEditor(row)}>
-              加载
-            </Button>
-            {canManage && row.status !== "archived" && (
-              <Button
-                size="small"
-                type="primary"
-                onClick={async () => {
-                  await activateVersionMutation.mutateAsync(row);
-                }}
-                loading={activateVersionMutation.isPending}
-                disabled={selectedModel?.active_version_no === row.version_no}
-              >
-                激活
-              </Button>
-            )}
-            {selectedModel?.active_version_no === row.version_no && <Tag color="green">当前激活</Tag>}
-          </Space>
-        ),
-      },
-    ],
-    [activateVersionMutation, canManage, handleLoadVersionToEditor, selectedModel?.active_version_no],
   );
 
   const runColumns = useMemo<ColumnsType<AtpSimulationRunSummary>>(
@@ -987,7 +878,7 @@ export default function PowerLinesAtpViewerPage() {
   }
 
   const modelError = modelsQuery.error instanceof Error ? modelsQuery.error.message : "";
-  const versionError = versionsQuery.error instanceof Error ? versionsQuery.error.message : "";
+  const versionError = currentVersionQuery.error instanceof Error ? currentVersionQuery.error.message : "";
   const runError = runsQuery.error instanceof Error ? runsQuery.error.message : "";
   const engineError = engineQuery.error instanceof Error ? engineQuery.error.message : "";
 
@@ -1042,12 +933,12 @@ export default function PowerLinesAtpViewerPage() {
       </Card>
 
       <Card
-        title={selectedModel ? `版本管理 - ${selectedModel.name}` : "版本管理"}
+        title={selectedModel ? `模型模板 - ${selectedModel.name}` : "模型模板"}
         extra={(
           <Space size={8} wrap>
             {canManage && (
-              <Button type="primary" onClick={openCreateVersionModal} disabled={!selectedModelId}>
-                新建版本
+              <Button type="primary" onClick={openVersionEditorModal} disabled={!selectedModelId}>
+                {currentVersionDetail ? "编辑当前模板" : "创建模板"}
               </Button>
             )}
           </Space>
@@ -1056,14 +947,27 @@ export default function PowerLinesAtpViewerPage() {
         {!selectedModelId ? (
           <Empty description="请先选择模型" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
-          <Table<AtpModelVersionSummary>
-            rowKey={(row) => row.id}
-            columns={versionColumns}
-            dataSource={versions}
-            loading={versionsQuery.isFetching}
-            pagination={false}
-            scroll={{ x: 1580 }}
-          />
+          <Space direction="vertical" size={12} className="w-full">
+            {currentVersionDetail ? (
+              <>
+                <div className="grid gap-3 md:grid-cols-4">
+                  <Card><Statistic title="当前模板" value={`v${currentVersionDetail.version_no}`} /></Card>
+                  <Card><Statistic title="入口文件" value={currentVersionDetail.entry_file || "-"} /></Card>
+                  <Card><Statistic title="文本大小" value={`${currentVersionDetail.atp_text_size} B`} /></Card>
+                  <Card><Statistic title="最近更新" value={formatDateTime(currentVersionDetail.update_date)} /></Card>
+                </div>
+                <Alert
+                  type="info"
+                  showIcon
+                  message={`当前模板：v${currentVersionDetail.version_no}${currentVersionDetail.version_tag ? ` / ${currentVersionDetail.version_tag}` : ""}`}
+                  description={currentVersionDetail.change_note || "当前模型模板已就绪，可直接执行仿真或进入编辑。"}
+                />
+                <TextArea value={currentVersionDetail.atp_text} readOnly autoSize={{ minRows: 10, maxRows: 18 }} />
+              </>
+            ) : (
+              <Empty description="当前模型还没有模板，请先创建模板。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            )}
+          </Space>
         )}
       </Card>
 
@@ -1085,7 +989,7 @@ export default function PowerLinesAtpViewerPage() {
                 <Statistic title="运行记录" value={runs.length} />
               </Card>
               <Card>
-                <Statistic title="激活版本" value={selectedModel?.active_version_no ? `v${selectedModel.active_version_no}` : "-"} />
+                <Statistic title="当前模板" value={currentVersionDetail ? `v${currentVersionDetail.version_no}` : "-"} />
               </Card>
             </div>
 
@@ -1097,18 +1001,6 @@ export default function PowerLinesAtpViewerPage() {
                 runMutation.mutate(values);
               }}
             >
-              <Form.Item name="version_id" label="目标版本">
-                <Select
-                  allowClear
-                  placeholder="默认激活版本"
-                  style={{ width: 220 }}
-                  options={versions.map((item) => ({
-                    value: item.id,
-                    label: `v${item.version_no}${item.version_tag ? ` (${item.version_tag})` : ""}`,
-                    disabled: item.status === "archived",
-                  }))}
-                />
-              </Form.Item>
               <Form.Item name="timeout_seconds" label="超时(秒)">
                 <InputNumber min={1} max={3600} style={{ width: 120 }} placeholder="默认" />
               </Form.Item>
@@ -1119,13 +1011,14 @@ export default function PowerLinesAtpViewerPage() {
                 <Switch />
               </Form.Item>
               <Form.Item>
-                <Button type="primary" htmlType="submit" loading={runMutation.isPending} disabled={!canRun}>
+                <Button type="primary" htmlType="submit" loading={runMutation.isPending} disabled={!canRun || !currentVersionDetail}>
                   执行仿真
                 </Button>
               </Form.Item>
             </Form>
 
             {!canRun && <Typography.Text type="secondary">当前账号无仿真执行权限（需要 `atp.run` 或 `atp.manage`）。</Typography.Text>}
+            {canRun && !currentVersionDetail && <Typography.Text type="secondary">当前模型还没有模板，无法执行仿真。</Typography.Text>}
 
             <Table<AtpSimulationRunSummary>
               rowKey={(row) => row.id}
@@ -1272,10 +1165,10 @@ export default function PowerLinesAtpViewerPage() {
       </Modal>
 
       <Modal
-        title="新建版本"
+        title={currentVersionDetail ? "编辑当前模板" : "创建模板"}
         open={versionModalOpen}
         width={900}
-        okText="创建版本"
+        okText={currentVersionDetail ? "保存模板" : "创建模板"}
         confirmLoading={createVersionMutation.isPending}
         onCancel={() => {
           if (createVersionMutation.isPending) {
@@ -1294,16 +1187,13 @@ export default function PowerLinesAtpViewerPage() {
           initialValues={DEFAULT_VERSION_FORM}
         >
           <div className="grid gap-3 md:grid-cols-2">
-            <Form.Item name="version_tag" label="版本标签">
-              <Input placeholder="例如：2026Q2-雷击参数优化" />
+            <Form.Item name="version_tag" label="模板标签">
+              <Input placeholder="例如：220kV-输电线路模板" />
             </Form.Item>
-            <Form.Item name="status" label="状态">
-              <Select options={[...VERSION_STATUS_OPTIONS]} />
+            <Form.Item name="entry_file" label="入口文件名">
+              <Input placeholder="例如：line_model.atp" />
             </Form.Item>
           </div>
-          <Form.Item name="entry_file" label="入口文件名">
-            <Input placeholder="例如：line_model.atp" />
-          </Form.Item>
           <Form.Item name="change_note" label="变更说明">
             <TextArea autoSize={{ minRows: 2, maxRows: 5 }} />
           </Form.Item>
