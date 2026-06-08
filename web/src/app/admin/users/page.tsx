@@ -677,7 +677,6 @@ export default function AdminUsersPage() {
         extra={(
           <Space>
             {usersQuery.isFetching && <Spin size="small" />}
-            <Typography.Text type="secondary">共 {usersQuery.data?.total ?? 0} 条</Typography.Text>
             <Button type="primary" onClick={openCreateUserModal}>
               新增用户
             </Button>
