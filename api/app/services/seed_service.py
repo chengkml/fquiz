@@ -299,7 +299,7 @@ DEFAULT_MENUS: list[dict[str, object]] = [
     {
         "code": "admin.atp_models",
         "name": "ATP模型管理",
-        "path": "/admin/power-lines/atp-viewer",
+        "path": "/admin/atp-models",
         "icon": "Experiment",
         "parent_code": None,
         "type": "menu",

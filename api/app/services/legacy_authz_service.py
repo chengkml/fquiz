@@ -163,7 +163,7 @@ SYNTHETIC_LEGACY_MENU_ROWS: list[dict[str, Any]] = [
         "menu_label": "ATP模型管理",
         "menu_type": "MENU",
         "parent_id": None,
-        "url": "/admin/power-lines/atp-viewer",
+        "url": "/admin/atp-models",
         "menu_icon": "Experiment",
         "seq": 55,
         "state": "ENABLED",

@@ -20,7 +20,7 @@ from api.app.core.database import Base, get_db, init_db
 from api.app.core.dependencies import CurrentUser, get_current_user
 from api.app.models.menu import Menu
 from api.app.models.user import User
-from api.app.services.legacy_authz_service import DEFAULT_ADMIN_PERMISSION_CODES
+from api.app.services.legacy_authz_service import DEFAULT_ADMIN_PERMISSION_CODES, SYNTHETIC_LEGACY_MENU_ROWS
 from api.app.services.seed_service import DEFAULT_MENUS, DEFAULT_PERMISSIONS, DEFAULT_ROLES, SeedDefaultsResult, seed_defaults
 from api.app.services.topic_registry import TOPIC_RULES
 
@@ -93,6 +93,11 @@ class LegacyQuizCleanupContractTest(unittest.TestCase):
         self.assertNotIn("question_bank.read", DEFAULT_ROLES["admin"]["permissions"])
         self.assertNotIn("question_bank.manage", DEFAULT_ROLES["admin"]["permissions"])
 
+    def test_legacy_authz_uses_standalone_atp_models_menu_url(self) -> None:
+        atp_menu = next(row for row in SYNTHETIC_LEGACY_MENU_ROWS if row["menu_id"] == "admin.atp_models")
+
+        self.assertEqual(atp_menu["url"], "/admin/atp-models")
+
 
 class SeedDefaultsServiceTest(DatabaseFixtureTestCase):
     def setUp(self) -> None:
@@ -150,6 +155,15 @@ class SeedDefaultsServiceTest(DatabaseFixtureTestCase):
         self.assertEqual(result.mode, "force_overwrite")
         self.assertTrue(result.overwrote_existing)
         self.assertGreater(result.summary["menus"].overwritten, 0)
+
+    def test_seed_defaults_use_standalone_atp_models_path(self) -> None:
+        self._run_seed()
+
+        menu = self._load_menu("admin.atp_models")
+        default_menu = DEFAULT_MENU_BY_CODE["admin.atp_models"]
+
+        self.assertEqual(str(default_menu["path"]), "/admin/atp-models")
+        self.assertEqual(menu.path, "/admin/atp-models")
 
 
 class SeedDefaultsEndpointTest(DatabaseFixtureTestCase):
