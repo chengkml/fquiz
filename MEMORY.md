@@ -51,6 +51,7 @@
 - CORS 来源控制采用“双轨配置”：`API_CORS_ORIGINS`（精确列表）+ `API_CORS_ORIGIN_REGEX`（正则，可选）；`API_CORS_ORIGINS` 支持 `*` 和通配符域名并在后端转换为 `allow_origin_regex`。
 - GitHub Actions 使用 `appleboy/ssh-action` 部署时，慢网环境需显式设置 `command_timeout`（建议 `45m`）并为 `docker compose pull` 增加重试，避免出现 `Run Command Timeout` 直接中断发布。
 - 生产发布默认不再依赖 `ghcr.io`：工作流镜像仓库统一通过 `REGISTRY` / `REGISTRY_NAMESPACE` 控制，默认指向阿里云个人版容器仓库 `crpi-u265r07n4blchcqo.cn-shanghai.personal.cr.aliyuncs.com/ck-registry`；CI 与远端部署均使用 `REGISTRY_USERNAME` / `REGISTRY_PASSWORD` 登录同一仓库，避免服务器侧访问 GHCR 出现 `Get "https://ghcr.io/v2/": EOF`。
+- GitHub Actions 若继续使用 `docker/setup-buildx-action` 默认 `docker-container` 驱动，BuildKit builder 会先拉 `moby/buildkit:buildx-stable-1`；在当前网络条件下应显式通过 `driver-opts` 指向镜像站（当前口径：`docker.m.daocloud.io/moby/buildkit:buildx-stable-1`），避免安装 Buildx 阶段因 Docker Hub 超时直接失败。
 - `docker compose up -d` 不会重建 `build` 类型服务镜像；开发链路默认使用 `deploy/dev-deploy/compose.yml`，前端代码变更后需执行 `docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml up --build -d web`（必要时先 `docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml build --no-cache web`）。
 - `api` 构建若在拉取 `docker.m.daocloud.io/library/python:3.11-slim` 时出现 manifest `EOF`，优先重试 `docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml build api`；若持续失败，可在 `deploy/dev-deploy/.env` 覆盖 `PYTHON_BASE_IMAGE=python:3.11-slim` 走 Docker Hub 兜底。
 
