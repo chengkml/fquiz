@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -109,6 +110,22 @@ class AuditLogListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class SeedCategorySummary(BaseModel):
+    created: int = 0
+    updated: int = 0
+    linked: int = 0
+    unchanged: int = 0
+    overwritten: int = 0
+
+
+class SeedDefaultsResponse(BaseModel):
+    success: bool
+    force: bool
+    mode: Literal["missing_only", "force_overwrite"]
+    overwrote_existing: bool
+    summary: dict[str, SeedCategorySummary] = Field(default_factory=dict)
 
 
 MenuTreeItem.model_rebuild()

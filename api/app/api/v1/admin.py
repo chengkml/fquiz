@@ -14,6 +14,7 @@ from ...schemas.admin import (
     RoleListResponse,
     RoleMenuUpdateRequest,
     RolePublic,
+    SeedDefaultsResponse,
     RoleUpdateRequest,
 )
 from ...services.admin_service import (
@@ -35,6 +36,7 @@ from ...services.legacy_admin_rbac_service import (
     update_menu,
     update_role,
 )
+from ...services.seed_service import seed_defaults
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -133,6 +135,16 @@ def get_audit_logs(
         action=action,
         user_id=user_id,
     )
+
+
+@router.post("/system/seed-defaults", response_model=SeedDefaultsResponse)
+def seed_defaults_endpoint(
+    force: bool = Query(default=False),
+    _: CurrentUser = Depends(require_permission("menu.manage")),
+    db: Session = Depends(get_db),
+) -> SeedDefaultsResponse:
+    result = seed_defaults(db, force=force)
+    return SeedDefaultsResponse.model_validate(result.to_response())
 
 
 @router.get("/menus", response_model=MenuListResponse)

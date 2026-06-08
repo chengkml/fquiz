@@ -403,8 +403,6 @@ def init_db() -> None:
         user,
         worker_registry,
     )  # noqa: F401
-    from ..services.seed_service import seed_defaults
-
     _ensure_user_pk_column_compatibility()
     _ensure_user_timestamp_column_compatibility()
     _ensure_user_audit_column_compatibility()
@@ -412,21 +410,3 @@ def init_db() -> None:
     _ensure_tower_model_column_compatibility()
     _ensure_tower_profile_column_compatibility()
     Base.metadata.create_all(bind=engine)
-    with SessionLocal() as db:
-        local_hosts = {"db", "localhost", "127.0.0.1", "::1"}
-        database_url = (settings.database_url or "").strip().lower()
-        database_url_targets_local = any(
-            token in database_url for token in ("@db:", "@localhost:", "@127.0.0.1:", "@[::1]:")
-        )
-        should_seed_defaults = (
-            settings.db_host.strip().lower() in local_hosts
-            or database_url_targets_local
-        )
-
-        if should_seed_defaults:
-            seed_defaults(db)
-        else:
-            logger.info(
-                "Skip seed defaults for non-local database target: host=%s",
-                settings.db_host,
-            )
