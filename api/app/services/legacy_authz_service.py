@@ -92,6 +92,7 @@ MENU_CODE_PERMISSION_MAP: dict[str, set[str]] = {
     "admin.roles": {"role.read", "role.manage"},
     "admin.menus": {"menu.read", "menu.manage"},
     "admin.system_params": {"system_param.read", "system_param.manage"},
+    "admin.fl_analysis": {"line.read", "line.manage"},
     "admin.files": {"file.read", "file.manage"},
     "admin.elevation": {"elevation.read", "elevation.manage"},
     "admin.tower_models": {"tower_model.read", "tower_model.manage"},

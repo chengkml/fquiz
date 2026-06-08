@@ -719,6 +719,8 @@
   - admin 默认授予上述权限。
 - 菜单口径：
   - 新增菜单 `admin.power_lines`，路由 `/admin/power-lines`；
+  - 一级菜单默认排序中，`admin.power_lines` 使用最小 `sort_order`，应展示在后台菜单最前面；
+  - 后台默认菜单集合补齐 `admin.fl_analysis`、`admin.fault_recurrence`、`admin.basic_data`、`admin.system_monitor`、`admin.system`；其中后 3 项为无路由目录菜单，用于保留现存菜单树全量可见性。
   - 页面由 `web/src/app/admin/power-lines/page.tsx` 承载线路与杆塔管理闭环。
 
 ## 线路地图展示口径（2026-04-25）
