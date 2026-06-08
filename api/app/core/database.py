@@ -390,7 +390,6 @@ def init_db() -> None:
         line,
         line_tower,
         menu,
-        model_registry,
         object_group,
         question_bank,
         rbac,
