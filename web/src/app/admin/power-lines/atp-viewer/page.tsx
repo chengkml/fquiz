@@ -338,18 +338,6 @@ export default function PowerLinesAtpViewerPage() {
     staleTime: 30_000,
   });
 
-  const modelError = modelsQuery.error instanceof Error ? modelsQuery.error.message : "";
-  const versionError = versionsQuery.error instanceof Error ? versionsQuery.error.message : "";
-  const runError = runsQuery.error instanceof Error ? runsQuery.error.message : "";
-  const engineError = engineQuery.error instanceof Error ? engineQuery.error.message : "";
-
-  useToastFeedback({
-    errorMessage: error || modelError || versionError || runError || engineError,
-    successMessage: success,
-    clearError: () => setError(""),
-    clearSuccess: () => setSuccess(""),
-  });
-
   const refreshModels = useCallback(async () => {
     await queryClient.invalidateQueries({
       predicate: (query) =>
@@ -894,6 +882,13 @@ export default function PowerLinesAtpViewerPage() {
   const versionError = currentVersionQuery.error instanceof Error ? currentVersionQuery.error.message : "";
   const runError = runsQuery.error instanceof Error ? runsQuery.error.message : "";
   const engineError = engineQuery.error instanceof Error ? engineQuery.error.message : "";
+
+  useToastFeedback({
+    errorMessage: error || modelError || versionError || runError || engineError,
+    successMessage: success,
+    clearError: () => setError(""),
+    clearSuccess: () => setSuccess(""),
+  });
   return (
     <Space direction="vertical" size={16} className="w-full">
       <Card
