@@ -26,6 +26,13 @@ import {
 import { useAuth } from "@/components/auth-provider";
 import { readApiError } from "@/lib/api";
 import { getTaskDisplayName } from "@/lib/celery-task-display";
+import {
+  formatTaskMonitorDuration,
+  formatTaskMonitorErrorMessage,
+  getQueueDisplayName,
+  getTaskSourceDisplay,
+  getTaskStateDisplay,
+} from "@/lib/task-monitor-display";
 
 const { Text } = Typography;
 const AntCard = Card as unknown as ComponentType<CardProps>;
@@ -108,24 +115,13 @@ function formatDateTime(value: string | null | undefined): string {
 }
 
 function renderTaskStateTag(state: string) {
-  const normalized = (state || "").toUpperCase();
-  const color =
-    normalized === "STARTED"
-      ? "processing"
-      : normalized === "RECEIVED"
-        ? "blue"
-        : normalized === "SCHEDULED"
-          ? "purple"
-          : normalized === "RETRY"
-            ? "orange"
-            : normalized === "SUCCESS"
-              ? "green"
-              : normalized === "FAILURE"
-                ? "red"
-                : normalized === "REVOKED"
-                  ? "default"
-                  : "geekblue";
-  return <Tag color={color}>{normalized || "UNKNOWN"}</Tag>;
+  const display = getTaskStateDisplay(state);
+  return <Tag color={display.color}>{display.label}</Tag>;
+}
+
+function renderTaskSourceTag(source: string) {
+  const display = getTaskSourceDisplay(source);
+  return <Tag color={display.color}>{display.label}</Tag>;
 }
 
 function containsText(source: string | null | undefined, keyword: string): boolean {
@@ -207,14 +203,14 @@ export default function AdminTaskMonitorPage() {
   const taskColumns = useMemo<TableColumnsType<TaskTableRow>>(
     () => [
       {
-        title: "Task ID",
+        title: "任务 ID",
         dataIndex: "task_id",
         key: "task_id",
         width: 260,
         render: (value: string) => <Text copyable>{value}</Text>,
       },
       {
-        title: "任务名",
+        title: "任务名称",
         dataIndex: "name",
         key: "name",
         width: 220,
@@ -228,42 +224,42 @@ export default function AdminTaskMonitorPage() {
         render: (value: string) => renderTaskStateTag(value),
       },
       {
-        title: "来源",
+        title: "监控分组",
         dataIndex: "source",
         key: "source",
-        width: 100,
-        render: (value: string) => value || "-",
+        width: 120,
+        render: (value: string) => renderTaskSourceTag(value),
       },
       {
         title: "队列",
         dataIndex: "queue_name",
         key: "queue_name",
         width: 120,
-        render: (value: string | null) => value || "-",
+        render: (value: string | null) => getQueueDisplayName(value),
       },
       {
-        title: "Worker",
+        title: "执行节点",
         dataIndex: "worker",
         key: "worker",
         width: 220,
         render: (value: string) => value || "-",
       },
       {
-        title: "接收",
+        title: "接收时间",
         dataIndex: "received_at",
         key: "received_at",
         width: 170,
         render: (value: string | null) => formatDateTime(value),
       },
       {
-        title: "开始",
+        title: "开始时间",
         dataIndex: "started_at",
         key: "started_at",
         width: 170,
         render: (value: string | null) => formatDateTime(value),
       },
       {
-        title: "完成",
+        title: "完成时间",
         dataIndex: "finished_at",
         key: "finished_at",
         width: 170,
@@ -274,24 +270,24 @@ export default function AdminTaskMonitorPage() {
         dataIndex: "runtime_seconds",
         key: "runtime_seconds",
         width: 110,
-        render: (value: number | null) => (value === null ? "-" : `${value.toFixed(3)}s`),
+        render: (value: number | null) => formatTaskMonitorDuration(value),
       },
       {
-        title: "Args",
+        title: "位置参数",
         dataIndex: "args_text",
         key: "args_text",
         width: 220,
         render: (value: string | null) => (value ? <Text ellipsis={{ tooltip: value }}>{value}</Text> : "-"),
       },
       {
-        title: "Kwargs",
+        title: "关键字参数",
         dataIndex: "kwargs_text",
         key: "kwargs_text",
         width: 220,
         render: (value: string | null) => (value ? <Text ellipsis={{ tooltip: value }}>{value}</Text> : "-"),
       },
       {
-        title: "Exception",
+        title: "异常信息",
         dataIndex: "exception_text",
         key: "exception_text",
         width: 220,
@@ -322,7 +318,10 @@ export default function AdminTaskMonitorPage() {
         return false;
       }
       if (queueKeyword.trim()) {
-        const text = item.queue_names.join(", ");
+        const text = [
+          item.queue_names.join(", "),
+          item.queue_names.map((queueName) => getQueueDisplayName(queueName)).join(", "),
+        ].join(" ");
         if (!containsText(text, queueKeyword.trim())) {
           return false;
         }
@@ -353,7 +352,18 @@ export default function AdminTaskMonitorPage() {
       if (!keyword) {
         return true;
       }
-      const haystack = [item.task_id, item.name, item.queue_name || "", item.worker, item.args_text || "", item.kwargs_text || ""]
+      const haystack = [
+        item.task_id,
+        item.name,
+        getTaskDisplayName(item.name),
+        item.queue_name || "",
+        getQueueDisplayName(item.queue_name),
+        item.worker,
+        getTaskSourceDisplay(item.source).label,
+        getTaskStateDisplay(item.state).label,
+        item.args_text || "",
+        item.kwargs_text || "",
+      ]
         .join(" ")
         .toLowerCase();
       return haystack.includes(keyword.toLowerCase());
@@ -469,7 +479,7 @@ export default function AdminTaskMonitorPage() {
   if (!canRead) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
-        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `celery.read` 或 `celery.manage`）。</p>
+        <p className="text-sm text-[var(--gray-11)]">你没有访问任务监控页面的权限，请联系管理员开通相关权限。</p>
         <Link
           href="/"
           className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
@@ -500,10 +510,10 @@ export default function AdminTaskMonitorPage() {
         )}
       >
         <Form layout="inline" style={{ rowGap: 12 }}>
-          <Form.Item label="Worker" className="min-w-[220px]">
+          <Form.Item label="执行节点" className="min-w-[220px]">
             <Input
               allowClear
-              placeholder="按 Worker 名称筛选"
+              placeholder="按执行节点名称筛选"
               value={workerKeyword}
               onChange={(event) => setWorkerKeyword(event.target.value)}
             />
@@ -521,7 +531,7 @@ export default function AdminTaskMonitorPage() {
           <Form.Item label="任务" className="min-w-[240px]">
             <Input
               allowClear
-              placeholder="按 Task ID/任务名筛选"
+              placeholder="按任务 ID / 任务名称筛选"
               value={taskKeyword}
               onChange={(event) => setTaskKeyword(event.target.value)}
             />
@@ -553,7 +563,7 @@ export default function AdminTaskMonitorPage() {
 
         <Space className="mt-4" size={[16, 8]} wrap>
           <Text type="secondary">生成时间：{formatDateTime(workersOverview?.generated_at)}</Text>
-          <Text type="secondary">Worker：{filteredWorkers.length}/{workersOverview?.summary.total ?? 0}</Text>
+          <Text type="secondary">执行节点：{filteredWorkers.length}/{workersOverview?.summary.total ?? 0}</Text>
           <Text type="secondary">在线：{workersOverview?.summary.online ?? 0}</Text>
           <Text type="secondary">离线：{workersOverview?.summary.offline ?? 0}</Text>
           <Text type="secondary">任务：{filteredTaskRows.length} 条</Text>
@@ -564,7 +574,10 @@ export default function AdminTaskMonitorPage() {
             className="mt-4"
             type="error"
             showIcon
-            message={workersOverviewQuery.error instanceof Error ? workersOverviewQuery.error.message : "任务监控数据加载失败"}
+            message={formatTaskMonitorErrorMessage(
+              workersOverviewQuery.error instanceof Error ? workersOverviewQuery.error.message : "",
+              "任务监控数据加载失败，请稍后重试。",
+            )}
           />
         )}
         {allTasksQuery.error && (
@@ -572,7 +585,10 @@ export default function AdminTaskMonitorPage() {
             className="mt-4"
             type="error"
             showIcon
-            message={allTasksQuery.error instanceof Error ? allTasksQuery.error.message : "任务列表数据加载失败"}
+            message={formatTaskMonitorErrorMessage(
+              allTasksQuery.error instanceof Error ? allTasksQuery.error.message : "",
+              "任务列表数据加载失败，请稍后重试。",
+            )}
           />
         )}
 

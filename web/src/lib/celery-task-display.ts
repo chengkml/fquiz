@@ -1,9 +1,13 @@
 const TASK_NAME_LABELS: Record<string, string> = {
   "app.tasks.atp_model_tasks.execute_atp_model_run_job": "ATP 模型仿真",
   "app.tasks.elevation_tasks.analyze_elevation_dataset_job": "高程数据集分析",
-  "app.tasks.worker_registry_tasks.sweep_worker_registry_offline": "Worker 离线巡检",
+  "app.tasks.elevation_tasks.build_elevation_dataset_terrain_job": "高程地形生成",
   "app.tasks.elevation_tasks.apply_elevation_for_line_job": "线路高程回填",
-  "app.tasks.wine_tasks.execute_wine_run_job": "Wine 运行任务",
+  "app.tasks.fl_analysis_tasks.execute_fl_analysis_job": "防雷分析计算",
+  "app.tasks.scheduled_task_tasks.dispatch_due_scheduled_tasks": "到期定时任务派发",
+  "app.tasks.scheduled_task_tasks.execute_scheduled_task_job": "定时任务执行",
+  "app.tasks.wine_tasks.execute_wine_run_job": "Wine 程序执行",
+  "app.tasks.worker_registry_tasks.sweep_worker_registry_offline": "执行节点离线巡检",
 };
 
 export function getTaskDisplayName(taskName: string | null | undefined): string {
@@ -13,7 +17,10 @@ export function getTaskDisplayName(taskName: string | null | undefined): string 
   }
   const label = TASK_NAME_LABELS[normalized];
   if (!label) {
+    if (normalized.startsWith("app.tasks.")) {
+      return "未识别任务";
+    }
     return normalized;
   }
-  return `${label} (${normalized})`;
+  return label;
 }
