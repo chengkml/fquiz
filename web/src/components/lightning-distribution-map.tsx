@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { withBasePath } from "@/lib/base-path";
 import type {
   LightningDistributionGridCell,
   LightningDistributionScatterPoint,
@@ -12,6 +13,8 @@ type LightningDistributionMapProps = {
   grids: LightningDistributionGridCell[];
   loading?: boolean;
 };
+
+type CesiumNamespace = typeof import("cesium");
 
 function hasValidCoord(lon: number, lat: number): boolean {
   if (Number.isNaN(lon) || Number.isNaN(lat)) return false;
@@ -41,8 +44,8 @@ export function LightningDistributionMap({
   loading = false,
 }: LightningDistributionMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const viewerRef = useRef<any>(null);
-  const cesiumRef = useRef<any>(null);
+  const viewerRef = useRef<import("cesium").Viewer | null>(null);
+  const cesiumRef = useRef<CesiumNamespace | null>(null);
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
 
@@ -72,7 +75,7 @@ export function LightningDistributionMap({
         const Cesium = await import("cesium");
         if (disposed || !containerRef.current) return;
 
-        (window as typeof window & { CESIUM_BASE_URL?: string }).CESIUM_BASE_URL = "/cesium";
+        (window as typeof window & { CESIUM_BASE_URL?: string }).CESIUM_BASE_URL = withBasePath("/cesium");
         Cesium.Ion.defaultAccessToken = "";
 
         const viewer = new Cesium.Viewer(containerRef.current, {
@@ -137,7 +140,7 @@ export function LightningDistributionMap({
       });
     });
 
-    const positions: any[] = [];
+    const positions: import("cesium").Cartesian3[] = [];
     safePoints.forEach((point) => {
       const absCurrent = point.abs_current_ka ?? (point.current_ka ? Math.abs(point.current_ka) : null);
       const color = Cesium.Color.fromCssColorString(pointColorByAbsCurrent(absCurrent));

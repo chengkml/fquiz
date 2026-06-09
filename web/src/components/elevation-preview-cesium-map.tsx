@@ -3,6 +3,7 @@
 import { Alert, Empty, Spin } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { withBasePath } from "@/lib/base-path";
 import { reloadOnceOnChunkError } from "@/lib/chunk-error";
 import type { ElevationDatasetPreviewCell, ElevationDatasetPreviewPoint } from "@/types/auth";
 
@@ -108,7 +109,7 @@ export function ElevationPreviewCesiumMap({
     async function initViewer() {
       if (!containerRef.current || viewerRef.current) return;
       try {
-        window.CESIUM_BASE_URL = "/cesium";
+        window.CESIUM_BASE_URL = withBasePath("/cesium");
         const Cesium = await import("cesium");
         if (cancelled || !containerRef.current) return;
 

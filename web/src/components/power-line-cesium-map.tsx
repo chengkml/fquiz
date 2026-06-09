@@ -4,6 +4,7 @@ import { AimOutlined, MinusOutlined, PlusOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Empty, Spin, Typography } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { withBasePath } from "@/lib/base-path";
 import { reloadOnceOnChunkError } from "@/lib/chunk-error";
 import type { LineTowerSummary } from "@/types/auth";
 
@@ -238,7 +239,7 @@ export function PowerLineCesiumMap({
       }
 
       try {
-        window.CESIUM_BASE_URL = "/cesium";
+        window.CESIUM_BASE_URL = withBasePath("/cesium");
         const Cesium = await import("cesium");
         if (cancelled || !containerRef.current) {
           return;
