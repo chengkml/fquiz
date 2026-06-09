@@ -25,6 +25,7 @@ import {
 } from "antd";
 
 import { useAuth } from "@/components/auth-provider";
+import { AdminPageLoading } from "@/components/admin-page-loading";
 import { readApiError } from "@/lib/api";
 import { getTaskDisplayName } from "@/lib/celery-task-display";
 
@@ -487,11 +488,7 @@ export default function AdminWorkersPage() {
   }, [updateTableScrollY]);
 
   if (initializing || (overviewQuery.isLoading && !overviewQuery.data && canRead && Boolean(user))) {
-    return (
-      <div className="py-10">
-        <Spin tip="Worker监控数据加载中..." />
-      </div>
-    );
+    return <AdminPageLoading tip="Worker监控数据加载中..." minHeightClassName="min-h-[280px]" />;
   }
 
   if (!user) {
