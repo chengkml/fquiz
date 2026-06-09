@@ -253,6 +253,10 @@ body {
   min-height: var(--admin-workers-table-body-min-height, 180px);
 }
 
+.admin-task-monitor-table-anchor .ant-table-body {
+  min-height: var(--admin-task-monitor-table-body-min-height, 180px);
+}
+
 .admin-roles-table-anchor .ant-table-body {
   min-height: var(--admin-roles-table-body-min-height, 180px);
 }

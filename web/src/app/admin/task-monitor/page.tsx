@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import dayjs from "dayjs";
-import { useMemo, useState } from "react";
 import type { ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Alert,
   Button,
   Card,
   Empty,
+  Form,
   Input,
   Select,
   Space,
@@ -30,6 +31,9 @@ const { Text } = Typography;
 const AntCard = Card as unknown as ComponentType<CardProps>;
 
 const DEFAULT_RECENT_LIMIT = 100;
+const TASK_MONITOR_TABLE_MIN_SCROLL_Y = 180;
+const TASK_MONITOR_TABLE_VIEWPORT_GAP = 40;
+const TASK_MONITOR_TABLE_FALLBACK_RESERVE = 220;
 
 type FlowerWorkerItem = {
   worker: string;
@@ -156,6 +160,8 @@ export default function AdminTaskMonitorPage() {
   const [queueKeyword, setQueueKeyword] = useState("");
   const [taskKeyword, setTaskKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "online" | "offline">("all");
+  const [tableScrollY, setTableScrollY] = useState(TASK_MONITOR_TABLE_MIN_SCROLL_Y);
+  const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const workersOverviewQuery = useQuery({
     queryKey: ["flower-workers-overview"],
@@ -195,6 +201,8 @@ export default function AdminTaskMonitorPage() {
     refetchInterval: autoRefresh ? 5_000 : false,
     staleTime: 15_000,
   });
+
+  const workersOverview = workersOverviewQuery.data;
 
   const taskColumns = useMemo<TableColumnsType<TaskTableRow>>(
     () => [
@@ -352,9 +360,93 @@ export default function AdminTaskMonitorPage() {
     });
   }, [allTaskRows, filteredWorkers, taskKeyword]);
 
+  const handleResetFilters = () => {
+    setWorkerKeyword("");
+    setQueueKeyword("");
+    setTaskKeyword("");
+    setStatusFilter("all");
+  };
+
+  const updateTableScrollY = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - TASK_MONITOR_TABLE_FALLBACK_RESERVE);
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? TASK_MONITOR_TABLE_MIN_SCROLL_Y;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - TASK_MONITOR_TABLE_VIEWPORT_GAP);
+    }
+
+    const clampedHeight = Math.max(TASK_MONITOR_TABLE_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.requestAnimationFrame(updateTableScrollY);
+  }, [
+    allTasksQuery.isFetching,
+    filteredTaskRows.length,
+    statusFilter,
+    updateTableScrollY,
+    workerKeyword,
+    workersOverviewQuery.error,
+    workersOverviewQuery.isFetching,
+    workersOverview?.summary.total,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updateTableScrollY);
+    };
+
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateTableScrollY);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTableScrollY]);
+
   if (initializing || (workersOverviewQuery.isLoading && !workersOverviewQuery.data && canRead && Boolean(user))) {
     return (
-      <div className="py-10">
+      <div className="flex min-h-[240px] items-center justify-center">
         <Spin tip="任务监控数据加载中..." />
       </div>
     );
@@ -388,95 +480,138 @@ export default function AdminTaskMonitorPage() {
     );
   }
 
-  const workersOverview = workersOverviewQuery.data;
-
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <AntCard>
-        <Space size={16} wrap>
-          <Input
-            allowClear
-            placeholder="按 Worker 名称筛选"
-            value={workerKeyword}
-            onChange={(event) => setWorkerKeyword(event.target.value)}
-            style={{ width: 220 }}
-          />
-          <Input
-            allowClear
-            placeholder="按队列名称筛选"
-            value={queueKeyword}
-            onChange={(event) => setQueueKeyword(event.target.value)}
-            style={{ width: 220 }}
-          />
-          <Input
-            allowClear
-            placeholder="按 Task ID/任务名筛选"
-            value={taskKeyword}
-            onChange={(event) => setTaskKeyword(event.target.value)}
-            style={{ width: 240 }}
-          />
-          <Select
-            value={statusFilter}
-            onChange={(value) => setStatusFilter(parseStatusFilter(value))}
-            options={[
-              { label: "全部状态", value: "all" },
-              { label: "在线", value: "online" },
-              { label: "离线", value: "offline" },
-            ]}
-            style={{ width: 150 }}
-          />
-          <Space size={8}>
-            <Text>自动刷新</Text>
-            <Switch checked={autoRefresh} onChange={setAutoRefresh} />
+    <div className="space-y-6">
+      <AntCard
+        title="任务监控"
+        extra={(
+          <Space>
+            {(workersOverviewQuery.isFetching || allTasksQuery.isFetching) && <Spin size="small" />}
+            <Button
+              onClick={() => {
+                void workersOverviewQuery.refetch();
+                void allTasksQuery.refetch();
+              }}
+              loading={workersOverviewQuery.isFetching || allTasksQuery.isFetching}
+            >
+              刷新监控数据
+            </Button>
           </Space>
-          <Button
-            onClick={() => {
-              void workersOverviewQuery.refetch();
-              void allTasksQuery.refetch();
-            }}
-            loading={workersOverviewQuery.isFetching || allTasksQuery.isFetching}
-          >
-            刷新监控数据
-          </Button>
+        )}
+      >
+        <Form layout="inline" style={{ rowGap: 12 }}>
+          <Form.Item label="Worker" className="min-w-[220px]">
+            <Input
+              allowClear
+              placeholder="按 Worker 名称筛选"
+              value={workerKeyword}
+              onChange={(event) => setWorkerKeyword(event.target.value)}
+            />
+          </Form.Item>
+
+          <Form.Item label="队列" className="min-w-[220px]">
+            <Input
+              allowClear
+              placeholder="按队列名称筛选"
+              value={queueKeyword}
+              onChange={(event) => setQueueKeyword(event.target.value)}
+            />
+          </Form.Item>
+
+          <Form.Item label="任务" className="min-w-[240px]">
+            <Input
+              allowClear
+              placeholder="按 Task ID/任务名筛选"
+              value={taskKeyword}
+              onChange={(event) => setTaskKeyword(event.target.value)}
+            />
+          </Form.Item>
+
+          <Form.Item label="状态" className="min-w-[170px]">
+            <Select
+              value={statusFilter}
+              onChange={(value) => setStatusFilter(parseStatusFilter(value))}
+              options={[
+                { label: "全部状态", value: "all" },
+                { label: "在线", value: "online" },
+                { label: "离线", value: "offline" },
+              ]}
+            />
+          </Form.Item>
+
+          <Form.Item>
+            <Space size={8}>
+              <Text>自动刷新</Text>
+              <Switch checked={autoRefresh} onChange={setAutoRefresh} />
+            </Space>
+          </Form.Item>
+
+          <Form.Item>
+            <Button onClick={handleResetFilters}>重置筛选</Button>
+          </Form.Item>
+        </Form>
+
+        <Space className="mt-4" size={[16, 8]} wrap>
           <Text type="secondary">生成时间：{formatDateTime(workersOverview?.generated_at)}</Text>
+          <Text type="secondary">Worker：{filteredWorkers.length}/{workersOverview?.summary.total ?? 0}</Text>
+          <Text type="secondary">在线：{workersOverview?.summary.online ?? 0}</Text>
+          <Text type="secondary">离线：{workersOverview?.summary.offline ?? 0}</Text>
+          <Text type="secondary">任务：{filteredTaskRows.length} 条</Text>
         </Space>
-      </AntCard>
 
-      {workersOverviewQuery.error && (
-        <Alert
-          type="error"
-          showIcon
-          message={workersOverviewQuery.error instanceof Error ? workersOverviewQuery.error.message : "任务监控数据加载失败"}
-        />
-      )}
-      {allTasksQuery.error && (
-        <Alert
-          type="error"
-          showIcon
-          message={allTasksQuery.error instanceof Error ? allTasksQuery.error.message : "任务列表数据加载失败"}
-        />
-      )}
+        {workersOverviewQuery.error && (
+          <Alert
+            className="mt-4"
+            type="error"
+            showIcon
+            message={workersOverviewQuery.error instanceof Error ? workersOverviewQuery.error.message : "任务监控数据加载失败"}
+          />
+        )}
+        {allTasksQuery.error && (
+          <Alert
+            className="mt-4"
+            type="error"
+            showIcon
+            message={allTasksQuery.error instanceof Error ? allTasksQuery.error.message : "任务列表数据加载失败"}
+          />
+        )}
 
-      {!workersOverview && !workersOverviewQuery.isFetching && (
-        <AntCard>
-          <Empty description="暂无任务监控数据" />
-        </AntCard>
-      )}
+        {!workersOverview && !workersOverviewQuery.isFetching && (
+          <div className="mt-4">
+            <Empty description="暂无任务监控数据" />
+          </div>
+        )}
 
-      {workersOverview && (
-        <>
-          <AntCard title="任务明细">
+        {workersOverview && (
+          <div
+            ref={tableScrollAnchorRef}
+            className="admin-task-monitor-table-anchor mt-4"
+            style={{ "--admin-task-monitor-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+          >
             <Table<TaskTableRow>
               rowKey={(record) => record.key}
               columns={taskColumns}
               dataSource={filteredTaskRows}
-              pagination={{ pageSize: 50, showSizeChanger: true }}
-              locale={{ emptyText: "暂无任务数据" }}
-              scroll={{ x: 2600 }}
+              pagination={{
+                pageSize: 50,
+                showSizeChanger: true,
+                pageSizeOptions: [20, 50, 100, 200],
+                showTotal: (total) => `共 ${total} 条`,
+                style: { marginBottom: 0 },
+              }}
+              locale={{
+                emptyText: (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="暂无符合筛选条件的任务数据。"
+                  />
+                ),
+              }}
+              scroll={{ x: 2600, y: tableScrollY }}
             />
-          </AntCard>
-        </>
-      )}
-    </Space>
+          </div>
+        )}
+      </AntCard>
+    </div>
   );
 }
