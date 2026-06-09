@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   App,
   Breadcrumb,
+  Card,
   Empty,
   Form,
   Input,
@@ -16,6 +17,7 @@ import {
   Progress,
   Dropdown,
   message as antdMessage,
+  type CardProps,
   type MenuProps,
   type TableProps,
 } from "antd";
@@ -33,10 +35,10 @@ import {
   MoreOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { Button, Card } from "@/components/ui-antd";
+import { Button } from "@/components/ui-antd";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
@@ -91,6 +93,7 @@ function readXhrError(xhr: XMLHttpRequest): string {
 const FILES_TABLE_MIN_SCROLL_Y = 180;
 const FILES_TABLE_VIEWPORT_GAP = 40;
 const FILES_TABLE_FALLBACK_RESERVE = 220;
+const AntCard = Card as unknown as ComponentType<CardProps>;
 
 export default function AdminFilesPage() {
   const queryClient = useQueryClient();
@@ -815,68 +818,68 @@ export default function AdminFilesPage() {
     <div className="space-y-6">
       {messageContextHolder}
 
-      <Card className="shadow-sm" size="small">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <Typography.Title level={4} className="!mb-1">{pageDisplayName}列表</Typography.Title>
-            </div>
-            <Space wrap>
+      <AntCard
+        title="文件列表"
+        extra={(
+          <Space wrap>
+            {filesQuery.isFetching && <Spin size="small" />}
+            <Button
+              type="button"
+              color="gray"
+              size="1"
+              variant="soft"
+              onClick={() => void refreshCurrentPath()}
+              disabled={filesQuery.isFetching}
+              icon={<ReloadOutlined />}
+            >
+              {filesQuery.isFetching ? "刷新中..." : "刷新"}
+            </Button>
+
+            {canManage && (
               <Button
                 type="button"
                 color="gray"
                 size="1"
                 variant="soft"
-                onClick={() => void refreshCurrentPath()}
-                disabled={filesQuery.isFetching}
-                icon={<ReloadOutlined />}
+                onClick={() => {
+                  setCreateDirectoryModalOpen(true);
+                  setErrorMessage("");
+                }}
+                disabled={createDirectoryMutation.isPending}
+                icon={<PlusOutlined />}
               >
-                {filesQuery.isFetching ? "刷新中..." : "刷新"}
+                新建目录
               </Button>
+            )}
 
-              {canManage && (
+            {canManage && (
+              <Upload
+                showUploadList={false}
+                maxCount={1}
+                beforeUpload={(file) => {
+                  handleUploadFile(file as File);
+                  return false;
+                }}
+                disabled={uploadMutation.isPending || !activeMountCode}
+              >
                 <Button
                   type="button"
                   color="gray"
                   size="1"
                   variant="soft"
-                  onClick={() => {
-                    setCreateDirectoryModalOpen(true);
-                    setErrorMessage("");
-                  }}
-                  disabled={createDirectoryMutation.isPending}
-                  icon={<PlusOutlined />}
-                >
-                  新建目录
-                </Button>
-              )}
-
-              {canManage && (
-                <Upload
-                  showUploadList={false}
-                  maxCount={1}
-                  beforeUpload={(file) => {
-                    handleUploadFile(file as File);
-                    return false;
-                  }}
                   disabled={uploadMutation.isPending || !activeMountCode}
+                  icon={<UploadOutlined />}
                 >
-                  <Button
-                    type="button"
-                    color="gray"
-                    size="1"
-                    variant="soft"
-                    disabled={uploadMutation.isPending || !activeMountCode}
-                    icon={<UploadOutlined />}
-                  >
-                    {uploadMutation.isPending ? "上传中..." : "上传文件"}
-                  </Button>
-                </Upload>
-              )}
-            </Space>
-          </div>
-
+                  {uploadMutation.isPending ? "上传中..." : "上传文件"}
+                </Button>
+              </Upload>
+            )}
+          </Space>
+        )}
+      >
+        <div className="space-y-4">
           {uploadMutation.isPending && (
-            <div className="mt-3 rounded-md border border-[var(--gray-5)] bg-[var(--gray-a2)] px-3 py-2">
+            <div className="rounded-lg border border-[var(--gray-5)] bg-[var(--gray-a2)] px-3 py-2">
               <div className="mb-1 flex items-center justify-between gap-3">
                 <Typography.Text ellipsis={{ tooltip: uploadFileName || undefined }} className="max-w-[420px]">
                   正在上传：{uploadFileName || "未命名文件"}
@@ -887,13 +890,13 @@ export default function AdminFilesPage() {
             </div>
           )}
 
-          <div className="mt-4 rounded-lg border border-[var(--gray-5)] bg-[var(--gray-a2)] px-3 py-2 [&_.ant-breadcrumb-link]:!text-[var(--gray-12)] [&_.ant-breadcrumb-separator]:!text-[var(--gray-10)]">
+          <div className="rounded-lg border border-[var(--gray-5)] bg-[var(--gray-a2)] px-3 py-2 [&_.ant-breadcrumb-link]:!text-[var(--gray-12)] [&_.ant-breadcrumb-separator]:!text-[var(--gray-10)]">
             <Breadcrumb items={breadcrumbItems} />
           </div>
 
           <div
             ref={tableScrollAnchorRef}
-            className="admin-files-table-anchor mt-4"
+            className="admin-files-table-anchor"
             style={{ "--admin-files-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
           >
             <AntTable<FileEntryItem>
@@ -914,7 +917,8 @@ export default function AdminFilesPage() {
               }}
             />
           </div>
-      </Card>
+        </div>
+      </AntCard>
 
       <Modal
         title="新建目录"
