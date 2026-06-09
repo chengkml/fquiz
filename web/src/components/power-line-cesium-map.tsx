@@ -6,6 +6,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { withBasePath } from "@/lib/base-path";
 import { reloadOnceOnChunkError } from "@/lib/chunk-error";
+import {
+  buildRouteSegments,
+  collectTowerGeoPoints,
+  type RouteSegment,
+  type TowerGeoPoint,
+} from "@/lib/power-line-route";
 import type { LineTowerSummary } from "@/types/auth";
 
 type PowerLineCesiumMapProps = {
@@ -17,21 +23,6 @@ type PowerLineCesiumMapProps = {
 };
 
 type CesiumNamespace = typeof import("cesium");
-
-type TowerGeoPoint = {
-  id: string;
-  seqNo: number;
-  towerNo: string;
-  longitude: number;
-  latitude: number;
-  altitudeM: number;
-  riskLevel: string | null;
-};
-
-type RouteSegment = {
-  key: string;
-  points: TowerGeoPoint[];
-};
 
 type RouteViewState = {
   boundingSphere: import("cesium").BoundingSphere;
@@ -45,7 +36,6 @@ declare global {
 }
 
 const DEFAULT_MAP_HEIGHT = 560;
-const DEFAULT_ALTITUDE_M = 0;
 const MIN_CAMERA_RANGE = 1500;
 const MIN_ZOOM_STEP_RANGE = 300;
 const DEFAULT_POINT_COLOR = "#38bdf8";
@@ -65,14 +55,6 @@ function formatErrorMessage(candidate: unknown): string {
   return "Cesium 初始化失败，请检查依赖与静态资源是否已同步。";
 }
 
-function hasValidGeo(tower: LineTowerSummary): boolean {
-  if (tower.longitude === null || tower.latitude === null) return false;
-  if (Number.isNaN(tower.longitude) || Number.isNaN(tower.latitude)) return false;
-  if (tower.longitude < -180 || tower.longitude > 180) return false;
-  if (tower.latitude < -90 || tower.latitude > 90) return false;
-  return true;
-}
-
 function toRad(value: number): number {
   return (value * Math.PI) / 180;
 }
@@ -89,43 +71,6 @@ function calcGeoDistanceKm(start: TowerGeoPoint, end: TowerGeoPoint): number {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const EARTH_RADIUS_KM = 6371;
   return EARTH_RADIUS_KM * c;
-}
-
-function buildRouteSegments(points: TowerGeoPoint[]): RouteSegment[] {
-  if (points.length === 0) {
-    return [];
-  }
-
-  const segments: RouteSegment[] = [];
-  let current: TowerGeoPoint[] = [];
-
-  points.forEach((point, index) => {
-    if (current.length === 0) {
-      current.push(point);
-      return;
-    }
-
-    const prev = current[current.length - 1];
-    if (point.seqNo === prev.seqNo + 1) {
-      current.push(point);
-      return;
-    }
-
-    segments.push({
-      key: `${current[0].id}-${index}`,
-      points: current,
-    });
-    current = [point];
-  });
-
-  if (current.length > 0) {
-    segments.push({
-      key: `${current[0].id}-tail`,
-      points: current,
-    });
-  }
-
-  return segments;
 }
 
 function estimateRouteLengthKm(segments: RouteSegment[]): number {
@@ -163,22 +108,12 @@ export function PowerLineCesiumMap({
   );
 
   const towerGeoPoints = useMemo<TowerGeoPoint[]>(() => {
-    return sortedTowers
-      .filter(hasValidGeo)
-      .map((tower) => ({
-        id: tower.id,
-        seqNo: tower.seq_no,
-        towerNo: tower.tower_no,
-        longitude: tower.longitude ?? 0,
-        latitude: tower.latitude ?? 0,
-        altitudeM: tower.altitude_m ?? DEFAULT_ALTITUDE_M,
-        riskLevel: tower.risk_level,
-      }));
+    return collectTowerGeoPoints(sortedTowers);
   }, [sortedTowers]);
 
   const routeSegments = useMemo(
-    () => buildRouteSegments(towerGeoPoints),
-    [towerGeoPoints],
+    () => buildRouteSegments(sortedTowers),
+    [sortedTowers],
   );
   const routeGapCount = Math.max(routeSegments.length - 1, 0);
   const routeLengthKm = useMemo(
