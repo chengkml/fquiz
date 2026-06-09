@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   Button,
+  Card,
   Empty,
   Form,
   Input,
@@ -15,8 +16,10 @@ import {
   Space,
   Table,
   Tag,
+  type CardProps,
   type TableColumnsType,
 } from "antd";
+import type { ComponentType } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
@@ -53,8 +56,10 @@ const PARAM_STATUS_OPTIONS = [
   { label: "已禁用", value: "disabled" },
 ] as const satisfies ReadonlyArray<{ label: string; value: FormState["status"] }>;
 
+const AntCard = Card as unknown as ComponentType<CardProps>;
+
 const PARAM_TABLE_MIN_SCROLL_Y = 180;
-const PARAM_TABLE_VIEWPORT_GAP = 8;
+const PARAM_TABLE_VIEWPORT_GAP = 40;
 const PARAM_TABLE_FALLBACK_RESERVE = 220;
 
 export default function AdminSystemParamsPage() {
@@ -427,16 +432,19 @@ export default function AdminSystemParamsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-[var(--gray-6)] bg-[var(--gray-1)] p-4 shadow-sm sm:p-5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-[var(--gray-12)]">参数列表</h2>
-          {canManage ? (
-            <Button type="primary" onClick={startCreate}>
-              新建参数
-            </Button>
-          ) : null}
-        </div>
-
+      <AntCard
+        title="参数列表"
+        extra={(
+          <Space>
+            {listQuery.isFetching && <Spin size="small" />}
+            {canManage ? (
+              <Button type="primary" onClick={startCreate}>
+                新建参数
+              </Button>
+            ) : null}
+          </Space>
+        )}
+      >
         <Form layout="inline" style={{ rowGap: 12 }}>
           <Form.Item label="关键词" className="min-w-[240px]">
             <Input
@@ -490,7 +498,7 @@ export default function AdminSystemParamsPage() {
             }}
           />
         </div>
-      </div>
+      </AntCard>
 
       {canManage && (
         <Modal
