@@ -421,17 +421,6 @@ export default function AdminTaskMonitorPage() {
     });
   }, [allTaskRows, filteredWorkers, taskKeyword]);
 
-  const stateBuckets = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const row of filteredTaskRows) {
-      const state = (row.state || "UNKNOWN").toUpperCase();
-      counts.set(state, (counts.get(state) || 0) + 1);
-    }
-    return Array.from(counts.entries())
-      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
-      .map(([state, count]) => ({ state, count }));
-  }, [filteredTaskRows]);
-
   const queuePendingTotal = filteredWorkers.reduce(
     (sum, item) => sum + item.active_count + item.reserved_count + item.scheduled_count,
     0,
@@ -572,19 +561,6 @@ export default function AdminTaskMonitorPage() {
               </AntCard>
             </Col>
           </Row>
-
-          <AntCard title="任务状态分布">
-            <Space wrap>
-              {stateBuckets.length > 0 ? (
-                stateBuckets.map((item) => (
-                  <Tag key={`task-state-${item.state}`} color="geekblue">{`${item.state}: ${item.count}`}</Tag>
-                ))
-              ) : (
-                <Text type="secondary">暂无状态分布数据</Text>
-              )}
-            </Space>
-          </AntCard>
-
           <AntCard title="Worker 概览">
             <Table<FlowerWorkerItem>
               rowKey={(record) => record.worker}
