@@ -31,6 +31,8 @@ import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type {
+  ElevationDatasetListResponse,
+  ElevationDatasetSummary,
   LineListResponse,
   LineSummary,
   LineTowerImportResponse,
@@ -156,6 +158,11 @@ const POWER_LINES_STATUS_ESTIMATE_HEIGHT = 34;
 const POWER_LINES_MAP_HEADER_ESTIMATE_HEIGHT = 112;
 const POWER_LINES_MAP_MIN_HEIGHT = 240;
 const POWER_LINES_TABLE_MIN_SCROLL_Y = 180;
+const TERRAIN_EXAGGERATION_OPTIONS = [
+  { label: "1.0x", value: 1 },
+  { label: "1.5x", value: 1.5 },
+  { label: "2.0x", value: 2 },
+] as const;
 
 const EMPTY_LINE_FORM: LineFormValues = {
   name: "",
@@ -517,8 +524,17 @@ function validateStructuredGeometry(
   return null;
 }
 
+function terrainStatusLabel(status: ElevationDatasetSummary["terrain_status"]): string {
+  if (status === "ready") return "已就绪";
+  if (status === "processing") return "生成中";
+  if (status === "pending") return "待生成";
+  if (status === "failed") return "生成失败";
+  if (status === "not_supported") return "格式不支持";
+  return status || "-";
+}
+
 export default function AdminPowerLinesPage() {
-  const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
+  const { user, initializing, fetchWithAuth, getAccessToken, hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const { message: messageApi } = App.useApp();
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -546,6 +562,8 @@ export default function AdminPowerLinesPage() {
   const [editingTower, setEditingTower] = useState<LineTowerSummary | null>(null);
   const [editingTowerProfileTower, setEditingTowerProfileTower] = useState<LineTowerSummary | null>(null);
   const [towerViewMode, setTowerViewMode] = useState<"table" | "map">("map");
+  const [selectedTerrainDatasetId, setSelectedTerrainDatasetId] = useState<string | null | undefined>(undefined);
+  const [terrainExaggeration, setTerrainExaggeration] = useState<number>(1.5);
   const [error, setError] = useState("");
   const [panelBodyHeight, setPanelBodyHeight] = useState(POWER_LINES_PANEL_MIN_HEIGHT);
 
@@ -553,6 +571,7 @@ export default function AdminPowerLinesPage() {
   const canLineManage = hasPermission("line.manage");
   const canTowerRead = hasPermission("tower.read") || hasPermission("tower.manage");
   const canTowerManage = hasPermission("tower.manage");
+  const canElevationRead = hasPermission("elevation.read") || hasPermission("elevation.manage");
   const canRead = canLineRead || canTowerRead;
 
   const lineListPath = useMemo(() => {
@@ -645,6 +664,18 @@ export default function AdminPowerLinesPage() {
     },
   });
 
+  const elevationDatasetsQuery = useQuery({
+    queryKey: ["/api/v1/elevation/datasets"],
+    enabled: !!user && canElevationRead,
+    queryFn: async () => {
+      const response = await fetchWithAuth("/api/v1/elevation/datasets");
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as ElevationDatasetListResponse;
+    },
+  });
+
   const towerProfileQuery = useQuery({
     queryKey: ["tower-profile", editingTowerProfileTower?.id],
     enabled: !!user && !!editingTowerProfileTower && towerProfileModalOpen && canTowerRead,
@@ -658,9 +689,10 @@ export default function AdminPowerLinesPage() {
   });
   const lineError = linesQuery.error instanceof Error ? linesQuery.error.message : "";
   const towerError = towersQuery.error instanceof Error ? towersQuery.error.message : "";
+  const elevationDatasetError = elevationDatasetsQuery.error instanceof Error ? elevationDatasetsQuery.error.message : "";
 
   useToastFeedback({
-    errorMessage: error || lineError || towerError,
+    errorMessage: error || lineError || towerError || elevationDatasetError,
     clearError: () => setError(""),
   });
 
@@ -772,6 +804,9 @@ export default function AdminPowerLinesPage() {
     void refreshLines();
     void refreshTowers();
   }, [refreshLines, refreshTowers]));
+  useTopicSubscription("admin.elevation", useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["/api/v1/elevation/datasets"] });
+  }, [queryClient]));
   useTopicSubscription("admin.tower-models", useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["/api/v1/tower-models/selector"] });
   }, [queryClient]));
@@ -779,6 +814,44 @@ export default function AdminPowerLinesPage() {
   const lines = useMemo(() => linesQuery.data?.items ?? [], [linesQuery.data?.items]);
   const towers = useMemo(() => towersQuery.data?.items ?? [], [towersQuery.data?.items]);
   const towerModels = useMemo(() => towerModelOptionsQuery.data ?? [], [towerModelOptionsQuery.data]);
+  const elevationDatasets = useMemo(() => elevationDatasetsQuery.data?.items ?? [], [elevationDatasetsQuery.data?.items]);
+  const selectableTerrainDatasets = useMemo(
+    () =>
+      elevationDatasets.filter(
+        (item) => item.status === "active" && item.terrain_status !== "not_supported",
+      ),
+    [elevationDatasets],
+  );
+  const preferredTerrainDatasetId = useMemo(
+    () =>
+      selectableTerrainDatasets.find((item) => item.terrain_status === "ready")?.id
+      ?? selectableTerrainDatasets[0]?.id
+      ?? null,
+    [selectableTerrainDatasets],
+  );
+  const effectiveTerrainDatasetId = useMemo(() => {
+    if (selectedTerrainDatasetId === undefined) {
+      return preferredTerrainDatasetId;
+    }
+    if (selectedTerrainDatasetId === null) {
+      return null;
+    }
+    return selectableTerrainDatasets.some((item) => item.id === selectedTerrainDatasetId)
+      ? selectedTerrainDatasetId
+      : preferredTerrainDatasetId;
+  }, [preferredTerrainDatasetId, selectableTerrainDatasets, selectedTerrainDatasetId]);
+  const selectedTerrainDataset = useMemo(
+    () => selectableTerrainDatasets.find((item) => item.id === effectiveTerrainDatasetId) ?? null,
+    [effectiveTerrainDatasetId, selectableTerrainDatasets],
+  );
+  const terrainDatasetOptions = useMemo(
+    () =>
+      selectableTerrainDatasets.map((item) => ({
+        value: item.id,
+        label: `${item.code} - ${item.name}（${terrainStatusLabel(item.terrain_status)}）`,
+      })),
+    [selectableTerrainDatasets],
+  );
   const towerModelOptions = towerModels.map((item) => ({ value: item.code, label: `${item.code} - ${item.name}` }));
   const effectiveSelectedLineId = useMemo(() => {
     if (selectedLineTouched) {
@@ -1384,6 +1457,25 @@ export default function AdminPowerLinesPage() {
   );
   const mapHeight = Math.max(POWER_LINES_MAP_MIN_HEIGHT, rightContentHeight - 32);
   const towerTableScrollY = Math.max(POWER_LINES_TABLE_MIN_SCROLL_Y, rightContentHeight - 54);
+  const terrainSelectionHint = useMemo(() => {
+    if (!canElevationRead) {
+      return "当前账号没有高程数据读取权限，线路分布图将使用椭球地表。";
+    }
+    if (!selectedTerrainDataset) {
+      return "未选择 DEM 数据集，线路分布图将使用椭球地表。";
+    }
+    if (selectedTerrainDataset.terrain_status === "ready") {
+      const bounds = selectedTerrainDataset.terrain_bounds;
+      const boundsText = bounds
+        ? `范围 ${bounds.west.toFixed(4)}, ${bounds.south.toFixed(4)} ~ ${bounds.east.toFixed(4)}, ${bounds.north.toFixed(4)}`
+        : "范围待同步";
+      return `当前 DEM：${selectedTerrainDataset.code}，地形已就绪，${boundsText}。`;
+    }
+    if (selectedTerrainDataset.terrain_status === "failed") {
+      return `当前 DEM：${selectedTerrainDataset.code}，地形生成失败，将回退到椭球地表。`;
+    }
+    return `当前 DEM：${selectedTerrainDataset.code}，地形状态为${terrainStatusLabel(selectedTerrainDataset.terrain_status)}，就绪前将回退到椭球地表。`;
+  }, [canElevationRead, selectedTerrainDataset]);
   if (initializing || linesQuery.isLoading) {
     return <AdminPageLoading tip="加载线路数据中..." minHeightClassName="min-h-[280px]" />;
   }
@@ -1520,6 +1612,26 @@ export default function AdminPowerLinesPage() {
                     placeholder="按风险等级筛选"
                   />
                 </div>
+                <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_180px]">
+                  <Select
+                    allowClear
+                    placeholder={canElevationRead ? "选择 DEM 地形数据集" : "无高程数据权限"}
+                    value={effectiveTerrainDatasetId ?? undefined}
+                    options={terrainDatasetOptions}
+                    disabled={!canElevationRead || terrainDatasetOptions.length === 0}
+                    onChange={(value) => setSelectedTerrainDatasetId(value ?? null)}
+                  />
+                  <Select
+                    value={terrainExaggeration}
+                    options={[...TERRAIN_EXAGGERATION_OPTIONS]}
+                    onChange={(value) => setTerrainExaggeration(value)}
+                  />
+                </div>
+                <Alert
+                  type={selectedTerrainDataset?.terrain_status === "ready" ? "success" : "info"}
+                  showIcon
+                  message={terrainSelectionHint}
+                />
                 <div className="relative overflow-y-auto" style={{ height: rightContentHeight }}>
                   <div
                     aria-hidden={towerViewMode !== "map"}
@@ -1533,6 +1645,9 @@ export default function AdminPowerLinesPage() {
                       lineCode={selectedLine.code}
                       lineName={selectedLine.name}
                       towers={towers}
+                      terrainDataset={selectedTerrainDataset}
+                      accessToken={getAccessToken()}
+                      exaggeration={terrainExaggeration}
                       loading={towersQuery.isFetching}
                       height={mapHeight}
                     />

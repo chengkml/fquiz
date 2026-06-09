@@ -204,8 +204,16 @@ export type FileOperationResponse = {
 
 export type ElevationDatasetStatus = "active" | "disabled";
 export type ElevationDatasetUsageStatus = "idle" | "in_use";
+export type ElevationDatasetTerrainStatus = "pending" | "processing" | "ready" | "failed" | "not_supported";
 export type ElevationApplyMode = "fill_null_only" | "overwrite_all";
 export type ElevationApplyJobStatus = "pending" | "running" | "success" | "failed";
+
+export type ElevationTerrainBounds = {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+};
 
 export type ElevationDatasetSummary = {
   id: string;
@@ -229,6 +237,15 @@ export type ElevationDatasetSummary = {
   analysis_error_message: string | null;
   analysis_started_at: string | null;
   analysis_finished_at: string | null;
+  terrain_status: ElevationDatasetTerrainStatus;
+  terrain_task_id: string | null;
+  terrain_error_message: string | null;
+  terrain_root_path: string | null;
+  terrain_url_template: string | null;
+  terrain_min_zoom: number | null;
+  terrain_max_zoom: number | null;
+  terrain_bounds: ElevationTerrainBounds | null;
+  terrain_metadata: Record<string, unknown> | null;
   notes: string | null;
   create_date: string;
   create_user: string | null;
@@ -242,6 +259,14 @@ export type ElevationDatasetListResponse = {
 };
 
 export type ElevationDatasetAnalyzeResponse = {
+  dataset: ElevationDatasetSummary;
+  task_id: string | null;
+  queued: boolean;
+  detail: string | null;
+  warnings: string[];
+};
+
+export type ElevationDatasetTerrainBuildResponse = {
   dataset: ElevationDatasetSummary;
   task_id: string | null;
   queued: boolean;
@@ -350,6 +375,18 @@ export type ElevationDatasetAnalysisTaskStatusResponse = {
   detail: string | null;
   started_at: string | null;
   finished_at: string | null;
+  update_date: string | null;
+};
+
+export type ElevationDatasetTerrainTaskStatusResponse = {
+  dataset_id: string;
+  dataset_code: string;
+  task_id: string | null;
+  status: ElevationDatasetAnalysisTaskStatus;
+  detail: string | null;
+  terrain_url_template: string | null;
+  terrain_min_zoom: number | null;
+  terrain_max_zoom: number | null;
   update_date: string | null;
 };
 

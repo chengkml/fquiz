@@ -276,6 +276,93 @@ def _ensure_elevation_dataset_column_compatibility() -> None:
                 "Detected missing elevation_dataset.analysis_finished_at; added nullable analysis finish time column.",
             )
 
+        if "terrain_status" not in column_names:
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ADD COLUMN IF NOT EXISTS terrain_status VARCHAR(32)"),
+            )
+            connection.execute(
+                text(
+                    """
+                    UPDATE elevation_dataset
+                    SET terrain_status = CASE
+                        WHEN lower(coalesce(file_format, '')) IN ('img', 'tif', 'tiff') THEN 'pending'
+                        ELSE 'not_supported'
+                    END
+                    WHERE terrain_status IS NULL
+                    """
+                ),
+            )
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ALTER COLUMN terrain_status SET NOT NULL"),
+            )
+            logger.warning(
+                "Detected missing elevation_dataset.terrain_status; added and backfilled by file format.",
+            )
+
+        if "terrain_task_id" not in column_names:
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ADD COLUMN IF NOT EXISTS terrain_task_id VARCHAR(128)"),
+            )
+            logger.warning(
+                "Detected missing elevation_dataset.terrain_task_id; added nullable terrain task id column.",
+            )
+
+        if "terrain_error_message" not in column_names:
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ADD COLUMN IF NOT EXISTS terrain_error_message TEXT"),
+            )
+            logger.warning(
+                "Detected missing elevation_dataset.terrain_error_message; added nullable terrain error column.",
+            )
+
+        if "terrain_root_path" not in column_names:
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ADD COLUMN IF NOT EXISTS terrain_root_path VARCHAR(2048)"),
+            )
+            logger.warning(
+                "Detected missing elevation_dataset.terrain_root_path; added nullable terrain root path column.",
+            )
+
+        if "terrain_url_template" not in column_names:
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ADD COLUMN IF NOT EXISTS terrain_url_template VARCHAR(2048)"),
+            )
+            logger.warning(
+                "Detected missing elevation_dataset.terrain_url_template; added nullable terrain URL template column.",
+            )
+
+        if "terrain_min_zoom" not in column_names:
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ADD COLUMN IF NOT EXISTS terrain_min_zoom INTEGER"),
+            )
+            logger.warning(
+                "Detected missing elevation_dataset.terrain_min_zoom; added nullable terrain min zoom column.",
+            )
+
+        if "terrain_max_zoom" not in column_names:
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ADD COLUMN IF NOT EXISTS terrain_max_zoom INTEGER"),
+            )
+            logger.warning(
+                "Detected missing elevation_dataset.terrain_max_zoom; added nullable terrain max zoom column.",
+            )
+
+        if "terrain_bounds" not in column_names:
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ADD COLUMN IF NOT EXISTS terrain_bounds JSON"),
+            )
+            logger.warning(
+                "Detected missing elevation_dataset.terrain_bounds; added nullable terrain bounds column.",
+            )
+
+        if "terrain_metadata" not in column_names:
+            connection.execute(
+                text("ALTER TABLE elevation_dataset ADD COLUMN IF NOT EXISTS terrain_metadata JSON"),
+            )
+            logger.warning(
+                "Detected missing elevation_dataset.terrain_metadata; added nullable terrain metadata column.",
+            )
+
 
 def _ensure_atp_simulation_run_column_compatibility() -> None:
     if not database_url.startswith("postgresql"):

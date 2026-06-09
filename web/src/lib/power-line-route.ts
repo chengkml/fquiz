@@ -5,7 +5,9 @@ export type RouteTowerInput = {
   longitude: number | null;
   latitude: number | null;
   altitude_m: number | null;
+  terrain?: string | null;
   risk_level: string | null;
+  raw_extra_json?: Record<string, unknown>;
 };
 
 export type TowerGeoPoint = {
@@ -15,7 +17,11 @@ export type TowerGeoPoint = {
   longitude: number;
   latitude: number;
   altitudeM: number;
+  terrain: string | null;
   riskLevel: string | null;
+  elevationPrepared: boolean;
+  elevationDatasetCode: string | null;
+  elevationSampleMethod: string | null;
 };
 
 export type RouteSegment = {
@@ -34,6 +40,13 @@ export function hasValidGeo(tower: Pick<RouteTowerInput, "longitude" | "latitude
 }
 
 function toTowerGeoPoint(tower: RouteTowerInput): TowerGeoPoint {
+  const rawExtra = tower.raw_extra_json ?? {};
+  const elevation = rawExtra && typeof rawExtra === "object" && !Array.isArray(rawExtra)
+    ? rawExtra.elevation
+    : null;
+  const elevationRecord = elevation && typeof elevation === "object" && !Array.isArray(elevation)
+    ? elevation as Record<string, unknown>
+    : null;
   return {
     id: tower.id,
     seqNo: tower.seq_no,
@@ -41,7 +54,11 @@ function toTowerGeoPoint(tower: RouteTowerInput): TowerGeoPoint {
     longitude: tower.longitude ?? 0,
     latitude: tower.latitude ?? 0,
     altitudeM: tower.altitude_m ?? DEFAULT_ALTITUDE_M,
+    terrain: tower.terrain ?? null,
     riskLevel: tower.risk_level,
+    elevationPrepared: !!elevationRecord,
+    elevationDatasetCode: typeof elevationRecord?.dataset_code === "string" ? elevationRecord.dataset_code : null,
+    elevationSampleMethod: typeof elevationRecord?.sample_method === "string" ? elevationRecord.sample_method : null,
   };
 }
 

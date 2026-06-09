@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
+  Button,
   Descriptions,
   Empty,
   Form,
@@ -42,6 +43,8 @@ import type {
   ElevationDatasetListResponse,
   ElevationDatasetPreviewResponse,
   ElevationDatasetSummary,
+  ElevationDatasetTerrainBuildResponse,
+  ElevationDatasetTerrainTaskStatusResponse,
   LineListResponse,
   LineSummary,
 } from "@/types/auth";
@@ -86,6 +89,29 @@ function applyModeLabel(mode: string): string {
   if (mode === "fill_null_only") return "仅填空";
   if (mode === "overwrite_all") return "全部覆盖";
   return mode;
+}
+
+function terrainStatusTagColor(status: string): string {
+  if (status === "ready") return "green";
+  if (status === "processing") return "blue";
+  if (status === "pending") return "orange";
+  if (status === "failed") return "red";
+  return "default";
+}
+
+function terrainStatusLabel(status: string): string {
+  if (status === "ready") return "已就绪";
+  if (status === "processing") return "生成中";
+  if (status === "pending") return "待生成";
+  if (status === "failed") return "生成失败";
+  if (status === "not_supported") return "格式不支持";
+  return status || "-";
+}
+
+function terrainBuildActionLabel(status: string): string {
+  if (status === "ready") return "重建地形";
+  if (status === "failed") return "重试地形";
+  return "生成地形";
 }
 
 function formatDate(value: string | null | undefined): string {
@@ -155,6 +181,8 @@ export default function AdminElevationPage() {
 
   const [analysisModalOpen, setAnalysisModalOpen] = useState(false);
   const [analysisDataset, setAnalysisDataset] = useState<ElevationDatasetSummary | null>(null);
+  const [terrainModalOpen, setTerrainModalOpen] = useState(false);
+  const [terrainDataset, setTerrainDataset] = useState<ElevationDatasetSummary | null>(null);
 
   const [datasetForm] = Form.useForm<DatasetFormValues>();
   const [applyForm] = Form.useForm<ApplyFormValues>();
@@ -441,6 +469,30 @@ export default function AdminElevationPage() {
     },
   });
 
+  const terrainBuildMutation = useMutation({
+    mutationFn: async (datasetId: string) => {
+      const response = await fetchWithAuth(`/api/v1/elevation/datasets/${datasetId}/terrain/build`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as ElevationDatasetTerrainBuildResponse;
+    },
+    onSuccess: async (payload) => {
+      setError("");
+      setTerrainDataset(payload.dataset);
+      setPreviewDataset((current) => (current?.id === payload.dataset.id ? payload.dataset : current));
+      messageApi.success(payload.detail || (payload.queued ? "地形瓦片任务已提交" : "地形瓦片状态已刷新"));
+      await refreshElevationData();
+    },
+    onError: (candidate) => {
+      const nextError = candidate instanceof Error ? candidate.message : "提交地形瓦片任务失败";
+      setError(nextError);
+      messageApi.error(nextError);
+    },
+  });
+
   const analysisStatusQuery = useQuery({
     queryKey: ["/api/v1/elevation/datasets/analysis-task", analysisDataset?.id],
     enabled: !!analysisDataset,
@@ -455,9 +507,35 @@ export default function AdminElevationPage() {
     staleTime: 0,
   });
 
+  const terrainStatusQuery = useQuery({
+    queryKey: ["/api/v1/elevation/datasets/terrain-status", terrainDataset?.id],
+    enabled: !!terrainDataset && terrainModalOpen,
+    queryFn: async () => {
+      const response = await fetchWithAuth(`/api/v1/elevation/datasets/${terrainDataset?.id}/terrain/status`);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as ElevationDatasetTerrainTaskStatusResponse;
+    },
+    refetchInterval: terrainModalOpen ? 3000 : false,
+    staleTime: 0,
+  });
+
   const datasets = useMemo(() => datasetsQuery.data?.items ?? [], [datasetsQuery.data?.items]);
   const jobs = jobsQuery.data?.items ?? [];
   const lines = useMemo(() => linesQuery.data?.items ?? [], [linesQuery.data?.items]);
+  const currentPreviewDataset = useMemo(
+    () => (previewDataset ? datasets.find((item) => item.id === previewDataset.id) ?? previewDataset : null),
+    [datasets, previewDataset],
+  );
+  const currentAnalysisDataset = useMemo(
+    () => (analysisDataset ? datasets.find((item) => item.id === analysisDataset.id) ?? analysisDataset : null),
+    [analysisDataset, datasets],
+  );
+  const currentTerrainDataset = useMemo(
+    () => (terrainDataset ? datasets.find((item) => item.id === terrainDataset.id) ?? terrainDataset : null),
+    [datasets, terrainDataset],
+  );
 
   const lineOptions = useMemo(
     () =>
@@ -541,6 +619,21 @@ export default function AdminElevationPage() {
         },
       },
       {
+        title: "地形状态",
+        dataIndex: "terrain_status",
+        width: 120,
+        render: (value: string) => <Tag color={terrainStatusTagColor(value)}>{terrainStatusLabel(value)}</Tag>,
+      },
+      {
+        title: "地形层级",
+        key: "terrainZoom",
+        width: 120,
+        render: (_, row) =>
+          row.terrain_min_zoom !== null && row.terrain_max_zoom !== null
+            ? `${row.terrain_min_zoom} - ${row.terrain_max_zoom}`
+            : "-",
+      },
+      {
         title: "使用状态",
         dataIndex: "usage_status",
         width: 100,
@@ -566,7 +659,7 @@ export default function AdminElevationPage() {
         title: "操作",
         key: "actions",
         fixed: "right",
-        width: 280,
+        width: 380,
         render: (_, row) => (
           <Space size="small" wrap>
             <Typography.Link
@@ -618,6 +711,37 @@ export default function AdminElevationPage() {
               分析进度
             </Typography.Link>
             <Typography.Link
+              onClick={() => {
+                setTerrainDataset(row);
+                setTerrainModalOpen(true);
+              }}
+            >
+              地形状态
+            </Typography.Link>
+            <Typography.Link
+              disabled={
+                !canManage
+                || terrainBuildMutation.isPending
+                || row.terrain_status === "not_supported"
+                || row.status !== "active"
+              }
+              onClick={() => {
+                if (
+                  !canManage
+                  || terrainBuildMutation.isPending
+                  || row.terrain_status === "not_supported"
+                  || row.status !== "active"
+                ) {
+                  return;
+                }
+                setTerrainDataset(row);
+                setTerrainModalOpen(true);
+                terrainBuildMutation.mutate(row.id);
+              }}
+            >
+              {terrainBuildActionLabel(row.terrain_status)}
+            </Typography.Link>
+            <Typography.Link
               disabled={!canManage || datasetDataImportMutation.isPending}
               onClick={() => {
                 if (!canManage || datasetDataImportMutation.isPending) return;
@@ -661,6 +785,7 @@ export default function AdminElevationPage() {
       datasetFilesMutation,
       fetchWithAuth,
       messageApi,
+      terrainBuildMutation,
     ],
   );
 
@@ -729,7 +854,7 @@ export default function AdminElevationPage() {
     );
   }
 
-  const datasetTableScrollX = 2200;
+  const datasetTableScrollX = 2520;
 
   return (
     <div className="space-y-6">
@@ -796,7 +921,7 @@ export default function AdminElevationPage() {
       </Card>
 
       <Modal
-        title={previewDataset ? `高程预览：${previewDataset.code}` : "高程预览"}
+        title={currentPreviewDataset ? `高程预览：${currentPreviewDataset.code}` : "高程预览"}
         open={previewModalOpen}
         width={1040}
         footer={null}
@@ -807,15 +932,15 @@ export default function AdminElevationPage() {
           setPreviewLoading(false);
         }}
       >
-        {previewDataset && (
+        {currentPreviewDataset && (
           <div className="space-y-3">
             <Alert
               type="info"
               showIcon
-              message={`数据集：${previewDataset.name}（${previewDataset.file_format.toUpperCase()}）`}
+              message={`数据集：${currentPreviewDataset.name}（${currentPreviewDataset.file_format.toUpperCase()}）`}
               description={previewData
-                ? `预览模式：${previewData.preview_mode === "terrain_grid" ? "地形网格" : "点云"}；总样本 ${previewData.total_points}，当前展示 ${previewData.sampled_points}。`
-                : "正在加载预览数据..."}
+                ? `预览模式：${previewData.preview_mode === "terrain_grid" ? "地形网格" : "点云"}；总样本 ${previewData.total_points}，当前展示 ${previewData.sampled_points}；地形状态 ${terrainStatusLabel(currentPreviewDataset.terrain_status)}。`
+                : `正在加载预览数据... 当前地形状态：${terrainStatusLabel(currentPreviewDataset.terrain_status)}。`}
             />
             {previewData && previewData.warnings.length > 0 && (
               <Alert
@@ -888,6 +1013,8 @@ export default function AdminElevationPage() {
               </Card>
             )}
             <ElevationPreviewCesiumMap
+              dataset={currentPreviewDataset}
+              accessToken={getAccessToken()}
               points={previewData?.points ?? []}
               cells={previewData?.cells ?? []}
               loading={previewLoading}
@@ -1022,7 +1149,7 @@ export default function AdminElevationPage() {
       </Modal>
 
       <Modal
-        title={analysisDataset ? `分析进度：${analysisDataset.code}` : "分析进度"}
+        title={currentAnalysisDataset ? `分析进度：${currentAnalysisDataset.code}` : "分析进度"}
         open={analysisModalOpen}
         footer={null}
         onCancel={() => {
@@ -1030,7 +1157,7 @@ export default function AdminElevationPage() {
           setAnalysisDataset(null);
         }}
       >
-        {analysisDataset && (
+        {currentAnalysisDataset && (
           <div className="space-y-3">
             {analysisStatusQuery.isLoading ? (
               <div className="flex min-h-[180px] items-center justify-center">
@@ -1064,6 +1191,98 @@ export default function AdminElevationPage() {
                 )}
               </>
             )}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        title={currentTerrainDataset ? `地形状态：${currentTerrainDataset.code}` : "地形状态"}
+        open={terrainModalOpen}
+        footer={null}
+        onCancel={() => {
+          setTerrainModalOpen(false);
+          setTerrainDataset(null);
+        }}
+      >
+        {currentTerrainDataset && (
+          <div className="space-y-3">
+            <Alert
+              type={
+                currentTerrainDataset.terrain_status === "failed"
+                  ? "error"
+                  : currentTerrainDataset.terrain_status === "ready"
+                    ? "success"
+                    : "info"
+              }
+              showIcon
+              message={`数据集：${currentTerrainDataset.name}`}
+              description={currentTerrainDataset.terrain_error_message || `当前地形状态：${terrainStatusLabel(currentTerrainDataset.terrain_status)}`}
+            />
+            <Space wrap>
+              <Button
+                type="primary"
+                disabled={
+                  !canManage
+                  || terrainBuildMutation.isPending
+                  || currentTerrainDataset.terrain_status === "not_supported"
+                  || currentTerrainDataset.status !== "active"
+                }
+                loading={terrainBuildMutation.isPending}
+                onClick={() => {
+                  terrainBuildMutation.mutate(currentTerrainDataset.id);
+                }}
+              >
+                {terrainBuildActionLabel(currentTerrainDataset.terrain_status)}
+              </Button>
+              <Button
+                onClick={() => {
+                  void terrainStatusQuery.refetch();
+                }}
+              >
+                刷新状态
+              </Button>
+            </Space>
+            <Descriptions bordered size="small" column={1}>
+              <Descriptions.Item label="地形状态">
+                <Tag color={terrainStatusTagColor(currentTerrainDataset.terrain_status)}>
+                  {terrainStatusLabel(currentTerrainDataset.terrain_status)}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="任务状态">
+                <Tag color={statusTagColor(terrainStatusQuery.data?.status || "default")}>
+                  {terrainStatusQuery.data?.status || "-"}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="Task ID">{terrainStatusQuery.data?.task_id || currentTerrainDataset.terrain_task_id || "-"}</Descriptions.Item>
+              <Descriptions.Item label="地形层级">
+                {terrainStatusQuery.data?.terrain_min_zoom ?? currentTerrainDataset.terrain_min_zoom ?? "-"}
+                {" ~ "}
+                {terrainStatusQuery.data?.terrain_max_zoom ?? currentTerrainDataset.terrain_max_zoom ?? "-"}
+              </Descriptions.Item>
+              <Descriptions.Item label="地形模板">
+                {terrainStatusQuery.data?.terrain_url_template || currentTerrainDataset.terrain_url_template || "-"}
+              </Descriptions.Item>
+              <Descriptions.Item label="更新时间">
+                {formatDate(terrainStatusQuery.data?.update_date || currentTerrainDataset.update_date)}
+              </Descriptions.Item>
+            </Descriptions>
+            {terrainStatusQuery.isLoading ? (
+              <div className="flex min-h-[120px] items-center justify-center">
+                <Spin tip="地形状态加载中..." />
+              </div>
+            ) : terrainStatusQuery.error ? (
+              <Alert
+                type="error"
+                showIcon
+                message={terrainStatusQuery.error instanceof Error ? terrainStatusQuery.error.message : "地形状态加载失败"}
+              />
+            ) : terrainStatusQuery.data?.detail ? (
+              <Alert
+                type={terrainStatusQuery.data.status === "failed" ? "error" : "info"}
+                showIcon
+                message={terrainStatusQuery.data.detail}
+              />
+            ) : null}
           </div>
         )}
       </Modal>

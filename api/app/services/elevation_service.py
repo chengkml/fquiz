@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import csv
 import io
+import json
+import math
 import mimetypes
 import zipfile
 from dataclasses import dataclass
@@ -29,6 +31,9 @@ from ..schemas.elevation import (
     ElevationDatasetAnalyzeResponse,
     ElevationDatasetBatchImportResponse,
     ElevationDatasetDataImportResponse,
+    ElevationDatasetTerrainBuildResponse,
+    ElevationDatasetTerrainTaskStatusResponse,
+    ElevationTerrainLayerResponse,
     ElevationDatasetPreviewCell,
     ElevationDatasetPreviewDiagnostics,
     ElevationDatasetCreateRequest,
@@ -61,6 +66,22 @@ RASTER_FILE_FORMATS = {"img", "tif", "tiff"}
 IMPORTABLE_ELEVATION_EXTENSIONS = set(ELEVATION_FILE_EXT_FORMAT_MAP.keys())
 IMPORTABLE_ARCHIVE_EXTENSIONS = {".zip"}
 MAX_SAMPLE_COUNT_INT = 2_147_483_647
+TERRAIN_TILE_SIZE = 65
+TERRAIN_ROOT_DIRNAME = "terrain"
+TERRAIN_TILE_VERSION = "1.0.0"
+TERRAIN_TILE_FORMAT = "heightmap-1.0"
+TERRAIN_TILE_PROJECTION = "EPSG:4326"
+TERRAIN_DEFAULT_MIN_ZOOM = 0
+TERRAIN_DEFAULT_MAX_ZOOM = 6
+TERRAIN_MAX_ALLOWED_ZOOM = 10
+TERRAIN_CHILD_MASK_SW = 1
+TERRAIN_CHILD_MASK_SE = 2
+TERRAIN_CHILD_MASK_NW = 4
+TERRAIN_CHILD_MASK_NE = 8
+TERRAIN_WATER_MASK_ALL_LAND = b"\x00"
+TERRAIN_CONTENT_TYPE = "application/octet-stream"
+TERRAIN_SUPPORTED_DATASET_FORMATS = RASTER_FILE_FORMATS
+TERRAIN_BUILD_TOOL = "builtin-heightmap-1.0"
 
 
 @dataclass
@@ -105,6 +126,14 @@ class ElevationDatasetBatchImportStats:
             self.items = []
 
 
+@dataclass
+class _TerrainBuildArtifacts:
+    min_zoom: int
+    max_zoom: int
+    bounds: dict[str, float]
+    metadata: dict[str, Any]
+
+
 def serialize_dataset(item: ElevationDataset) -> ElevationDatasetSummary:
     return ElevationDatasetSummary(
         id=item.id,
@@ -128,6 +157,15 @@ def serialize_dataset(item: ElevationDataset) -> ElevationDatasetSummary:
         analysis_error_message=item.analysis_error_message,
         analysis_started_at=item.analysis_started_at,
         analysis_finished_at=item.analysis_finished_at,
+        terrain_status=item.terrain_status,  # type: ignore[arg-type]
+        terrain_task_id=item.terrain_task_id,
+        terrain_error_message=item.terrain_error_message,
+        terrain_root_path=item.terrain_root_path,
+        terrain_url_template=item.terrain_url_template,
+        terrain_min_zoom=item.terrain_min_zoom,
+        terrain_max_zoom=item.terrain_max_zoom,
+        terrain_bounds=item.terrain_bounds,
+        terrain_metadata=item.terrain_metadata,
         notes=item.notes,
         create_date=item.create_date,
         create_user=item.create_user,
@@ -214,6 +252,60 @@ def get_dataset_by_code(db: Session, code: str) -> ElevationDataset | None:
             func.lower(ElevationDataset.code) == normalized.lower()
         )
     ).scalar_one_or_none()
+
+
+def _supports_terrain_build(dataset: ElevationDataset) -> bool:
+    return _resolve_dataset_file_format(dataset) in TERRAIN_SUPPORTED_DATASET_FORMATS
+
+
+def _default_terrain_status_for_format(file_format: str) -> str:
+    return "pending" if file_format in TERRAIN_SUPPORTED_DATASET_FORMATS else "not_supported"
+
+
+def _sync_dataset_terrain_support(dataset: ElevationDataset) -> None:
+    file_format = _resolve_dataset_file_format(dataset)
+    if file_format in TERRAIN_SUPPORTED_DATASET_FORMATS:
+        if dataset.terrain_status == "not_supported":
+            dataset.terrain_status = "pending"
+        return
+
+    dataset.terrain_status = "not_supported"
+    dataset.terrain_task_id = None
+    dataset.terrain_error_message = None
+    dataset.terrain_root_path = None
+    dataset.terrain_url_template = None
+    dataset.terrain_min_zoom = None
+    dataset.terrain_max_zoom = None
+    dataset.terrain_bounds = None
+    dataset.terrain_metadata = None
+
+
+def _resolve_dataset_terrain_dir(dataset_code: str) -> str:
+    return join_virtual_path(_resolve_dataset_dir(dataset_code), TERRAIN_ROOT_DIRNAME)
+
+
+def _resolve_dataset_terrain_tile_path(*, dataset_code: str, z: int, x: int, y: int) -> str:
+    return join_virtual_path(join_virtual_path(join_virtual_path(_resolve_dataset_terrain_dir(dataset_code), str(z)), str(x)), f"{y}.terrain")
+
+
+def _build_dataset_terrain_url_template(dataset_id: str) -> str:
+    return f"/api/v1/elevation/datasets/{dataset_id}/terrain/{{z}}/{{x}}/{{y}}.terrain?v={TERRAIN_TILE_VERSION}"
+
+
+def _map_dataset_task_status(status_value: str | None) -> str:
+    status_map = {
+        "queued": "queued",
+        "pending": "queued",
+        "running": "running",
+        "processing": "running",
+        "success": "success",
+        "ready": "success",
+        "failed": "failed",
+        "unknown": "unknown",
+        "not_started": "not_found",
+        "not_supported": "not_found",
+    }
+    return status_map.get(status_value or "", "unknown")
 
 
 def list_dataset_files(
@@ -307,6 +399,7 @@ def create_dataset(
         resolution_m=payload.resolution_m,
         status="active",
         usage_status="idle",
+        terrain_status=_default_terrain_status_for_format(file_format),
         notes=_normalize_str(payload.notes),
         create_date=now,
         create_user=actor.id,
@@ -488,6 +581,15 @@ def import_dataset_data_files(
     dataset.file_path = preferred_file_path
     dataset.file_format = _detect_file_format(preferred_file_path)
     dataset.usage_status = "idle"
+    dataset.terrain_status = _default_terrain_status_for_format(dataset.file_format)
+    dataset.terrain_task_id = None
+    dataset.terrain_error_message = None
+    dataset.terrain_root_path = None
+    dataset.terrain_url_template = None
+    dataset.terrain_min_zoom = None
+    dataset.terrain_max_zoom = None
+    dataset.terrain_bounds = None
+    dataset.terrain_metadata = None
     dataset.update_user = actor.id
     dataset.update_date = utcnow()
     db.commit()
@@ -570,6 +672,172 @@ def get_dataset_analysis_task_status(
     )
 
 
+def get_dataset_terrain_task_status(
+    db: Session,
+    *,
+    dataset_id: str,
+) -> ElevationDatasetTerrainTaskStatusResponse:
+    dataset = get_dataset_by_id(db, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程数据集不存在")
+
+    mapped_status = _map_dataset_task_status(dataset.terrain_status)
+    detail = dataset.terrain_error_message
+    if detail is None:
+        if mapped_status == "queued":
+            detail = "地形瓦片任务已提交，等待执行。"
+        elif mapped_status == "running":
+            detail = "地形瓦片生成中。"
+        elif mapped_status == "success":
+            detail = "地形瓦片已就绪。"
+        elif dataset.terrain_status == "not_supported":
+            detail = "当前数据集格式不支持地形瓦片生成。"
+
+    return ElevationDatasetTerrainTaskStatusResponse(
+        dataset_id=dataset.id,
+        dataset_code=dataset.code,
+        task_id=dataset.terrain_task_id,
+        status=mapped_status,  # type: ignore[arg-type]
+        detail=detail,
+        terrain_url_template=dataset.terrain_url_template,
+        terrain_min_zoom=dataset.terrain_min_zoom,
+        terrain_max_zoom=dataset.terrain_max_zoom,
+        update_date=dataset.update_date,
+    )
+
+
+def queue_dataset_terrain_build(
+    db: Session,
+    *,
+    dataset_id: str,
+    actor: User,
+) -> ElevationDatasetTerrainBuildResponse:
+    item = get_dataset_by_id(db, dataset_id)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程数据集不存在")
+    if item.status != "active":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="高程数据集未启用")
+    if not _supports_terrain_build(item):
+        item.terrain_status = "not_supported"
+        item.terrain_task_id = None
+        item.terrain_error_message = None
+        item.update_user = actor.id
+        item.update_date = utcnow()
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前数据集格式不支持地形瓦片生成")
+
+    if item.terrain_status == "processing" or (item.terrain_status == "pending" and item.terrain_task_id):
+        return ElevationDatasetTerrainBuildResponse(
+            dataset=serialize_dataset(item),
+            task_id=item.terrain_task_id,
+            queued=False,
+            detail="地形瓦片任务已存在，无需重复提交。",
+            warnings=[],
+        )
+
+    item.terrain_status = "pending"
+    item.terrain_error_message = None
+    item.terrain_root_path = None
+    item.terrain_url_template = None
+    item.terrain_min_zoom = None
+    item.terrain_max_zoom = None
+    item.terrain_bounds = None
+    item.terrain_metadata = None
+    item.update_user = actor.id
+    item.update_date = utcnow()
+    db.commit()
+
+    try:
+        task = _dispatch_elevation_dataset_terrain_task(dataset_id=item.id, actor_user_id=actor.id)
+    except Exception as exc:
+        item.terrain_status = "failed"
+        item.terrain_error_message = str(exc)
+        item.terrain_task_id = None
+        item.update_user = actor.id
+        item.update_date = utcnow()
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"地形瓦片任务派发失败: {exc}") from exc
+
+    item.terrain_task_id = str(task.id)
+    item.update_user = actor.id
+    item.update_date = utcnow()
+    db.commit()
+
+    saved = get_dataset_by_id(db, dataset_id)
+    if not saved:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="地形瓦片任务保存失败")
+
+    _publish_elevation_change(
+        "elevation.dataset.terrain.queued",
+        {"action": "dataset_terrain_queued", "dataset_id": saved.id, "task_id": saved.terrain_task_id},
+    )
+    return ElevationDatasetTerrainBuildResponse(
+        dataset=serialize_dataset(saved),
+        task_id=saved.terrain_task_id,
+        queued=True,
+        detail="地形瓦片任务已提交，等待执行。",
+        warnings=[],
+    )
+
+
+def get_dataset_terrain_layer(
+    db: Session,
+    *,
+    dataset_id: str,
+) -> ElevationTerrainLayerResponse:
+    dataset = get_dataset_by_id(db, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程数据集不存在")
+    if dataset.terrain_status != "ready" or not dataset.terrain_root_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="地形瓦片尚未就绪")
+
+    mount = _require_mount(db, dataset.mount_code)
+    driver = _build_driver_or_400(mount)
+    layer_path = _resolve_dataset_terrain_layer_path(dataset.code)
+    try:
+        payload = driver.read_file(layer_path)
+    except StoragePathNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="地形 layer.json 不存在") from exc
+    except StorageInvalidPathError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except StorageDriverError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    try:
+        data = json.loads(payload.content.decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="地形 layer.json 解析失败") from exc
+    return ElevationTerrainLayerResponse.model_validate(data)
+
+
+def get_dataset_terrain_tile(
+    db: Session,
+    *,
+    dataset_id: str,
+    z: int,
+    x: int,
+    y: int,
+) -> bytes:
+    dataset = get_dataset_by_id(db, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程数据集不存在")
+    if dataset.terrain_status != "ready" or not dataset.terrain_root_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="地形瓦片尚未就绪")
+
+    mount = _require_mount(db, dataset.mount_code)
+    driver = _build_driver_or_400(mount)
+    tile_path = _resolve_dataset_terrain_tile_path(dataset_code=dataset.code, z=z, x=x, y=y)
+    try:
+        payload = driver.read_file(tile_path)
+    except StoragePathNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="地形瓦片不存在") from exc
+    except StorageInvalidPathError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except StorageDriverError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return payload.content
+
+
 def update_dataset(
     db: Session,
     dataset_id: str,
@@ -593,6 +861,7 @@ def update_dataset(
     if "notes" in update_data:
         item.notes = _normalize_str(update_data["notes"])
 
+    _sync_dataset_terrain_support(item)
     item.update_user = actor.id
     item.update_date = utcnow()
     db.commit()
@@ -676,6 +945,8 @@ def analyze_dataset(
     item.bbox_max_lon = stats["bbox_max_lon"]
     item.bbox_min_lat = stats["bbox_min_lat"]
     item.bbox_max_lat = stats["bbox_max_lat"]
+    if _supports_terrain_build(item) and item.terrain_status == "not_supported":
+        item.terrain_status = "pending"
     item.analysis_status = "success"
     item.analysis_error_message = None
     item.analysis_finished_at = utcnow()
@@ -691,6 +962,7 @@ def analyze_dataset(
         "elevation.dataset.analyzed",
         {"action": "dataset_analyzed", "dataset_id": saved.id},
     )
+    _queue_dataset_terrain_build_after_analysis(db, dataset=saved, actor_user_id=actor.id)
     return ElevationDatasetAnalyzeResponse(
         dataset=serialize_dataset(saved),
         task_id=saved.analysis_task_id,
@@ -932,6 +1204,12 @@ def _dispatch_elevation_dataset_analysis_task(*, dataset_id: str, actor_user_id:
     return analyze_elevation_dataset_job.delay(dataset_id, actor_user_id)
 
 
+def _dispatch_elevation_dataset_terrain_task(*, dataset_id: str, actor_user_id: str | None):
+    from ..tasks.elevation_tasks import build_elevation_dataset_terrain_job
+
+    return build_elevation_dataset_terrain_job.delay(dataset_id, actor_user_id)
+
+
 def execute_apply_job(job_id: str) -> None:
     db = SessionLocal()
     try:
@@ -1117,6 +1395,105 @@ def execute_dataset_analysis_job(*, dataset_id: str, actor_user_id: str | None) 
         db.close()
 
 
+def execute_dataset_terrain_build_job(*, dataset_id: str, actor_user_id: str | None) -> None:
+    db = SessionLocal()
+    try:
+        item = get_dataset_by_id(db, dataset_id)
+        if not item:
+            return
+        if not _supports_terrain_build(item):
+            item.terrain_status = "not_supported"
+            item.terrain_task_id = None
+            item.terrain_error_message = None
+            item.update_date = utcnow()
+            db.commit()
+            return
+
+        item.terrain_status = "processing"
+        item.terrain_error_message = None
+        item.update_date = utcnow()
+        db.commit()
+        _publish_elevation_change(
+            "elevation.dataset.terrain.running",
+            {"action": "dataset_terrain_running", "dataset_id": item.id},
+        )
+
+        actor = db.execute(select(User).where(User.id == actor_user_id)).scalar_one_or_none() if actor_user_id else None
+        if actor is None:
+            actor = db.execute(select(User).where(User.status == "active").order_by(User.id.asc())).scalars().first()
+        if actor is None:
+            item.terrain_status = "failed"
+            item.terrain_error_message = "未找到可用用户执行地形瓦片生成"
+            item.update_date = utcnow()
+            db.commit()
+            _publish_elevation_change(
+                "elevation.dataset.terrain.failed",
+                {"action": "dataset_terrain_failed", "dataset_id": item.id},
+            )
+            return
+
+        artifacts = _build_dataset_terrain_tiles(db, item)
+        saved = get_dataset_by_id(db, dataset_id)
+        if saved is None:
+            return
+        saved.terrain_status = "ready"
+        saved.terrain_error_message = None
+        saved.terrain_root_path = _resolve_dataset_terrain_dir(saved.code)
+        saved.terrain_url_template = _build_dataset_terrain_url_template(saved.id)
+        saved.terrain_min_zoom = artifacts.min_zoom
+        saved.terrain_max_zoom = artifacts.max_zoom
+        saved.terrain_bounds = artifacts.bounds
+        saved.terrain_metadata = artifacts.metadata
+        saved.update_date = utcnow()
+        saved.update_user = actor.id
+        db.commit()
+        _publish_elevation_change(
+            "elevation.dataset.terrain.ready",
+            {"action": "dataset_terrain_ready", "dataset_id": saved.id},
+        )
+    except Exception as exc:
+        failed = get_dataset_by_id(db, dataset_id)
+        if failed is not None:
+            failed.terrain_status = "failed"
+            failed.terrain_error_message = str(exc)
+            failed.update_date = utcnow()
+            db.commit()
+            _publish_elevation_change(
+                "elevation.dataset.terrain.failed",
+                {"action": "dataset_terrain_failed", "dataset_id": failed.id},
+            )
+        raise
+    finally:
+        db.close()
+
+
+def _queue_dataset_terrain_build_after_analysis(db: Session, *, dataset: ElevationDataset, actor_user_id: str | None) -> None:
+    if not _supports_terrain_build(dataset):
+        return
+    if dataset.terrain_status in {"processing", "ready"}:
+        return
+    if dataset.terrain_status == "pending" and dataset.terrain_task_id:
+        return
+    dataset.terrain_status = "pending"
+    dataset.terrain_error_message = None
+    dataset.update_date = utcnow()
+    db.commit()
+    try:
+        task = _dispatch_elevation_dataset_terrain_task(dataset_id=dataset.id, actor_user_id=actor_user_id)
+        dataset.terrain_task_id = str(task.id)
+        dataset.update_date = utcnow()
+        db.commit()
+        _publish_elevation_change(
+            "elevation.dataset.terrain.queued",
+            {"action": "dataset_terrain_queued", "dataset_id": dataset.id, "task_id": dataset.terrain_task_id},
+        )
+    except Exception as exc:
+        dataset.terrain_status = "failed"
+        dataset.terrain_error_message = str(exc)
+        dataset.update_date = utcnow()
+        db.commit()
+
+
 def _ensure_dataset_file_exists(db: Session, *, mount_code: str, file_path: str) -> None:
     mount = _require_mount(db, mount_code.strip())
     driver = _build_driver_or_400(mount)
@@ -1150,6 +1527,10 @@ def _resolve_dataset_file_path(*, dataset_code: str, filename: str | None) -> st
     normalized_name = _normalize_dataset_filename(filename)
     dataset_dir = _resolve_dataset_dir(dataset_code)
     return join_virtual_path(dataset_dir, normalized_name)
+
+
+def _resolve_dataset_terrain_layer_path(dataset_code: str) -> str:
+    return join_virtual_path(_resolve_dataset_terrain_dir(dataset_code), "layer.json")
 
 
 def _normalize_dataset_code(value: str) -> str:
@@ -1837,6 +2218,329 @@ def _compute_raster_stats(
             },
             warnings,
         )
+
+
+def _compute_raster_wgs84_bounds(*, rasterio: Any, src: Any) -> dict[str, float]:
+    source_bounds = src.bounds
+    if src.crs is None or str(src.crs) in {"EPSG:4326", "OGC:CRS84"}:
+        return _clamp_bounds_to_wgs84(
+            {
+                "west": float(source_bounds.left),
+                "south": float(source_bounds.bottom),
+                "east": float(source_bounds.right),
+                "north": float(source_bounds.top),
+            }
+        )
+
+    xs, ys = rasterio.warp.transform(
+        src.crs,
+        "EPSG:4326",
+        [float(source_bounds.left), float(source_bounds.right), float(source_bounds.left), float(source_bounds.right)],
+        [float(source_bounds.bottom), float(source_bounds.bottom), float(source_bounds.top), float(source_bounds.top)],
+    )
+    return _clamp_bounds_to_wgs84(
+        {
+            "west": float(min(xs)),
+            "south": float(min(ys)),
+            "east": float(max(xs)),
+            "north": float(max(ys)),
+        }
+    )
+
+
+def _clamp_bounds_to_wgs84(bounds: dict[str, float]) -> dict[str, float]:
+    west = max(-180.0, min(180.0, float(bounds["west"])))
+    east = max(-180.0, min(180.0, float(bounds["east"])))
+    south = max(-90.0, min(90.0, float(bounds["south"])))
+    north = max(-90.0, min(90.0, float(bounds["north"])))
+    if east <= west:
+        east = min(180.0, west + 1e-6)
+    if north <= south:
+        north = min(90.0, south + 1e-6)
+    return {
+        "west": west,
+        "south": south,
+        "east": east,
+        "north": north,
+    }
+
+
+def _resolve_terrain_zoom_limits(*, bounds: dict[str, float], resolution_m: float | None) -> tuple[int, int]:
+    min_zoom = TERRAIN_DEFAULT_MIN_ZOOM
+    if resolution_m is None or resolution_m <= 0:
+        base_max_zoom = TERRAIN_DEFAULT_MAX_ZOOM
+    else:
+        meters_per_sample = max(float(resolution_m), 1.0)
+        numerator = 180.0 * 111_320.0
+        denominator = max((TERRAIN_TILE_SIZE - 1) * meters_per_sample, 1.0)
+        base_max_zoom = int(math.floor(math.log2(max(numerator / denominator, 1.0))))
+        base_max_zoom = max(TERRAIN_DEFAULT_MIN_ZOOM, min(TERRAIN_MAX_ALLOWED_ZOOM, base_max_zoom))
+
+    max_zoom = max(min_zoom, base_max_zoom)
+    while max_zoom > min_zoom:
+        availability = _build_terrain_available_ranges(bounds=bounds, max_zoom=max_zoom)
+        tile_count = sum((tile_range["endX"] - tile_range["startX"] + 1) * (tile_range["endY"] - tile_range["startY"] + 1) for ranges in availability.values() for tile_range in ranges)
+        if tile_count <= 512:
+            break
+        max_zoom -= 1
+
+    return min_zoom, max_zoom
+
+
+def _tile_counts(level: int) -> tuple[int, int]:
+    return 1 << (level + 1), 1 << level
+
+
+def _tile_span_degrees(level: int) -> float:
+    return 180.0 / float(1 << level)
+
+
+def _build_terrain_available_ranges(*, bounds: dict[str, float], max_zoom: int) -> dict[int, list[dict[str, int]]]:
+    ranges: dict[int, list[dict[str, int]]] = {
+        0: [{"startX": 0, "endX": 1, "startY": 0, "endY": 0}],
+    }
+    epsilon = 1e-9
+    for level in range(1, max_zoom + 1):
+        x_count, y_count = _tile_counts(level)
+        span = _tile_span_degrees(level)
+        start_x = int(math.floor((bounds["west"] + 180.0) / span))
+        end_x = int(math.floor((bounds["east"] + 180.0 - epsilon) / span))
+        start_y = int(math.floor((bounds["south"] + 90.0) / span))
+        end_y = int(math.floor((bounds["north"] + 90.0 - epsilon) / span))
+        start_x = max(0, min(x_count - 1, start_x))
+        end_x = max(0, min(x_count - 1, end_x))
+        start_y = max(0, min(y_count - 1, start_y))
+        end_y = max(0, min(y_count - 1, end_y))
+        if end_x < start_x or end_y < start_y:
+            continue
+        ranges[level] = [{
+            "startX": start_x,
+            "endX": end_x,
+            "startY": start_y,
+            "endY": end_y,
+        }]
+    return ranges
+
+
+def _tile_bounds_from_tms(level: int, x: int, y: int) -> dict[str, float]:
+    span = _tile_span_degrees(level)
+    west = -180.0 + x * span
+    east = west + span
+    south = -90.0 + y * span
+    north = south + span
+    return {
+        "west": west,
+        "south": south,
+        "east": east,
+        "north": north,
+    }
+
+
+def _tile_intersects_bounds(tile_bounds: dict[str, float], bounds: dict[str, float]) -> bool:
+    return not (
+        tile_bounds["east"] <= bounds["west"]
+        or tile_bounds["west"] >= bounds["east"]
+        or tile_bounds["north"] <= bounds["south"]
+        or tile_bounds["south"] >= bounds["north"]
+    )
+
+
+def _range_contains_tile(tile_range: dict[str, int], *, x: int, y: int) -> bool:
+    return tile_range["startX"] <= x <= tile_range["endX"] and tile_range["startY"] <= y <= tile_range["endY"]
+
+
+def _build_terrain_child_mask(*, availability: dict[int, list[dict[str, int]]], level: int, x: int, y: int, max_zoom: int) -> int:
+    if level >= max_zoom:
+        return 0
+
+    next_ranges = availability.get(level + 1, [])
+    if not next_ranges:
+        return 0
+
+    mask = 0
+    children = (
+        (TERRAIN_CHILD_MASK_SW, 2 * x, 2 * y),
+        (TERRAIN_CHILD_MASK_SE, 2 * x + 1, 2 * y),
+        (TERRAIN_CHILD_MASK_NW, 2 * x, 2 * y + 1),
+        (TERRAIN_CHILD_MASK_NE, 2 * x + 1, 2 * y + 1),
+    )
+    for bit, child_x, child_y in children:
+        if any(_range_contains_tile(tile_range, x=child_x, y=child_y) for tile_range in next_ranges):
+            mask |= bit
+    return mask
+
+
+def _ensure_virtual_directory(driver: Any, path: str) -> None:
+    try:
+        driver.ensure_directory(path)
+    except StorageInvalidPathError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except StorageDriverError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+def _delete_virtual_directory_if_exists(driver: Any, path: str) -> None:
+    try:
+        driver.delete_path(path, is_dir=True, recursive=True)
+    except StoragePathNotFoundError:
+        return
+    except StorageInvalidPathError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except StorageDriverError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+def _write_virtual_file(driver: Any, *, path: str, content: bytes, content_type: str | None) -> None:
+    parent_path = str(Path(path).parent).replace("\\", "/")
+    if not parent_path.startswith("/"):
+        parent_path = f"/{parent_path}"
+    _ensure_virtual_directory(driver, parent_path)
+    try:
+        driver.write_file(path, content=content, content_type=content_type)
+    except StorageInvalidPathError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except StorageDriverError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+def _build_dataset_terrain_tiles(db: Session, dataset: ElevationDataset) -> _TerrainBuildArtifacts:
+    mount = _require_mount(db, dataset.mount_code)
+    driver = _build_driver_or_400(mount)
+    terrain_dir = _resolve_dataset_terrain_dir(dataset.code)
+
+    _delete_virtual_directory_if_exists(driver, terrain_dir)
+    _ensure_virtual_directory(driver, terrain_dir)
+
+    with _open_raster_dataset(db, dataset) as opened:
+        rasterio = opened.rasterio
+        src = opened.dataset
+        bounds = _compute_raster_wgs84_bounds(rasterio=rasterio, src=src)
+        min_zoom, max_zoom = _resolve_terrain_zoom_limits(bounds=bounds, resolution_m=dataset.resolution_m)
+        availability = _build_terrain_available_ranges(bounds=bounds, max_zoom=max_zoom)
+
+        tile_count = 0
+        for level in range(min_zoom, max_zoom + 1):
+            ranges = availability.get(level, [])
+            for tile_range in ranges:
+                for tile_x in range(tile_range["startX"], tile_range["endX"] + 1):
+                    for tile_y in range(tile_range["startY"], tile_range["endY"] + 1):
+                        tile_count += 1
+                        tile_bounds = _tile_bounds_from_tms(level, tile_x, tile_y)
+                        child_mask = _build_terrain_child_mask(
+                            availability=availability,
+                            level=level,
+                            x=tile_x,
+                            y=tile_y,
+                            max_zoom=max_zoom,
+                        )
+                        tile_bytes = _generate_heightmap_tile_bytes(
+                            rasterio=rasterio,
+                            src=src,
+                            tile_bounds=tile_bounds,
+                            child_mask=child_mask,
+                            is_blank_root=level == 0 and not _tile_intersects_bounds(tile_bounds, bounds),
+                        )
+                        tile_path = _resolve_dataset_terrain_tile_path(dataset_code=dataset.code, z=level, x=tile_x, y=tile_y)
+                        _write_virtual_file(driver, path=tile_path, content=tile_bytes, content_type=TERRAIN_CONTENT_TYPE)
+
+        layer_payload = ElevationTerrainLayerResponse(
+            tiles=[f"{{z}}/{{x}}/{{y}}.terrain?v={TERRAIN_TILE_VERSION}"],
+            maxzoom=max_zoom,
+            attribution=f"{dataset.code} {dataset.name}",
+            bounds=[bounds["west"], bounds["south"], bounds["east"], bounds["north"]],
+            available=[availability.get(level, []) for level in range(0, max_zoom + 1)],
+        ).model_dump(mode="json")
+        _write_virtual_file(
+            driver,
+            path=_resolve_dataset_terrain_layer_path(dataset.code),
+            content=json.dumps(layer_payload, ensure_ascii=True, separators=(",", ":")).encode("utf-8"),
+            content_type="application/json",
+        )
+
+        metadata = {
+            "tool": TERRAIN_BUILD_TOOL,
+            "format": TERRAIN_TILE_FORMAT,
+            "projection": TERRAIN_TILE_PROJECTION,
+            "tile_size": TERRAIN_TILE_SIZE,
+            "generated_at": utcnow().isoformat(),
+            "source_crs": str(src.crs) if src.crs is not None else None,
+            "source_nodata": src.nodatavals[0] if src.nodatavals else None,
+            "resolution_m": dataset.resolution_m,
+            "tile_count": tile_count,
+            "layer_url": f"/api/v1/elevation/datasets/{dataset.id}/terrain/layer.json",
+            "terrain_url_template": _build_dataset_terrain_url_template(dataset.id),
+        }
+        return _TerrainBuildArtifacts(
+            min_zoom=min_zoom,
+            max_zoom=max_zoom,
+            bounds=bounds,
+            metadata=metadata,
+        )
+
+
+def _generate_heightmap_tile_bytes(
+    *,
+    rasterio: Any,
+    src: Any,
+    tile_bounds: dict[str, float],
+    child_mask: int,
+    is_blank_root: bool,
+) -> bytes:
+    import numpy as np
+
+    if is_blank_root:
+        heights = np.full((TERRAIN_TILE_SIZE, TERRAIN_TILE_SIZE), 0.0, dtype="float32")
+    else:
+        destination = np.full((TERRAIN_TILE_SIZE, TERRAIN_TILE_SIZE), np.nan, dtype="float32")
+        destination_transform = rasterio.transform.from_bounds(
+            tile_bounds["west"],
+            tile_bounds["south"],
+            tile_bounds["east"],
+            tile_bounds["north"],
+            TERRAIN_TILE_SIZE,
+            TERRAIN_TILE_SIZE,
+        )
+        band_nodata = src.nodatavals[0] if src.nodatavals else None
+        rasterio.warp.reproject(
+            source=rasterio.band(src, 1),
+            destination=destination,
+            src_transform=src.transform,
+            src_crs=src.crs,
+            src_nodata=band_nodata,
+            dst_transform=destination_transform,
+            dst_crs="EPSG:4326",
+            dst_nodata=np.nan,
+            resampling=rasterio.warp.Resampling.bilinear,
+        )
+        if np.isnan(destination).any():
+            nearest = np.full((TERRAIN_TILE_SIZE, TERRAIN_TILE_SIZE), np.nan, dtype="float32")
+            rasterio.warp.reproject(
+                source=rasterio.band(src, 1),
+                destination=nearest,
+                src_transform=src.transform,
+                src_crs=src.crs,
+                src_nodata=band_nodata,
+                dst_transform=destination_transform,
+                dst_crs="EPSG:4326",
+                dst_nodata=np.nan,
+                resampling=rasterio.warp.Resampling.nearest,
+            )
+            destination = np.where(np.isnan(destination), nearest, destination)
+        heights = np.nan_to_num(destination, nan=0.0).astype("float32")
+
+    encoded = _encode_heightmap_array(heights)
+    payload = bytearray(encoded.tobytes(order="C"))
+    payload.extend(bytes([child_mask]))
+    payload.extend(TERRAIN_WATER_MASK_ALL_LAND)
+    return bytes(payload)
+
+
+def _encode_heightmap_array(heights: Any) -> Any:
+    import numpy as np
+
+    encoded = np.rint((heights + 1000.0) * 5.0)
+    encoded = np.clip(encoded, 0.0, float(256 * 256 - 1))
+    return encoded.astype("<u2")
 
 
 def _build_raster_preview(

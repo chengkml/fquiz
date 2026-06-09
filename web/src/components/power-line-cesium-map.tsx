@@ -4,20 +4,32 @@ import { AimOutlined, MinusOutlined, PlusOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Empty, Spin, Typography } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { getApiBaseUrl } from "@/lib/api";
 import { withBasePath } from "@/lib/base-path";
 import { reloadOnceOnChunkError } from "@/lib/chunk-error";
+import {
+  countLineTowersOutsideTerrainBounds,
+  getElevationTerrainLayerUrl,
+  getElevationTerrainRenderState,
+} from "@/lib/elevation-terrain";
 import {
   buildRouteSegments,
   collectTowerGeoPoints,
   type RouteSegment,
   type TowerGeoPoint,
 } from "@/lib/power-line-route";
-import type { LineTowerSummary } from "@/types/auth";
+import type { ElevationDatasetSummary, LineTowerSummary } from "@/types/auth";
 
 type PowerLineCesiumMapProps = {
   lineCode?: string;
   lineName?: string;
   towers: LineTowerSummary[];
+  terrainDataset?: Pick<
+    ElevationDatasetSummary,
+    "id" | "name" | "terrain_status" | "terrain_url_template" | "terrain_bounds" | "terrain_metadata"
+  > | null;
+  accessToken?: string | null;
+  exaggeration?: number;
   loading?: boolean;
   height?: number;
 };
@@ -90,6 +102,9 @@ export function PowerLineCesiumMap({
   lineCode,
   lineName,
   towers,
+  terrainDataset = null,
+  accessToken = null,
+  exaggeration = 1,
   loading = false,
   height = DEFAULT_MAP_HEIGHT,
 }: PowerLineCesiumMapProps) {
@@ -99,8 +114,18 @@ export function PowerLineCesiumMap({
   const routeViewRef = useRef<RouteViewState | null>(null);
   const [initError, setInitError] = useState("");
   const [ready, setReady] = useState(false);
+  const [terrainError, setTerrainError] = useState("");
+  const [pointerInfo, setPointerInfo] = useState("");
   const [colorByRisk, setColorByRisk] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
+  const terrainRenderState = useMemo(
+    () => (terrainDataset ? getElevationTerrainRenderState(terrainDataset) : "fallback"),
+    [terrainDataset],
+  );
+  const towersOutsideTerrainBounds = useMemo(
+    () => countLineTowersOutsideTerrainBounds(towers, terrainDataset?.terrain_bounds ?? null),
+    [terrainDataset?.terrain_bounds, towers],
+  );
 
   const sortedTowers = useMemo(
     () => [...towers].sort((a, b) => a.seq_no - b.seq_no),
@@ -188,10 +213,10 @@ export function PowerLineCesiumMap({
           fullscreenButton: false,
           geocoder: false,
           homeButton: false,
-          infoBox: false,
+          infoBox: true,
           navigationHelpButton: false,
           sceneModePicker: false,
-          selectionIndicator: false,
+          selectionIndicator: true,
           skyBox: false,
           skyAtmosphere: false,
           timeline: false,
@@ -203,10 +228,31 @@ export function PowerLineCesiumMap({
         viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0f172a");
         viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#020617");
         viewer.scene.screenSpaceCameraController.enableZoom = true;
+        viewer.scene.screenSpaceCameraController.enableCollisionDetection = true;
         const creditContainer = viewer.cesiumWidget.creditContainer as HTMLElement | null;
         if (creditContainer) {
           creditContainer.style.display = "none";
         }
+        viewer.screenSpaceEventHandler.setInputAction((movement: { endPosition?: import("cesium").Cartesian2 }) => {
+          if (!movement.endPosition) {
+            setPointerInfo("");
+            return;
+          }
+          const ray = viewer.camera.getPickRay(movement.endPosition);
+          const cartesian = ray
+            ? viewer.scene.globe.pick(ray, viewer.scene)
+            : viewer.camera.pickEllipsoid(movement.endPosition, viewer.scene.globe.ellipsoid);
+          if (!cartesian) {
+            setPointerInfo("");
+            return;
+          }
+          const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+          const lon = Cesium.Math.toDegrees(cartographic.longitude);
+          const lat = Cesium.Math.toDegrees(cartographic.latitude);
+          const ground = viewer.scene.globe.getHeight(cartographic) ?? cartographic.height ?? 0;
+          const datasetName = terrainDataset?.name ? ` | ${terrainDataset.name}` : "";
+          setPointerInfo(`${lon.toFixed(5)}, ${lat.toFixed(5)} | ${ground.toFixed(2)} m${datasetName}`);
+        }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 
         viewerRef.current = viewer;
         setInitError("");
@@ -233,8 +279,64 @@ export function PowerLineCesiumMap({
       cesiumRef.current = null;
       routeViewRef.current = null;
       setReady(false);
+      setPointerInfo("");
     };
-  }, []);
+  }, [terrainDataset?.name]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function updateTerrain() {
+      const viewer = viewerRef.current;
+      const Cesium = cesiumRef.current;
+      if (!viewer || !Cesium || !ready) {
+        return;
+      }
+
+      setTerrainError("");
+      viewer.scene.verticalExaggeration = exaggeration;
+      viewer.scene.verticalExaggerationRelativeHeight = 0.0;
+
+      if (terrainRenderState !== "ready" || !terrainDataset) {
+        viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+        viewer.scene.globe.depthTestAgainstTerrain = false;
+        return;
+      }
+
+      try {
+        const terrainUrl = getElevationTerrainLayerUrl(terrainDataset);
+        if (!terrainUrl) {
+          viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+          return;
+        }
+        const resource = new Cesium.Resource({
+          url: `${getApiBaseUrl()}${terrainUrl}`,
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+        });
+        const terrainProvider = await Cesium.CesiumTerrainProvider.fromUrl(resource, {
+          requestMetadata: false,
+          requestWaterMask: false,
+          requestVertexNormals: false,
+        });
+        if (cancelled) {
+          return;
+        }
+        viewer.terrainProvider = terrainProvider;
+        viewer.scene.globe.depthTestAgainstTerrain = true;
+      } catch (error) {
+        if (!cancelled) {
+          viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+          viewer.scene.globe.depthTestAgainstTerrain = false;
+          setTerrainError(formatErrorMessage(error));
+        }
+      }
+    }
+
+    void updateTerrain();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, exaggeration, ready, terrainDataset, terrainRenderState]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -307,13 +409,17 @@ export function PowerLineCesiumMap({
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           }
           : undefined,
-        description: `
+          description: `
           <div style="line-height:1.7;">
             <div><strong>塔号：</strong>${tower.towerNo}</div>
             <div><strong>序号：</strong>${tower.seqNo}</div>
             <div><strong>坐标：</strong>${tower.longitude.toFixed(6)}, ${tower.latitude.toFixed(6)}</div>
             <div><strong>海拔：</strong>${tower.altitudeM.toFixed(2)} m</div>
+            <div><strong>地形：</strong>${tower.terrain ?? "-"}</div>
             <div><strong>风险等级：</strong>${tower.riskLevel ?? "-"}</div>
+            <div><strong>高程采样：</strong>${tower.elevationPrepared ? "已回填" : "未回填"}</div>
+            <div><strong>来源数据集：</strong>${tower.elevationDatasetCode ?? "-"}</div>
+            <div><strong>采样方式：</strong>${tower.elevationSampleMethod ?? "-"}</div>
           </div>
         `,
       });
@@ -330,6 +436,27 @@ export function PowerLineCesiumMap({
 
   return (
     <div className="space-y-3">
+      {terrainDataset ? (
+        <Typography.Text type="secondary">
+          地形底图：{terrainDataset.name}，状态 {terrainDataset.terrain_status}
+          {terrainDataset.terrain_status === "ready" ? `，夸张 ${exaggeration.toFixed(1)}x` : "，未启用真实地形"}
+          {towersOutsideTerrainBounds > 0 ? `，超出范围杆塔 ${towersOutsideTerrainBounds} 个` : ""}
+        </Typography.Text>
+      ) : null}
+      {terrainDataset && towersOutsideTerrainBounds > 0 ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={`有 ${towersOutsideTerrainBounds} 个杆塔超出所选 DEM 覆盖范围`}
+        />
+      ) : null}
+      {terrainError ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={`地形瓦片加载失败，已回退到平面模式：${terrainError}`}
+        />
+      ) : null}
       <div className="flex flex-wrap items-center gap-3">
         <Checkbox checked={colorByRisk} onChange={(event) => setColorByRisk(event.target.checked)}>
           按风险着色
@@ -384,6 +511,7 @@ export function PowerLineCesiumMap({
           </div>
         ) : null}
       </div>
+      {pointerInfo ? <div className="text-xs text-slate-500">{pointerInfo}</div> : null}
 
       {towerGeoPoints.length === 0 ? (
         <Empty

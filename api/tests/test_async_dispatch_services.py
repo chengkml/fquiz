@@ -110,11 +110,57 @@ def test_queue_dataset_analysis_reuses_existing_running_task(monkeypatch) -> Non
         assert first.queued is True
         assert first.task_id == "elev-task-1"
         assert first.dataset.analysis_status == "queued"
+        assert first.dataset.terrain_status == "not_supported"
 
         second = elevation_service.queue_dataset_analysis(session, dataset_id=dataset.id, actor=actor)
         assert second.queued is False
         assert second.task_id == "elev-task-1"
         assert second.detail == "分析任务已存在，无需重复提交。"
+    finally:
+        session.close()
+
+
+def test_queue_dataset_terrain_build_reuses_existing_running_task(monkeypatch) -> None:
+    testing_session = _build_sessionmaker(ElevationDataset.__table__)
+    session: Session = testing_session()
+    try:
+        dataset = ElevationDataset(
+            code="ELEV-TERRAIN-001",
+            name="样例地形集",
+            file_format="tif",
+            mount_code="default",
+            dataset_dir="/elevation/datasets/ELEV-TERRAIN-001",
+            file_path="/elevation/datasets/ELEV-TERRAIN-001/data.tif",
+            status="active",
+            usage_status="idle",
+            terrain_status="pending",
+        )
+        session.add(dataset)
+        session.commit()
+
+        actor = User(
+            id="actor-1",
+            email="actor@example.com",
+            username="actor",
+            password_hash="hashed",
+            status="active",
+        )
+
+        monkeypatch.setattr(
+            elevation_service,
+            "_dispatch_elevation_dataset_terrain_task",
+            lambda **_: SimpleNamespace(id="terrain-task-1"),
+        )
+
+        first = elevation_service.queue_dataset_terrain_build(session, dataset_id=dataset.id, actor=actor)
+        assert first.queued is True
+        assert first.task_id == "terrain-task-1"
+        assert first.dataset.terrain_status == "pending"
+
+        second = elevation_service.queue_dataset_terrain_build(session, dataset_id=dataset.id, actor=actor)
+        assert second.queued is False
+        assert second.task_id == "terrain-task-1"
+        assert second.detail == "地形瓦片任务已存在，无需重复提交。"
     finally:
         session.close()
 

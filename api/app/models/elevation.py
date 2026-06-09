@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..core.database import Base
@@ -42,6 +42,15 @@ class ElevationDataset(Base):
     analysis_error_message: Mapped[str | None] = mapped_column(Text)
     analysis_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     analysis_finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    terrain_status: Mapped[str] = mapped_column(String(32), default="not_supported", index=True)
+    terrain_task_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    terrain_error_message: Mapped[str | None] = mapped_column(Text)
+    terrain_root_path: Mapped[str | None] = mapped_column(String(2048))
+    terrain_url_template: Mapped[str | None] = mapped_column(String(2048))
+    terrain_min_zoom: Mapped[int | None] = mapped_column(Integer)
+    terrain_max_zoom: Mapped[int | None] = mapped_column(Integer)
+    terrain_bounds: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    terrain_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     sample_count: Mapped[int] = mapped_column(Integer, default=0)
     bbox_min_lon: Mapped[float | None] = mapped_column(Float)
     bbox_max_lon: Mapped[float | None] = mapped_column(Float)

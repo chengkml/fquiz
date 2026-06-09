@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
@@ -19,6 +19,9 @@ from ...schemas.elevation import (
     ElevationDatasetListResponse,
     ElevationDatasetPreviewResponse,
     ElevationDatasetSummary,
+    ElevationDatasetTerrainBuildResponse,
+    ElevationDatasetTerrainTaskStatusResponse,
+    ElevationTerrainLayerResponse,
     ElevationDatasetUpdateRequest,
 )
 from ...services.elevation_service import (
@@ -26,6 +29,9 @@ from ...services.elevation_service import (
     create_dataset,
     delete_dataset,
     get_dataset_analysis_task_status,
+    get_dataset_terrain_layer,
+    get_dataset_terrain_task_status,
+    get_dataset_terrain_tile,
     get_job_by_id,
     import_dataset_data_files,
     import_datasets_from_csv,
@@ -34,6 +40,7 @@ from ...services.elevation_service import (
     list_jobs,
     preview_dataset,
     queue_dataset_analysis,
+    queue_dataset_terrain_build,
     serialize_job,
     update_dataset,
 )
@@ -129,6 +136,15 @@ def analyze_elevation_dataset(
     return queue_dataset_analysis(db, dataset_id=dataset_id, actor=current_user.user)
 
 
+@router.post("/datasets/{dataset_id}/terrain/build", response_model=ElevationDatasetTerrainBuildResponse)
+def build_elevation_dataset_terrain(
+    dataset_id: str,
+    current_user: CurrentUser = Depends(require_permission("elevation.manage")),
+    db: Session = Depends(get_db),
+) -> ElevationDatasetTerrainBuildResponse:
+    return queue_dataset_terrain_build(db, dataset_id=dataset_id, actor=current_user.user)
+
+
 @router.get("/datasets/{dataset_id}/preview", response_model=ElevationDatasetPreviewResponse)
 def preview_elevation_dataset(
     dataset_id: str,
@@ -159,6 +175,37 @@ def get_elevation_dataset_analysis_task_status(
     db: Session = Depends(get_db),
 ) -> ElevationDatasetAnalysisTaskStatusResponse:
     return get_dataset_analysis_task_status(db, dataset_id=dataset_id)
+
+
+@router.get("/datasets/{dataset_id}/terrain/status", response_model=ElevationDatasetTerrainTaskStatusResponse)
+def get_elevation_dataset_terrain_status(
+    dataset_id: str,
+    _: CurrentUser = Depends(require_any_permission("elevation.read", "elevation.manage")),
+    db: Session = Depends(get_db),
+) -> ElevationDatasetTerrainTaskStatusResponse:
+    return get_dataset_terrain_task_status(db, dataset_id=dataset_id)
+
+
+@router.get("/datasets/{dataset_id}/terrain/layer.json", response_model=ElevationTerrainLayerResponse)
+def get_elevation_dataset_terrain_layer(
+    dataset_id: str,
+    _: CurrentUser = Depends(require_any_permission("elevation.read", "elevation.manage")),
+    db: Session = Depends(get_db),
+) -> ElevationTerrainLayerResponse:
+    return get_dataset_terrain_layer(db, dataset_id=dataset_id)
+
+
+@router.get("/datasets/{dataset_id}/terrain/{z}/{x}/{y}.terrain")
+def get_elevation_dataset_terrain_tile_endpoint(
+    dataset_id: str,
+    z: int,
+    x: int,
+    y: int,
+    _: CurrentUser = Depends(require_any_permission("elevation.read", "elevation.manage")),
+    db: Session = Depends(get_db),
+) -> Response:
+    content = get_dataset_terrain_tile(db, dataset_id=dataset_id, z=z, x=x, y=y)
+    return Response(content=content, media_type="application/octet-stream")
 
 
 @router.get("/jobs", response_model=ElevationApplyJobListResponse)

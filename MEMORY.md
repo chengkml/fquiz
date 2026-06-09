@@ -283,6 +283,21 @@
 - 一期采样策略为 CSV 点集最近邻（非栅格插值），用于先打通管理与回填闭环；默认推荐回填模式 `fill_null_only`，避免覆盖人工高程。
 - 高频通知 topic 为 `admin.elevation`，线路联动通知沿用 `admin.power-lines`。
 - 高程数据文件格式已扩展为：`csv/img/tif/tiff`。
+
+## DEM 地形瓦片口径（2026-06-09）
+
+- 高程数据集在“分析成功”后会自动尝试派发 DEM 地形瓦片构建任务；管理端同时保留手动 `POST /api/v1/elevation/datasets/{id}/terrain/build` 触发入口，用于重试或重建。
+- 地形瓦片产物采用 Cesium `heightmap-1.0` 规范，落盘到数据集目录下的 `terrain/`：
+  - `terrain/layer.json`
+  - `terrain/{z}/{x}/{y}.terrain`
+- 当前服务口径：
+  - `GET /api/v1/elevation/datasets/{id}/terrain/layer.json`
+  - `GET /api/v1/elevation/datasets/{id}/terrain/{z}/{x}/{y}.terrain`
+- 前端加载 Cesium DEM 时，必须通过 `Cesium.Resource` 显式附带 `Authorization: Bearer <token>`；不能假设仅靠 refresh cookie 即可访问地形接口。
+- 前端地形地址生成统一复用 `web/src/lib/elevation-terrain.ts`：
+  - `getElevationTerrainRenderState()`
+  - `getElevationTerrainLayerUrl()`
+- `/admin/elevation` 负责展示地形状态、手动触发构建和预览地图加载真实地形；`/admin/power-lines` 负责选择已接入的 DEM 数据集和垂直夸张倍数，不在页面层重复实现地形地址或状态判断逻辑。
   - `csv`：继续使用点集最近邻采样。
   - `img/tif/tiff`：使用栅格像元采样（按杆塔经纬度取值，必要时自动做 CRS 转换）。
 - 栅格实现口径：

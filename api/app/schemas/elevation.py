@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 
 ElevationDatasetStatus = Literal["active", "disabled"]
 ElevationDatasetUsageStatus = Literal["idle", "in_use"]
+ElevationDatasetTerrainStatus = Literal["pending", "processing", "ready", "failed", "not_supported"]
 ElevationApplyMode = Literal["fill_null_only", "overwrite_all"]
 ElevationApplyJobStatus = Literal["pending", "running", "success", "failed"]
 
@@ -34,6 +35,15 @@ class ElevationDatasetSummary(BaseModel):
     analysis_error_message: str | None = None
     analysis_started_at: datetime | None = None
     analysis_finished_at: datetime | None = None
+    terrain_status: ElevationDatasetTerrainStatus = "not_supported"
+    terrain_task_id: str | None = None
+    terrain_error_message: str | None = None
+    terrain_root_path: str | None = None
+    terrain_url_template: str | None = None
+    terrain_min_zoom: int | None = None
+    terrain_max_zoom: int | None = None
+    terrain_bounds: dict[str, Any] | None = None
+    terrain_metadata: dict[str, Any] | None = None
     notes: str | None = None
     create_date: datetime
     create_user: str | None = None
@@ -74,6 +84,14 @@ class ElevationDatasetUpdateRequest(BaseModel):
 
 
 class ElevationDatasetAnalyzeResponse(BaseModel):
+    dataset: ElevationDatasetSummary
+    task_id: str | None = None
+    queued: bool = True
+    detail: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ElevationDatasetTerrainBuildResponse(BaseModel):
     dataset: ElevationDatasetSummary
     task_id: str | None = None
     queued: bool = True
@@ -171,6 +189,32 @@ class ElevationDatasetAnalysisTaskStatusResponse(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     update_date: datetime | None = None
+
+
+class ElevationDatasetTerrainTaskStatusResponse(BaseModel):
+    dataset_id: str
+    dataset_code: str
+    task_id: str | None = None
+    status: Literal["queued", "running", "success", "failed", "unknown", "not_found"] = "not_found"
+    detail: str | None = None
+    terrain_url_template: str | None = None
+    terrain_min_zoom: int | None = None
+    terrain_max_zoom: int | None = None
+    update_date: datetime | None = None
+
+
+class ElevationTerrainLayerResponse(BaseModel):
+    tilejson: str = "2.1.0"
+    format: str = "heightmap-1.0"
+    version: str = "1.0.0"
+    scheme: Literal["tms"] = "tms"
+    projection: Literal["EPSG:4326"] = "EPSG:4326"
+    tiles: list[str]
+    maxzoom: int
+    extensions: list[str] = Field(default_factory=list)
+    attribution: str | None = None
+    bounds: list[float] | None = None
+    available: list[list[dict[str, int]]] | None = None
 
 
 class ElevationApplyJobSummary(BaseModel):
