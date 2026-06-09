@@ -103,6 +103,46 @@ export type SystemParamListResponse = {
   total: number;
 };
 
+export type ScheduledTaskStatus = "idle" | "queued" | "running" | "success" | "failed" | "disabled";
+export type ScheduledTaskType = "syslog_cleanup";
+
+export type ScheduledTaskSummary = {
+  id: number;
+  task_key: string;
+  name: string;
+  task_type: ScheduledTaskType;
+  description: string | null;
+  cron_expression: string;
+  timezone: string;
+  retain_days: number;
+  enabled: boolean;
+  status: ScheduledTaskStatus;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  last_success_at: string | null;
+  last_error_at: string | null;
+  last_error_message: string | null;
+  last_result_json: Record<string, unknown>;
+  run_count: number;
+  create_user: string | null;
+  update_user: string | null;
+  create_date: string;
+  update_date: string;
+  creator: UserPublic | null;
+  updater: UserPublic | null;
+};
+
+export type ScheduledTaskListResponse = {
+  items: ScheduledTaskSummary[];
+  total: number;
+};
+
+export type ScheduledTaskRunResponse = {
+  success: boolean;
+  task: ScheduledTaskSummary;
+  celery_task_id: string | null;
+};
+
 export type FileStorageDriverType = "VFS" | "S3";
 
 export type FileStorageBackendSummary = {

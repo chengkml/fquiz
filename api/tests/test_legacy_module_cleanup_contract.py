@@ -63,6 +63,15 @@ class LegacyModuleCleanupContractTest(unittest.TestCase):
         self.assertNotIn("admin.todos", PROTECTED_MENU_CODES)
         self.assertNotIn("admin.jwt_generator", PROTECTED_MENU_CODES)
 
+    def test_new_scheduled_task_dispatcher_is_registered(self) -> None:
+        include = set(celery_app.conf.include or [])
+        self.assertIn("app.tasks.scheduled_task_tasks", include)
+
+        beat_schedule = celery_app.conf.beat_schedule or {}
+        self.assertIn("dispatch-due-scheduled-tasks", beat_schedule)
+        entry = beat_schedule["dispatch-due-scheduled-tasks"]
+        self.assertEqual(entry.get("task"), "app.tasks.scheduled_task_tasks.dispatch_due_scheduled_tasks")
+
 
 if __name__ == "__main__":
     unittest.main()

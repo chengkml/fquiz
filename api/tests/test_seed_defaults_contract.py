@@ -19,6 +19,7 @@ from api.app.api.v1.admin import router as admin_router
 from api.app.core.database import Base, get_db, init_db
 from api.app.core.dependencies import CurrentUser, get_current_user
 from api.app.models.menu import Menu
+from api.app.models.scheduled_task import ScheduledTask
 from api.app.models.user import User
 from api.app.services.legacy_authz_service import DEFAULT_ADMIN_PERMISSION_CODES, SYNTHETIC_LEGACY_MENU_ROWS
 from api.app.services.seed_service import DEFAULT_MENUS, DEFAULT_PERMISSIONS, DEFAULT_ROLES, SeedDefaultsResult, seed_defaults
@@ -164,6 +165,20 @@ class SeedDefaultsServiceTest(DatabaseFixtureTestCase):
 
         self.assertEqual(str(default_menu["path"]), "/admin/atp-models")
         self.assertEqual(menu.path, "/admin/atp-models")
+
+    def test_seed_defaults_include_scheduled_tasks_menu_and_default_task(self) -> None:
+        self._run_seed()
+
+        menu = self._load_menu("admin.scheduled_tasks")
+        default_menu = DEFAULT_MENU_BY_CODE["admin.scheduled_tasks"]
+        scheduled_task = self.session.scalar(
+            select(ScheduledTask).where(ScheduledTask.task_key == "syslog.cleanup.default")
+        )
+
+        self.assertEqual(str(default_menu["path"]), "/admin/scheduled-tasks")
+        self.assertEqual(menu.path, "/admin/scheduled-tasks")
+        self.assertIsNotNone(scheduled_task)
+        self.assertTrue(scheduled_task.enabled if scheduled_task else False)
 
 
 class SeedDefaultsEndpointTest(DatabaseFixtureTestCase):

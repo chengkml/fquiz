@@ -10,6 +10,7 @@ from ..models.menu import Menu
 from ..models.rbac import Permission, Role
 from ..models.tower_model import TowerModel
 from ..models.user import User
+from .scheduled_task_service import seed_default_scheduled_tasks
 from .tower_model_service import seed_tower_models_from_legacy
 
 settings = get_settings()
@@ -297,13 +298,26 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "permission_code": "celery.read",
     },
     {
+        "code": "admin.scheduled_tasks",
+        "name": "定时任务管理",
+        "path": "/admin/scheduled-tasks",
+        "icon": "CalendarClock",
+        "parent_code": None,
+        "type": "menu",
+        "sort_order": 55,
+        "status": "enabled",
+        "visible": True,
+        "cacheable": False,
+        "permission_code": "celery.read",
+    },
+    {
         "code": "admin.atp_models",
         "name": "ATP模型管理",
         "path": "/admin/atp-models",
         "icon": "Experiment",
         "parent_code": None,
         "type": "menu",
-        "sort_order": 55,
+        "sort_order": 56,
         "status": "enabled",
         "visible": True,
         "cacheable": False,
@@ -316,7 +330,7 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "icon": "Apartment",
         "parent_code": None,
         "type": "menu",
-        "sort_order": 56,
+        "sort_order": 57,
         "status": "enabled",
         "visible": True,
         "cacheable": False,
@@ -329,7 +343,7 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "icon": "FolderTree",
         "parent_code": None,
         "type": "menu",
-        "sort_order": 57,
+        "sort_order": 58,
         "status": "enabled",
         "visible": True,
         "cacheable": False,
@@ -342,7 +356,7 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "icon": "Database",
         "parent_code": None,
         "type": "menu",
-        "sort_order": 58,
+        "sort_order": 59,
         "status": "enabled",
         "visible": True,
         "cacheable": False,
@@ -355,7 +369,7 @@ DEFAULT_MENUS: list[dict[str, object]] = [
         "icon": "FileText",
         "parent_code": None,
         "type": "menu",
-        "sort_order": 59,
+        "sort_order": 60,
         "status": "enabled",
         "visible": True,
         "cacheable": False,
@@ -428,6 +442,7 @@ ROLE_MENU_BINDINGS: dict[str, list[str]] = {
         "admin.lightning_distribution",
         "admin.workers",
         "admin.task_monitor",
+        "admin.scheduled_tasks",
         "admin.atp_models",
         "admin.tower_models",
         "admin.files",
@@ -506,6 +521,9 @@ def seed_defaults(db: Session, *, force: bool = False) -> SeedDefaultsResult:
         legacy_summary.created += legacy_seed_result.imported_models
         legacy_summary.updated += legacy_seed_result.updated_models
         legacy_summary.unchanged += legacy_seed_result.skipped_models
+
+    seed_default_scheduled_tasks(db)
+    db.commit()
 
     return result
 

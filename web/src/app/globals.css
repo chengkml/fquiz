@@ -261,6 +261,10 @@ body {
   min-height: var(--admin-system-params-table-body-min-height, 180px);
 }
 
+.admin-scheduled-tasks-table-anchor .ant-table-body {
+  min-height: var(--admin-scheduled-tasks-table-body-min-height, 180px);
+}
+
 .admin-syslog-table-anchor .ant-table-body {
   min-height: var(--admin-syslog-table-body-min-height, 180px);
 }

@@ -82,6 +82,7 @@ PROTECTED_MENU_CODES = {
     "admin.lightning_distribution",
     "admin.workers",
     "admin.task_monitor",
+    "admin.scheduled_tasks",
     "admin.atp_models",
     "admin.data_query",
     "admin.hot_search",

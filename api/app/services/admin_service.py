@@ -418,6 +418,7 @@ def delete_menu(db: Session, menu_id: int) -> bool:
         "admin.lightning_distribution",
         "admin.workers",
         "admin.task_monitor",
+        "admin.scheduled_tasks",
         "admin.atp_models",
         "admin.tower_models",
         "admin.files",

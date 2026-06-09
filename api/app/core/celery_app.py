@@ -14,6 +14,7 @@ celery_app = Celery(
         "app.tasks.atp_model_tasks",
         "app.tasks.elevation_tasks",
         "app.tasks.fl_analysis_tasks",
+        "app.tasks.scheduled_task_tasks",
         "app.tasks.wine_tasks",
         "app.tasks.worker_registry_tasks",
     ],
@@ -25,6 +26,10 @@ celery_app.conf.update(
         "sweep-worker-registry-offline": {
             "task": "app.tasks.worker_registry_tasks.sweep_worker_registry_offline",
             "schedule": 30.0,
+        },
+        "dispatch-due-scheduled-tasks": {
+            "task": "app.tasks.scheduled_task_tasks.dispatch_due_scheduled_tasks",
+            "schedule": 60.0,
         },
     },
     enable_utc=True,

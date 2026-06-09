@@ -5,7 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api.router import api_router
 from .core.config import get_settings
-from .core.database import init_db
+from .core.database import SessionLocal, init_db
+from .services.scheduled_task_service import seed_default_scheduled_tasks
 
 settings = get_settings()
 
@@ -13,6 +14,12 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    db = SessionLocal()
+    try:
+        seed_default_scheduled_tasks(db)
+        db.commit()
+    finally:
+        db.close()
     yield
 
 

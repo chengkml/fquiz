@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import Icon, {
   ApartmentOutlined,
   AppstoreOutlined,
+  CalendarOutlined,
   ConsoleSqlOutlined,
   CompressOutlined,
   DatabaseOutlined,
@@ -107,6 +108,7 @@ const MENU_ICON_COMPONENTS = {
   Map: GlobalOutlined,
   DeploymentUnitOutlined,
   RadarChart: RadarChartOutlined,
+  CalendarClock: CalendarOutlined,
   Experiment: ExperimentOutlined,
   Apartment: ApartmentOutlined,
   FolderTree: FolderOpenOutlined,
@@ -121,6 +123,7 @@ const MENU_ICON_COMPONENTS = {
   ThunderboltOutlined,
   GlobalOutlined,
   RadarChartOutlined,
+  CalendarOutlined,
   ExperimentOutlined,
   ApartmentOutlined,
   FolderOpenOutlined,

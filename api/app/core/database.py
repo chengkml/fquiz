@@ -416,6 +416,7 @@ def init_db() -> None:
         menu,
         object_group,
         rbac,
+        scheduled_task,
         system_param,
         tower_model,
         tower_profile,
