@@ -74,10 +74,10 @@ def update_system_param_endpoint(
 @router.delete("/{param_id}")
 def delete_system_param_endpoint(
     param_id: int,
-    _: CurrentUser = Depends(require_permission("system_param.manage")),
+    current_user: CurrentUser = Depends(require_permission("system_param.manage")),
     db: Session = Depends(get_db),
 ) -> dict[str, bool]:
-    deleted = delete_system_param(db, param_id)
+    deleted = delete_system_param(db, param_id, actor_user_id=current_user.user.id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="System parameter not found")
     return {"success": True}

@@ -19,6 +19,7 @@ from ..schemas.user import (
     UserUpdateRequest,
 )
 from ..core.security import hash_password
+from .audit_service import compose_audit_detail, describe_changed_fields, summarize_values, write_audit_log
 from .legacy_authz_service import (
     UserAuthorization,
     get_user_authorization,
@@ -89,6 +90,8 @@ def get_user_by_username(db: Session, username: str) -> User | None:
 def create_user(
     db: Session,
     payload: UserCreateRequest,
+    *,
+    actor_user_id: str | None,
 ) -> UserPublic | None:
     user_id = payload.user_id.strip()
 
@@ -111,6 +114,17 @@ def create_user(
     db.add(user)
     db.commit()
     _assign_legacy_roles(db, user_id, [])
+    write_audit_log(
+        db,
+        action="user.create",
+        actor_user_id=actor_user_id,
+        detail=compose_audit_detail(
+            f"target_user_id={user.id}",
+            f"target_username={user.username}",
+            f"target_status={user.status}",
+        ),
+    )
+    db.commit()
 
     created = get_user_by_id(db, user_id)
     if created:
@@ -127,12 +141,22 @@ def create_user(
     return serialize_user(created) if created else None
 
 
-def delete_user(db: Session, user_id: str) -> bool:
+def delete_user(db: Session, user_id: str, *, actor_user_id: str | None) -> bool:
     user = get_user_by_id(db, user_id)
     if not user:
         return False
 
+    target_username = user.username
     revoke_active_sessions_for_user(db, user_id)
+    write_audit_log(
+        db,
+        action="user.delete",
+        actor_user_id=actor_user_id,
+        detail=compose_audit_detail(
+            f"target_user_id={user_id}",
+            f"target_username={target_username}",
+        ),
+    )
     db.delete(user)
     db.commit()
 
@@ -152,6 +176,8 @@ def reset_user_password(
     db: Session,
     user_id: str,
     payload: UserPasswordResetRequest,
+    *,
+    actor_user_id: str | None,
 ) -> UserPublic | None:
     user = get_user_by_id(db, user_id)
     if not user:
@@ -159,6 +185,17 @@ def reset_user_password(
 
     user.password_hash = hash_password(payload.new_password)
     revoke_active_sessions_for_user(db, user_id)
+    write_audit_log(
+        db,
+        action="user.password.reset",
+        actor_user_id=actor_user_id,
+        detail=compose_audit_detail(
+            f"target_user_id={user.id}",
+            f"target_username={user.username}",
+            "password_updated=true",
+            "sessions_revoked=true",
+        ),
+    )
     db.commit()
 
     updated = get_user_by_id(db, user_id)
@@ -189,10 +226,15 @@ def update_user(
     db: Session,
     user_id: str,
     payload: UserUpdateRequest,
+    *,
+    actor_user_id: str | None,
 ) -> UserPublic | None:
     user = get_user_by_id(db, user_id)
     if not user:
         return None
+
+    changed_fields: list[str] = []
+    previous_status = user.status
 
     if payload.email is not None:
         next_email = payload.email.strip().lower()
@@ -205,6 +247,7 @@ def update_user(
             if duplicate:
                 return None
             user.email = next_email
+            changed_fields.append("email")
 
     if payload.username is not None:
         next_username = payload.username.strip()
@@ -217,6 +260,7 @@ def update_user(
             if duplicate:
                 return None
             user.username = next_username
+            changed_fields.append("username")
 
     status_changed = False
     if payload.status:
@@ -224,7 +268,26 @@ def update_user(
         if next_status != user.status:
             user.status = next_status
             status_changed = True
+            changed_fields.append("status")
 
+    if not changed_fields:
+        return serialize_user(user)
+
+    write_audit_log(
+        db,
+        action="user.update",
+        actor_user_id=actor_user_id,
+        detail=compose_audit_detail(
+            f"target_user_id={user.id}",
+            f"target_username={user.username}",
+            describe_changed_fields(changed_fields),
+            (
+                f"status_transition={previous_status}->{user.status}"
+                if status_changed
+                else None
+            ),
+        ),
+    )
     db.commit()
     updated = get_user_by_id(db, user_id)
     if updated:
@@ -255,6 +318,8 @@ def set_user_roles(
     db: Session,
     user_id: str,
     payload: UserRoleUpdateRequest,
+    *,
+    actor_user_id: str | None,
 ) -> UserPublic | None:
     user = get_user_by_id(db, user_id)
     if not user:
@@ -271,6 +336,17 @@ def set_user_roles(
     updated = get_user_by_id(db, user_id)
     if updated:
         authz = get_user_authorization(db, updated.id)
+        write_audit_log(
+            db,
+            action="user.roles.replace",
+            actor_user_id=actor_user_id,
+            detail=compose_audit_detail(
+                f"target_user_id={updated.id}",
+                f"target_username={updated.username}",
+                f"role_codes={summarize_values(sorted(authz.role_codes))}",
+            ),
+        )
+        db.commit()
         queue_user_auth_refresh(updated)
         _fire_and_forget(
             publish_topic(
@@ -355,7 +431,6 @@ def revoke_active_sessions_for_user(db: Session, user_id: str) -> None:
         return
     for session in sessions:
         session.revoked_at = now
-    db.commit()
 
 
 def revoke_active_sessions_for_user_by_id(user_id: str) -> None:
@@ -363,12 +438,16 @@ def revoke_active_sessions_for_user_by_id(user_id: str) -> None:
 
     with SessionLocal() as session:
         revoke_active_sessions_for_user(session, user_id)
+        session.commit()
 
 
 def _fire_and_forget(coro: object) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
+        close = getattr(coro, "close", None)
+        if callable(close):
+            close()
         return
     loop.create_task(coro)
 
@@ -413,7 +492,6 @@ def _replace_legacy_user_roles(db: Session, user_id: str, role_ids: list[str]) -
                     "role_id": role_id,
                 },
             )
-        db.commit()
     except SQLAlchemyError:
         db.rollback()
         return False

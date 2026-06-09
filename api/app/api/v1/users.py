@@ -29,10 +29,10 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.post("", response_model=UserPublic)
 def create_user_account(
     payload: UserCreateRequest,
-    _: CurrentUser = Depends(require_permission("user.manage")),
+    current_user: CurrentUser = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ) -> UserPublic:
-    created = create_user(db, payload)
+    created = create_user(db, payload, actor_user_id=current_user.user.id)
     if not created:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -76,10 +76,10 @@ def get_user_detail(
 def update_user_profile(
     user_id: str,
     payload: UserUpdateRequest,
-    _: CurrentUser = Depends(require_permission("user.manage")),
+    current_user: CurrentUser = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ) -> UserPublic:
-    updated = update_user(db, user_id, payload)
+    updated = update_user(db, user_id, payload, actor_user_id=current_user.user.id)
     if not updated:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -92,10 +92,10 @@ def update_user_profile(
 def reset_password(
     user_id: str,
     payload: UserPasswordResetRequest,
-    _: CurrentUser = Depends(require_permission("user.manage")),
+    current_user: CurrentUser = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ) -> UserPublic:
-    updated = reset_user_password(db, user_id, payload)
+    updated = reset_user_password(db, user_id, payload, actor_user_id=current_user.user.id)
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return updated
@@ -104,10 +104,10 @@ def reset_password(
 @router.delete("/{user_id}", response_model=MessageResponse)
 def remove_user(
     user_id: str,
-    _: CurrentUser = Depends(require_permission("user.manage")),
+    current_user: CurrentUser = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
-    deleted = delete_user(db, user_id)
+    deleted = delete_user(db, user_id, actor_user_id=current_user.user.id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return MessageResponse(message="User deleted")
@@ -117,10 +117,10 @@ def remove_user(
 def assign_roles(
     user_id: str,
     payload: UserRoleUpdateRequest,
-    _: CurrentUser = Depends(require_permission("user.manage")),
+    current_user: CurrentUser = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ) -> UserPublic:
-    updated = set_user_roles(db, user_id, payload)
+    updated = set_user_roles(db, user_id, payload, actor_user_id=current_user.user.id)
     if not updated:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

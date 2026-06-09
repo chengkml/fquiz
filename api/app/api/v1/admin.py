@@ -52,10 +52,10 @@ def get_roles(
 @router.post("/roles", response_model=RolePublic)
 def create_role_endpoint(
     payload: RoleCreateRequest,
-    _: CurrentUser = Depends(require_permission("role.manage")),
+    current_user: CurrentUser = Depends(require_permission("role.manage")),
     db: Session = Depends(get_db),
 ) -> RolePublic:
-    created = create_role(db, payload)
+    created = create_role(db, payload, actor_user_id=current_user.user.id)
     if not created:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role payload or duplicate role code")
     return created
@@ -65,10 +65,10 @@ def create_role_endpoint(
 def update_role_endpoint(
     role_id: str,
     payload: RoleUpdateRequest,
-    _: CurrentUser = Depends(require_permission("role.manage")),
+    current_user: CurrentUser = Depends(require_permission("role.manage")),
     db: Session = Depends(get_db),
 ) -> RolePublic:
-    updated = update_role(db, role_id, payload)
+    updated = update_role(db, role_id, payload, actor_user_id=current_user.user.id)
     if not updated:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Role not found or invalid update payload")
     return updated
@@ -77,10 +77,10 @@ def update_role_endpoint(
 @router.delete("/roles/{role_id}")
 def delete_role_endpoint(
     role_id: str,
-    _: CurrentUser = Depends(require_permission("role.manage")),
+    current_user: CurrentUser = Depends(require_permission("role.manage")),
     db: Session = Depends(get_db),
 ) -> dict[str, bool]:
-    deleted = delete_role(db, role_id)
+    deleted = delete_role(db, role_id, actor_user_id=current_user.user.id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Role not found or protected role cannot be deleted")
     return {"success": True}
@@ -102,10 +102,10 @@ def get_role_menus(
 def replace_role_menus_endpoint(
     role_id: str,
     payload: RoleMenuUpdateRequest,
-    _: CurrentUser = Depends(require_permission("role.manage")),
+    current_user: CurrentUser = Depends(require_permission("role.manage")),
     db: Session = Depends(get_db),
 ) -> RolePublic:
-    updated = replace_role_menus(db, role_id, payload.menu_ids)
+    updated = replace_role_menus(db, role_id, payload.menu_ids, actor_user_id=current_user.user.id)
     if not updated:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Role not found or invalid menu ids")
     return updated
@@ -158,10 +158,10 @@ def get_menus(
 @router.post("/menus", response_model=MenuPublic)
 def create_menu_endpoint(
     payload: MenuCreateRequest,
-    _: CurrentUser = Depends(require_permission("menu.manage")),
+    current_user: CurrentUser = Depends(require_permission("menu.manage")),
     db: Session = Depends(get_db),
 ) -> MenuPublic:
-    created = create_menu(db, payload)
+    created = create_menu(db, payload, actor_user_id=current_user.user.id)
     if not created:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid menu payload or duplicate menu code")
     return created
@@ -171,12 +171,12 @@ def create_menu_endpoint(
 def update_menu_endpoint(
     menu_id: str,
     payload: MenuUpdateRequest,
-    _: CurrentUser = Depends(require_permission("menu.manage")),
+    current_user: CurrentUser = Depends(require_permission("menu.manage")),
     db: Session = Depends(get_db),
 ) -> MenuPublic:
     if not get_menu_by_id(db, menu_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu not found")
-    updated = update_menu(db, menu_id, payload)
+    updated = update_menu(db, menu_id, payload, actor_user_id=current_user.user.id)
     if not updated:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid menu update payload")
     return updated
@@ -185,10 +185,10 @@ def update_menu_endpoint(
 @router.delete("/menus/{menu_id}")
 def delete_menu_endpoint(
     menu_id: str,
-    _: CurrentUser = Depends(require_permission("menu.manage")),
+    current_user: CurrentUser = Depends(require_permission("menu.manage")),
     db: Session = Depends(get_db),
 ) -> dict[str, bool]:
-    deleted = delete_menu(db, menu_id)
+    deleted = delete_menu(db, menu_id, actor_user_id=current_user.user.id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Menu not found or protected menu cannot be deleted")
     return {"success": True}

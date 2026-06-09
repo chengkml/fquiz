@@ -12,6 +12,7 @@ from ..schemas.system_param import (
     SystemParamSummary,
     SystemParamUpdateRequest,
 )
+from .audit_service import compose_audit_detail, describe_changed_fields, write_audit_log
 from .push_service import publish_topic
 from .user_service import serialize_user
 
@@ -108,6 +109,17 @@ def create_system_param(db: Session, payload: SystemParamCreateRequest, *, actor
         updated_by_user_id=actor_user_id,
     )
     db.add(item)
+    db.flush()
+    write_audit_log(
+        db,
+        action="system_param.create",
+        actor_user_id=actor_user_id,
+        detail=compose_audit_detail(
+            f"param_id={item.id}",
+            f"param_key={item.param_key}",
+            f"status={item.status}",
+        ),
+    )
     db.commit()
 
     saved = get_system_param_by_id(db, item.id)
@@ -139,16 +151,38 @@ def update_system_param(
         return None
 
     update_data = payload.model_dump(exclude_unset=True)
+    changed_fields: list[str] = []
+    previous_status = item.status
     if "param_name" in update_data and update_data["param_name"] is not None:
         item.param_name = str(update_data["param_name"]).strip()
+        changed_fields.append("param_name")
     if "param_value" in update_data and update_data["param_value"] is not None:
         item.param_value = str(update_data["param_value"])
+        changed_fields.append("param_value")
     if "description" in update_data:
         item.description = (str(update_data["description"]) if update_data["description"] is not None else "").strip()
+        changed_fields.append("description")
     if "status" in update_data and update_data["status"] is not None:
         item.status = str(update_data["status"])
+        changed_fields.append("status")
 
     item.updated_by_user_id = actor_user_id
+    if changed_fields:
+        write_audit_log(
+            db,
+            action="system_param.update",
+            actor_user_id=actor_user_id,
+            detail=compose_audit_detail(
+                f"param_id={item.id}",
+                f"param_key={item.param_key}",
+                describe_changed_fields(changed_fields),
+                (
+                    f"status_transition={previous_status}->{item.status}"
+                    if "status" in changed_fields
+                    else None
+                ),
+            ),
+        )
     db.commit()
 
     saved = get_system_param_by_id(db, param_id)
@@ -168,13 +202,22 @@ def update_system_param(
     return serialize_system_param(saved)
 
 
-def delete_system_param(db: Session, param_id: int) -> bool:
+def delete_system_param(db: Session, param_id: int, *, actor_user_id: str) -> bool:
     item = get_system_param_by_id(db, param_id)
     if not item:
         return False
 
     deleted_id = item.id
     deleted_key = item.param_key
+    write_audit_log(
+        db,
+        action="system_param.delete",
+        actor_user_id=actor_user_id,
+        detail=compose_audit_detail(
+            f"param_id={deleted_id}",
+            f"param_key={deleted_key}",
+        ),
+    )
     db.delete(item)
     db.commit()
 
@@ -194,5 +237,8 @@ def _fire_and_forget(coro: object) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
+        close = getattr(coro, "close", None)
+        if callable(close):
+            close()
         return
     loop.create_task(coro)

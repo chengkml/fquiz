@@ -98,13 +98,14 @@ def upload_file_endpoint(
 def download_file_endpoint(
     mount_code: str = Query(..., min_length=2, max_length=64),
     path: str = Query(..., min_length=1, max_length=2048),
-    _: CurrentUser = Depends(require_any_permission("file.read", "file.manage")),
+    current_user: CurrentUser = Depends(require_any_permission("file.read", "file.manage")),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     filename, content, content_type = download_file_from_path(
         db,
         mount_code=mount_code,
         path=path,
+        actor=current_user.user,
     )
 
     media_type = content_type or "application/octet-stream"
@@ -116,13 +117,14 @@ def download_file_endpoint(
 def download_directory_zip_endpoint(
     mount_code: str = Query(..., min_length=2, max_length=64),
     path: str = Query(..., min_length=1, max_length=2048),
-    _: CurrentUser = Depends(require_any_permission("file.read", "file.manage")),
+    current_user: CurrentUser = Depends(require_any_permission("file.read", "file.manage")),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     filename, content, content_type = download_directory_as_zip(
         db,
         mount_code=mount_code,
         path=path,
+        actor=current_user.user,
     )
 
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}

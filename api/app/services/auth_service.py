@@ -6,12 +6,12 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from ..models.audit_log import AuditLog
 from ..models.auth_session import AuthSession
 from ..models.base import utcnow
 from ..models.rbac import Role
 from ..models.user import User
 from ..schemas.auth import LoginRequest, RegisterRequest
+from .audit_service import compose_audit_detail, write_audit_log
 from .legacy_authz_service import (
     get_user_authorization,
     is_user_enabled,
@@ -72,7 +72,15 @@ def register_user(
     db.add(user)
     db.commit()
 
-    db.add(AuditLog(user_id=user.id, action="auth.register", detail="User registered"))
+    write_audit_log(
+        db,
+        action="auth.register",
+        actor_user_id=user.id,
+        detail=compose_audit_detail(
+            f"user_id={user.id}",
+            f"username={user.username}",
+        ),
+    )
     db.commit()
 
     return issue_auth_result_for_user(
@@ -91,14 +99,36 @@ def login_user(
     user_agent: str | None,
     ip_address: str | None,
 ) -> AuthResult:
-    user = get_user_by_id(db, payload.user_id.strip())
+    requested_user_id = payload.user_id.strip()
+    user = get_user_by_id(db, requested_user_id)
     if not user or not verify_password(payload.password, user.password_hash):
+        write_audit_log(
+            db,
+            action="auth.login_failed",
+            actor_user_id=user.id if user else None,
+            detail=compose_audit_detail(
+                f"attempted_user_id={requested_user_id}",
+                "reason=invalid_credentials",
+            ),
+        )
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid user_id or password",
         )
 
     if not is_user_enabled(user.status):
+        write_audit_log(
+            db,
+            action="auth.login_failed",
+            actor_user_id=user.id,
+            detail=compose_audit_detail(
+                f"attempted_user_id={requested_user_id}",
+                f"username={user.username}",
+                "reason=user_disabled",
+            ),
+        )
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User is disabled",
@@ -144,7 +174,15 @@ def refresh_user_session(
         )
 
     session.revoked_at = now
-    db.add(AuditLog(user_id=session.user_id, action="auth.refresh", detail="Session rotated"))
+    write_audit_log(
+        db,
+        action="auth.refresh",
+        actor_user_id=session.user_id,
+        detail=compose_audit_detail(
+            f"user_id={session.user_id}",
+            "session_rotated=true",
+        ),
+    )
     db.commit()
 
     return issue_auth_result_for_user(
@@ -177,7 +215,15 @@ def logout_user_session(db: Session, refresh_token: str | None, *, user_id: str 
         return
 
     session.revoked_at = now
-    db.add(AuditLog(user_id=session.user_id, action="auth.logout", detail="Session revoked"))
+    write_audit_log(
+        db,
+        action="auth.logout",
+        actor_user_id=session.user_id,
+        detail=compose_audit_detail(
+            f"user_id={session.user_id}",
+            "session_revoked=true",
+        ),
+    )
     db.commit()
 
 
@@ -215,7 +261,16 @@ def issue_auth_result_for_user(
     )
 
     user.last_login_at = utcnow()
-    db.add(AuditLog(user_id=user.id, action=action, detail="Access token issued"))
+    write_audit_log(
+        db,
+        action=action,
+        actor_user_id=user.id,
+        detail=compose_audit_detail(
+            f"user_id={user.id}",
+            f"username={user.username}",
+            "access_token_issued=true",
+        ),
+    )
     db.commit()
 
     user = get_user_by_id_with_rbac(db, user_id)

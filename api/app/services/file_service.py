@@ -25,6 +25,7 @@ from ..schemas.file_storage import (
     FileStorageBackendPublic,
     FileStorageMountPublic,
 )
+from .audit_service import compose_audit_detail, write_audit_log
 from .push_service import publish_topic
 from .storage_driver import (
     StorageDriverError,
@@ -126,6 +127,16 @@ def create_directory(
         objects=entries,
         actor=actor,
     )
+    write_audit_log(
+        db,
+        action="file.mkdir",
+        actor_user_id=actor.id,
+        detail=compose_audit_detail(
+            f"mount_code={mount.code}",
+            f"path={target_path}",
+            f"parent_path={parent_path}",
+        ),
+    )
     db.commit()
     _notify_files_changed(action="created_directory", mount_code=mount.code, path=target_path)
 
@@ -171,6 +182,17 @@ def delete_file_path(
         parent_path=parent_path,
         objects=parent_entries,
         actor=actor,
+    )
+    write_audit_log(
+        db,
+        action="file.delete",
+        actor_user_id=actor.id,
+        detail=compose_audit_detail(
+            f"mount_code={mount.code}",
+            f"path={target_path}",
+            f"is_dir={str(payload.is_dir).lower()}",
+            f"recursive={str(payload.recursive).lower()}",
+        ),
     )
     db.commit()
     _notify_files_changed(action="deleted_path", mount_code=mount.code, path=target_path)
@@ -222,6 +244,17 @@ def rename_file_path(
             actor=actor,
         )
 
+    write_audit_log(
+        db,
+        action="file.rename",
+        actor_user_id=actor.id,
+        detail=compose_audit_detail(
+            f"mount_code={mount.code}",
+            f"source_path={source_path}",
+            f"target_path={target_path}",
+            f"is_dir={str(payload.is_dir).lower()}",
+        ),
+    )
     db.commit()
     _notify_files_changed(action="renamed_path", mount_code=mount.code, path=target_path)
     return FileOperationResponse(
@@ -285,6 +318,17 @@ def move_file_path(
             actor=actor,
         )
 
+    write_audit_log(
+        db,
+        action="file.move",
+        actor_user_id=actor.id,
+        detail=compose_audit_detail(
+            f"mount_code={mount.code}",
+            f"source_path={source_path}",
+            f"target_path={target_path}",
+            f"is_dir={str(payload.is_dir).lower()}",
+        ),
+    )
     db.commit()
     _notify_files_changed(action="moved_path", mount_code=mount.code, path=target_path)
     return FileOperationResponse(
@@ -350,6 +394,17 @@ def upload_file_to_path(
         objects=parent_entries,
         actor=actor,
     )
+    write_audit_log(
+        db,
+        action="file.upload",
+        actor_user_id=actor.id,
+        detail=compose_audit_detail(
+            f"mount_code={mount.code}",
+            f"path={target_path}",
+            f"content_type={content_type or 'application/octet-stream'}",
+            f"size={len(content)}",
+        ),
+    )
     db.commit()
 
     _notify_files_changed(action="uploaded_file", mount_code=mount.code, path=target_path)
@@ -366,6 +421,7 @@ def download_file_from_path(
     *,
     mount_code: str,
     path: str,
+    actor: User | None = None,
 ) -> tuple[str, bytes, str | None]:
     mount = _require_mount(db, mount_code)
     driver = _build_driver_or_400(mount)
@@ -384,6 +440,19 @@ def download_file_from_path(
     except StorageDriverError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
+    if actor is not None:
+        write_audit_log(
+            db,
+            action="file.download",
+            actor_user_id=actor.id,
+            detail=compose_audit_detail(
+                f"mount_code={mount.code}",
+                f"path={normalized_path}",
+                f"filename={result.name}",
+            ),
+        )
+        db.commit()
+
     return result.name, result.content, result.mime_type
 
 
@@ -392,6 +461,7 @@ def download_directory_as_zip(
     *,
     mount_code: str,
     path: str,
+    actor: User | None = None,
 ) -> tuple[str, bytes, str]:
     mount = _require_mount(db, mount_code)
     driver = _build_driver_or_400(mount)
@@ -442,6 +512,19 @@ def download_directory_as_zip(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Create zip archive failed: {exc}",
         ) from exc
+
+    if actor is not None:
+        write_audit_log(
+            db,
+            action="file.download_zip",
+            actor_user_id=actor.id,
+            detail=compose_audit_detail(
+                f"mount_code={mount.code}",
+                f"path={normalized_path}",
+                f"filename={zip_filename}",
+            ),
+        )
+        db.commit()
 
     return zip_filename, buffer.getvalue(), "application/zip"
 
@@ -642,5 +725,8 @@ def _fire_and_forget(coro: object) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
+        close = getattr(coro, "close", None)
+        if callable(close):
+            close()
         return
     loop.create_task(coro)

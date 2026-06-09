@@ -19,6 +19,7 @@ from ..schemas.admin import (
     RolePublic,
     RoleUpdateRequest,
 )
+from .audit_service import compose_audit_detail, describe_changed_fields, summarize_values, write_audit_log
 from .legacy_authz_service import (
     DEFAULT_ADMIN_PERMISSION_CODES,
     LEGACY_URL_PATH_MAP,
@@ -173,7 +174,7 @@ def get_role_by_id(db: Session, role_id: str) -> RolePublic | None:
     )
 
 
-def create_role(db: Session, payload: RoleCreateRequest) -> RolePublic | None:
+def create_role(db: Session, payload: RoleCreateRequest, *, actor_user_id: str | None) -> RolePublic | None:
     role_id = payload.code.strip()
     if not role_id:
         return None
@@ -206,6 +207,17 @@ def create_role(db: Session, payload: RoleCreateRequest) -> RolePublic | None:
             },
         )
         _replace_role_menus_internal(db, role_id, menu_ids)
+        write_audit_log(
+            db,
+            action="role.create",
+            actor_user_id=actor_user_id,
+            detail=compose_audit_detail(
+                f"role_id={role_id}",
+                f"role_code={role_id}",
+                f"role_name={role_name}",
+                f"menu_ids={summarize_values(menu_ids)}" if menu_ids else None,
+            ),
+        )
         db.commit()
     except SQLAlchemyError:
         db.rollback()
@@ -223,9 +235,12 @@ def create_role(db: Session, payload: RoleCreateRequest) -> RolePublic | None:
     return get_role_by_id(db, role_id)
 
 
-def update_role(db: Session, role_id: str, payload: RoleUpdateRequest) -> RolePublic | None:
+def update_role(db: Session, role_id: str, payload: RoleUpdateRequest, *, actor_user_id: str | None) -> RolePublic | None:
     role_id = role_id.strip()
     if not role_id:
+        return None
+    current_role = get_role_by_id(db, role_id)
+    if not current_role:
         return None
     role_source = "legacy" if _legacy_role_table_exists(db) else "modern"
     resolved_role_id = role_id
@@ -252,6 +267,7 @@ def update_role(db: Session, role_id: str, payload: RoleUpdateRequest) -> RolePu
         resolved_role_code = str(role_row.get("code") or resolved_role_id).strip() or resolved_role_id
 
     impacted_user_ids = _get_role_user_ids(db, resolved_role_id)
+    changed_fields: list[str] = []
     menus_changed = False
     try:
         if payload.name is not None:
@@ -259,6 +275,8 @@ def update_role(db: Session, role_id: str, payload: RoleUpdateRequest) -> RolePu
             if not role_name:
                 db.rollback()
                 return None
+            if role_name != current_role.name:
+                changed_fields.append("name")
             if role_source == "legacy":
                 db.execute(
                     text("UPDATE user_role SET name = :name, descr = :descr, update_date = :update_date WHERE id = :id"),
@@ -283,9 +301,28 @@ def update_role(db: Session, role_id: str, payload: RoleUpdateRequest) -> RolePu
             if not _menu_ids_exist(db, menu_ids, role_source=role_source):
                 db.rollback()
                 return None
+            if menu_ids != sorted(current_role.menu_ids):
+                changed_fields.append("menu_ids")
             _replace_role_menus_internal(db, resolved_role_id, menu_ids, role_source=role_source)
             menus_changed = True
 
+        if changed_fields:
+            write_audit_log(
+                db,
+                action="role.update",
+                actor_user_id=actor_user_id,
+                detail=compose_audit_detail(
+                    f"role_id={resolved_role_id}",
+                    f"role_code={resolved_role_code}",
+                    f"role_name={payload.name.strip() if payload.name is not None else current_role.name}",
+                    describe_changed_fields(changed_fields),
+                    (
+                        f"menu_ids={summarize_values(sorted(set(menu_id.strip() for menu_id in payload.menu_ids if menu_id.strip())))}"
+                        if payload.menu_ids is not None and "menu_ids" in changed_fields
+                        else None
+                    ),
+                ),
+            )
         db.commit()
     except SQLAlchemyError:
         db.rollback()
@@ -315,10 +352,11 @@ def update_role(db: Session, role_id: str, payload: RoleUpdateRequest) -> RolePu
     return get_role_by_id(db, resolved_role_id)
 
 
-def delete_role(db: Session, role_id: str) -> bool:
+def delete_role(db: Session, role_id: str, *, actor_user_id: str | None) -> bool:
     role_id = role_id.strip()
     if not role_id:
         return False
+    current_role = get_role_by_id(db, role_id)
     role_source = "legacy" if _legacy_role_table_exists(db) else "modern"
     resolved_role_id = role_id
     resolved_role_code = role_id
@@ -350,6 +388,16 @@ def delete_role(db: Session, role_id: str) -> bool:
     impacted_user_ids = _get_role_user_ids(db, resolved_role_id)
     has_user_role_relation = _legacy_user_role_relation_exists(db)
     try:
+        write_audit_log(
+            db,
+            action="role.delete",
+            actor_user_id=actor_user_id,
+            detail=compose_audit_detail(
+                f"role_id={resolved_role_id}",
+                f"role_code={resolved_role_code}",
+                f"role_name={current_role.name}" if current_role else None,
+            ),
+        )
         if role_source == "legacy":
             db.execute(text("DELETE FROM role_menu_rela WHERE role_id = :role_id"), {"role_id": resolved_role_id})
             if has_user_role_relation:
@@ -419,7 +467,7 @@ def get_menu_by_id(db: Session, menu_id: str) -> MenuPublic | None:
     return serialize_menu_row(row)
 
 
-def create_menu(db: Session, payload: MenuCreateRequest) -> MenuPublic | None:
+def create_menu(db: Session, payload: MenuCreateRequest, *, actor_user_id: str | None) -> MenuPublic | None:
     menu_code = payload.code.strip()
     if not menu_code:
         return None
@@ -468,6 +516,18 @@ def create_menu(db: Session, payload: MenuCreateRequest) -> MenuPublic | None:
                 "update_date": datetime.now(),
             },
         )
+        write_audit_log(
+            db,
+            action="menu.create",
+            actor_user_id=actor_user_id,
+            detail=compose_audit_detail(
+                f"menu_id={menu_id}",
+                f"menu_code={menu_code}",
+                f"menu_name={menu_name}",
+                f"path={_to_legacy_url(payload.path) or ''}",
+                f"parent_id={parent_id}" if parent_id else None,
+            ),
+        )
         db.commit()
     except SQLAlchemyError:
         db.rollback()
@@ -485,18 +545,21 @@ def create_menu(db: Session, payload: MenuCreateRequest) -> MenuPublic | None:
     return get_menu_by_id(db, menu_id)
 
 
-def update_menu(db: Session, menu_id: str, payload: MenuUpdateRequest) -> MenuPublic | None:
+def update_menu(db: Session, menu_id: str, payload: MenuUpdateRequest, *, actor_user_id: str | None) -> MenuPublic | None:
     menu = get_menu_by_id(db, menu_id)
     if not menu:
         return None
 
     update_data = payload.model_dump(exclude_unset=True)
+    changed_fields: list[str] = []
     next_name = menu.name
     if "name" in update_data and update_data["name"] is not None:
         candidate_name = str(update_data["name"]).strip()
         if not candidate_name:
             return None
         next_name = candidate_name
+        if candidate_name != menu.name:
+            changed_fields.append("name")
     next_parent_id = menu.parent_id
     if "parent_id" in update_data:
         parent_id = update_data["parent_id"]
@@ -510,6 +573,23 @@ def update_menu(db: Session, menu_id: str, payload: MenuUpdateRequest) -> MenuPu
             next_parent_id = normalized_parent
         else:
             next_parent_id = None
+        if next_parent_id != menu.parent_id:
+            changed_fields.append("parent_id")
+
+    if "path" in update_data and update_data["path"] != menu.path:
+        changed_fields.append("path")
+    if "icon" in update_data and update_data["icon"] != menu.icon:
+        changed_fields.append("icon")
+    if "type" in update_data and update_data["type"] != menu.type:
+        changed_fields.append("type")
+    if "sort_order" in update_data and update_data["sort_order"] != menu.sort_order:
+        changed_fields.append("sort_order")
+    if "status" in update_data and update_data["status"] != menu.status:
+        changed_fields.append("status")
+    if "permission_code" in update_data and update_data["permission_code"] != menu.permission_code:
+        changed_fields.append("permission_code")
+    if "component" in update_data and update_data["component"] != menu.component:
+        changed_fields.append("component")
 
     impacted_user_ids = _get_users_with_menu_access(db, menu.id)
     try:
@@ -543,6 +623,26 @@ def update_menu(db: Session, menu_id: str, payload: MenuUpdateRequest) -> MenuPu
                 "update_date": datetime.now(),
             },
         )
+        if changed_fields:
+            next_status = str(update_data.get("status", menu.status))
+            next_path = update_data.get("path", menu.path)
+            write_audit_log(
+                db,
+                action="menu.update",
+                actor_user_id=actor_user_id,
+                detail=compose_audit_detail(
+                    f"menu_id={menu.id}",
+                    f"menu_code={menu.code}",
+                    f"menu_name={next_name}",
+                    describe_changed_fields(changed_fields),
+                    f"path={next_path}" if next_path else None,
+                    (
+                        f"status_transition={menu.status}->{next_status}"
+                        if "status" in changed_fields
+                        else None
+                    ),
+                ),
+            )
         db.commit()
     except SQLAlchemyError:
         db.rollback()
@@ -561,7 +661,7 @@ def update_menu(db: Session, menu_id: str, payload: MenuUpdateRequest) -> MenuPu
     return get_menu_by_id(db, menu.id)
 
 
-def delete_menu(db: Session, menu_id: str) -> bool:
+def delete_menu(db: Session, menu_id: str, *, actor_user_id: str | None) -> bool:
     normalized_menu_id = menu_id.strip()
     if not normalized_menu_id:
         return False
@@ -581,6 +681,17 @@ def delete_menu(db: Session, menu_id: str) -> bool:
 
         impacted_user_ids = _get_users_with_menu_access(db, menu.id, role_source=menu_source)
         try:
+            write_audit_log(
+                db,
+                action="menu.delete",
+                actor_user_id=actor_user_id,
+                detail=compose_audit_detail(
+                    f"menu_id={menu.id}",
+                    f"menu_code={menu.code}",
+                    f"menu_name={menu.name}",
+                    f"path={menu.path}" if menu.path else None,
+                ),
+            )
             db.execute(text("DELETE FROM role_menu_rela WHERE menu_id = :menu_id"), {"menu_id": menu.id})
             db.execute(text("DELETE FROM menu WHERE menu_id = :menu_id"), {"menu_id": menu.id})
             db.commit()
@@ -616,6 +727,15 @@ def delete_menu(db: Session, menu_id: str) -> bool:
 
         impacted_user_ids = _get_users_with_menu_access(db, resolved_menu_id, role_source=menu_source)
         try:
+            write_audit_log(
+                db,
+                action="menu.delete",
+                actor_user_id=actor_user_id,
+                detail=compose_audit_detail(
+                    f"menu_id={resolved_menu_id}",
+                    f"menu_code={resolved_menu_code}",
+                ),
+            )
             db.execute(text("DELETE FROM role_menus WHERE menu_id::text = :menu_id"), {"menu_id": resolved_menu_id})
             db.execute(text("DELETE FROM menus WHERE id::text = :menu_id"), {"menu_id": resolved_menu_id})
             db.commit()
@@ -674,10 +794,11 @@ def list_role_menu_ids(db: Session, role_id: str) -> list[str] | None:
     return [menu_id for menu_id in menu_ids if menu_id in menu_rows]
 
 
-def replace_role_menus(db: Session, role_id: str, menu_ids: list[str]) -> RolePublic | None:
+def replace_role_menus(db: Session, role_id: str, menu_ids: list[str], *, actor_user_id: str | None) -> RolePublic | None:
     role_exists = db.scalar(text("SELECT id FROM user_role WHERE id = :id"), {"id": role_id})
     if not role_exists:
         return None
+    current_role = get_role_by_id(db, role_id)
     normalized_menu_ids = sorted(set(menu_id.strip() for menu_id in menu_ids if menu_id.strip()))
     if not _menu_ids_exist(db, normalized_menu_ids):
         return None
@@ -685,6 +806,17 @@ def replace_role_menus(db: Session, role_id: str, menu_ids: list[str]) -> RolePu
     impacted_user_ids = _get_role_user_ids(db, role_id)
     try:
         _replace_role_menus_internal(db, role_id, normalized_menu_ids)
+        write_audit_log(
+            db,
+            action="role.menus.replace",
+            actor_user_id=actor_user_id,
+            detail=compose_audit_detail(
+                f"role_id={role_id}",
+                f"role_code={current_role.code}" if current_role else f"role_code={role_id}",
+                f"role_name={current_role.name}" if current_role else None,
+                f"menu_ids={summarize_values(normalized_menu_ids)}",
+            ),
+        )
         db.commit()
     except SQLAlchemyError:
         db.rollback()
@@ -1109,5 +1241,8 @@ def _fire_and_forget(coro: object) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
+        close = getattr(coro, "close", None)
+        if callable(close):
+            close()
         return
     loop.create_task(coro)
