@@ -9,14 +9,11 @@ import {
   Alert,
   Button,
   Card,
-  Col,
   Empty,
   Input,
-  Row,
   Select,
   Space,
   Spin,
-  Statistic,
   Switch,
   Table,
   Tag,
@@ -127,10 +124,6 @@ function renderTaskStateTag(state: string) {
   return <Tag color={color}>{normalized || "UNKNOWN"}</Tag>;
 }
 
-function renderWorkerStatusTag(status: string) {
-  return (status || "").toUpperCase() === "ONLINE" ? <Tag color="green">在线</Tag> : <Tag color="default">离线</Tag>;
-}
-
 function containsText(source: string | null | undefined, keyword: string): boolean {
   if (!keyword) {
     return true;
@@ -202,68 +195,6 @@ export default function AdminTaskMonitorPage() {
     refetchInterval: autoRefresh ? 5_000 : false,
     staleTime: 15_000,
   });
-
-  const workerColumns = useMemo<TableColumnsType<FlowerWorkerItem>>(
-    () => [
-      {
-        title: "Worker",
-        dataIndex: "worker",
-        key: "worker",
-        width: 280,
-      },
-      {
-        title: "状态",
-        dataIndex: "status",
-        key: "status",
-        width: 90,
-        render: (value: string) => renderWorkerStatusTag(value),
-      },
-      {
-        title: "队列",
-        dataIndex: "queue_names",
-        key: "queue_names",
-        render: (value: string[]) => (value.length > 0 ? value.join(", ") : "-"),
-      },
-      {
-        title: "并发",
-        dataIndex: "concurrency",
-        key: "concurrency",
-        width: 80,
-      },
-      {
-        title: "Prefetch",
-        dataIndex: "prefetch_count",
-        key: "prefetch_count",
-        width: 90,
-      },
-      {
-        title: "已注册任务",
-        dataIndex: "registered_count",
-        key: "registered_count",
-        width: 110,
-      },
-      {
-        title: "累计处理",
-        dataIndex: "processed_count",
-        key: "processed_count",
-        width: 110,
-      },
-      {
-        title: "Active/Reserved/Scheduled",
-        key: "runtime_counts",
-        width: 190,
-        render: (_: unknown, record) => `${record.active_count}/${record.reserved_count}/${record.scheduled_count}`,
-      },
-      {
-        title: "最近心跳",
-        dataIndex: "last_heartbeat_at",
-        key: "last_heartbeat_at",
-        width: 170,
-        render: (value: string | null) => formatDateTime(value),
-      },
-    ],
-    [],
-  );
 
   const taskColumns = useMemo<TableColumnsType<TaskTableRow>>(
     () => [
@@ -421,11 +352,6 @@ export default function AdminTaskMonitorPage() {
     });
   }, [allTaskRows, filteredWorkers, taskKeyword]);
 
-  const queuePendingTotal = filteredWorkers.reduce(
-    (sum, item) => sum + item.active_count + item.reserved_count + item.scheduled_count,
-    0,
-  );
-
   if (initializing || (workersOverviewQuery.isLoading && !workersOverviewQuery.data && canRead && Boolean(user))) {
     return (
       <div className="py-10">
@@ -539,39 +465,6 @@ export default function AdminTaskMonitorPage() {
 
       {workersOverview && (
         <>
-          <Row gutter={[16, 16]}>
-            <Col xs={24} md={6}>
-              <AntCard>
-                <Statistic title="在线 Worker" value={workersOverview.summary.online} />
-              </AntCard>
-            </Col>
-            <Col xs={24} md={6}>
-              <AntCard>
-                <Statistic title="离线 Worker" value={workersOverview.summary.offline} />
-              </AntCard>
-            </Col>
-            <Col xs={24} md={6}>
-              <AntCard>
-                <Statistic title="队列待处理" value={queuePendingTotal} />
-              </AntCard>
-            </Col>
-            <Col xs={24} md={6}>
-              <AntCard>
-                <Statistic title="采样任务数" value={filteredTaskRows.length} />
-              </AntCard>
-            </Col>
-          </Row>
-          <AntCard title="Worker 概览">
-            <Table<FlowerWorkerItem>
-              rowKey={(record) => record.worker}
-              columns={workerColumns}
-              dataSource={filteredWorkers}
-              pagination={false}
-              locale={{ emptyText: "暂无 Worker 数据" }}
-              scroll={{ x: 1500 }}
-            />
-          </AntCard>
-
           <AntCard title="任务明细">
             <Table<TaskTableRow>
               rowKey={(record) => record.key}
