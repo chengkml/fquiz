@@ -681,16 +681,6 @@ export default function AdminFilesPage() {
         ),
       },
       {
-        title: "索引同步时间",
-        key: "synced_at",
-        width: 220,
-        render: (_value, item) => (
-          <Typography.Text type="secondary" className="text-xs">
-            {formatDate(item.synced_at)}
-          </Typography.Text>
-        ),
-      },
-      {
         title: "操作",
         key: "actions",
         width: 320,
