@@ -9,15 +9,13 @@ import {
   Alert,
   Button,
   Card,
-  Col,
   Drawer,
   Empty,
+  Form,
   Input,
-  Row,
   Select,
   Space,
   Spin,
-  Statistic,
   Switch,
   Table,
   Tag,
@@ -455,44 +453,7 @@ export default function AdminWorkersPage() {
   const taskOverview = workerTasksQuery.data;
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <AntCard>
-        <Space size={16} wrap>
-          <Input
-            allowClear
-            placeholder="按 Worker 名称筛选"
-            value={workerKeyword}
-            onChange={(event) => setWorkerKeyword(event.target.value)}
-            style={{ width: 220 }}
-          />
-          <Input
-            allowClear
-            placeholder="按队列名称筛选"
-            value={queueKeyword}
-            onChange={(event) => setQueueKeyword(event.target.value)}
-            style={{ width: 220 }}
-          />
-          <Select
-            value={statusFilter}
-            onChange={(value) => setStatusFilter(parseStatusFilter(value))}
-            options={[
-              { label: "全部状态", value: "all" },
-              { label: "在线", value: "online" },
-              { label: "离线", value: "offline" },
-            ]}
-            style={{ width: 150 }}
-          />
-          <Space size={8}>
-            <Text>自动刷新</Text>
-            <Switch checked={autoRefresh} onChange={setAutoRefresh} />
-          </Space>
-          <Button onClick={() => void overviewQuery.refetch()} loading={overviewQuery.isFetching}>
-            刷新Worker
-          </Button>
-          <Text type="secondary">生成时间：{formatDateTime(overview?.generated_at)}</Text>
-        </Space>
-      </AntCard>
-
+    <div className="space-y-6">
       {overviewQuery.error && (
         <Alert
           type="error"
@@ -508,31 +469,55 @@ export default function AdminWorkersPage() {
       )}
 
       {overview && (
-        <>
-          <Row gutter={[16, 16]}>
-            <Col xs={24} md={6}>
-              <AntCard>
-                <Statistic title="Worker总数" value={overview.summary.total} />
-              </AntCard>
-            </Col>
-            <Col xs={24} md={6}>
-              <AntCard>
-                <Statistic title="在线Worker" value={overview.summary.online} />
-              </AntCard>
-            </Col>
-            <Col xs={24} md={6}>
-              <AntCard>
-                <Statistic title="离线Worker" value={overview.summary.offline} />
-              </AntCard>
-            </Col>
-            <Col xs={24} md={6}>
-              <AntCard>
-                <Statistic title="筛选结果" value={filteredWorkers.length} />
-              </AntCard>
-            </Col>
-          </Row>
+        <AntCard
+          title="Worker列表"
+          extra={(
+            <Space>
+              {overviewQuery.isFetching && <Spin size="small" />}
+              <Text type="secondary">生成时间：{formatDateTime(overview.generated_at)}</Text>
+              <Button onClick={() => void overviewQuery.refetch()} loading={overviewQuery.isFetching}>
+                刷新Worker
+              </Button>
+            </Space>
+          )}
+        >
+          <Form layout="inline" style={{ rowGap: 12 }}>
+            <Form.Item label="Worker" className="min-w-[240px]">
+              <Input
+                allowClear
+                placeholder="按 Worker 名称筛选"
+                value={workerKeyword}
+                onChange={(event) => setWorkerKeyword(event.target.value)}
+              />
+            </Form.Item>
 
-          <AntCard title="Worker列表">
+            <Form.Item label="队列" className="min-w-[240px]">
+              <Input
+                allowClear
+                placeholder="按队列名称筛选"
+                value={queueKeyword}
+                onChange={(event) => setQueueKeyword(event.target.value)}
+              />
+            </Form.Item>
+
+            <Form.Item label="状态" className="min-w-[170px]">
+              <Select
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(parseStatusFilter(value))}
+                options={[
+                  { label: "全部状态", value: "all" },
+                  { label: "在线", value: "online" },
+                  { label: "离线", value: "offline" },
+                ]}
+              />
+            </Form.Item>
+
+            <Form.Item label="自动刷新">
+              <Switch checked={autoRefresh} onChange={setAutoRefresh} />
+            </Form.Item>
+          </Form>
+
+          <div className="mt-4">
             <Table<WorkerMonitorWorkerItem>
               rowKey={(record) => record.worker}
               columns={workerColumns}
@@ -541,8 +526,8 @@ export default function AdminWorkersPage() {
               locale={{ emptyText: "暂无Worker数据" }}
               scroll={{ x: 1600 }}
             />
-          </AntCard>
-        </>
+          </div>
+        </AntCard>
       )}
 
       <Drawer
@@ -623,6 +608,6 @@ export default function AdminWorkersPage() {
           </Space>
         ) : null}
       </Drawer>
-    </Space>
+    </div>
   );
 }
