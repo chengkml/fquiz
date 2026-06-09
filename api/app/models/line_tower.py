@@ -12,6 +12,7 @@ from .base import utcnow
 
 if TYPE_CHECKING:
     from .line import Line
+    from .tower_profile import TowerProfile
 
 
 class LineTower(Base):
@@ -63,3 +64,11 @@ class LineTower(Base):
     update_user: Mapped[str | None] = mapped_column(String(64), index=True)
 
     line: Mapped[Line] = relationship("Line", back_populates="towers", lazy="selectin")
+    profile: Mapped[TowerProfile | None] = relationship(
+        "TowerProfile",
+        back_populates="tower",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+        single_parent=True,
+        uselist=False,
+    )

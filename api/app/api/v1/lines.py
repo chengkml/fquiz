@@ -88,15 +88,9 @@ def delete_line_endpoint(
     _: CurrentUser = Depends(require_permission("line.manage")),
     db: Session = Depends(get_db),
 ) -> dict[str, bool]:
-    deleted, tower_count = delete_line(db, line_id)
+    deleted = delete_line(db, line_id)
     if not deleted:
-        line = get_line_by_id(db, line_id)
-        if not line:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Line not found")
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Line has {tower_count} towers, delete towers first",
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Line not found")
     return {"success": True}
 
 

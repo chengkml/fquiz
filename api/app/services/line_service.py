@@ -225,19 +225,15 @@ def update_line(
     )
 
 
-def delete_line(db: Session, line_id: str) -> tuple[bool, int]:
+def delete_line(db: Session, line_id: str) -> bool:
     line = get_line_by_id(db, line_id)
     if not line:
-        return False, 0
-
-    tower_count = int(db.scalar(select(func.count()).select_from(LineTower).where(LineTower.line_id == line_id)) or 0)
-    if tower_count > 0:
-        return False, tower_count
+        return False
 
     db.delete(line)
     db.commit()
     _publish_line_change("power-lines.deleted", {"action": "deleted", "line_id": line_id})
-    return True, 0
+    return True
 
 
 def list_line_towers(

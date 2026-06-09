@@ -64,4 +64,4 @@ class TowerProfile(Base):
     )
     update_user: Mapped[str | None] = mapped_column(String(64), index=True)
 
-    tower: Mapped[LineTower] = relationship("LineTower", lazy="selectin")
+    tower: Mapped[LineTower] = relationship("LineTower", back_populates="profile", lazy="selectin")

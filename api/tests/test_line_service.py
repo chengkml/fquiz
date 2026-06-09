@@ -4,7 +4,7 @@ import csv
 import io
 from types import SimpleNamespace
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.database import Base
@@ -69,6 +69,47 @@ def test_generate_line_code_skips_existing_code(monkeypatch) -> None:
         generated = line_service._generate_line_code(session)
 
         assert generated == f"PL-{line_service.utcnow().strftime('%Y%m%d')}-DEF456"
+    finally:
+        session.close()
+
+
+def test_delete_line_cascades_to_towers_and_profiles(monkeypatch) -> None:
+    session = _build_session()
+    try:
+        monkeypatch.setattr(line_service, "_publish_line_change", lambda *args, **kwargs: None)
+
+        line = Line(
+            code="PL-DELETE-001",
+            name="待删除线路",
+            status="enabled",
+        )
+        session.add(line)
+        session.flush()
+
+        tower = LineTower(
+            line_id=line.id,
+            seq_no=1,
+            tower_no="T-001",
+            tower_model="ZM-001",
+            tower_type="直线塔",
+        )
+        session.add(tower)
+        session.flush()
+
+        session.add(
+            TowerProfile(
+                tower_id=tower.id,
+                structure_kind="直线塔",
+            )
+        )
+        session.commit()
+
+        deleted = line_service.delete_line(session, line.id)
+
+        assert deleted is True
+        assert line_service.get_line_by_id(session, line.id) is None
+        assert session.execute(select(LineTower).where(LineTower.line_id == line.id)).scalar_one_or_none() is None
+        assert session.execute(select(TowerProfile).where(TowerProfile.tower_id == tower.id)).scalar_one_or_none() is None
     finally:
         session.close()
 
