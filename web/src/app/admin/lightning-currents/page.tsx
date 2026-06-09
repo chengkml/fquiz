@@ -23,6 +23,7 @@ import type { ColumnsType } from "antd/es/table";
 import { useCallback, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { AdminPageLoading } from "@/components/admin-page-loading";
 import { LightningDistributionMap } from "@/components/lightning-distribution-map";
 import { Card } from "@/components/ui-antd";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
@@ -787,9 +788,10 @@ export default function AdminLightningCurrentsPage() {
 
   if (initializing || (!isDistributionOnly && eventsQuery.isLoading) || (isDistributionOnly && distributionStatsQuery.isLoading)) {
     return (
-      <Card>
-        <Typography.Text type="secondary">{isDistributionOnly ? "加载雷电分布数据中..." : "加载雷电流数据中..."}</Typography.Text>
-      </Card>
+      <AdminPageLoading
+        tip={isDistributionOnly ? "加载雷电分布数据中..." : "加载雷电流数据中..."}
+        minHeightClassName="min-h-[280px]"
+      />
     );
   }
 

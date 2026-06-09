@@ -24,6 +24,7 @@ import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { AdminPageLoading } from "@/components/admin-page-loading";
 import { Card } from "@/components/ui-antd";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
@@ -720,7 +721,7 @@ export default function AdminTowerModelsPage() {
   const mounts = mountsQuery.data?.mounts ?? [];
 
   if (initializing || towerModelsQuery.isLoading) {
-    return <Card><Typography.Text type="secondary">加载杆塔模型中...</Typography.Text></Card>;
+    return <AdminPageLoading tip="加载杆塔模型中..." minHeightClassName="min-h-[280px]" />;
   }
 
   if (!user) {

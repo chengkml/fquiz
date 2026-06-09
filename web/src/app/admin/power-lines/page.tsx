@@ -24,6 +24,7 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { AdminPageLoading } from "@/components/admin-page-loading";
 import { PowerLineCesiumMap } from "@/components/power-line-cesium-map";
 import { Card } from "@/components/ui-antd";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
@@ -1384,11 +1385,7 @@ export default function AdminPowerLinesPage() {
   const mapHeight = Math.max(POWER_LINES_MAP_MIN_HEIGHT, rightContentHeight - 32);
   const towerTableScrollY = Math.max(POWER_LINES_TABLE_MIN_SCROLL_Y, rightContentHeight - 54);
   if (initializing || linesQuery.isLoading) {
-    return (
-      <Card>
-        <Typography.Text type="secondary">加载线路数据中...</Typography.Text>
-      </Card>
-    );
+    return <AdminPageLoading tip="加载线路数据中..." minHeightClassName="min-h-[280px]" />;
   }
 
   if (!user) {
