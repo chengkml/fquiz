@@ -1,6 +1,7 @@
 "use client";
 
-import { PlayCircleOutlined, ReloadOutlined, StopOutlined } from "@ant-design/icons";
+import { PlayCircleOutlined, ReloadOutlined } from "@ant-design/icons";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Alert,
   Button,
@@ -16,7 +17,7 @@ import {
   type CardProps,
 } from "antd";
 import type { ComponentType } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
@@ -40,21 +41,24 @@ type WineRunFormValues = {
   timeout_seconds?: number | null;
 };
 
-type ParsedSseMessage = {
-  event: string;
-  payload: Record<string, unknown>;
-};
-
-type WineLogEvent = {
+type WineRunDetail = {
   id: string;
-  event: string;
-  receivedAt: number;
-  message?: string;
-  command?: string[];
-  cwd?: string;
-  timeoutSeconds?: number;
-  exitCode?: number;
-  timedOut?: boolean;
+  task_id: string | null;
+  status: "pending" | "running" | "success" | "failed";
+  exe_path: string;
+  arguments: string[];
+  working_dir: string;
+  timeout_seconds: number;
+  command_text: string | null;
+  resolved_binary: string | null;
+  exit_code: number | null;
+  timed_out: boolean;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number | null;
+  error_message: string | null;
+  stdout_text: string | null;
+  stderr_text: string | null;
 };
 
 const DEFAULT_FORM_VALUES: WineRunFormValues = {
@@ -76,85 +80,43 @@ function parseArguments(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
-function parseSseMessage(raw: string): ParsedSseMessage | null {
-  const lines = raw.split("\n");
-  let event = "message";
-  const dataLines: string[] = [];
-
-  for (const line of lines) {
-    if (line.startsWith("event:")) {
-      event = line.slice("event:".length).trim() || "message";
-      continue;
-    }
-    if (line.startsWith("data:")) {
-      dataLines.push(line.slice("data:".length).trimStart());
-    }
+function formatLogText(run: WineRunDetail | null | undefined): string {
+  if (!run) {
+    return "等待执行...";
   }
 
-  if (dataLines.length === 0) {
-    return null;
-  }
-
-  try {
-    const payload = JSON.parse(dataLines.join("\n")) as Record<string, unknown>;
-    return { event, payload };
-  } catch {
-    return {
-      event,
-      payload: { message: dataLines.join("\n") },
-    };
-  }
+  const parts = [
+    `状态: ${run.status}`,
+    `Task ID: ${run.task_id ?? "-"}`,
+    `命令: ${run.command_text ?? "-"}`,
+    `工作目录: ${run.working_dir}`,
+    `超时: ${run.timeout_seconds}s`,
+    `退出码: ${run.exit_code ?? "-"}`,
+    `是否超时: ${run.timed_out ? "true" : "false"}`,
+    "",
+    "[STDOUT]",
+    run.stdout_text ?? "",
+    "",
+    "[STDERR]",
+    run.stderr_text ?? "",
+  ];
+  return parts.join("\n");
 }
 
-function toStringArray(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  return value.filter((item): item is string => typeof item === "string");
-}
-
-function toLogEvent(message: ParsedSseMessage): WineLogEvent {
-  const payload = message.payload;
-  const exitCode = typeof payload.exit_code === "number" ? payload.exit_code : undefined;
-  const timeoutSeconds = typeof payload.timeout_seconds === "number" ? payload.timeout_seconds : undefined;
-  return {
-    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    event: message.event,
-    receivedAt: Date.now(),
-    message: typeof payload.message === "string" ? payload.message : undefined,
-    command: toStringArray(payload.command),
-    cwd: typeof payload.cwd === "string" ? payload.cwd : undefined,
-    timeoutSeconds,
-    exitCode,
-    timedOut: typeof payload.timed_out === "boolean" ? payload.timed_out : undefined,
-  };
-}
-
-function formatLogEvent(item: WineLogEvent): string {
-  const time = new Date(item.receivedAt).toLocaleTimeString();
-  if (item.event === "start") {
-    return `[${time}] START cwd=${item.cwd ?? "-"} timeout=${item.timeoutSeconds ?? "-"}s\n$ ${(item.command ?? []).join(" ")}`;
-  }
-  if (item.event === "exit") {
-    return `[${time}] EXIT code=${item.exitCode ?? "-"} timed_out=${item.timedOut ? "true" : "false"}`;
-  }
-  if (item.event === "heartbeat") {
-    return `[${time}] HEARTBEAT`;
-  }
-  if (item.event === "error") {
-    return `[${time}] ERROR ${item.message ?? ""}`;
-  }
-  return `[${time}] ${item.message ?? ""}`;
+function formatStatusTag(status: WineRunDetail["status"] | null | undefined) {
+  if (status === "success") return <Tag color="success">成功</Tag>;
+  if (status === "running") return <Tag color="processing">运行中</Tag>;
+  if (status === "failed") return <Tag color="error">失败</Tag>;
+  if (status === "pending") return <Tag color="blue">排队中</Tag>;
+  return <Tag>-</Tag>;
 }
 
 export default function AdminWineRunnerPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const [form] = Form.useForm<WineRunFormValues>();
-  const controllerRef = useRef<AbortController | null>(null);
   const [status, setStatus] = useState<WineStatusResponse | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
-  const [running, setRunning] = useState(false);
-  const [logs, setLogs] = useState<WineLogEvent[]>([]);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -198,49 +160,11 @@ export default function AdminWineRunnerPage() {
     });
   }, [loadStatus]);
 
-  const appendLog = useCallback((item: WineLogEvent) => {
-    setLogs((current) => [...current, item].slice(-1000));
-    if (item.event === "exit") {
-      if (item.exitCode === 0) {
-        setSuccess("测试执行完成");
-        setError("");
-      } else {
-        setSuccess("");
-        setError(`进程退出码：${item.exitCode ?? "-"}`);
-      }
-    }
-    if (item.event === "error") {
-      setSuccess("");
-      setError(item.message ?? "执行失败");
-    }
-  }, []);
-
-  const logText = useMemo(() => {
-    if (logs.length === 0) {
-      return "等待执行...";
-    }
-    return logs.map(formatLogEvent).join("\n");
-  }, [logs]);
-
-  const handleRun = async (values: WineRunFormValues) => {
-    if (!canManage) {
-      setError("缺少 wine.manage 权限");
-      return;
-    }
-
-    controllerRef.current?.abort();
-    const controller = new AbortController();
-    controllerRef.current = controller;
-    setRunning(true);
-    setLogs([]);
-    setError("");
-    setSuccess("");
-
-    try {
-      const response = await fetchWithAuth("/api/v1/wine/test/stream", {
+  const runMutation = useMutation({
+    mutationFn: async (values: WineRunFormValues) => {
+      const response = await fetchWithAuth("/api/v1/wine/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
         body: JSON.stringify({
           exe_path: values.exe_path.trim(),
           arguments: parseArguments(values.arguments_text),
@@ -252,56 +176,55 @@ export default function AdminWineRunnerPage() {
       if (!response.ok) {
         throw new Error(await readApiError(response));
       }
-      if (!response.body) {
-        throw new Error("后端未返回日志流");
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-        buffer += decoder.decode(value, { stream: true });
-        buffer = buffer.replace(/\r\n/g, "\n");
-
-        let separatorIndex = buffer.indexOf("\n\n");
-        while (separatorIndex >= 0) {
-          const rawMessage = buffer.slice(0, separatorIndex);
-          buffer = buffer.slice(separatorIndex + 2);
-          const parsed = parseSseMessage(rawMessage);
-          if (parsed) {
-            appendLog(toLogEvent(parsed));
-          }
-          separatorIndex = buffer.indexOf("\n\n");
-        }
-      }
-    } catch (candidate) {
-      if (candidate instanceof DOMException && candidate.name === "AbortError") {
-        appendLog({
-          id: `${Date.now()}-aborted`,
-          event: "error",
-          receivedAt: Date.now(),
-          message: "执行已停止",
-        });
-        return;
-      }
+      return (await response.json()) as WineRunDetail;
+    },
+    onSuccess: (payload) => {
+      setActiveRunId(payload.id);
+      setError("");
+      setSuccess(
+        payload.status === "success"
+          ? "执行完成"
+          : payload.status === "failed"
+            ? "执行失败"
+            : "执行任务已提交，等待 Worker 处理",
+      );
+    },
+    onError: (candidate) => {
       setSuccess("");
       setError(candidate instanceof Error ? candidate.message : "执行失败");
-    } finally {
-      if (controllerRef.current === controller) {
-        controllerRef.current = null;
+    },
+  });
+
+  const runDetailQuery = useQuery({
+    queryKey: ["wine-run-detail", activeRunId],
+    enabled: Boolean(activeRunId) && canRead,
+    queryFn: async () => {
+      if (!activeRunId) {
+        throw new Error("运行记录不存在");
       }
-      setRunning(false);
+      const response = await fetchWithAuth(`/api/v1/wine/runs/${activeRunId}`);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as WineRunDetail;
+    },
+    refetchInterval: (query) => {
+      const detail = query.state.data as WineRunDetail | undefined;
+      return detail && (detail.status === "pending" || detail.status === "running") ? 2000 : false;
+    },
+  });
+
+  const handleRun = async (values: WineRunFormValues) => {
+    if (!canManage) {
+      setError("缺少 wine.manage 权限");
+      return;
     }
+    setError("");
+    setSuccess("");
+    await runMutation.mutateAsync(values);
   };
 
-  const handleStop = () => {
-    controllerRef.current?.abort();
-  };
+  const logText = useMemo(() => formatLogText(runDetailQuery.data), [runDetailQuery.data]);
 
   if (initializing) {
     return <Card loading />;
@@ -378,21 +301,40 @@ export default function AdminWineRunnerPage() {
                   type="primary"
                   htmlType="submit"
                   icon={<PlayCircleOutlined />}
-                  disabled={!canManage || running}
-                  loading={running}
+                  disabled={!canManage || runMutation.isPending}
+                  loading={runMutation.isPending}
                 >
                   执行测试
                 </Button>
-                <Button icon={<StopOutlined />} disabled={!running} onClick={handleStop}>
-                  停止
-                </Button>
+                {activeRunId && (
+                  <Typography.Text type="secondary">当前运行 ID: {activeRunId}</Typography.Text>
+                )}
               </Space>
             </Form>
           </Card>
         </Col>
       </Row>
 
-      <Card title="实时日志">
+      <Card title="运行状态">
+        {runDetailQuery.isLoading ? (
+          <Typography.Text type="secondary">正在加载运行详情...</Typography.Text>
+        ) : runDetailQuery.error instanceof Error ? (
+          <Alert type="error" showIcon message="运行详情加载失败" description={runDetailQuery.error.message} />
+        ) : (
+          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <Space wrap>
+              <Typography.Text strong>状态</Typography.Text>
+              {formatStatusTag(runDetailQuery.data?.status)}
+            </Space>
+            <Typography.Text type="secondary">Task ID: {runDetailQuery.data?.task_id ?? "-"}</Typography.Text>
+            <Typography.Text type="secondary">开始时间: {runDetailQuery.data?.started_at ?? "-"}</Typography.Text>
+            <Typography.Text type="secondary">结束时间: {runDetailQuery.data?.finished_at ?? "-"}</Typography.Text>
+            <Typography.Text type="secondary">错误信息: {runDetailQuery.data?.error_message ?? "-"}</Typography.Text>
+          </Space>
+        )}
+      </Card>
+
+      <Card title="执行日志">
         <pre className="h-[460px] overflow-auto rounded-md border border-[var(--ant-color-border)] bg-[var(--ant-color-bg-container)] p-4 text-xs leading-5 text-[var(--ant-color-text)]">
           {logText}
         </pre>

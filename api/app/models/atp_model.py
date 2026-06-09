@@ -128,6 +128,7 @@ class AtpSimulationRun(Base):
     )
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     engine_mode: Mapped[str] = mapped_column(String(20), default="wine", index=True)
+    task_id: Mapped[str | None] = mapped_column(String(128), index=True)
     engine_command: Mapped[str | None] = mapped_column(String(1000))
     working_dir: Mapped[str | None] = mapped_column(String(1000))
     timeout_seconds: Mapped[int] = mapped_column(Integer, default=600)

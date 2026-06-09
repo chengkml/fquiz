@@ -1,22 +1,35 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import shutil
+import subprocess
 import time
-from collections.abc import AsyncGenerator
 from pathlib import Path
-from uuid import uuid4
+from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from ..core.config import get_settings
-from ..schemas.wine import WineRunRequest, WineStatusResponse
-from .wine_probe import probe_wine_binary_async
+from ..core.database import SessionLocal
+from ..models.base import utcnow
+from ..models.wine import WineRun
+from ..schemas.wine import WineRunDetail, WineRunListResponse, WineRunRequest, WineRunSummary, WineStatusResponse
+from .wine_probe import probe_wine_binary, probe_wine_binary_async
 
 
 settings = get_settings()
+LOG_MAX_CHARS = 200_000
+
+
+def _truncate_output(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if len(value) <= LOG_MAX_CHARS:
+        return value
+    return f"{value[:LOG_MAX_CHARS]}\n...[truncated]"
 
 
 def _allowed_root() -> Path:
@@ -47,7 +60,6 @@ def _resolve_path_under_root(raw_path: str, *, field_name: str, must_exist: bool
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"{field_name} must be inside wine allowed root: {root}",
         )
-
     if must_exist and not resolved.exists():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -69,7 +81,6 @@ def _resolve_executable(raw_path: str) -> Path:
 def _resolve_working_dir(raw_path: str | None, executable: Path) -> Path:
     if not raw_path:
         return executable.parent
-
     working_dir = _resolve_path_under_root(raw_path, field_name="working_dir", must_exist=True)
     if not working_dir.is_dir():
         raise HTTPException(
@@ -87,10 +98,6 @@ def _resolve_timeout(payload_timeout: int | None) -> int:
             detail=f"timeout_seconds cannot exceed {settings.wine_max_timeout_seconds}",
         )
     return timeout_seconds
-
-
-def _sse_event(event: str, data: dict[str, object]) -> str:
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 async def get_wine_status() -> WineStatusResponse:
@@ -120,114 +127,202 @@ async def get_wine_status() -> WineStatusResponse:
     )
 
 
-async def _terminate_process(process: asyncio.subprocess.Process) -> None:
-    if process.returncode is not None:
-        return
-    process.terminate()
-    try:
-        await asyncio.wait_for(process.wait(), timeout=5)
-    except asyncio.TimeoutError:
-        process.kill()
-        await process.wait()
-
-
-async def stream_wine_run(payload: WineRunRequest) -> AsyncGenerator[str, None]:
-    run_id = uuid4().hex
-    resolved_binary = _resolve_binary()
-    if not resolved_binary:
-        yield _sse_event("error", {"run_id": run_id, "message": "Wine binary not found"})
-        return
-
-    probe = await probe_wine_binary_async(resolved_binary)
-    if not probe.available:
-        yield _sse_event("error", {"run_id": run_id, "message": probe.error or "Wine binary unavailable"})
-        return
-
-    try:
-        executable = _resolve_executable(payload.exe_path)
-        working_dir = _resolve_working_dir(payload.working_dir, executable)
-        timeout_seconds = _resolve_timeout(payload.timeout_seconds)
-    except HTTPException as exc:
-        yield _sse_event("error", {"run_id": run_id, "message": str(exc.detail)})
-        return
-    command = [resolved_binary, str(executable), *payload.arguments]
-    env = os.environ.copy()
-    env.update(payload.environment)
-
-    yield _sse_event(
-        "start",
-        {
-            "run_id": run_id,
-            "command": command,
-            "cwd": str(working_dir),
-            "timeout_seconds": timeout_seconds,
-            "started_at": time.time(),
-        },
+def serialize_run(item: WineRun) -> WineRunSummary:
+    stdout_text = item.stdout_text or ""
+    stderr_text = item.stderr_text or ""
+    return WineRunSummary(
+        id=item.id,
+        task_id=item.task_id,
+        status=item.status,  # type: ignore[arg-type]
+        exe_path=item.exe_path,
+        arguments=item.arguments_json or [],
+        working_dir=item.working_dir,
+        timeout_seconds=item.timeout_seconds,
+        command_text=item.command_text,
+        resolved_binary=item.resolved_binary,
+        exit_code=item.exit_code,
+        timed_out=item.timed_out,
+        started_at=item.started_at,
+        finished_at=item.finished_at,
+        duration_ms=item.duration_ms,
+        error_message=item.error_message,
+        stdout_size=len(stdout_text),
+        stderr_size=len(stderr_text),
+        create_date=item.create_date,
+        create_user=item.create_user,
     )
 
-    process: asyncio.subprocess.Process | None = None
-    timed_out = False
-    deadline = time.monotonic() + timeout_seconds
-    last_heartbeat = time.monotonic()
+
+def serialize_run_detail(item: WineRun) -> WineRunDetail:
+    summary = serialize_run(item)
+    return WineRunDetail(
+        **summary.model_dump(),
+        stdout_text=item.stdout_text,
+        stderr_text=item.stderr_text,
+    )
+
+
+def list_runs(db: Session, *, limit: int, offset: int) -> WineRunListResponse:
+    total = int(db.scalar(select(func.count()).select_from(WineRun)) or 0)
+    items = db.execute(
+        select(WineRun).order_by(WineRun.create_date.desc(), WineRun.id.desc()).limit(limit).offset(offset)
+    ).scalars().all()
+    return WineRunListResponse(items=[serialize_run(item) for item in items], total=total)
+
+
+def get_run_by_id(db: Session, run_id: str) -> WineRun | None:
+    return db.execute(select(WineRun).where(WineRun.id == run_id)).scalar_one_or_none()
+
+
+def get_run_detail(db: Session, *, run_id: str) -> WineRunDetail:
+    run = get_run_by_id(db, run_id)
+    if not run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wine run not found")
+    return serialize_run_detail(run)
+
+
+def create_run(
+    db: Session,
+    *,
+    payload: WineRunRequest,
+    actor_user_id: str,
+) -> WineRunDetail:
+    resolved_binary = _resolve_binary()
+    if not resolved_binary:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Wine binary not found")
+
+    probe = probe_wine_binary(resolved_binary)
+    if not probe.available:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=probe.error or "Wine binary unavailable")
+
+    executable = _resolve_executable(payload.exe_path)
+    working_dir = _resolve_working_dir(payload.working_dir, executable)
+    timeout_seconds = _resolve_timeout(payload.timeout_seconds)
+    command = [resolved_binary, str(executable), *payload.arguments]
+
+    run = WineRun(
+        status="pending",
+        exe_path=str(executable),
+        arguments_json=payload.arguments,
+        working_dir=str(working_dir),
+        environment_json=payload.environment,
+        wine_binary=settings.wine_binary_path.strip() or "wine",
+        resolved_binary=resolved_binary,
+        command_text=" ".join(command),
+        timeout_seconds=timeout_seconds,
+        create_user=actor_user_id,
+        update_user=actor_user_id,
+    )
+    db.add(run)
+    db.flush()
+    db.commit()
 
     try:
-        process = await asyncio.create_subprocess_exec(
-            *command,
-            cwd=str(working_dir),
-            env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
+        task = _dispatch_wine_run_task(run_id=run.id, actor_user_id=actor_user_id)
+    except Exception as exc:
+        _mark_run_failed(db, run=run, actor_user_id=actor_user_id, reason=f"Celery dispatch failed: {exc}")
+        saved = get_run_by_id(db, run.id)
+        if not saved:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Wine run save failed") from exc
+        return serialize_run_detail(saved)
+    run.task_id = str(task.id)
+    run.update_user = actor_user_id
+    run.update_date = utcnow()
+    db.commit()
 
-        if process.stdout is None:
-            yield _sse_event("error", {"run_id": run_id, "message": "Process stdout is unavailable"})
-            await _terminate_process(process)
+    saved = get_run_by_id(db, run.id)
+    if not saved:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Wine run save failed")
+    return serialize_run_detail(saved)
+
+
+def execute_run_job(*, run_id: str, actor_user_id: str | None) -> None:
+    db = SessionLocal()
+    try:
+        run = get_run_by_id(db, run_id)
+        if not run or run.status in {"success", "failed"}:
             return
 
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                timed_out = True
-                yield _sse_event("error", {"run_id": run_id, "message": "Execution timed out"})
-                await _terminate_process(process)
-                break
+        resolved_binary = run.resolved_binary or _resolve_binary()
+        if not resolved_binary:
+            _mark_run_failed(db, run=run, actor_user_id=actor_user_id, reason="Wine binary not found")
+            return
 
-            try:
-                line = await asyncio.wait_for(process.stdout.readline(), timeout=min(0.5, remaining))
-            except asyncio.TimeoutError:
-                if process.returncode is not None:
-                    break
-                if time.monotonic() - last_heartbeat >= 15:
-                    last_heartbeat = time.monotonic()
-                    yield _sse_event("heartbeat", {"run_id": run_id})
-                continue
+        command = [resolved_binary, run.exe_path, *(run.arguments_json or [])]
+        env = os.environ.copy()
+        env.update(run.environment_json or {})
 
-            if line:
-                yield _sse_event(
-                    "log",
-                    {
-                        "run_id": run_id,
-                        "message": line.decode("utf-8", errors="replace").rstrip("\r\n"),
-                    },
-                )
-                continue
-            break
+        run.status = "running"
+        run.started_at = utcnow()
+        run.finished_at = None
+        run.error_message = None
+        run.timed_out = False
+        run.update_user = actor_user_id
+        run.update_date = utcnow()
+        db.commit()
 
-        exit_code = await process.wait()
-        yield _sse_event(
-            "exit",
-            {
-                "run_id": run_id,
-                "exit_code": exit_code,
-                "timed_out": timed_out,
-                "finished_at": time.time(),
-            },
-        )
-    except asyncio.CancelledError:
-        if process is not None:
-            await _terminate_process(process)
-        raise
-    except OSError as exc:
-        yield _sse_event("error", {"run_id": run_id, "message": str(exc)})
-        if process is not None:
-            await _terminate_process(process)
+        started_perf = time.perf_counter()
+        try:
+            result = subprocess.run(
+                command,
+                cwd=run.working_dir,
+                env=env,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=run.timeout_seconds,
+                check=False,
+            )
+            run.exit_code = result.returncode
+            run.stdout_text = _truncate_output(result.stdout)
+            run.stderr_text = _truncate_output(result.stderr)
+            if result.returncode == 0:
+                run.status = "success"
+                run.error_message = None
+            else:
+                run.status = "failed"
+                run.error_message = f"Wine process exited with code {result.returncode}"
+        except subprocess.TimeoutExpired as exc:
+            run.status = "failed"
+            run.timed_out = True
+            run.exit_code = None
+            run.stdout_text = _truncate_output((exc.stdout or "") if isinstance(exc.stdout, str) else "")
+            run.stderr_text = _truncate_output((exc.stderr or "") if isinstance(exc.stderr, str) else "")
+            run.error_message = f"Execution timed out after {run.timeout_seconds} seconds"
+        except OSError as exc:
+            run.status = "failed"
+            run.exit_code = None
+            run.stdout_text = None
+            run.stderr_text = None
+            run.error_message = str(exc)
+
+        run.duration_ms = max(int((time.perf_counter() - started_perf) * 1000), 0)
+        run.finished_at = utcnow()
+        run.update_user = actor_user_id
+        run.update_date = utcnow()
+        db.commit()
+    finally:
+        db.close()
+
+
+def _mark_run_failed(
+    db: Session,
+    *,
+    run: WineRun,
+    actor_user_id: str | None,
+    reason: str,
+) -> None:
+    run.status = "failed"
+    run.error_message = reason
+    run.finished_at = utcnow()
+    run.duration_ms = 0 if run.duration_ms is None else run.duration_ms
+    run.update_user = actor_user_id
+    run.update_date = utcnow()
+    db.commit()
+
+
+def _dispatch_wine_run_task(*, run_id: str, actor_user_id: str | None):
+    from ..tasks.wine_tasks import execute_wine_run_job
+
+    return execute_wine_run_job.delay(run_id, actor_user_id)

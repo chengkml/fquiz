@@ -22,7 +22,6 @@ from ...schemas.elevation import (
     ElevationDatasetUpdateRequest,
 )
 from ...services.elevation_service import (
-    analyze_dataset,
     create_apply_job,
     create_dataset,
     delete_dataset,
@@ -34,6 +33,7 @@ from ...services.elevation_service import (
     list_datasets,
     list_jobs,
     preview_dataset,
+    queue_dataset_analysis,
     serialize_job,
     update_dataset,
 )
@@ -126,7 +126,7 @@ def analyze_elevation_dataset(
     current_user: CurrentUser = Depends(require_permission("elevation.manage")),
     db: Session = Depends(get_db),
 ) -> ElevationDatasetAnalyzeResponse:
-    return analyze_dataset(db, dataset_id=dataset_id, actor=current_user.user)
+    return queue_dataset_analysis(db, dataset_id=dataset_id, actor=current_user.user)
 
 
 @router.get("/datasets/{dataset_id}/preview", response_model=ElevationDatasetPreviewResponse)

@@ -693,7 +693,72 @@ def analyze_dataset(
     )
     return ElevationDatasetAnalyzeResponse(
         dataset=serialize_dataset(saved),
+        task_id=saved.analysis_task_id,
+        queued=False,
+        detail="最近一次分析已完成。",
         warnings=warnings,
+    )
+
+
+def queue_dataset_analysis(
+    db: Session,
+    *,
+    dataset_id: str,
+    actor: User,
+) -> ElevationDatasetAnalyzeResponse:
+    item = get_dataset_by_id(db, dataset_id)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程数据集不存在")
+    if item.status != "active":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="高程数据集未启用")
+
+    if item.analysis_status in {"queued", "running"}:
+        return ElevationDatasetAnalyzeResponse(
+            dataset=serialize_dataset(item),
+            task_id=item.analysis_task_id,
+            queued=False,
+            detail="分析任务已存在，无需重复提交。",
+            warnings=[],
+        )
+
+    item.analysis_status = "queued"
+    item.analysis_error_message = None
+    item.analysis_started_at = None
+    item.analysis_finished_at = None
+    item.update_user = actor.id
+    item.update_date = utcnow()
+    db.commit()
+
+    try:
+        task = _dispatch_elevation_dataset_analysis_task(dataset_id=item.id, actor_user_id=actor.id)
+    except Exception as exc:
+        item.analysis_status = "failed"
+        item.analysis_error_message = str(exc)
+        item.analysis_finished_at = utcnow()
+        item.update_user = actor.id
+        item.update_date = utcnow()
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"分析任务派发失败: {exc}") from exc
+
+    item.analysis_task_id = str(task.id)
+    item.update_user = actor.id
+    item.update_date = utcnow()
+    db.commit()
+
+    saved = get_dataset_by_id(db, dataset_id)
+    if not saved:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="高程数据集分析任务保存失败")
+
+    _publish_elevation_change(
+        "elevation.dataset.analysis.queued",
+        {"action": "dataset_analysis_queued", "dataset_id": saved.id, "task_id": saved.analysis_task_id},
+    )
+    return ElevationDatasetAnalyzeResponse(
+        dataset=serialize_dataset(saved),
+        task_id=saved.analysis_task_id,
+        queued=True,
+        detail="分析任务已提交，等待执行。",
+        warnings=[],
     )
 
 
@@ -2125,5 +2190,8 @@ def _fire_and_forget(coro: object) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
+        close = getattr(coro, "close", None)
+        if callable(close):
+            close()
         return
     loop.create_task(coro)

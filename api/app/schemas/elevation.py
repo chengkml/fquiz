@@ -75,6 +75,9 @@ class ElevationDatasetUpdateRequest(BaseModel):
 
 class ElevationDatasetAnalyzeResponse(BaseModel):
     dataset: ElevationDatasetSummary
+    task_id: str | None = None
+    queued: bool = True
+    detail: str | None = None
     warnings: list[str] = Field(default_factory=list)
 
 

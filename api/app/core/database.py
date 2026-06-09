@@ -277,6 +277,31 @@ def _ensure_elevation_dataset_column_compatibility() -> None:
             )
 
 
+def _ensure_atp_simulation_run_column_compatibility() -> None:
+    if not database_url.startswith("postgresql"):
+        return
+
+    schema = settings.resolved_db_schema
+    with engine.begin() as connection:
+        db_inspector = inspect(connection)
+        if not db_inspector.has_table("atp_simulation_run", schema=schema):
+            return
+
+        column_names = {
+            column["name"]
+            for column in db_inspector.get_columns("atp_simulation_run", schema=schema)
+        }
+        if "task_id" in column_names:
+            return
+
+        connection.execute(
+            text("ALTER TABLE atp_simulation_run ADD COLUMN IF NOT EXISTS task_id VARCHAR(128)"),
+        )
+        logger.warning(
+            "Detected missing atp_simulation_run.task_id; added nullable task id column.",
+        )
+
+
 def _ensure_tower_model_column_compatibility() -> None:
     """
     Keep `tower_model` columns aligned with the current ORM mapping.
@@ -395,12 +420,14 @@ def init_db() -> None:
         tower_model,
         tower_profile,
         user,
+        wine,
         worker_registry,
     )  # noqa: F401
     _ensure_user_pk_column_compatibility()
     _ensure_user_timestamp_column_compatibility()
     _ensure_user_audit_column_compatibility()
     _ensure_elevation_dataset_column_compatibility()
+    _ensure_atp_simulation_run_column_compatibility()
     _ensure_tower_model_column_compatibility()
     _ensure_tower_profile_column_compatibility()
     Base.metadata.create_all(bind=engine)

@@ -106,6 +106,7 @@ class AtpSimulationRunSummary(BaseModel):
     model_id: str
     version_id: str | None = None
     version_no: int | None = None
+    task_id: str | None = None
     status: AtpSimulationRunStatus
     engine_mode: AtpEngineMode
     engine_command: str | None = None

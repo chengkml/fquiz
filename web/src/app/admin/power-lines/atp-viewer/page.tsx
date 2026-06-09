@@ -275,6 +275,10 @@ export default function PowerLinesAtpViewerPage() {
       }
       return (await response.json()) as AtpSimulationRunListResponse;
     },
+    refetchInterval: (query) => {
+      const payload = query.state.data as AtpSimulationRunListResponse | undefined;
+      return payload?.items.some((item) => item.status === "pending" || item.status === "running") ? 3000 : false;
+    },
   });
 
   const models = useMemo(() => modelsQuery.data?.items ?? [], [modelsQuery.data]);
@@ -322,6 +326,10 @@ export default function PowerLinesAtpViewerPage() {
         throw new Error(await readApiError(response));
       }
       return (await response.json()) as AtpSimulationRunDetail;
+    },
+    refetchInterval: (query) => {
+      const detail = query.state.data as AtpSimulationRunDetail | undefined;
+      return detail && (detail.status === "pending" || detail.status === "running") ? 2000 : false;
     },
   });
 
@@ -572,7 +580,13 @@ export default function PowerLinesAtpViewerPage() {
     },
     onSuccess: async (result) => {
       setError("");
-      setSuccess(result.status === "success" ? "仿真任务执行成功" : "仿真任务执行完成");
+      setSuccess(
+        result.status === "success"
+          ? "仿真任务执行成功"
+          : result.status === "failed"
+            ? "仿真任务执行失败"
+            : "仿真任务已提交，等待 Worker 执行",
+      );
       setActiveRunId(result.id);
       setRunDetailOpen(true);
       await refreshRuns();
@@ -844,6 +858,18 @@ export default function PowerLinesAtpViewerPage() {
     return stringifyAtpGraphJson(graphJson);
   }, [graphJson]);
 
+  const modelError = modelsQuery.error instanceof Error ? modelsQuery.error.message : "";
+  const versionError = currentVersionQuery.error instanceof Error ? currentVersionQuery.error.message : "";
+  const runError = runsQuery.error instanceof Error ? runsQuery.error.message : "";
+  const engineError = engineQuery.error instanceof Error ? engineQuery.error.message : "";
+
+  useToastFeedback({
+    errorMessage: error || modelError || versionError || runError || engineError,
+    successMessage: success,
+    clearError: () => setError(""),
+    clearSuccess: () => setSuccess(""),
+  });
+
   if (initializing) {
     return (
       <Card>
@@ -877,18 +903,6 @@ export default function PowerLinesAtpViewerPage() {
       </Card>
     );
   }
-
-  const modelError = modelsQuery.error instanceof Error ? modelsQuery.error.message : "";
-  const versionError = currentVersionQuery.error instanceof Error ? currentVersionQuery.error.message : "";
-  const runError = runsQuery.error instanceof Error ? runsQuery.error.message : "";
-  const engineError = engineQuery.error instanceof Error ? engineQuery.error.message : "";
-
-  useToastFeedback({
-    errorMessage: error || modelError || versionError || runError || engineError,
-    successMessage: success,
-    clearError: () => setError(""),
-    clearSuccess: () => setSuccess(""),
-  });
   return (
     <Space direction="vertical" size={16} className="w-full">
       <Card

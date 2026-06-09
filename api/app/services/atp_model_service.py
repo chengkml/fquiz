@@ -282,6 +282,7 @@ def serialize_run(item: AtpSimulationRun) -> AtpSimulationRunSummary:
         model_id=item.model_id,
         version_id=item.version_id,
         version_no=version_no,
+        task_id=item.task_id,
         status=item.status,  # type: ignore[arg-type]
         engine_mode=item.engine_mode,  # type: ignore[arg-type]
         engine_command=item.engine_command,
@@ -731,136 +732,230 @@ def run_model_version(
     )
     db.add(run)
     db.flush()
+    run.update_date = utcnow()
+    db.commit()
 
-    now = utcnow()
-    run.started_at = now
-    run.status = "running"
-    run.update_date = now
-
-    command, working_dir, error = _build_run_command(model=model, version=version, run=run, payload=payload)
-    run.engine_command = " ".join(command) if command else None
-    run.working_dir = str(working_dir) if working_dir else None
-
-    if error:
-        run.status = "failed"
-        run.error_message = error
-        run.finished_at = utcnow()
-        run.duration_ms = 0
-        run.update_user = actor_user_id
+    if payload.dry_run:
+        execute_model_run_job(
+            run_id=run.id,
+            payload_data=payload.model_dump(),
+            actor_user_id=actor_user_id,
+        )
+        db.expire_all()
+    else:
+        try:
+            task = _dispatch_atp_model_run_task(
+                run_id=run.id,
+                payload_data=payload.model_dump(),
+                actor_user_id=actor_user_id,
+            )
+        except Exception as exc:
+            _mark_run_failed(
+                db,
+                run=run,
+                actor_user_id=actor_user_id,
+                reason=f"Celery dispatch failed: {exc}",
+            )
+            saved = get_model_run_by_id(db, model_id=model.id, run_id=run.id)
+            if not saved:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Run save failed") from exc
+            return serialize_run_detail(saved)
+        run.task_id = str(task.id)
         run.update_date = utcnow()
+        run.update_user = actor_user_id
         db.commit()
+
         _publish_change(
-            "run.failed",
+            "run.queued",
             {
-                "action": "run_failed",
+                "action": "run_queued",
                 "model_id": model.id,
                 "version_id": version.id,
                 "run_id": run.id,
-                "reason": error,
+                "task_id": run.task_id,
             },
         )
-        saved = get_model_run_by_id(db, model_id=model.id, run_id=run.id)
-        if not saved:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Run save failed")
-        return serialize_run_detail(saved)
 
-    if payload.dry_run:
-        run.status = "success"
-        run.exit_code = 0
-        run.stdout_text = json.dumps(
-            {
-                "dry_run": True,
-                "command": command,
-                "working_dir": str(working_dir),
-                "timeout_seconds": timeout_seconds,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        run.stderr_text = ""
+    saved = get_model_run_by_id(db, model_id=model.id, run_id=run.id)
+    if not saved:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Run save failed")
+    return serialize_run_detail(saved)
+
+
+def execute_model_run_job(
+    *,
+    run_id: str,
+    payload_data: dict[str, Any],
+    actor_user_id: str | None,
+) -> None:
+    from ..core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        run = db.execute(select(AtpSimulationRun).where(AtpSimulationRun.id == run_id)).scalar_one_or_none()
+        if run is None or run.status in {"success", "failed"}:
+            return
+
+        model = get_model_by_id(db, run.model_id)
+        if model is None:
+            return
+
+        if run.version_id is None:
+            _mark_run_failed(
+                db,
+                run=run,
+                actor_user_id=actor_user_id,
+                reason="Version not found",
+            )
+            return
+
+        version = get_model_version_by_id(db, model_id=model.id, version_id=run.version_id)
+        if version is None:
+            _mark_run_failed(
+                db,
+                run=run,
+                actor_user_id=actor_user_id,
+                reason="Version not found",
+            )
+            return
+
+        payload = AtpSimulationRunRequest.model_validate(payload_data)
+        run.started_at = utcnow()
+        run.status = "running"
+        run.error_message = None
+        run.finished_at = None
+        run.duration_ms = None
+        run.update_date = utcnow()
+        run.update_user = actor_user_id
+
+        command, working_dir, error = _build_run_command(model=model, version=version, run=run, payload=payload)
+        run.engine_command = " ".join(command) if command else None
+        run.working_dir = str(working_dir) if working_dir else None
+
+        if error:
+            _mark_run_failed(db, run=run, actor_user_id=actor_user_id, reason=error)
+            return
+
+        if payload.dry_run:
+            run.status = "success"
+            run.exit_code = 0
+            run.stdout_text = json.dumps(
+                {
+                    "dry_run": True,
+                    "command": command,
+                    "working_dir": str(working_dir),
+                    "timeout_seconds": run.timeout_seconds,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            run.stderr_text = ""
+            run.finished_at = utcnow()
+            run.duration_ms = 0
+            run.update_user = actor_user_id
+            run.update_date = utcnow()
+            db.commit()
+            _publish_change(
+                "run.finished",
+                {
+                    "action": "run_dry_finished",
+                    "model_id": model.id,
+                    "version_id": version.id,
+                    "run_id": run.id,
+                    "status": run.status,
+                },
+            )
+            return
+
+        db.commit()
+
+        env = os.environ.copy()
+        env.update(payload.environment)
+        started_perf = time.perf_counter()
+        try:
+            result = subprocess.run(
+                command,
+                cwd=str(working_dir),
+                env=env,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=run.timeout_seconds,
+                check=False,
+            )
+            run.exit_code = result.returncode
+            run.stdout_text = _truncate_output(result.stdout)
+            run.stderr_text = _truncate_output(result.stderr)
+            if result.returncode == 0:
+                run.status = "success"
+                run.error_message = None
+            else:
+                run.status = "failed"
+                run.error_message = f"ATP engine exited with code {result.returncode}"
+        except subprocess.TimeoutExpired as exc:
+            run.status = "failed"
+            run.exit_code = None
+            run.stdout_text = _truncate_output((exc.stdout or "") if isinstance(exc.stdout, str) else "")
+            run.stderr_text = _truncate_output((exc.stderr or "") if isinstance(exc.stderr, str) else "")
+            run.error_message = f"Execution timed out after {run.timeout_seconds} seconds"
+        except OSError as exc:
+            run.status = "failed"
+            run.exit_code = None
+            run.stdout_text = None
+            run.stderr_text = None
+            run.error_message = str(exc)
+
+        run.duration_ms = max(int((time.perf_counter() - started_perf) * 1000), 0)
         run.finished_at = utcnow()
-        run.duration_ms = 0
         run.update_user = actor_user_id
         run.update_date = utcnow()
         db.commit()
         _publish_change(
             "run.finished",
             {
-                "action": "run_dry_finished",
+                "action": "run_finished",
                 "model_id": model.id,
                 "version_id": version.id,
                 "run_id": run.id,
                 "status": run.status,
+                "exit_code": run.exit_code,
             },
         )
-        saved = get_model_run_by_id(db, model_id=model.id, run_id=run.id)
-        if not saved:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Run save failed")
-        return serialize_run_detail(saved)
+    finally:
+        db.close()
 
-    env = os.environ.copy()
-    env.update(payload.environment)
 
-    started_perf = time.perf_counter()
-    try:
-        result = subprocess.run(
-            command,
-            cwd=str(working_dir),
-            env=env,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout_seconds,
-            check=False,
-        )
-        run.exit_code = result.returncode
-        run.stdout_text = _truncate_output(result.stdout)
-        run.stderr_text = _truncate_output(result.stderr)
+def _dispatch_atp_model_run_task(*, run_id: str, payload_data: dict[str, Any], actor_user_id: str | None):
+    from ..tasks.atp_model_tasks import execute_atp_model_run_job
 
-        if result.returncode == 0:
-            run.status = "success"
-            run.error_message = None
-        else:
-            run.status = "failed"
-            run.error_message = f"ATP engine exited with code {result.returncode}"
-    except subprocess.TimeoutExpired as exc:
-        run.status = "failed"
-        run.exit_code = None
-        run.stdout_text = _truncate_output((exc.stdout or "") if isinstance(exc.stdout, str) else "")
-        run.stderr_text = _truncate_output((exc.stderr or "") if isinstance(exc.stderr, str) else "")
-        run.error_message = f"Execution timed out after {timeout_seconds} seconds"
-    except OSError as exc:
-        run.status = "failed"
-        run.exit_code = None
-        run.stdout_text = None
-        run.stderr_text = None
-        run.error_message = str(exc)
+    return execute_atp_model_run_job.delay(run_id, payload_data, actor_user_id)
 
-    duration_ms = int((time.perf_counter() - started_perf) * 1000)
-    run.duration_ms = max(duration_ms, 0)
+
+def _mark_run_failed(
+    db: Session,
+    *,
+    run: AtpSimulationRun,
+    actor_user_id: str | None,
+    reason: str,
+) -> None:
+    run.status = "failed"
+    run.error_message = reason
     run.finished_at = utcnow()
+    run.duration_ms = 0 if run.duration_ms is None else run.duration_ms
     run.update_user = actor_user_id
     run.update_date = utcnow()
-
     db.commit()
-
     _publish_change(
-        "run.finished",
+        "run.failed",
         {
-            "action": "run_finished",
-            "model_id": model.id,
-            "version_id": version.id,
+            "action": "run_failed",
+            "model_id": run.model_id,
+            "version_id": run.version_id,
             "run_id": run.id,
-            "status": run.status,
-            "exit_code": run.exit_code,
+            "reason": reason,
         },
     )
-
-    saved = get_model_run_by_id(db, model_id=model.id, run_id=run.id)
-    if not saved:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Run save failed")
-    return serialize_run_detail(saved)
 
 
 def _resolve_target_version(db: Session, *, model: AtpModel, payload: AtpSimulationRunRequest) -> AtpModelVersion:

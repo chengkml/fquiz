@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+WineRunStatus = Literal["pending", "running", "success", "failed"]
 
 
 class WineStatusResponse(BaseModel):
@@ -54,3 +59,35 @@ class WineRunRequest(BaseModel):
                 raise ValueError(msg)
             normalized[env_key] = value
         return normalized
+
+
+class WineRunSummary(BaseModel):
+    id: str
+    task_id: str | None = None
+    status: WineRunStatus
+    exe_path: str
+    arguments: list[str] = Field(default_factory=list)
+    working_dir: str
+    timeout_seconds: int
+    command_text: str | None = None
+    resolved_binary: str | None = None
+    exit_code: int | None = None
+    timed_out: bool = False
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    duration_ms: int | None = None
+    error_message: str | None = None
+    stdout_size: int = 0
+    stderr_size: int = 0
+    create_date: datetime
+    create_user: str | None = None
+
+
+class WineRunDetail(WineRunSummary):
+    stdout_text: str | None = None
+    stderr_text: str | None = None
+
+
+class WineRunListResponse(BaseModel):
+    items: list[WineRunSummary]
+    total: int

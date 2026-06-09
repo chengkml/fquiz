@@ -203,6 +203,9 @@ export type ElevationDatasetListResponse = {
 
 export type ElevationDatasetAnalyzeResponse = {
   dataset: ElevationDatasetSummary;
+  task_id: string | null;
+  queued: boolean;
+  detail: string | null;
   warnings: string[];
 };
 
@@ -672,6 +675,7 @@ export type AtpSimulationRunSummary = {
   model_id: string;
   version_id: string | null;
   version_no: number | null;
+  task_id: string | null;
   status: AtpSimulationRunStatus;
   engine_mode: AtpEngineMode;
   engine_command: string | null;
