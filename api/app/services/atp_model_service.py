@@ -35,6 +35,7 @@ from ..schemas.atp_model import (
     AtpSimulationRunSummary,
 )
 from .push_service import publish_topic
+from .legacy_atp_adapter import build_legacy_atp_status_checks
 from .wine_probe import probe_wine_binary
 
 
@@ -183,6 +184,7 @@ def get_engine_status() -> AtpEngineStatusResponse:
     mode = _resolve_engine_mode()
     storage_root = str(_resolve_storage_root())
     workdir = str(_resolve_engine_workdir())
+    checks = build_legacy_atp_status_checks()
 
     if mode == "wine":
         wine_binary, resolved_engine, error = _resolve_wine_engine_executable()
@@ -198,6 +200,7 @@ def get_engine_status() -> AtpEngineStatusResponse:
             workdir=workdir,
             default_timeout_seconds=settings.atp_engine_default_timeout_seconds,
             max_timeout_seconds=settings.atp_engine_max_timeout_seconds,
+            checks=checks,
             error=error,
         )
 
@@ -211,6 +214,7 @@ def get_engine_status() -> AtpEngineStatusResponse:
         workdir=workdir,
         default_timeout_seconds=settings.atp_engine_default_timeout_seconds,
         max_timeout_seconds=settings.atp_engine_max_timeout_seconds,
+        checks=checks,
         error=error,
     )
 

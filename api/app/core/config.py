@@ -62,6 +62,12 @@ class Settings(BaseSettings):
     atp_engine_workdir: str = "runs"
     atp_engine_default_timeout_seconds: int = 600
     atp_engine_max_timeout_seconds: int = 3600
+    atp_legacy_root: str = "./data/wine/ATP"
+    atp_tpbig_executable: str = "ATP/tpbig.exe"
+    atp_rjtzl_executable: str = "ATP/rjtzl.exe"
+    atp_template_root: str = "./data/wine/ATP/templates"
+    atp_run_root: str = "./data/wine/atp-runs"
+    atp_egm_subdir: str = "EGM"
 
     initial_admin_email: str | None = None
     initial_admin_user_id: str = "admin"

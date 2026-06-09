@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 FlAnalysisJobType = Literal["normal", "tongtiao", "risk", "mitigation", "report", "scenario"]
 FlAnalysisJobStatus = Literal["pending", "queued", "running", "blocked", "success", "failed"]
 FlAnalysisRunStatus = Literal["pending", "running", "blocked", "success", "failed"]
-FlAnalysisAdapter = Literal["placeholder", "wine", "atp", "custom"]
+FlAnalysisAdapter = Literal["placeholder", "wine", "atp", "legacy_atp", "custom"]
 FlAnalysisCurrentWaveform = Literal["heidler", "double_slope", "double_exponential"]
 FlAnalysisFlashoverMethod = Literal["guideline", "intersection", "leader_development"]
 FlAnalysisAltitudeCorrection = Literal["none", "formula1", "formula2"]
@@ -91,7 +91,12 @@ class FlAnalysisJobCreateRequest(BaseModel):
     external_adapter: FlAnalysisAdapter = "placeholder"
     adapter_config_json: dict[str, Any] = Field(
         default_factory=dict,
-        description="normal/tongtiao 任务在 external_adapter=atp/wine 时可传 model_id、version_id/version_no、result_file、parameter_bindings 等 ATP 执行配置。",
+        description=(
+            "normal/tongtiao 任务在 external_adapter=atp/wine 时可传 model_id、version_id/version_no、"
+            "result_file、parameter_bindings 等 ATP 执行配置；"
+            "external_adapter=legacy_atp 时可传 model_root、template_id/template_subdir、calculation_mode、"
+            "use_egm、feature_bindings、result_file 等旧 ATP/EGM 资产配置。"
+        ),
     )
     execution_options_json: dict[str, Any] = Field(
         default_factory=dict,

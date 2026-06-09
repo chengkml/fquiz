@@ -33,6 +33,7 @@ from ..schemas.fl_analysis import (
 )
 from .atp_model_service import _truncate_output
 from .fl_analysis_external import execute_external_waveform_tower_analysis, resolve_external_waveform_job
+from .legacy_atp_adapter import execute_legacy_atp_tower_analysis, resolve_legacy_atp_job
 from .fl_analysis_report import build_report_document, build_report_summary_payload
 from .fl_analysis_rules import (
     grade_mitigation_snapshot_payload,
@@ -215,10 +216,18 @@ def create_job(
                 )
             except RuntimeError as exc:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        elif external_adapter == "legacy_atp":
+            try:
+                resolve_legacy_atp_job(
+                    adapter_config_json=adapter_config_json,
+                    execution_options=execution_options,
+                )
+            except RuntimeError as exc:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         elif external_adapter != "placeholder":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="普通计算和同跳计算仅支持 placeholder/atp/wine 适配器",
+                detail="普通计算和同跳计算仅支持 placeholder/atp/wine/legacy_atp 适配器",
             )
     if total_tower_count <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前线路没有可分析的杆塔数据")
@@ -433,19 +442,31 @@ def execute_job(job_id: str) -> None:
         summary = _new_result_summary()
         tower_map = {tower.id: tower for tower in towers}
         external_job = None
+        legacy_external_job = None
         stdout_chunks: list[str] = []
         stderr_chunks: list[str] = []
-        if waveform_job_type in {"normal", "tongtiao"} and job.external_adapter in {"atp", "wine"}:
-            external_job = resolve_external_waveform_job(
-                db,
-                external_adapter=job.external_adapter,
-                adapter_config_json=job.adapter_config_json or {},
-            )
-            summary["external_model_id"] = external_job.model.id
-            summary["external_model_code"] = external_job.model.code
-            summary["external_model_name"] = external_job.model.name
-            summary["external_version_id"] = external_job.version.id
-            summary["external_version_no"] = external_job.version.version_no
+        if waveform_job_type in {"normal", "tongtiao"}:
+            if job.external_adapter in {"atp", "wine"}:
+                external_job = resolve_external_waveform_job(
+                    db,
+                    external_adapter=job.external_adapter,
+                    adapter_config_json=job.adapter_config_json or {},
+                )
+                summary["external_model_id"] = external_job.model.id
+                summary["external_model_code"] = external_job.model.code
+                summary["external_model_name"] = external_job.model.name
+                summary["external_version_id"] = external_job.version.id
+                summary["external_version_no"] = external_job.version.version_no
+            elif job.external_adapter == "legacy_atp":
+                legacy_external_job = resolve_legacy_atp_job(
+                    adapter_config_json=job.adapter_config_json or {},
+                    execution_options=execution_options,
+                )
+                summary["external_model_id"] = legacy_external_job.template_identifier
+                summary["external_model_code"] = legacy_external_job.calculation_mode
+                summary["external_model_name"] = legacy_external_job.template_dir.name
+                summary["external_version_id"] = legacy_external_job.template_identifier
+                summary["external_version_no"] = 1
         for snapshot in snapshots:
             payload = {
                 "base_tower_json": snapshot.base_tower_json or {},
@@ -478,6 +499,21 @@ def execute_job(job_id: str) -> None:
                         stdout_chunks.append(f"[{snapshot.tower_no}] {execution.stdout_text}")
                     if execution.stderr_text:
                         stderr_chunks.append(f"[{snapshot.tower_no}] {execution.stderr_text}")
+                elif legacy_external_job is not None:
+                    execution = execute_legacy_atp_tower_analysis(
+                        legacy_external_job,
+                        job=job,
+                        snapshot=snapshot,
+                        execution_options=execution_options,
+                        baseline_result=baseline_result,
+                    )
+                    graded = execution.result_json
+                    run.engine_command = run.engine_command or execution.engine_command
+                    run.working_dir = run.working_dir or execution.working_dir
+                    if execution.stdout_text:
+                        stdout_chunks.append(f"[{snapshot.tower_no}] {execution.stdout_text}")
+                    if execution.stderr_text:
+                        stderr_chunks.append(f"[{snapshot.tower_no}] {execution.stderr_text}")
                 else:
                     graded = baseline_result
             elif waveform_job_type == "tongtiao":
@@ -485,6 +521,21 @@ def execute_job(job_id: str) -> None:
                 if external_job is not None:
                     execution = execute_external_waveform_tower_analysis(
                         external_job,
+                        job=job,
+                        snapshot=snapshot,
+                        execution_options=execution_options,
+                        baseline_result=baseline_result,
+                    )
+                    graded = execution.result_json
+                    run.engine_command = run.engine_command or execution.engine_command
+                    run.working_dir = run.working_dir or execution.working_dir
+                    if execution.stdout_text:
+                        stdout_chunks.append(f"[{snapshot.tower_no}] {execution.stdout_text}")
+                    if execution.stderr_text:
+                        stderr_chunks.append(f"[{snapshot.tower_no}] {execution.stderr_text}")
+                elif legacy_external_job is not None:
+                    execution = execute_legacy_atp_tower_analysis(
+                        legacy_external_job,
                         job=job,
                         snapshot=snapshot,
                         execution_options=execution_options,
@@ -550,7 +601,7 @@ def execute_job(job_id: str) -> None:
                 summary["external_engine_adapter"] = job.external_adapter
         elif waveform_job_type in {"normal", "tongtiao"}:
             summary["workflow"] = _workflow_summary_from_execution_options(execution_options)
-            if external_job is not None:
+            if external_job is not None or legacy_external_job is not None:
                 summary["external_engine_adapter"] = job.external_adapter
         if stdout_chunks:
             run.stdout_text = _truncate_output("\n\n".join(stdout_chunks))
@@ -564,7 +615,7 @@ def execute_job(job_id: str) -> None:
             run_id=run.id,
             started_perf=started_perf,
             summary=summary,
-            adapter_status="executed" if external_job is not None else "computed",
+            adapter_status="executed" if external_job is not None or legacy_external_job is not None else "computed",
         )
 
     except Exception as exc:

@@ -151,4 +151,5 @@ class AtpEngineStatusResponse(BaseModel):
     workdir: str
     default_timeout_seconds: int
     max_timeout_seconds: int
+    checks: dict[str, dict[str, Any]] = Field(default_factory=dict)
     error: str | None = None
