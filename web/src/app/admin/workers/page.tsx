@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import dayjs from "dayjs";
-import { useMemo, useState } from "react";
-import type { ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, ComponentType } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Alert,
@@ -32,6 +32,9 @@ const { Text } = Typography;
 const AntCard = Card as unknown as ComponentType<CardProps>;
 
 const DEFAULT_RECENT_LIMIT = 100;
+const WORKERS_TABLE_MIN_SCROLL_Y = 180;
+const WORKERS_TABLE_VIEWPORT_GAP = 40;
+const WORKERS_TABLE_FALLBACK_RESERVE = 220;
 
 type WorkerMonitorWorkerItem = {
   worker: string;
@@ -149,6 +152,8 @@ export default function AdminWorkersPage() {
   const [queueKeyword, setQueueKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "online" | "offline">("all");
   const [selectedWorker, setSelectedWorker] = useState<string | null>(null);
+  const [tableScrollY, setTableScrollY] = useState(WORKERS_TABLE_MIN_SCROLL_Y);
+  const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const overviewQuery = useQuery({
     queryKey: ["worker-monitor-overview"],
@@ -413,6 +418,74 @@ export default function AdminWorkersPage() {
     });
   }, [overviewQuery.data?.workers, queueKeyword, statusFilter, workerKeyword]);
 
+  const updateTableScrollY = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - WORKERS_TABLE_FALLBACK_RESERVE);
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? WORKERS_TABLE_MIN_SCROLL_Y;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - WORKERS_TABLE_VIEWPORT_GAP);
+    }
+
+    const clampedHeight = Math.max(WORKERS_TABLE_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.requestAnimationFrame(updateTableScrollY);
+  }, [filteredWorkers.length, overviewQuery.isFetching, updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updateTableScrollY);
+    };
+
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateTableScrollY);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTableScrollY]);
+
   if (initializing || (overviewQuery.isLoading && !overviewQuery.data && canRead && Boolean(user))) {
     return (
       <div className="py-10">
@@ -470,8 +543,8 @@ export default function AdminWorkersPage() {
 
       {overview && (
         <AntCard
-          title="Worker列表"
-          extra={(
+          title="Worker监控"
+          extra={
             <Space>
               {overviewQuery.isFetching && <Spin size="small" />}
               <Text type="secondary">生成时间：{formatDateTime(overview.generated_at)}</Text>
@@ -479,7 +552,7 @@ export default function AdminWorkersPage() {
                 刷新Worker
               </Button>
             </Space>
-          )}
+          }
         >
           <Form layout="inline" style={{ rowGap: 12 }}>
             <Form.Item label="Worker" className="min-w-[240px]">
@@ -517,14 +590,18 @@ export default function AdminWorkersPage() {
             </Form.Item>
           </Form>
 
-          <div className="mt-4">
+          <div
+            ref={tableScrollAnchorRef}
+            className="admin-workers-table-anchor mt-4"
+            style={{ "--admin-workers-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+          >
             <Table<WorkerMonitorWorkerItem>
               rowKey={(record) => record.worker}
               columns={workerColumns}
               dataSource={filteredWorkers}
-              pagination={{ pageSize: 10, showSizeChanger: true }}
+              pagination={{ pageSize: 10, showSizeChanger: true, style: { marginBottom: 0 } }}
               locale={{ emptyText: "暂无Worker数据" }}
-              scroll={{ x: 1600 }}
+              scroll={{ x: 1600, y: tableScrollY }}
             />
           </div>
         </AntCard>
