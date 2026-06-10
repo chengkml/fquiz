@@ -78,7 +78,7 @@ const DEFAULT_APPLY_FORM: ApplyFormValues = {
   mode: "fill_null_only",
 };
 
-const DATASET_IMPORT_BATCH_SIZE = 20;
+const DATASET_IMPORT_BATCH_SIZE = 5;
 
 function statusTagColor(status: string): string {
   if (status === "success" || status === "active") return "green";
