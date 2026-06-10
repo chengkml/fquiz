@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  App,
   Alert,
   Button,
   Descriptions,
@@ -169,6 +170,7 @@ export default function AdminElevationPage() {
     getAccessToken,
     refreshAccessToken,
   } = useAuth();
+  const { modal } = App.useApp();
   const [messageApi, messageContextHolder] = message.useMessage();
 
   const [error, setError] = useState("");
@@ -842,7 +844,7 @@ export default function AdminElevationPage() {
               disabled={!canManage || datasetDeleteMutation.isPending}
               onClick={() => {
                 if (!canManage || datasetDeleteMutation.isPending) return;
-                Modal.confirm({
+                modal.confirm({
                   title: "删除高程数据集",
                   content: `确认删除数据集「${row.code} - ${row.name}」？该操作会同时删除关联的回填任务记录，且不可恢复。`,
                   okText: "确认删除",
@@ -867,6 +869,7 @@ export default function AdminElevationPage() {
       datasetFilesMutation,
       fetchWithAuth,
       messageApi,
+      modal,
       terrainBuildMutation,
     ],
   );
