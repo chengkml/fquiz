@@ -31,12 +31,14 @@ import { ElevationPreviewCesiumMap } from "@/components/elevation-preview-cesium
 import { Card } from "@/components/ui-antd";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
-import { getApiBaseUrl, readApiError } from "@/lib/api";
+import { readApiError } from "@/lib/api";
 import { readLinePreparation } from "@/lib/line-preparation";
 import type {
   ElevationApplyJobCreateResponse,
   ElevationApplyJobListResponse,
   ElevationApplyJobSummary,
+  ElevationDataImportJobListResponse,
+  ElevationDataImportJobSummary,
   ElevationDatasetAnalysisTaskStatusResponse,
   ElevationDatasetDataImportResponse,
   ElevationDatasetFileItem,
@@ -78,8 +80,6 @@ const DEFAULT_APPLY_FORM: ApplyFormValues = {
   mode: "fill_null_only",
 };
 
-const DATASET_IMPORT_BATCH_SIZE = 5;
-
 function statusTagColor(status: string): string {
   if (status === "success" || status === "active") return "green";
   if (status === "running") return "blue";
@@ -117,6 +117,27 @@ function terrainBuildActionLabel(status: string): string {
   return "生成地形";
 }
 
+function importJobStatusLabel(status: string): string {
+  if (status === "pending") return "待执行";
+  if (status === "running") return "执行中";
+  if (status === "success") return "成功";
+  if (status === "failed") return "失败";
+  return status || "-";
+}
+
+function importJobStageLabel(stage: string | null | undefined): string {
+  if (!stage) return "-";
+  if (stage === "staging") return "接收文件";
+  if (stage === "queued") return "等待执行";
+  if (stage === "running") return "开始执行";
+  if (stage === "importing") return "导入文件";
+  if (stage === "finalizing") return "刷新元信息";
+  if (stage === "analyzing") return "派发分析";
+  if (stage === "completed") return "已完成";
+  if (stage === "failed") return "失败";
+  return stage;
+}
+
 function formatDate(value: string | null | undefined): string {
   if (!value) return "-";
   return new Date(value).toLocaleString();
@@ -135,29 +156,8 @@ function formatFileSize(size: number): string {
   return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-function readXhrError(xhr: XMLHttpRequest): string {
-  const fallback = `HTTP ${xhr.status}`;
-  const raw = xhr.responseText?.trim();
-  if (!raw) {
-    return fallback;
-  }
-  try {
-    const parsed = JSON.parse(raw) as { detail?: string };
-    return parsed.detail?.trim() ? parsed.detail : fallback;
-  } catch {
-    return raw.length > 200 ? fallback : raw;
-  }
-}
-
-function chunkFiles(files: File[], size: number): File[][] {
-  if (size <= 0) {
-    return [files];
-  }
-  const chunks: File[][] = [];
-  for (let index = 0; index < files.length; index += size) {
-    chunks.push(files.slice(index, index + size));
-  }
-  return chunks;
+function formatImportJobCounts(job: Pick<ElevationDataImportJobSummary, "uploaded_file_count" | "extracted_file_count" | "imported_file_count">): string {
+  return `上传 ${job.uploaded_file_count} / 解压 ${job.extracted_file_count} / 可用 ${job.imported_file_count}`;
 }
 
 export default function AdminElevationPage() {
@@ -168,7 +168,6 @@ export default function AdminElevationPage() {
     hasPermission,
     fetchWithAuth,
     getAccessToken,
-    refreshAccessToken,
   } = useAuth();
   const { modal } = App.useApp();
   const [messageApi, messageContextHolder] = message.useMessage();
@@ -184,10 +183,8 @@ export default function AdminElevationPage() {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importDataset, setImportDataset] = useState<ElevationDatasetSummary | null>(null);
   const [importFileList, setImportFileList] = useState<UploadFile[]>([]);
-  const [datasetDataUploadProgress, setDatasetDataUploadProgress] = useState(0);
-  const [datasetDataUploadFileName, setDatasetDataUploadFileName] = useState("");
-  const [lastImportedFiles, setLastImportedFiles] = useState<string[]>([]);
-  const [lastAnalysisTaskId, setLastAnalysisTaskId] = useState<string | null>(null);
+  const [importJobModalOpen, setImportJobModalOpen] = useState(false);
+  const [importJob, setImportJob] = useState<ElevationDataImportJobSummary | null>(null);
 
   const [datasetFilesModalOpen, setDatasetFilesModalOpen] = useState(false);
   const [datasetFilesDataset, setDatasetFilesDataset] = useState<ElevationDatasetSummary | null>(null);
@@ -208,6 +205,7 @@ export default function AdminElevationPage() {
 
   const datasetListPath = "/api/v1/elevation/datasets";
   const jobListPath = "/api/v1/elevation/jobs?limit=100";
+  const importJobListPath = "/api/v1/elevation/import-jobs?limit=100";
   const lineListPath = "/api/v1/lines";
 
   const datasetsQuery = useQuery({
@@ -234,6 +232,18 @@ export default function AdminElevationPage() {
     },
   });
 
+  const importJobsQuery = useQuery({
+    queryKey: [importJobListPath],
+    enabled: !!user && canRead,
+    queryFn: async () => {
+      const response = await fetchWithAuth(importJobListPath);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as ElevationDataImportJobListResponse;
+    },
+  });
+
   const linesQuery = useQuery({
     queryKey: [lineListPath],
     enabled: !!user && canRead,
@@ -254,6 +264,7 @@ export default function AdminElevationPage() {
         && (
           query.queryKey[0].startsWith("/api/v1/elevation/datasets")
           || query.queryKey[0].startsWith("/api/v1/elevation/jobs")
+          || query.queryKey[0].startsWith("/api/v1/elevation/import-jobs")
         ),
     });
   }, [queryClient]);
@@ -263,6 +274,7 @@ export default function AdminElevationPage() {
       error
       || (datasetsQuery.error instanceof Error ? datasetsQuery.error.message : "")
       || (jobsQuery.error instanceof Error ? jobsQuery.error.message : "")
+      || (importJobsQuery.error instanceof Error ? importJobsQuery.error.message : "")
       || (linesQuery.error instanceof Error ? linesQuery.error.message : ""),
     clearError: () => setError(""),
   });
@@ -326,153 +338,33 @@ export default function AdminElevationPage() {
 
   const datasetDataImportMutation = useMutation({
     mutationFn: async (payload: { datasetId: string; files: File[] }) => {
-      setDatasetDataUploadProgress(0);
-      setDatasetDataUploadFileName(
-        payload.files.length === 1 ? payload.files[0].name : `共 ${payload.files.length} 个文件`,
-      );
-
-      const uploadWithXhr = (
-        token: string | null,
-        files: File[],
-        options: { completedBytes: number; totalBytes: number; triggerAnalysis: boolean; label: string },
-      ) =>
-        new Promise<ElevationDatasetDataImportResponse>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open("POST", `${getApiBaseUrl()}/api/v1/elevation/datasets/${payload.datasetId}/data/import`);
-          xhr.withCredentials = true;
-          if (token) {
-            xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-          }
-
-          xhr.upload.onprogress = (event: ProgressEvent<EventTarget>) => {
-            if (options.totalBytes <= 0) {
-              return;
-            }
-            const loadedBytes = options.completedBytes + (event.lengthComputable ? event.loaded : 0);
-            const percent = Math.min(99, Math.max(0, Math.round((loadedBytes / options.totalBytes) * 100)));
-            setDatasetDataUploadProgress(percent);
-          };
-
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              try {
-                resolve(JSON.parse(xhr.responseText) as ElevationDatasetDataImportResponse);
-              } catch {
-                reject(new Error("上传成功但响应解析失败"));
-              }
-              return;
-            }
-            reject(new Error(readXhrError(xhr)));
-          };
-
-          xhr.onerror = () => reject(new Error("网络异常，导入失败"));
-          xhr.onabort = () => reject(new Error("导入已取消"));
-
-          const formData = new FormData();
-          formData.append("trigger_analysis", String(options.triggerAnalysis));
-          for (const file of files) {
-            formData.append("files", file);
-          }
-          setDatasetDataUploadFileName(options.label);
-          xhr.send(formData);
-        });
-
-      const batches = chunkFiles(payload.files, DATASET_IMPORT_BATCH_SIZE);
-      const totalBytes = payload.files.reduce((sum, file) => sum + file.size, 0);
-      let completedBytes = 0;
-      let latestResult: ElevationDatasetDataImportResponse | null = null;
-      let uploadedFileCount = 0;
-      let extractedFileCount = 0;
-      let importedFileCount = 0;
-      let analysisTaskQueued = false;
-      let analysisTaskId: string | null = null;
-      const warnings: string[] = [];
-      const importedFiles = new Set<string>();
-
-      for (const [index, batch] of batches.entries()) {
-        const batchBytes = batch.reduce((sum, file) => sum + file.size, 0);
-        const triggerAnalysis = index === batches.length - 1;
-        const label = batches.length === 1
-          ? (batch.length === 1 ? batch[0].name : `共 ${batch.length} 个文件`)
-          : `第 ${index + 1}/${batches.length} 批，共 ${batch.length} 个文件`;
-
-        let result: ElevationDatasetDataImportResponse;
-        try {
-          result = await uploadWithXhr(getAccessToken(), batch, {
-            completedBytes,
-            totalBytes,
-            triggerAnalysis,
-            label,
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "导入失败";
-          const isUnauthorized = message.includes("401") || message.includes("未授权");
-          if (!isUnauthorized) {
-            throw error;
-          }
-          const refreshed = await refreshAccessToken();
-          if (!refreshed) {
-            throw error;
-          }
-          result = await uploadWithXhr(getAccessToken(), batch, {
-            completedBytes,
-            totalBytes,
-            triggerAnalysis,
-            label,
-          });
-        }
-
-        latestResult = result;
-        uploadedFileCount += result.uploaded_file_count;
-        extractedFileCount += result.extracted_file_count;
-        importedFileCount += result.imported_file_count;
-        analysisTaskQueued = analysisTaskQueued || result.analysis_task_queued;
-        analysisTaskId = result.analysis_task_id ?? analysisTaskId;
-        for (const warning of result.warnings) {
-          warnings.push(warning);
-        }
-        for (const importedFile of result.imported_files) {
-          importedFiles.add(importedFile);
-        }
-        completedBytes += batchBytes;
-        setDatasetDataUploadProgress(Math.min(99, Math.max(0, Math.round((completedBytes / Math.max(totalBytes, 1)) * 100))));
+      const formData = new FormData();
+      formData.append("trigger_analysis", "true");
+      for (const file of payload.files) {
+        formData.append("files", file);
       }
-      setDatasetDataUploadProgress(100);
-
-      if (!latestResult) {
-        throw new Error("导入失败");
+      const response = await fetchWithAuth(`/api/v1/elevation/datasets/${payload.datasetId}/data/import`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
       }
-
-      return {
-        ...latestResult,
-        uploaded_file_count: uploadedFileCount,
-        extracted_file_count: extractedFileCount,
-        imported_file_count: importedFileCount,
-        analysis_task_queued: analysisTaskQueued,
-        analysis_task_id: analysisTaskId,
-        warning_count: warnings.length,
-        warnings,
-        imported_files: Array.from(importedFiles).sort(),
-      };
+      return (await response.json()) as ElevationDatasetDataImportResponse;
     },
     onSuccess: async (payload) => {
-      const monitorHint = payload.analysis_task_queued && payload.analysis_task_id
-        ? `，分析任务ID：${payload.analysis_task_id}`
-        : "";
-      const msg = payload.warning_count > 0
-        ? `数据导入完成：上传 ${payload.uploaded_file_count} 个、解压 ${payload.extracted_file_count} 个、可用 ${payload.imported_file_count} 个，告警 ${payload.warning_count} 条${monitorHint}`
-        : `数据导入完成：上传 ${payload.uploaded_file_count} 个、解压 ${payload.extracted_file_count} 个、可用 ${payload.imported_file_count} 个${monitorHint}`;
       setError("");
-      messageApi.success(msg);
-      setLastImportedFiles(payload.imported_files);
-      setLastAnalysisTaskId(payload.analysis_task_id);
+      setImportJob(payload.job);
+      setImportJobModalOpen(true);
+      messageApi.success(payload.detail || (payload.queued ? "导入任务已提交" : "导入任务已存在"));
+      setImportModalOpen(false);
+      setImportFileList([]);
       await refreshElevationData();
     },
     onError: (candidate) => {
       const nextError = candidate instanceof Error ? candidate.message : "导入高程数据失败";
       setError(nextError);
       messageApi.error(nextError);
-      setDatasetDataUploadProgress(0);
     },
   });
 
@@ -606,8 +498,18 @@ export default function AdminElevationPage() {
   });
 
   const datasets = useMemo(() => datasetsQuery.data?.items ?? [], [datasetsQuery.data?.items]);
-  const jobs = jobsQuery.data?.items ?? [];
+  const jobs = useMemo(() => jobsQuery.data?.items ?? [], [jobsQuery.data?.items]);
+  const importJobs = useMemo(() => importJobsQuery.data?.items ?? [], [importJobsQuery.data?.items]);
   const lines = useMemo(() => linesQuery.data?.items ?? [], [linesQuery.data?.items]);
+  const latestImportJobByDataset = useMemo(() => {
+    const mapping = new Map<string, ElevationDataImportJobSummary>();
+    for (const item of importJobs) {
+      if (!mapping.has(item.dataset_id)) {
+        mapping.set(item.dataset_id, item);
+      }
+    }
+    return mapping;
+  }, [importJobs]);
   const currentPreviewDataset = useMemo(
     () => (previewDataset ? datasets.find((item) => item.id === previewDataset.id) ?? previewDataset : null),
     [datasets, previewDataset],
@@ -619,6 +521,10 @@ export default function AdminElevationPage() {
   const currentTerrainDataset = useMemo(
     () => (terrainDataset ? datasets.find((item) => item.id === terrainDataset.id) ?? terrainDataset : null),
     [datasets, terrainDataset],
+  );
+  const currentImportJob = useMemo(
+    () => (importJob ? importJobs.find((item) => item.id === importJob.id) ?? importJob : null),
+    [importJob, importJobs],
   );
 
   const lineOptions = useMemo(
@@ -740,10 +646,28 @@ export default function AdminElevationPage() {
         render: (value: string) => formatDate(value),
       },
       {
+        title: "最近导入",
+        key: "latestImportJob",
+        width: 220,
+        render: (_, row) => {
+          const latestJob = latestImportJobByDataset.get(row.id);
+          if (!latestJob) {
+            return <Typography.Text type="secondary">-</Typography.Text>;
+          }
+          return (
+            <Space direction="vertical" size={0}>
+              <Tag color={statusTagColor(latestJob.status)}>{importJobStatusLabel(latestJob.status)}</Tag>
+              <Typography.Text type="secondary">{importJobStageLabel(latestJob.current_stage)}</Typography.Text>
+              <Typography.Text type="secondary">{`${latestJob.progress_percent}%`}</Typography.Text>
+            </Space>
+          );
+        },
+      },
+      {
         title: "操作",
         key: "actions",
         fixed: "right",
-        width: 380,
+        width: 460,
         render: (_, row) => (
           <Space size="small" wrap>
             <Typography.Link
@@ -803,6 +727,17 @@ export default function AdminElevationPage() {
               地形状态
             </Typography.Link>
             <Typography.Link
+              disabled={!latestImportJobByDataset.get(row.id)}
+              onClick={() => {
+                const latestJob = latestImportJobByDataset.get(row.id);
+                if (!latestJob) return;
+                setImportJob(latestJob);
+                setImportJobModalOpen(true);
+              }}
+            >
+              导入进度
+            </Typography.Link>
+            <Typography.Link
               disabled={
                 !canManage
                 || terrainBuildMutation.isPending
@@ -831,10 +766,6 @@ export default function AdminElevationPage() {
                 if (!canManage || datasetDataImportMutation.isPending) return;
                 setImportDataset(row);
                 setImportFileList([]);
-                setDatasetDataUploadProgress(0);
-                setDatasetDataUploadFileName("");
-                setLastImportedFiles([]);
-                setLastAnalysisTaskId(null);
                 setImportModalOpen(true);
               }}
             >
@@ -868,6 +799,7 @@ export default function AdminElevationPage() {
       datasetDeleteMutation,
       datasetFilesMutation,
       fetchWithAuth,
+      latestImportJobByDataset,
       messageApi,
       modal,
       terrainBuildMutation,
@@ -903,7 +835,80 @@ export default function AdminElevationPage() {
     [],
   );
 
-  if (initializing || datasetsQuery.isLoading || jobsQuery.isLoading || linesQuery.isLoading) {
+  const importJobColumns = useMemo<ColumnsType<ElevationDataImportJobSummary>>(
+    () => [
+      {
+        title: "任务ID",
+        dataIndex: "id",
+        width: 180,
+        render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
+      },
+      {
+        title: "数据集",
+        width: 220,
+        render: (_, row) => `${row.dataset_code || "-"} ${row.dataset_name || ""}`.trim() || "-",
+      },
+      {
+        title: "状态",
+        dataIndex: "status",
+        width: 100,
+        render: (value: string) => <Tag color={statusTagColor(value)}>{importJobStatusLabel(value)}</Tag>,
+      },
+      {
+        title: "阶段",
+        dataIndex: "current_stage",
+        width: 120,
+        render: (value: string | null) => importJobStageLabel(value),
+      },
+      {
+        title: "进度",
+        dataIndex: "progress_percent",
+        width: 180,
+        render: (value: number) => <Progress percent={value} size="small" />,
+      },
+      {
+        title: "计数",
+        width: 180,
+        render: (_, row) => formatImportJobCounts(row),
+      },
+      {
+        title: "分析任务",
+        width: 180,
+        render: (_, row) => row.analysis_task_id || "-",
+      },
+      {
+        title: "更新时间",
+        dataIndex: "update_date",
+        width: 170,
+        render: (value: string) => formatDate(value),
+      },
+      {
+        title: "说明",
+        dataIndex: "detail_message",
+        width: 260,
+        render: (value: string | null) => value || "-",
+      },
+      {
+        title: "操作",
+        key: "actions",
+        fixed: "right",
+        width: 90,
+        render: (_, row) => (
+          <Typography.Link
+            onClick={() => {
+              setImportJob(row);
+              setImportJobModalOpen(true);
+            }}
+          >
+            查看
+          </Typography.Link>
+        ),
+      },
+    ],
+    [],
+  );
+
+  if (initializing || datasetsQuery.isLoading || jobsQuery.isLoading || importJobsQuery.isLoading || linesQuery.isLoading) {
     return (
       <div className="flex min-h-[280px] items-center justify-center">
         <Spin tip="高程数据加载中..." />
@@ -1001,6 +1006,20 @@ export default function AdminElevationPage() {
             dataSource={jobs}
             pagination={false}
             scroll={{ x: 1900 }}
+          />
+        )}
+      </Card>
+
+      <Card title="高程导入任务">
+        {importJobs.length === 0 ? (
+          <Empty description="暂无导入任务。" />
+        ) : (
+          <Table<ElevationDataImportJobSummary>
+            rowKey={(row) => row.id}
+            columns={importJobColumns}
+            dataSource={importJobs}
+            pagination={false}
+            scroll={{ x: 1600 }}
           />
         )}
       </Card>
@@ -1116,10 +1135,6 @@ export default function AdminElevationPage() {
           setImportModalOpen(false);
           setImportDataset(null);
           setImportFileList([]);
-          setDatasetDataUploadProgress(0);
-          setDatasetDataUploadFileName("");
-          setLastImportedFiles([]);
-          setLastAnalysisTaskId(null);
         }}
         onOk={() => {
           if (!importDataset || datasetDataImportMutation.isPending) return;
@@ -1161,37 +1176,69 @@ export default function AdminElevationPage() {
           >
             <Typography.Link>选择文件（支持多选）</Typography.Link>
           </Upload>
-
-          {(datasetDataImportMutation.isPending || datasetDataUploadProgress > 0) && (
-            <div className="space-y-2">
-              <Typography.Text type="secondary">
-                {datasetDataUploadFileName || "正在上传文件..."}
-              </Typography.Text>
-              <Progress
-                percent={datasetDataUploadProgress}
-                status={datasetDataUploadProgress >= 100 ? "active" : "normal"}
-              />
-            </div>
-          )}
-
-          {lastImportedFiles.length > 0 && (
-            <Alert
-              type="success"
-              showIcon
-              message={`已导入文件（${lastImportedFiles.length}）`}
-              description={lastImportedFiles.slice(0, 5).join("；")}
-            />
-          )}
-
-          {lastAnalysisTaskId && (
-            <Alert
-              type="info"
-              showIcon
-              message="分析任务已触发"
-              description={`Task ID: ${lastAnalysisTaskId}，可点击数据集行「分析进度」查看实时状态。`}
-            />
-          )}
+          <Alert
+            type="info"
+            showIcon
+            message="导入任务会在后台异步执行"
+            description="提交后可在“高程导入任务”列表或数据集行的“导入进度”里回看处理进度、告警和分析任务状态。"
+          />
         </div>
+      </Modal>
+
+      <Modal
+        title={currentImportJob ? `导入进度：${currentImportJob.dataset_code || currentImportJob.id}` : "导入进度"}
+        open={importJobModalOpen}
+        footer={null}
+        onCancel={() => {
+          setImportJobModalOpen(false);
+          setImportJob(null);
+        }}
+      >
+        {currentImportJob && (
+          <div className="space-y-3">
+            <Alert
+              type={
+                currentImportJob.status === "failed"
+                  ? "error"
+                  : currentImportJob.status === "success"
+                    ? "success"
+                    : "info"
+              }
+              showIcon
+              message={`${currentImportJob.dataset_code || "-"} ${currentImportJob.dataset_name || ""}`.trim()}
+              description={currentImportJob.detail_message || "导入任务已创建。"}
+            />
+            <Progress percent={currentImportJob.progress_percent} />
+            <Descriptions bordered size="small" column={1}>
+              <Descriptions.Item label="任务状态">
+                <Tag color={statusTagColor(currentImportJob.status)}>{importJobStatusLabel(currentImportJob.status)}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="当前阶段">{importJobStageLabel(currentImportJob.current_stage)}</Descriptions.Item>
+              <Descriptions.Item label="Task ID">{currentImportJob.task_id || "-"}</Descriptions.Item>
+              <Descriptions.Item label="文件计数">{formatImportJobCounts(currentImportJob)}</Descriptions.Item>
+              <Descriptions.Item label="分析任务">{currentImportJob.analysis_task_id || "-"}</Descriptions.Item>
+              <Descriptions.Item label="开始时间">{formatDate(currentImportJob.started_at)}</Descriptions.Item>
+              <Descriptions.Item label="结束时间">{formatDate(currentImportJob.finished_at)}</Descriptions.Item>
+              <Descriptions.Item label="更新时间">{formatDate(currentImportJob.update_date)}</Descriptions.Item>
+            </Descriptions>
+            {currentImportJob.warning_count > 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                message={`导入告警（${currentImportJob.warning_count}）`}
+                description={currentImportJob.warnings.slice(0, 5).join("；")}
+              />
+            )}
+            {currentImportJob.imported_files.length > 0 && (
+              <Alert
+                type="success"
+                showIcon
+                message={`已导入文件（${currentImportJob.imported_files.length}）`}
+                description={currentImportJob.imported_files.slice(0, 5).join("；")}
+              />
+            )}
+          </div>
+        )}
       </Modal>
 
       <Modal

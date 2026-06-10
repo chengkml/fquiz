@@ -207,6 +207,7 @@ export type ElevationDatasetUsageStatus = "idle" | "in_use";
 export type ElevationDatasetTerrainStatus = "pending" | "processing" | "ready" | "failed" | "not_supported";
 export type ElevationApplyMode = "fill_null_only" | "overwrite_all";
 export type ElevationApplyJobStatus = "pending" | "running" | "success" | "failed";
+export type ElevationDataImportJobStatus = "pending" | "running" | "success" | "failed";
 
 export type ElevationTerrainBounds = {
   west: number;
@@ -331,15 +332,10 @@ export type ElevationDatasetBatchImportResponse = {
 };
 
 export type ElevationDatasetDataImportResponse = {
-  dataset: ElevationDatasetSummary;
-  uploaded_file_count: number;
-  extracted_file_count: number;
-  imported_file_count: number;
-  analysis_task_queued: boolean;
-  analysis_task_id: string | null;
-  warning_count: number;
+  job: ElevationDataImportJobSummary;
+  queued: boolean;
+  detail: string | null;
   warnings: string[];
-  imported_files: string[];
 };
 
 export type ElevationDatasetFileItem = {
@@ -475,6 +471,38 @@ export type ElevationApplyJobListResponse = {
 export type ElevationApplyJobCreateResponse = {
   job: ElevationApplyJobSummary;
   queued: boolean;
+};
+
+export type ElevationDataImportJobSummary = {
+  id: string;
+  dataset_id: string;
+  dataset_code: string | null;
+  dataset_name: string | null;
+  status: ElevationDataImportJobStatus;
+  task_id: string | null;
+  progress_percent: number;
+  current_stage: string | null;
+  detail_message: string | null;
+  trigger_analysis: boolean;
+  analysis_task_queued: boolean;
+  analysis_task_id: string | null;
+  uploaded_file_count: number;
+  extracted_file_count: number;
+  imported_file_count: number;
+  warning_count: number;
+  warnings: string[];
+  imported_files: string[];
+  started_at: string | null;
+  finished_at: string | null;
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
+};
+
+export type ElevationDataImportJobListResponse = {
+  items: ElevationDataImportJobSummary[];
+  total: number;
 };
 
 export type LineSummary = {

@@ -10,7 +10,8 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any
+from typing import Any, Callable
+from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import delete, func, select
@@ -18,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from ..core.database import SessionLocal
 from ..models.base import utcnow
-from ..models.elevation import ElevationApplyJob, ElevationDataset
+from ..models.elevation import ElevationApplyJob, ElevationDataImportJob, ElevationDataset
 from ..models.line import Line
 from ..models.line_tower import LineTower
 from ..models.user import User
@@ -27,6 +28,8 @@ from ..schemas.elevation import (
     ElevationApplyJobCreateResponse,
     ElevationApplyJobListResponse,
     ElevationApplyJobSummary,
+    ElevationDataImportJobListResponse,
+    ElevationDataImportJobSummary,
     ElevationDatasetAnalysisTaskStatusResponse,
     ElevationDatasetAnalyzeResponse,
     ElevationDatasetBatchImportResponse,
@@ -82,6 +85,7 @@ TERRAIN_WATER_MASK_ALL_LAND = b"\x00"
 TERRAIN_CONTENT_TYPE = "application/octet-stream"
 TERRAIN_SUPPORTED_DATASET_FORMATS = RASTER_FILE_FORMATS
 TERRAIN_BUILD_TOOL = "builtin-heightmap-1.0"
+IMPORT_JOB_STAGE_DIRNAME = ".imports"
 
 
 @dataclass
@@ -203,6 +207,36 @@ def serialize_job(item: ElevationApplyJob) -> ElevationApplyJobSummary:
     )
 
 
+def serialize_data_import_job(item: ElevationDataImportJob) -> ElevationDataImportJobSummary:
+    dataset = item.dataset
+    return ElevationDataImportJobSummary(
+        id=item.id,
+        dataset_id=item.dataset_id,
+        dataset_code=dataset.code if dataset else None,
+        dataset_name=dataset.name if dataset else None,
+        status=item.status,  # type: ignore[arg-type]
+        task_id=item.task_id,
+        progress_percent=item.progress_percent,
+        current_stage=item.current_stage,
+        detail_message=item.detail_message,
+        trigger_analysis=item.trigger_analysis,
+        analysis_task_queued=item.analysis_task_queued,
+        analysis_task_id=item.analysis_task_id,
+        uploaded_file_count=item.uploaded_file_count,
+        extracted_file_count=item.extracted_file_count,
+        imported_file_count=item.imported_file_count,
+        warning_count=item.warning_count,
+        warnings=list(item.warnings_json or []),
+        imported_files=list(item.imported_files_json or []),
+        started_at=item.started_at,
+        finished_at=item.finished_at,
+        create_date=item.create_date,
+        create_user=item.create_user,
+        update_date=item.update_date,
+        update_user=item.update_user,
+    )
+
+
 def list_datasets(
     db: Session,
     *,
@@ -252,6 +286,23 @@ def get_dataset_by_code(db: Session, code: str) -> ElevationDataset | None:
             func.lower(ElevationDataset.code) == normalized.lower()
         )
     ).scalar_one_or_none()
+
+
+def get_data_import_job_by_id(db: Session, job_id: str) -> ElevationDataImportJob | None:
+    return db.execute(
+        select(ElevationDataImportJob).where(ElevationDataImportJob.id == job_id)
+    ).scalar_one_or_none()
+
+
+def _get_active_data_import_job_for_dataset(db: Session, dataset_id: str) -> ElevationDataImportJob | None:
+    return db.execute(
+        select(ElevationDataImportJob)
+        .where(
+            ElevationDataImportJob.dataset_id == dataset_id,
+            ElevationDataImportJob.status.in_(("pending", "running")),
+        )
+        .order_by(ElevationDataImportJob.create_date.desc(), ElevationDataImportJob.id.desc())
+    ).scalars().first()
 
 
 def _supports_terrain_build(dataset: ElevationDataset) -> bool:
@@ -530,124 +581,129 @@ def import_dataset_data_files(
     if not files:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请至少上传一个文件")
 
+    existing_job = _get_active_data_import_job_for_dataset(db, dataset_id)
+    if existing_job is not None:
+        return ElevationDatasetDataImportResponse(
+            job=serialize_data_import_job(existing_job),
+            queued=False,
+            detail="导入任务已存在，无需重复提交。",
+            warnings=list(existing_job.warnings_json or []),
+        )
+
     mount = _require_mount(db, dataset.mount_code)
     driver = _build_driver_or_400(mount)
     dataset_dir = _resolve_dataset_dir(dataset.code)
     _ensure_dataset_directory(driver=driver, dataset_dir=dataset_dir)
 
-    uploaded_file_count = 0
-    extracted_file_count = 0
-    warnings: list[str] = []
-    imported_files: list[str] = []
-
-    for upload in files:
-        filename = (upload.filename or "").strip()
-        suffix = Path(filename).suffix.lower()
-        if not filename:
-            warnings.append("存在空文件名上传项，已跳过")
-            continue
-
-        if suffix in IMPORTABLE_ARCHIVE_EXTENSIONS:
-            archive_bytes = _read_upload_content(upload)
-            zip_result = _extract_zip_to_dataset_directory(
-                driver=driver,
-                dataset_dir=dataset_dir,
-                zip_content=archive_bytes,
-            )
-            extracted_file_count += zip_result["extracted_count"]
-            imported_files.extend(zip_result["imported_files"])
-            warnings.extend(zip_result["warnings"])
-            continue
-
-        if suffix not in IMPORTABLE_ELEVATION_EXTENSIONS:
-            warnings.append(f"文件 {filename} 类型不支持，已跳过（仅支持 csv/img/tif/tiff/zip）")
-            continue
-
-        content = _read_upload_content(upload)
-        target_path = _write_dataset_file(
-            driver=driver,
-            dataset_dir=dataset_dir,
-            filename=filename,
-            content=content,
-            content_type=upload.content_type,
-        )
-        uploaded_file_count += 1
-        imported_files.append(target_path)
-
-    available_file_paths = _list_dataset_imported_file_paths(
-        driver=driver,
-        dataset_dir=dataset_dir,
+    now = utcnow()
+    job = ElevationDataImportJob(
+        dataset_id=dataset.id,
+        status="pending",
+        progress_percent=0,
+        current_stage="staging",
+        detail_message="正在接收上传文件。",
+        trigger_analysis=trigger_analysis,
+        create_date=now,
+        create_user=actor.id,
+        update_date=now,
+        update_user=actor.id,
     )
-    preferred_file_path = _pick_preferred_dataset_file_path(
-        paths=available_file_paths,
-        current_path=dataset.file_path,
-    )
-    if preferred_file_path is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="未导入任何可用高程文件")
-
-    dataset.dataset_dir = dataset_dir
-    dataset.file_path = preferred_file_path
-    dataset.file_format = _detect_file_format(preferred_file_path)
-    dataset.sample_count = 0
-    dataset.bbox_min_lon = None
-    dataset.bbox_max_lon = None
-    dataset.bbox_min_lat = None
-    dataset.bbox_max_lat = None
-    dataset.usage_status = "idle"
-    dataset.terrain_status = _default_terrain_status_for_format(dataset.file_format)
-    dataset.terrain_task_id = None
-    dataset.terrain_error_message = None
-    dataset.terrain_root_path = None
-    dataset.terrain_url_template = None
-    dataset.terrain_min_zoom = None
-    dataset.terrain_max_zoom = None
-    dataset.terrain_bounds = None
-    dataset.terrain_metadata = None
-    dataset.analysis_task_id = None
-    dataset.analysis_status = "not_started"
-    dataset.analysis_error_message = None
-    dataset.analysis_started_at = None
-    dataset.analysis_finished_at = None
-    dataset.update_user = actor.id
-    dataset.update_date = utcnow()
+    db.add(job)
     db.commit()
 
-    analysis_task_queued = False
-    analysis_task_id: str | None = None
-    if trigger_analysis:
-        try:
-            task = _dispatch_elevation_dataset_analysis_task(dataset_id=dataset.id, actor_user_id=actor.id)
-            analysis_task_queued = True
-            analysis_task_id = str(task.id)
-            dataset.analysis_task_id = analysis_task_id
-            dataset.analysis_status = "queued"
-            dataset.analysis_error_message = None
-            dataset.analysis_started_at = None
-            dataset.analysis_finished_at = None
-            dataset.update_date = utcnow()
-            dataset.update_user = actor.id
-            db.commit()
-        except Exception as exc:  # pragma: no cover
-            warnings.append(f"自动分析任务派发失败：{exc}")
+    saved = get_data_import_job_by_id(db, job.id)
+    if saved is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="创建导入任务失败")
 
-    refreshed = get_dataset_by_id(db, dataset.id)
-    if refreshed is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="数据集刷新失败")
+    stage_result: dict[str, Any] | None = None
+    try:
+        stage_result = _stage_dataset_import_job_uploads(
+            driver=driver,
+            dataset=dataset,
+            import_job_id=saved.id,
+            files=files,
+        )
+        saved.uploaded_file_count = stage_result["uploaded_file_count"]
+        saved.warning_count = len(stage_result["warnings"])
+        saved.warnings_json = list(stage_result["warnings"])
+        saved.staged_files_json = list(stage_result["staged_files"])
+        saved.current_stage = "queued"
+        saved.detail_message = "导入任务已提交，等待执行。"
+        saved.progress_percent = 0
+        saved.update_date = utcnow()
+        saved.update_user = actor.id
+        db.commit()
+
+        task = _dispatch_elevation_dataset_data_import_task(import_job_id=saved.id, actor_user_id=actor.id)
+        saved.task_id = str(task.id)
+        saved.update_date = utcnow()
+        saved.update_user = actor.id
+        db.commit()
+    except HTTPException as exc:
+        db.rollback()
+        failed = get_data_import_job_by_id(db, saved.id)
+        if failed is not None:
+            failed.status = "failed"
+            failed.progress_percent = 100
+            failed.current_stage = "failed"
+            failed.detail_message = str(exc.detail)
+            if stage_result is not None:
+                failed.uploaded_file_count = stage_result["uploaded_file_count"]
+                failed.warning_count = len(stage_result["warnings"])
+                failed.warnings_json = list(stage_result["warnings"])
+                failed.staged_files_json = list(stage_result["staged_files"])
+            failed.staged_files_json = []
+            failed.finished_at = utcnow()
+            failed.update_date = utcnow()
+            failed.update_user = actor.id
+            db.commit()
+            _publish_elevation_change(
+                "elevation.dataset.import.failed",
+                {"action": "dataset_import_failed", "dataset_id": dataset.id, "import_job_id": failed.id},
+            )
+        _cleanup_staged_dataset_import_files(driver=driver, dataset_code=dataset.code, import_job_id=saved.id)
+        raise
+    except Exception as exc:
+        db.rollback()
+        failed = get_data_import_job_by_id(db, saved.id)
+        if failed is not None:
+            failed.status = "failed"
+            failed.progress_percent = 100
+            failed.current_stage = "failed"
+            failed.detail_message = f"导入任务派发失败：{exc}"
+            if stage_result is not None:
+                failed.uploaded_file_count = stage_result["uploaded_file_count"]
+                failed.warning_count = len(stage_result["warnings"])
+                failed.warnings_json = list(stage_result["warnings"])
+                failed.staged_files_json = list(stage_result["staged_files"])
+            failed.staged_files_json = []
+            failed.finished_at = utcnow()
+            failed.update_date = utcnow()
+            failed.update_user = actor.id
+            db.commit()
+            _publish_elevation_change(
+                "elevation.dataset.import.failed",
+                {"action": "dataset_import_failed", "dataset_id": dataset.id, "import_job_id": failed.id},
+            )
+        _cleanup_staged_dataset_import_files(driver=driver, dataset_code=dataset.code, import_job_id=saved.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"导入任务派发失败: {exc}",
+        ) from exc
+
+    queued = get_data_import_job_by_id(db, saved.id)
+    if queued is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="导入任务保存失败")
 
     _publish_elevation_change(
-        "elevation.dataset.data_imported",
-        {"action": "dataset_data_imported", "dataset_id": refreshed.id},
+        "elevation.dataset.import.queued",
+        {"action": "dataset_import_queued", "dataset_id": dataset.id, "import_job_id": queued.id, "task_id": queued.task_id},
     )
     return ElevationDatasetDataImportResponse(
-        dataset=serialize_dataset(refreshed),
-        uploaded_file_count=uploaded_file_count,
-        extracted_file_count=extracted_file_count,
-        imported_file_count=len(imported_files),
-        analysis_task_queued=analysis_task_queued,
-        analysis_task_id=analysis_task_id,
-        warning_count=len(warnings),
-        warnings=warnings,
-        imported_files=sorted(set(imported_files)),
+        job=serialize_data_import_job(queued),
+        queued=True,
+        detail="导入任务已提交，等待执行。",
+        warnings=list(queued.warnings_json or []),
     )
 
 
@@ -723,6 +779,282 @@ def get_dataset_terrain_task_status(
         terrain_max_zoom=dataset.terrain_max_zoom,
         update_date=dataset.update_date,
     )
+
+
+def list_data_import_jobs(
+    db: Session,
+    *,
+    dataset_id: str | None,
+    status_filter: str | None,
+    limit: int,
+) -> ElevationDataImportJobListResponse:
+    stmt = select(ElevationDataImportJob)
+    total_stmt = select(func.count()).select_from(ElevationDataImportJob)
+
+    if dataset_id:
+        stmt = stmt.where(ElevationDataImportJob.dataset_id == dataset_id)
+        total_stmt = total_stmt.where(ElevationDataImportJob.dataset_id == dataset_id)
+    if status_filter in {"pending", "running", "success", "failed"}:
+        stmt = stmt.where(ElevationDataImportJob.status == status_filter)
+        total_stmt = total_stmt.where(ElevationDataImportJob.status == status_filter)
+
+    total = int(db.scalar(total_stmt) or 0)
+    items = db.execute(
+        stmt.order_by(ElevationDataImportJob.create_date.desc(), ElevationDataImportJob.id.desc()).limit(limit)
+    ).scalars().all()
+    return ElevationDataImportJobListResponse(
+        items=[serialize_data_import_job(item) for item in items],
+        total=total,
+    )
+
+
+def _resolve_dataset_import_stage_root_dir(dataset_code: str) -> str:
+    return join_virtual_path(_resolve_dataset_dir(dataset_code), IMPORT_JOB_STAGE_DIRNAME)
+
+
+def _resolve_dataset_import_stage_dir(*, dataset_code: str, import_job_id: str) -> str:
+    return join_virtual_path(_resolve_dataset_import_stage_root_dir(dataset_code), import_job_id)
+
+
+def _build_dataset_import_stage_filename(*, index: int, filename: str) -> str:
+    suffix = Path(filename).suffix.lower()
+    return f"{index:03d}-{uuid4().hex}{suffix}"
+
+
+def _close_upload_file(upload: UploadFile) -> None:
+    try:
+        upload.file.close()
+    except Exception:
+        pass
+
+
+def _stage_dataset_import_job_uploads(
+    *,
+    driver: Any,
+    dataset: ElevationDataset,
+    import_job_id: str,
+    files: list[UploadFile],
+) -> dict[str, Any]:
+    stage_root_dir = _resolve_dataset_import_stage_root_dir(dataset.code)
+    stage_dir = _resolve_dataset_import_stage_dir(dataset_code=dataset.code, import_job_id=import_job_id)
+    try:
+        driver.ensure_directory(stage_root_dir)
+        driver.ensure_directory(stage_dir)
+    except StorageInvalidPathError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except StorageDriverError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    staged_files: list[dict[str, str | None]] = []
+    warnings: list[str] = []
+    uploaded_file_count = 0
+
+    for index, upload in enumerate(files, start=1):
+        filename = (upload.filename or "").strip()
+        if not filename:
+            warnings.append("存在空文件名上传项，已跳过")
+            _close_upload_file(upload)
+            continue
+
+        suffix = Path(filename).suffix.lower()
+        if suffix not in IMPORTABLE_ELEVATION_EXTENSIONS and suffix not in IMPORTABLE_ARCHIVE_EXTENSIONS:
+            warnings.append(f"文件 {filename} 类型不支持，已跳过（仅支持 csv/img/tif/tiff/zip）")
+            _close_upload_file(upload)
+            continue
+
+        content = _read_upload_content(upload)
+        stage_filename = _build_dataset_import_stage_filename(index=index, filename=filename)
+        stage_path = join_virtual_path(stage_dir, stage_filename)
+        try:
+            driver.write_file(
+                stage_path,
+                content=content,
+                content_type=upload.content_type or mimetypes.guess_type(filename)[0],
+            )
+        except StorageInvalidPathError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except StorageDriverError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+        staged_files.append(
+            {
+                "path": stage_path,
+                "filename": filename,
+                "content_type": upload.content_type,
+            }
+        )
+        uploaded_file_count += 1
+
+    if not staged_files:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="未提交任何可用高程文件")
+
+    return {
+        "uploaded_file_count": uploaded_file_count,
+        "warnings": warnings,
+        "staged_files": staged_files,
+    }
+
+
+def _cleanup_staged_dataset_import_files(*, driver: Any, dataset_code: str, import_job_id: str) -> None:
+    stage_dir = _resolve_dataset_import_stage_dir(dataset_code=dataset_code, import_job_id=import_job_id)
+    try:
+        driver.delete_path(stage_dir, is_dir=True, recursive=True)
+    except StoragePathNotFoundError:
+        return
+    except Exception:
+        return
+
+
+def _perform_dataset_data_import(
+    db: Session,
+    *,
+    dataset: ElevationDataset,
+    driver: Any,
+    actor_user_id: str | None,
+    staged_files: list[dict[str, str | None]],
+    trigger_analysis: bool,
+    progress_hook: Callable[[int, str, str], None] | None = None,
+) -> dict[str, Any]:
+    dataset_dir = _resolve_dataset_dir(dataset.code)
+    _ensure_dataset_directory(driver=driver, dataset_dir=dataset_dir)
+
+    uploaded_file_count = 0
+    extracted_file_count = 0
+    warnings: list[str] = []
+    imported_files: list[str] = []
+    total_files = max(len(staged_files), 1)
+
+    for index, staged_file in enumerate(staged_files, start=1):
+        filename = _normalize_str(staged_file.get("filename")) or Path(str(staged_file.get("path") or "")).name
+        staged_path = _normalize_str(staged_file.get("path"))
+        if staged_path is None:
+            warnings.append("存在缺少暂存路径的导入文件，已跳过")
+            continue
+
+        if progress_hook is not None:
+            file_percent = 15 + math.floor((index - 1) * 55 / total_files)
+            progress_hook(file_percent, "importing", f"正在处理文件 {index}/{total_files}：{filename}")
+
+        try:
+            staged_payload = driver.read_file(staged_path)
+        except StoragePathNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"导入暂存文件不存在：{filename}") from exc
+        except StorageInvalidPathError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except StorageDriverError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+        suffix = Path(filename).suffix.lower()
+        if suffix in IMPORTABLE_ARCHIVE_EXTENSIONS:
+            zip_result = _extract_zip_to_dataset_directory(
+                driver=driver,
+                dataset_dir=dataset_dir,
+                zip_content=staged_payload.content,
+            )
+            extracted_file_count += zip_result["extracted_count"]
+            imported_files.extend(zip_result["imported_files"])
+            warnings.extend(zip_result["warnings"])
+            uploaded_file_count += 1
+            continue
+
+        if suffix not in IMPORTABLE_ELEVATION_EXTENSIONS:
+            warnings.append(f"文件 {filename} 类型不支持，已跳过（仅支持 csv/img/tif/tiff/zip）")
+            continue
+
+        target_path = _write_dataset_file(
+            driver=driver,
+            dataset_dir=dataset_dir,
+            filename=filename,
+            content=staged_payload.content,
+            content_type=staged_file.get("content_type") or staged_payload.mime_type,
+        )
+        uploaded_file_count += 1
+        imported_files.append(target_path)
+
+    if progress_hook is not None:
+        progress_hook(75, "finalizing", "正在刷新数据集元信息。")
+
+    available_file_paths = _list_dataset_imported_file_paths(driver=driver, dataset_dir=dataset_dir)
+    preferred_file_path = _pick_preferred_dataset_file_path(paths=available_file_paths, current_path=dataset.file_path)
+    if preferred_file_path is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="未导入任何可用高程文件")
+
+    dataset.dataset_dir = dataset_dir
+    dataset.file_path = preferred_file_path
+    dataset.file_format = _detect_file_format(preferred_file_path)
+    dataset.sample_count = 0
+    dataset.bbox_min_lon = None
+    dataset.bbox_max_lon = None
+    dataset.bbox_min_lat = None
+    dataset.bbox_max_lat = None
+    dataset.usage_status = "idle"
+    dataset.terrain_status = _default_terrain_status_for_format(dataset.file_format)
+    dataset.terrain_task_id = None
+    dataset.terrain_error_message = None
+    dataset.terrain_root_path = None
+    dataset.terrain_url_template = None
+    dataset.terrain_min_zoom = None
+    dataset.terrain_max_zoom = None
+    dataset.terrain_bounds = None
+    dataset.terrain_metadata = None
+    dataset.analysis_task_id = None
+    dataset.analysis_status = "not_started"
+    dataset.analysis_error_message = None
+    dataset.analysis_started_at = None
+    dataset.analysis_finished_at = None
+    dataset.update_user = actor_user_id
+    dataset.update_date = utcnow()
+    db.commit()
+
+    if progress_hook is not None:
+        progress_hook(85, "analyzing", "正在派发分析任务。")
+
+    analysis_task_queued = False
+    analysis_task_id: str | None = None
+    if trigger_analysis:
+        try:
+            task = _dispatch_elevation_dataset_analysis_task(dataset_id=dataset.id, actor_user_id=actor_user_id)
+            analysis_task_queued = True
+            analysis_task_id = str(task.id)
+            dataset.analysis_task_id = analysis_task_id
+            dataset.analysis_status = "queued"
+            dataset.analysis_error_message = None
+            dataset.analysis_started_at = None
+            dataset.analysis_finished_at = None
+            dataset.update_date = utcnow()
+            dataset.update_user = actor_user_id
+            db.commit()
+        except Exception as exc:  # pragma: no cover
+            warnings.append(f"自动分析任务派发失败：{exc}")
+
+    refreshed = get_dataset_by_id(db, dataset.id)
+    if refreshed is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="数据集刷新失败")
+
+    _publish_elevation_change(
+        "elevation.dataset.data_imported",
+        {"action": "dataset_data_imported", "dataset_id": refreshed.id},
+    )
+
+    imported_files_unique = sorted(set(imported_files))
+    detail = (
+        f"导入完成：上传 {uploaded_file_count} 个、解压 {extracted_file_count} 个、可用 {len(imported_files)} 个"
+    )
+    if progress_hook is not None:
+        progress_hook(95, "completed", detail)
+
+    return {
+        "dataset": refreshed,
+        "uploaded_file_count": uploaded_file_count,
+        "extracted_file_count": extracted_file_count,
+        "imported_file_count": len(imported_files),
+        "analysis_task_queued": analysis_task_queued,
+        "analysis_task_id": analysis_task_id,
+        "warning_count": len(warnings),
+        "warnings": warnings,
+        "imported_files": imported_files_unique,
+        "detail": detail,
+    }
 
 
 def queue_dataset_terrain_build(
@@ -1229,6 +1561,12 @@ def _dispatch_elevation_dataset_terrain_task(*, dataset_id: str, actor_user_id: 
     return build_elevation_dataset_terrain_job.delay(dataset_id, actor_user_id)
 
 
+def _dispatch_elevation_dataset_data_import_task(*, import_job_id: str, actor_user_id: str | None):
+    from ..tasks.elevation_tasks import import_elevation_dataset_data_job
+
+    return import_elevation_dataset_data_job.delay(import_job_id, actor_user_id)
+
+
 def execute_apply_job(job_id: str, actor_user_id: str | None = None) -> None:
     db = SessionLocal()
     try:
@@ -1410,6 +1748,133 @@ def execute_dataset_analysis_job(*, dataset_id: str, actor_user_id: str | None) 
                 "elevation.dataset.analysis.failed",
                 {"action": "dataset_analysis_failed", "dataset_id": failed.id},
             )
+        raise
+    finally:
+        db.close()
+
+
+def execute_dataset_data_import_job(*, import_job_id: str, actor_user_id: str | None) -> None:
+    db = SessionLocal()
+    try:
+        job = get_data_import_job_by_id(db, import_job_id)
+        if not job:
+            return
+        if job.status in {"success", "failed"}:
+            return
+
+        dataset = get_dataset_by_id(db, job.dataset_id)
+        if dataset is None:
+            job.status = "failed"
+            job.progress_percent = 100
+            job.current_stage = "failed"
+            job.detail_message = "高程数据集不存在"
+            job.finished_at = utcnow()
+            job.update_date = utcnow()
+            db.commit()
+            return
+
+        mount = _require_mount(db, dataset.mount_code)
+        driver = _build_driver_or_400(mount)
+
+        def progress_hook(progress_percent: int, stage: str, detail: str) -> None:
+            saved = get_data_import_job_by_id(db, import_job_id)
+            if saved is None:
+                return
+            saved.progress_percent = max(0, min(100, progress_percent))
+            saved.current_stage = stage
+            saved.detail_message = detail
+            saved.update_date = utcnow()
+            saved.update_user = actor_user_id or saved.update_user
+            db.commit()
+            _publish_elevation_change(
+                "elevation.dataset.import.progress",
+                {
+                    "action": "dataset_import_progress",
+                    "dataset_id": saved.dataset_id,
+                    "import_job_id": saved.id,
+                    "progress_percent": saved.progress_percent,
+                    "stage": saved.current_stage,
+                },
+            )
+
+        job.status = "running"
+        job.progress_percent = 5
+        job.current_stage = "running"
+        job.detail_message = "导入任务开始执行。"
+        job.started_at = utcnow()
+        job.finished_at = None
+        job.update_date = utcnow()
+        job.update_user = actor_user_id or job.update_user
+        db.commit()
+        _publish_elevation_change(
+            "elevation.dataset.import.running",
+            {"action": "dataset_import_running", "dataset_id": job.dataset_id, "import_job_id": job.id},
+        )
+
+        result = _perform_dataset_data_import(
+            db,
+            dataset=dataset,
+            driver=driver,
+            actor_user_id=actor_user_id,
+            staged_files=list(job.staged_files_json or []),
+            trigger_analysis=job.trigger_analysis,
+            progress_hook=progress_hook,
+        )
+
+        saved = get_data_import_job_by_id(db, import_job_id)
+        if saved is None:
+            return
+        combined_warnings = list(saved.warnings_json or []) + list(result["warnings"])
+        saved.status = "success"
+        saved.progress_percent = 100
+        saved.current_stage = "completed"
+        saved.detail_message = result["detail"]
+        saved.analysis_task_queued = result["analysis_task_queued"]
+        saved.analysis_task_id = result["analysis_task_id"]
+        saved.uploaded_file_count = result["uploaded_file_count"]
+        saved.extracted_file_count = result["extracted_file_count"]
+        saved.imported_file_count = result["imported_file_count"]
+        saved.warning_count = len(combined_warnings)
+        saved.warnings_json = combined_warnings
+        saved.imported_files_json = list(result["imported_files"])
+        saved.staged_files_json = []
+        saved.finished_at = utcnow()
+        saved.update_date = utcnow()
+        saved.update_user = actor_user_id or saved.update_user
+        db.commit()
+        _cleanup_staged_dataset_import_files(driver=driver, dataset_code=dataset.code, import_job_id=saved.id)
+        _publish_elevation_change(
+            "elevation.dataset.import.success",
+            {"action": "dataset_import_success", "dataset_id": saved.dataset_id, "import_job_id": saved.id},
+        )
+    except Exception as exc:
+        db.rollback()
+        failed = get_data_import_job_by_id(db, import_job_id)
+        dataset = get_dataset_by_id(db, failed.dataset_id) if failed is not None else None
+        if failed is not None:
+            failed.status = "failed"
+            failed.progress_percent = 100
+            failed.current_stage = "failed"
+            failed.detail_message = str(exc)
+            failed.finished_at = utcnow()
+            failed.update_date = utcnow()
+            failed.update_user = actor_user_id or failed.update_user
+            db.commit()
+            _publish_elevation_change(
+                "elevation.dataset.import.failed",
+                {
+                    "action": "dataset_import_failed",
+                    "dataset_id": failed.dataset_id,
+                    "import_job_id": failed.id,
+                },
+            )
+        if dataset is not None:
+            try:
+                mount = _require_mount(db, dataset.mount_code)
+                driver = _build_driver_or_400(mount)
+                _cleanup_staged_dataset_import_files(driver=driver, dataset_code=dataset.code, import_job_id=import_job_id)
+            except Exception:
+                pass
         raise
     finally:
         db.close()
@@ -2914,8 +3379,11 @@ def _publish_elevation_change(event_name: str, payload: dict[str, Any]) -> None:
             ELEVATION_TOPIC,
             name=event_name,
             payload=payload,
-            requires_refetch=["/api/v1/elevation/datasets", "/api/v1/elevation/jobs"],
-            dedupe_key=f"{event_name}:{payload.get('job_id') or payload.get('dataset_id') or 'unknown'}",
+            requires_refetch=["/api/v1/elevation/datasets", "/api/v1/elevation/jobs", "/api/v1/elevation/import-jobs"],
+            dedupe_key=(
+                f"{event_name}:"
+                f"{payload.get('import_job_id') or payload.get('job_id') or payload.get('dataset_id') or 'unknown'}"
+            ),
         )
     )
 

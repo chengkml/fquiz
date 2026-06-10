@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.database import Base
 from app.models.atp_model import AtpModel, AtpModelVersion, AtpSimulationRun
-from app.models.elevation import ElevationDataset
+from app.models.elevation import ElevationDataImportJob, ElevationDataset
 from app.models.user import User
 from app.models.wine import WineRun
 from app.schemas.atp_model import AtpSimulationRunRequest
@@ -59,6 +59,25 @@ class _MemoryStorageDriver:
                 )
             )
         return entries
+
+    def read_file(self, path: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            path=path,
+            name=Path(path).name,
+            content=self.files[path],
+            mime_type=None,
+        )
+
+    def delete_path(self, path: str, *, is_dir: bool, recursive: bool) -> None:
+        normalized = path.rstrip("/")
+        if is_dir:
+            prefix = f"{normalized}/"
+            for file_path in list(self.files):
+                if file_path.startswith(prefix):
+                    del self.files[file_path]
+            self.directories = {item for item in self.directories if item != normalized and not item.startswith(prefix)}
+            return
+        self.files.pop(path, None)
 
 
 def _build_upload(filename: str, content: bytes, content_type: str = "application/octet-stream") -> SimpleNamespace:
@@ -214,8 +233,8 @@ def test_queue_dataset_terrain_build_reuses_existing_running_task(monkeypatch) -
         session.close()
 
 
-def test_import_dataset_data_files_batches_keep_preferred_raster_and_only_queue_final_analysis(monkeypatch) -> None:
-    testing_session = _build_sessionmaker(ElevationDataset.__table__)
+def test_import_dataset_data_files_queue_job_and_worker_keeps_preferred_raster(monkeypatch) -> None:
+    testing_session = _build_sessionmaker(ElevationDataset.__table__, ElevationDataImportJob.__table__)
     session: Session = testing_session()
     try:
         dataset = ElevationDataset(
@@ -247,10 +266,16 @@ def test_import_dataset_data_files_batches_keep_preferred_raster_and_only_queue_
             status="active",
         )
         driver = _MemoryStorageDriver()
+        import_calls: list[tuple[str, str | None]] = []
         analysis_calls: list[tuple[str, str | None]] = []
 
         monkeypatch.setattr(elevation_service, "_require_mount", lambda *_args, **_kwargs: SimpleNamespace(code="default"))
         monkeypatch.setattr(elevation_service, "_build_driver_or_400", lambda *_args, **_kwargs: driver)
+        monkeypatch.setattr(
+            elevation_service,
+            "_dispatch_elevation_dataset_data_import_task",
+            lambda *, import_job_id, actor_user_id: import_calls.append((import_job_id, actor_user_id)) or SimpleNamespace(id="import-task-1"),
+        )
         monkeypatch.setattr(
             elevation_service,
             "_dispatch_elevation_dataset_analysis_task",
@@ -263,20 +288,15 @@ def test_import_dataset_data_files_batches_keep_preferred_raster_and_only_queue_
             dataset_id=dataset.id,
             files=[_build_upload("terrain.img", b"img-bytes", "application/octet-stream")],
             actor=actor,
-            trigger_analysis=False,
+            trigger_analysis=True,
         )
-        session.refresh(dataset)
-
-        assert first.analysis_task_queued is False
-        assert first.analysis_task_id is None
-        assert dataset.file_path.endswith("/terrain.img")
-        assert dataset.file_format == "img"
-        assert dataset.analysis_status == "not_started"
-        assert dataset.analysis_task_id is None
-        assert dataset.sample_count == 0
-        assert dataset.bbox_min_lon is None
-        assert dataset.terrain_status == "pending"
-        assert analysis_calls == []
+        assert first.queued is True
+        assert first.job.task_id == "import-task-1"
+        assert first.job.status == "pending"
+        assert first.job.uploaded_file_count == 1
+        assert first.job.analysis_task_queued is False
+        assert import_calls == [(first.job.id, actor.id)]
+        assert any(path.endswith(".img") and "/.imports/" in path for path in driver.files)
 
         second = elevation_service.import_dataset_data_files(
             session,
@@ -285,20 +305,37 @@ def test_import_dataset_data_files_batches_keep_preferred_raster_and_only_queue_
             actor=actor,
             trigger_analysis=True,
         )
-        session.refresh(dataset)
+        assert second.queued is False
+        assert second.job.id == first.job.id
+        assert second.detail == "导入任务已存在，无需重复提交。"
 
-        assert second.analysis_task_queued is True
-        assert second.analysis_task_id == "new-task"
-        assert dataset.file_path.endswith("/terrain.img")
-        assert dataset.file_format == "img"
-        assert dataset.analysis_status == "queued"
-        assert dataset.analysis_task_id == "new-task"
-        assert dataset.terrain_status == "pending"
-        assert analysis_calls == [(dataset.id, actor.id)]
-        assert set(driver.files) == {
-            "/elevation/datasets/ELEV-IMPORT-001/terrain.img",
-            "/elevation/datasets/ELEV-IMPORT-001/points.csv",
-        }
+        monkeypatch.setattr(elevation_service, "SessionLocal", testing_session)
+        elevation_service.execute_dataset_data_import_job(import_job_id=first.job.id, actor_user_id=actor.id)
+
+        verification = testing_session()
+        try:
+            saved_dataset = verification.get(ElevationDataset, dataset.id)
+            saved_job = verification.get(ElevationDataImportJob, first.job.id)
+            assert saved_dataset is not None
+            assert saved_job is not None
+            assert saved_job.status == "success"
+            assert saved_job.progress_percent == 100
+            assert saved_job.analysis_task_queued is True
+            assert saved_job.analysis_task_id == "new-task"
+            assert saved_job.imported_file_count == 1
+            assert saved_dataset.file_path.endswith("/terrain.img")
+            assert saved_dataset.file_format == "img"
+            assert saved_dataset.analysis_status == "queued"
+            assert saved_dataset.analysis_task_id == "new-task"
+            assert saved_dataset.sample_count == 0
+            assert saved_dataset.bbox_min_lon is None
+            assert saved_dataset.terrain_status == "pending"
+            assert analysis_calls == [(dataset.id, actor.id)]
+            assert set(driver.files) == {
+                "/elevation/datasets/ELEV-IMPORT-001/terrain.img",
+            }
+        finally:
+            verification.close()
     finally:
         session.close()
 

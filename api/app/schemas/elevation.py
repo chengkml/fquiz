@@ -11,6 +11,7 @@ ElevationDatasetUsageStatus = Literal["idle", "in_use"]
 ElevationDatasetTerrainStatus = Literal["pending", "processing", "ready", "failed", "not_supported"]
 ElevationApplyMode = Literal["fill_null_only", "overwrite_all"]
 ElevationApplyJobStatus = Literal["pending", "running", "success", "failed"]
+ElevationDataImportJobStatus = Literal["pending", "running", "success", "failed"]
 
 
 class ElevationDatasetSummary(BaseModel):
@@ -152,15 +153,10 @@ class ElevationDatasetPreviewResponse(BaseModel):
 
 
 class ElevationDatasetDataImportResponse(BaseModel):
-    dataset: ElevationDatasetSummary
-    uploaded_file_count: int
-    extracted_file_count: int
-    imported_file_count: int
-    analysis_task_queued: bool = False
-    analysis_task_id: str | None = None
-    warning_count: int
+    job: "ElevationDataImportJobSummary"
+    queued: bool = True
+    detail: str | None = None
     warnings: list[str] = Field(default_factory=list)
-    imported_files: list[str] = Field(default_factory=list)
 
 
 class ElevationDatasetFileItem(BaseModel):
@@ -256,3 +252,38 @@ class ElevationApplyJobCreateRequest(BaseModel):
 class ElevationApplyJobCreateResponse(BaseModel):
     job: ElevationApplyJobSummary
     queued: bool = True
+
+
+class ElevationDataImportJobSummary(BaseModel):
+    id: str
+    dataset_id: str
+    dataset_code: str | None = None
+    dataset_name: str | None = None
+    status: ElevationDataImportJobStatus
+    task_id: str | None = None
+    progress_percent: int = 0
+    current_stage: str | None = None
+    detail_message: str | None = None
+    trigger_analysis: bool = True
+    analysis_task_queued: bool = False
+    analysis_task_id: str | None = None
+    uploaded_file_count: int = 0
+    extracted_file_count: int = 0
+    imported_file_count: int = 0
+    warning_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
+    imported_files: list[str] = Field(default_factory=list)
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    create_date: datetime
+    create_user: str | None = None
+    update_date: datetime
+    update_user: str | None = None
+
+
+class ElevationDataImportJobListResponse(BaseModel):
+    items: list[ElevationDataImportJobSummary]
+    total: int
+
+
+ElevationDatasetDataImportResponse.model_rebuild()

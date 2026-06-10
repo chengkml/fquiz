@@ -10,6 +10,8 @@ from ...schemas.elevation import (
     ElevationApplyJobCreateResponse,
     ElevationApplyJobListResponse,
     ElevationApplyJobSummary,
+    ElevationDataImportJobListResponse,
+    ElevationDataImportJobSummary,
     ElevationDatasetAnalysisTaskStatusResponse,
     ElevationDatasetAnalyzeResponse,
     ElevationDatasetBatchImportResponse,
@@ -28,6 +30,7 @@ from ...services.elevation_service import (
     create_apply_job,
     create_dataset,
     delete_dataset,
+    get_data_import_job_by_id,
     get_dataset_analysis_task_status,
     get_dataset_terrain_layer,
     get_dataset_terrain_task_status,
@@ -35,12 +38,14 @@ from ...services.elevation_service import (
     get_job_by_id,
     import_dataset_data_files,
     import_datasets_from_csv,
+    list_data_import_jobs,
     list_dataset_files,
     list_datasets,
     list_jobs,
     preview_dataset,
     queue_dataset_analysis,
     queue_dataset_terrain_build,
+    serialize_data_import_job,
     serialize_job,
     update_dataset,
 )
@@ -186,6 +191,34 @@ def get_elevation_dataset_terrain_status(
     db: Session = Depends(get_db),
 ) -> ElevationDatasetTerrainTaskStatusResponse:
     return get_dataset_terrain_task_status(db, dataset_id=dataset_id)
+
+
+@router.get("/import-jobs", response_model=ElevationDataImportJobListResponse)
+def get_elevation_data_import_jobs(
+    dataset_id: str | None = Query(default=None),
+    status_filter: str | None = Query(default=None, alias="status"),
+    limit: int = Query(default=50, ge=1, le=200),
+    _: CurrentUser = Depends(require_any_permission("elevation.read", "elevation.manage")),
+    db: Session = Depends(get_db),
+) -> ElevationDataImportJobListResponse:
+    return list_data_import_jobs(
+        db,
+        dataset_id=dataset_id,
+        status_filter=status_filter,
+        limit=limit,
+    )
+
+
+@router.get("/import-jobs/{job_id}", response_model=ElevationDataImportJobSummary)
+def get_elevation_data_import_job_detail(
+    job_id: str,
+    _: CurrentUser = Depends(require_any_permission("elevation.read", "elevation.manage")),
+    db: Session = Depends(get_db),
+) -> ElevationDataImportJobSummary:
+    item = get_data_import_job_by_id(db, job_id)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程导入任务不存在")
+    return serialize_data_import_job(item)
 
 
 @router.get("/datasets/{dataset_id}/terrain/layer.json", response_model=ElevationTerrainLayerResponse)

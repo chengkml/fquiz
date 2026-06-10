@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..core.database import Base
@@ -12,6 +12,7 @@ from .base import utcnow
 
 if TYPE_CHECKING:
     from .line import Line
+    from .user import User
 
 
 class ElevationDataset(Base):
@@ -113,4 +114,52 @@ class ElevationApplyJob(Base):
     update_user: Mapped[str | None] = mapped_column(String(64), index=True)
 
     line: Mapped[Line] = relationship("Line", lazy="selectin")
+    dataset: Mapped[ElevationDataset] = relationship("ElevationDataset", lazy="selectin")
+
+
+class ElevationDataImportJob(Base):
+    __tablename__ = "elevation_data_import_job"
+    __table_args__ = (
+        Index("idx_elevation_data_import_job_status", "status"),
+        Index("idx_elevation_data_import_job_dataset", "dataset_id"),
+        Index("idx_elevation_data_import_job_create_date", "create_date"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(32),
+        primary_key=True,
+        default=lambda: uuid4().hex,
+    )
+    dataset_id: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("elevation_dataset.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    task_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0)
+    current_stage: Mapped[str | None] = mapped_column(String(64))
+    detail_message: Mapped[str | None] = mapped_column(Text)
+    trigger_analysis: Mapped[bool] = mapped_column(Boolean, default=True)
+    analysis_task_queued: Mapped[bool] = mapped_column(Boolean, default=False)
+    analysis_task_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    uploaded_file_count: Mapped[int] = mapped_column(Integer, default=0)
+    extracted_file_count: Mapped[int] = mapped_column(Integer, default=0)
+    imported_file_count: Mapped[int] = mapped_column(Integer, default=0)
+    warning_count: Mapped[int] = mapped_column(Integer, default=0)
+    warnings_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    imported_files_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    staged_files_json: Mapped[list[dict[str, str | None]]] = mapped_column(JSON, default=list)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    create_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    create_user: Mapped[str | None] = mapped_column(String(64), index=True)
+    update_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+    )
+    update_user: Mapped[str | None] = mapped_column(String(64), index=True)
+
     dataset: Mapped[ElevationDataset] = relationship("ElevationDataset", lazy="selectin")
