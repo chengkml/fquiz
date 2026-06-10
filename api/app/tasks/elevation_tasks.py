@@ -5,8 +5,8 @@ from ..services.elevation_service import execute_apply_job, execute_dataset_anal
 
 
 @celery_app.task(name="app.tasks.elevation_tasks.apply_elevation_for_line_job")
-def apply_elevation_for_line_job(job_id: str) -> dict[str, str]:
-    execute_apply_job(job_id)
+def apply_elevation_for_line_job(job_id: str, actor_user_id: str | None = None) -> dict[str, str]:
+    execute_apply_job(job_id=job_id, actor_user_id=actor_user_id)
     return {"job_id": job_id, "status": "done"}
 
 

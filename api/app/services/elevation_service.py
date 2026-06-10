@@ -1192,7 +1192,7 @@ def create_apply_job(
     if not saved:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="创建任务失败")
 
-    task = _dispatch_elevation_apply_task(job_id=saved.id)
+    task = _dispatch_elevation_apply_task(job_id=saved.id, actor_user_id=actor.id)
     saved.task_id = task.id
     saved.update_user = actor.id
     saved.update_date = utcnow()
@@ -1211,10 +1211,10 @@ def create_apply_job(
     return ElevationApplyJobCreateResponse(job=serialize_job(latest), queued=True)
 
 
-def _dispatch_elevation_apply_task(*, job_id: str):
+def _dispatch_elevation_apply_task(*, job_id: str, actor_user_id: str | None):
     from ..tasks.elevation_tasks import apply_elevation_for_line_job
 
-    return apply_elevation_for_line_job.delay(job_id)
+    return apply_elevation_for_line_job.delay(job_id, actor_user_id)
 
 
 def _dispatch_elevation_dataset_analysis_task(*, dataset_id: str, actor_user_id: str | None):
@@ -1229,7 +1229,7 @@ def _dispatch_elevation_dataset_terrain_task(*, dataset_id: str, actor_user_id: 
     return build_elevation_dataset_terrain_job.delay(dataset_id, actor_user_id)
 
 
-def execute_apply_job(job_id: str) -> None:
+def execute_apply_job(job_id: str, actor_user_id: str | None = None) -> None:
     db = SessionLocal()
     try:
         job = get_job_by_id(db, job_id)
@@ -1237,6 +1237,7 @@ def execute_apply_job(job_id: str) -> None:
             return
         if job.status in {"success", "failed"}:
             return
+        resolved_actor_user_id = actor_user_id or job.create_user or job.update_user
 
         job.status = "running"
         job.started_at = utcnow()
@@ -1298,13 +1299,13 @@ def execute_apply_job(job_id: str) -> None:
         job.finished_at = utcnow()
         job.update_date = utcnow()
         line.update_date = utcnow()
-        line.update_user = actor_user_id
+        line.update_user = resolved_actor_user_id
         record_line_preparation_source(
             line,
             component="ground_slope",
             payload={
                 "prepared_at": utcnow().isoformat(),
-                "prepared_by_user_id": actor_user_id,
+                "prepared_by_user_id": resolved_actor_user_id,
                 "dataset_id": dataset.id,
                 "dataset_code": dataset.code,
                 "job_id": job.id,
