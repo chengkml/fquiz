@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
@@ -91,6 +91,7 @@ def import_elevation_datasets(
 def import_elevation_dataset_data(
     dataset_id: str,
     files: list[UploadFile] = File(...),
+    trigger_analysis: bool = Form(True),
     current_user: CurrentUser = Depends(require_permission("elevation.manage")),
     db: Session = Depends(get_db),
 ) -> ElevationDatasetDataImportResponse:
@@ -99,6 +100,7 @@ def import_elevation_dataset_data(
         dataset_id=dataset_id,
         files=files,
         actor=current_user.user,
+        trigger_analysis=trigger_analysis,
     )
 
 

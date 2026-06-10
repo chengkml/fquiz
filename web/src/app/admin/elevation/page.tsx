@@ -77,6 +77,8 @@ const DEFAULT_APPLY_FORM: ApplyFormValues = {
   mode: "fill_null_only",
 };
 
+const DATASET_IMPORT_BATCH_SIZE = 20;
+
 function statusTagColor(status: string): string {
   if (status === "success" || status === "active") return "green";
   if (status === "running") return "blue";
@@ -144,6 +146,17 @@ function readXhrError(xhr: XMLHttpRequest): string {
   } catch {
     return raw.length > 200 ? fallback : raw;
   }
+}
+
+function chunkFiles(files: File[], size: number): File[][] {
+  if (size <= 0) {
+    return [files];
+  }
+  const chunks: File[][] = [];
+  for (let index = 0; index < files.length; index += size) {
+    chunks.push(files.slice(index, index + size));
+  }
+  return chunks;
 }
 
 export default function AdminElevationPage() {
@@ -316,7 +329,11 @@ export default function AdminElevationPage() {
         payload.files.length === 1 ? payload.files[0].name : `共 ${payload.files.length} 个文件`,
       );
 
-      const uploadWithXhr = (token: string | null) =>
+      const uploadWithXhr = (
+        token: string | null,
+        files: File[],
+        options: { completedBytes: number; totalBytes: number; triggerAnalysis: boolean; label: string },
+      ) =>
         new Promise<ElevationDatasetDataImportResponse>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           xhr.open("POST", `${getApiBaseUrl()}/api/v1/elevation/datasets/${payload.datasetId}/data/import`);
@@ -326,16 +343,16 @@ export default function AdminElevationPage() {
           }
 
           xhr.upload.onprogress = (event: ProgressEvent<EventTarget>) => {
-            if (!event.lengthComputable || event.total <= 0) {
+            if (options.totalBytes <= 0) {
               return;
             }
-            const percent = Math.min(99, Math.max(0, Math.round((event.loaded / event.total) * 100)));
+            const loadedBytes = options.completedBytes + (event.lengthComputable ? event.loaded : 0);
+            const percent = Math.min(99, Math.max(0, Math.round((loadedBytes / options.totalBytes) * 100)));
             setDatasetDataUploadProgress(percent);
           };
 
           xhr.onload = () => {
             if (xhr.status >= 200 && xhr.status < 300) {
-              setDatasetDataUploadProgress(100);
               try {
                 resolve(JSON.parse(xhr.responseText) as ElevationDatasetDataImportResponse);
               } catch {
@@ -350,31 +367,96 @@ export default function AdminElevationPage() {
           xhr.onabort = () => reject(new Error("导入已取消"));
 
           const formData = new FormData();
-          for (const file of payload.files) {
+          formData.append("trigger_analysis", String(options.triggerAnalysis));
+          for (const file of files) {
             formData.append("files", file);
           }
+          setDatasetDataUploadFileName(options.label);
           xhr.send(formData);
         });
 
-      let result: ElevationDatasetDataImportResponse;
-      try {
-        result = await uploadWithXhr(getAccessToken());
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "导入失败";
-        const isUnauthorized = message.includes("401") || message.includes("未授权");
-        if (!isUnauthorized) {
-          throw error;
+      const batches = chunkFiles(payload.files, DATASET_IMPORT_BATCH_SIZE);
+      const totalBytes = payload.files.reduce((sum, file) => sum + file.size, 0);
+      let completedBytes = 0;
+      let latestResult: ElevationDatasetDataImportResponse | null = null;
+      let uploadedFileCount = 0;
+      let extractedFileCount = 0;
+      let importedFileCount = 0;
+      let analysisTaskQueued = false;
+      let analysisTaskId: string | null = null;
+      const warnings: string[] = [];
+      const importedFiles = new Set<string>();
+
+      for (const [index, batch] of batches.entries()) {
+        const batchBytes = batch.reduce((sum, file) => sum + file.size, 0);
+        const triggerAnalysis = index === batches.length - 1;
+        const label = batches.length === 1
+          ? (batch.length === 1 ? batch[0].name : `共 ${batch.length} 个文件`)
+          : `第 ${index + 1}/${batches.length} 批，共 ${batch.length} 个文件`;
+
+        let result: ElevationDatasetDataImportResponse;
+        try {
+          result = await uploadWithXhr(getAccessToken(), batch, {
+            completedBytes,
+            totalBytes,
+            triggerAnalysis,
+            label,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "导入失败";
+          const isUnauthorized = message.includes("401") || message.includes("未授权");
+          if (!isUnauthorized) {
+            throw error;
+          }
+          const refreshed = await refreshAccessToken();
+          if (!refreshed) {
+            throw error;
+          }
+          result = await uploadWithXhr(getAccessToken(), batch, {
+            completedBytes,
+            totalBytes,
+            triggerAnalysis,
+            label,
+          });
         }
-        const refreshed = await refreshAccessToken();
-        if (!refreshed) {
-          throw error;
+
+        latestResult = result;
+        uploadedFileCount += result.uploaded_file_count;
+        extractedFileCount += result.extracted_file_count;
+        importedFileCount += result.imported_file_count;
+        analysisTaskQueued = analysisTaskQueued || result.analysis_task_queued;
+        analysisTaskId = result.analysis_task_id ?? analysisTaskId;
+        for (const warning of result.warnings) {
+          warnings.push(warning);
         }
-        result = await uploadWithXhr(getAccessToken());
+        for (const importedFile of result.imported_files) {
+          importedFiles.add(importedFile);
+        }
+        completedBytes += batchBytes;
+        setDatasetDataUploadProgress(Math.min(99, Math.max(0, Math.round((completedBytes / Math.max(totalBytes, 1)) * 100))));
       }
-      return result;
+      setDatasetDataUploadProgress(100);
+
+      if (!latestResult) {
+        throw new Error("导入失败");
+      }
+
+      return {
+        ...latestResult,
+        uploaded_file_count: uploadedFileCount,
+        extracted_file_count: extractedFileCount,
+        imported_file_count: importedFileCount,
+        analysis_task_queued: analysisTaskQueued,
+        analysis_task_id: analysisTaskId,
+        warning_count: warnings.length,
+        warnings,
+        imported_files: Array.from(importedFiles).sort(),
+      };
     },
     onSuccess: async (payload) => {
-      const monitorHint = payload.analysis_task_id ? `，分析任务ID：${payload.analysis_task_id}` : "";
+      const monitorHint = payload.analysis_task_queued && payload.analysis_task_id
+        ? `，分析任务ID：${payload.analysis_task_id}`
+        : "";
       const msg = payload.warning_count > 0
         ? `数据导入完成：上传 ${payload.uploaded_file_count} 个、解压 ${payload.extracted_file_count} 个、可用 ${payload.imported_file_count} 个，告警 ${payload.warning_count} 条${monitorHint}`
         : `数据导入完成：上传 ${payload.uploaded_file_count} 个、解压 ${payload.extracted_file_count} 个、可用 ${payload.imported_file_count} 个${monitorHint}`;

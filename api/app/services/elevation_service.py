@@ -520,6 +520,7 @@ def import_dataset_data_files(
     dataset_id: str,
     files: list[UploadFile],
     actor: User,
+    trigger_analysis: bool = True,
 ) -> ElevationDatasetDataImportResponse:
     dataset = get_dataset_by_id(db, dataset_id)
     if not dataset:
@@ -573,13 +574,25 @@ def import_dataset_data_files(
         uploaded_file_count += 1
         imported_files.append(target_path)
 
-    preferred_file_path = _pick_preferred_dataset_file_path(paths=imported_files)
+    available_file_paths = _list_dataset_imported_file_paths(
+        driver=driver,
+        dataset_dir=dataset_dir,
+    )
+    preferred_file_path = _pick_preferred_dataset_file_path(
+        paths=available_file_paths,
+        current_path=dataset.file_path,
+    )
     if preferred_file_path is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="未导入任何可用高程文件")
 
     dataset.dataset_dir = dataset_dir
     dataset.file_path = preferred_file_path
     dataset.file_format = _detect_file_format(preferred_file_path)
+    dataset.sample_count = 0
+    dataset.bbox_min_lon = None
+    dataset.bbox_max_lon = None
+    dataset.bbox_min_lat = None
+    dataset.bbox_max_lat = None
     dataset.usage_status = "idle"
     dataset.terrain_status = _default_terrain_status_for_format(dataset.file_format)
     dataset.terrain_task_id = None
@@ -590,26 +603,32 @@ def import_dataset_data_files(
     dataset.terrain_max_zoom = None
     dataset.terrain_bounds = None
     dataset.terrain_metadata = None
+    dataset.analysis_task_id = None
+    dataset.analysis_status = "not_started"
+    dataset.analysis_error_message = None
+    dataset.analysis_started_at = None
+    dataset.analysis_finished_at = None
     dataset.update_user = actor.id
     dataset.update_date = utcnow()
     db.commit()
 
     analysis_task_queued = False
     analysis_task_id: str | None = None
-    try:
-        task = _dispatch_elevation_dataset_analysis_task(dataset_id=dataset.id, actor_user_id=actor.id)
-        analysis_task_queued = True
-        analysis_task_id = str(task.id)
-        dataset.analysis_task_id = analysis_task_id
-        dataset.analysis_status = "queued"
-        dataset.analysis_error_message = None
-        dataset.analysis_started_at = None
-        dataset.analysis_finished_at = None
-        dataset.update_date = utcnow()
-        dataset.update_user = actor.id
-        db.commit()
-    except Exception as exc:  # pragma: no cover
-        warnings.append(f"自动分析任务派发失败：{exc}")
+    if trigger_analysis:
+        try:
+            task = _dispatch_elevation_dataset_analysis_task(dataset_id=dataset.id, actor_user_id=actor.id)
+            analysis_task_queued = True
+            analysis_task_id = str(task.id)
+            dataset.analysis_task_id = analysis_task_id
+            dataset.analysis_status = "queued"
+            dataset.analysis_error_message = None
+            dataset.analysis_started_at = None
+            dataset.analysis_finished_at = None
+            dataset.update_date = utcnow()
+            dataset.update_user = actor.id
+            db.commit()
+        except Exception as exc:  # pragma: no cover
+            warnings.append(f"自动分析任务派发失败：{exc}")
 
     refreshed = get_dataset_by_id(db, dataset.id)
     if refreshed is None:
@@ -1656,13 +1675,35 @@ def _extract_zip_to_dataset_directory(
     }
 
 
-def _pick_preferred_dataset_file_path(*, paths: list[str]) -> str | None:
+def _list_dataset_imported_file_paths(*, driver: Any, dataset_dir: str) -> list[str]:
+    try:
+        entries = driver.list_dir(dataset_dir)
+    except StoragePathNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"高程数据目录不存在: {dataset_dir}") from exc
+    except StorageInvalidPathError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except StorageDriverError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    return [
+        entry.path
+        for entry in entries
+        if not entry.is_dir and Path(entry.name).suffix.lower() in IMPORTABLE_ELEVATION_EXTENSIONS
+    ]
+
+
+def _pick_preferred_dataset_file_path(*, paths: list[str], current_path: str | None = None) -> str | None:
     if not paths:
         return None
     for extension in (".img", ".tif", ".tiff", ".csv"):
-        for path in paths:
-            if path.lower().endswith(extension):
-                return path
+        matching_paths = [path for path in paths if path.lower().endswith(extension)]
+        if not matching_paths:
+            continue
+        if current_path in matching_paths:
+            return current_path
+        return matching_paths[0]
+    if current_path in paths:
+        return current_path
     return paths[0]
 
 

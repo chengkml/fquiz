@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,6 +15,54 @@ from app.models.wine import WineRun
 from app.schemas.atp_model import AtpSimulationRunRequest
 from app.schemas.wine import WineRunRequest
 from app.services import atp_model_service, elevation_service, wine_service
+
+
+class _MemoryStorageDriver:
+    def __init__(self) -> None:
+        self.directories: set[str] = set()
+        self.files: dict[str, bytes] = {}
+
+    def ensure_directory(self, path: str) -> None:
+        self.directories.add(path.rstrip("/") or "/")
+
+    def write_file(self, path: str, *, content: bytes, content_type: str | None = None) -> SimpleNamespace:
+        self.files[path] = content
+        parent_path = path.rsplit("/", 1)[0] or "/"
+        return SimpleNamespace(
+            path=path,
+            parent_path=parent_path,
+            name=Path(path).name,
+            is_dir=False,
+            size=len(content),
+            modified_at=None,
+            mime_type=content_type,
+        )
+
+    def list_dir(self, path: str) -> list[SimpleNamespace]:
+        prefix = f"{path.rstrip('/')}/"
+        entries: list[SimpleNamespace] = []
+        for file_path in sorted(self.files):
+            if not file_path.startswith(prefix):
+                continue
+            suffix = file_path[len(prefix):]
+            if "/" in suffix:
+                continue
+            entries.append(
+                SimpleNamespace(
+                    path=file_path,
+                    parent_path=path,
+                    name=Path(file_path).name,
+                    is_dir=False,
+                    size=len(self.files[file_path]),
+                    modified_at=None,
+                    mime_type=None,
+                )
+            )
+        return entries
+
+
+def _build_upload(filename: str, content: bytes, content_type: str = "application/octet-stream") -> SimpleNamespace:
+    return SimpleNamespace(filename=filename, file=io.BytesIO(content), content_type=content_type)
 
 
 def _build_sessionmaker(*tables):
@@ -161,6 +210,95 @@ def test_queue_dataset_terrain_build_reuses_existing_running_task(monkeypatch) -
         assert second.queued is False
         assert second.task_id == "terrain-task-1"
         assert second.detail == "地形瓦片任务已存在，无需重复提交。"
+    finally:
+        session.close()
+
+
+def test_import_dataset_data_files_batches_keep_preferred_raster_and_only_queue_final_analysis(monkeypatch) -> None:
+    testing_session = _build_sessionmaker(ElevationDataset.__table__)
+    session: Session = testing_session()
+    try:
+        dataset = ElevationDataset(
+            code="ELEV-IMPORT-001",
+            name="批量导入样例",
+            file_format="csv",
+            mount_code="default",
+            dataset_dir="/elevation/datasets/ELEV-IMPORT-001",
+            file_path="/elevation/datasets/ELEV-IMPORT-001/dataset.csv",
+            status="active",
+            usage_status="idle",
+            sample_count=128,
+            bbox_min_lon=100.0,
+            bbox_max_lon=120.0,
+            bbox_min_lat=20.0,
+            bbox_max_lat=30.0,
+            analysis_task_id="old-task",
+            analysis_status="success",
+            terrain_status="not_supported",
+        )
+        session.add(dataset)
+        session.commit()
+
+        actor = User(
+            id="actor-1",
+            email="actor@example.com",
+            username="actor",
+            password_hash="hashed",
+            status="active",
+        )
+        driver = _MemoryStorageDriver()
+        analysis_calls: list[tuple[str, str | None]] = []
+
+        monkeypatch.setattr(elevation_service, "_require_mount", lambda *_args, **_kwargs: SimpleNamespace(code="default"))
+        monkeypatch.setattr(elevation_service, "_build_driver_or_400", lambda *_args, **_kwargs: driver)
+        monkeypatch.setattr(
+            elevation_service,
+            "_dispatch_elevation_dataset_analysis_task",
+            lambda *, dataset_id, actor_user_id: analysis_calls.append((dataset_id, actor_user_id)) or SimpleNamespace(id="new-task"),
+        )
+        monkeypatch.setattr(elevation_service, "_publish_elevation_change", lambda *_args, **_kwargs: None)
+
+        first = elevation_service.import_dataset_data_files(
+            session,
+            dataset_id=dataset.id,
+            files=[_build_upload("terrain.img", b"img-bytes", "application/octet-stream")],
+            actor=actor,
+            trigger_analysis=False,
+        )
+        session.refresh(dataset)
+
+        assert first.analysis_task_queued is False
+        assert first.analysis_task_id is None
+        assert dataset.file_path.endswith("/terrain.img")
+        assert dataset.file_format == "img"
+        assert dataset.analysis_status == "not_started"
+        assert dataset.analysis_task_id is None
+        assert dataset.sample_count == 0
+        assert dataset.bbox_min_lon is None
+        assert dataset.terrain_status == "pending"
+        assert analysis_calls == []
+
+        second = elevation_service.import_dataset_data_files(
+            session,
+            dataset_id=dataset.id,
+            files=[_build_upload("points.csv", b"lon,lat,elevation\n1,2,3\n", "text/csv")],
+            actor=actor,
+            trigger_analysis=True,
+        )
+        session.refresh(dataset)
+
+        assert second.analysis_task_queued is True
+        assert second.analysis_task_id == "new-task"
+        assert dataset.file_path.endswith("/terrain.img")
+        assert dataset.file_format == "img"
+        assert dataset.analysis_status == "queued"
+        assert dataset.analysis_task_id == "new-task"
+        assert dataset.terrain_status == "pending"
+        assert analysis_calls == [(dataset.id, actor.id)]
+        assert set(driver.files) == {
+            "/elevation/datasets/ELEV-IMPORT-001/terrain.img",
+            "/elevation/datasets/ELEV-IMPORT-001/points.csv",
+        }
     finally:
         session.close()
 
