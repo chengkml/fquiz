@@ -21,7 +21,6 @@ class AtpAssetSummary(BaseModel):
     voltage_level: str | None = None
     tower_type: str | None = None
     scene_type: str | None = None
-    tags_json: list[str] = Field(default_factory=list)
     latest_release_no: int = 0
     active_release_no: int | None = None
     active_release_id: str | None = None
@@ -53,7 +52,6 @@ class AtpAssetCreateRequest(BaseModel):
     voltage_level: str | None = Field(default=None, max_length=16)
     tower_type: str | None = Field(default=None, max_length=64)
     scene_type: str | None = Field(default=None, max_length=32)
-    tags_json: list[str] = Field(default_factory=list, max_length=128)
 
 
 class AtpAssetUpdateRequest(BaseModel):
@@ -63,7 +61,6 @@ class AtpAssetUpdateRequest(BaseModel):
     voltage_level: str | None = Field(default=None, max_length=16)
     tower_type: str | None = Field(default=None, max_length=64)
     scene_type: str | None = Field(default=None, max_length=32)
-    tags_json: list[str] | None = Field(default=None, max_length=128)
 
 
 class AtpAssetReleaseSummary(BaseModel):

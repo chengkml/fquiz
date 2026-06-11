@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
@@ -13,6 +13,7 @@ from ...schemas.atp_asset import (
     AtpAssetReleaseCreateRequest,
     AtpAssetReleaseDetail,
     AtpAssetReleaseListResponse,
+    AtpAssetReleaseUpdateRequest,
     AtpAssetRunDetail,
     AtpAssetRunListResponse,
     AtpAssetRunRequest,
@@ -23,6 +24,7 @@ from ...services.atp_asset_service import (
     activate_release,
     create_asset,
     create_release,
+    create_release_from_archive,
     delete_asset,
     get_asset_by_id,
     get_release_by_id,
@@ -148,6 +150,32 @@ def create_atp_asset_release_endpoint(
     db: Session = Depends(get_db),
 ) -> AtpAssetReleaseDetail:
     return create_release(db, asset_id=asset_id, payload=payload, actor_user_id=current_user.user.id)
+
+
+@router.post("/assets/{asset_id}/releases/upload", response_model=AtpAssetReleaseDetail)
+def upload_atp_asset_release_endpoint(
+    asset_id: str,
+    release_tag: str | None = Form(default=None),
+    archive: UploadFile = File(...),
+    current_user: CurrentUser = Depends(require_permission("atp.manage")),
+    db: Session = Depends(get_db),
+) -> AtpAssetReleaseDetail:
+    try:
+        archive_content = archive.file.read()
+    finally:
+        try:
+            archive.file.close()
+        except Exception:
+            pass
+
+    return create_release_from_archive(
+        db,
+        asset_id=asset_id,
+        release_tag=release_tag,
+        archive_filename=archive.filename or "release.zip",
+        archive_content=archive_content,
+        actor_user_id=current_user.user.id,
+    )
 
 
 @router.get("/releases", response_model=AtpAssetReleaseListResponse)

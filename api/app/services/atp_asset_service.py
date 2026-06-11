@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import io
 import json
 import mimetypes
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import re
 import shutil
 import subprocess
 import sys
 import time
+import zipfile
 from dataclasses import dataclass
 from typing import Any
 
@@ -58,6 +61,7 @@ VALID_RELEASE_STATUS = {"draft", "released", "archived"}
 VALID_RUNNER_KIND = {"atp", "egm", "hybrid"}
 VALID_RUN_STATUS = {"pending", "running", "success", "failed"}
 LOG_MAX_CHARS = 200_000
+ATP_ASSET_RELEASES_ROOT = "/atp-library/releases"
 
 
 @dataclass(slots=True)
@@ -99,18 +103,6 @@ def _normalize_optional_str(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
-
-
-def _normalize_tags(values: list[str] | None) -> list[str]:
-    if not values:
-        return []
-    dedup: dict[str, None] = {}
-    for candidate in values:
-        normalized = candidate.strip()
-        if not normalized:
-            continue
-        dedup[normalized] = None
-    return list(dedup.keys())[:128]
 
 
 def _normalize_relative_path(value: str | None) -> str | None:
@@ -244,6 +236,96 @@ def _walk_storage_tree(driver: StorageDriver, root_path: str) -> StorageTree:
         dir_paths=dir_paths,
         max_depth=max_depth,
     )
+
+
+def _parent_virtual_path(path: str) -> str:
+    normalized = normalize_virtual_path(path)
+    if normalized == "/":
+        return "/"
+    parent = normalized.rsplit("/", 1)[0]
+    return parent if parent else "/"
+
+
+def _normalize_archive_member_path(value: str) -> str | None:
+    normalized = value.replace("\\", "/").strip()
+    if not normalized:
+        return None
+
+    parts: list[str] = []
+    for part in PurePosixPath(normalized).parts:
+        if part in {"", ".", "/"}:
+            continue
+        if part == "..":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Archive entry escapes target path: {value}")
+        parts.append(part)
+    return "/".join(parts) or None
+
+
+def _sanitize_storage_segment(value: str, *, fallback: str) -> str:
+    normalized = _normalize_optional_str(value) or fallback
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", normalized).strip(".-")
+    return normalized or fallback
+
+
+def _build_release_storage_root(asset_code: str, release_no: int) -> str:
+    asset_segment = _sanitize_storage_segment(asset_code, fallback="asset")
+    return normalize_virtual_path(f"{ATP_ASSET_RELEASES_ROOT}/{asset_segment}/r{release_no}")
+
+
+def _write_archive_to_storage(
+    driver: StorageDriver,
+    *,
+    storage_root_path: str,
+    archive_filename: str,
+    archive_content: bytes,
+) -> int:
+    filename = (archive_filename or "").strip().lower()
+    if filename and not filename.endswith(".zip"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Release ZIP 包必须是 zip 格式")
+    if not archive_content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Release ZIP 包不能为空")
+
+    driver.ensure_directory(storage_root_path)
+    extracted_count = 0
+    try:
+        with zipfile.ZipFile(io.BytesIO(archive_content)) as archive:
+            for member in archive.infolist():
+                if member.is_dir():
+                    continue
+                relative_path = _normalize_archive_member_path(member.filename)
+                if relative_path is None:
+                    continue
+                target_path = normalize_virtual_path(f"{storage_root_path.rstrip('/')}/{relative_path}")
+                driver.ensure_directory(_parent_virtual_path(target_path))
+                try:
+                    content = archive.read(member)
+                except Exception as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"读取 ZIP 条目失败: {member.filename}: {exc}",
+                    ) from exc
+                driver.write_file(
+                    target_path,
+                    content=content,
+                    content_type=mimetypes.guess_type(relative_path)[0],
+                )
+                extracted_count += 1
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Release ZIP 文件损坏: {exc}") from exc
+
+    if extracted_count <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Release ZIP 包中没有可导入文件")
+    return extracted_count
+
+
+def _resolve_runner_kind_from_tree(tree: StorageTree) -> str:
+    detected_entry = _auto_detect_entry_file(tree)
+    detected_egm_subdir = _auto_detect_egm_subdir(tree)
+    if detected_entry and detected_egm_subdir:
+        return "hybrid"
+    if detected_egm_subdir:
+        return "egm"
+    return "atp"
 
 
 def _auto_detect_entry_file(tree: StorageTree) -> str | None:
@@ -410,7 +492,6 @@ def serialize_asset(
         voltage_level=item.voltage_level,
         tower_type=item.tower_type,
         scene_type=item.scene_type,
-        tags_json=item.tags_json or [],
         latest_release_no=item.latest_release_no,
         active_release_no=item.active_release_no,
         active_release_id=active_release.id if active_release else None,
@@ -644,7 +725,6 @@ def create_asset(db: Session, payload: AtpAssetCreateRequest, *, actor_user_id: 
         voltage_level=_normalize_optional_str(payload.voltage_level),
         tower_type=_normalize_optional_str(payload.tower_type),
         scene_type=_normalize_optional_str(payload.scene_type),
-        tags_json=_normalize_tags(payload.tags_json),
         latest_release_no=0,
         active_release_no=None,
         create_user=actor_user_id,
@@ -687,8 +767,6 @@ def update_asset(
         item.tower_type = _normalize_optional_str(update_data["tower_type"])
     if "scene_type" in update_data:
         item.scene_type = _normalize_optional_str(update_data["scene_type"])
-    if "tags_json" in update_data:
-        item.tags_json = _normalize_tags(update_data["tags_json"])
 
     item.update_user = actor_user_id
     item.update_date = utcnow()
@@ -766,6 +844,18 @@ def get_release_by_id(db: Session, release_id: str) -> AtpAssetRelease | None:
     ).scalar_one_or_none()
 
 
+def _require_asset_dimensions(asset: AtpAsset) -> tuple[str, str, str]:
+    voltage_level = _normalize_optional_str(asset.voltage_level)
+    tower_type = _normalize_optional_str(asset.tower_type)
+    scene_type = _normalize_optional_str(asset.scene_type)
+    if not voltage_level or not tower_type or not scene_type:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请先为模型补齐电压等级、塔型和场景后再创建 Release",
+        )
+    return voltage_level, tower_type, scene_type
+
+
 def create_release(
     db: Session,
     *,
@@ -840,6 +930,55 @@ def create_release(
         {"action": "created", "asset_id": asset.id, "release_id": saved.id, "release_no": saved.release_no},
     )
     return serialize_release_detail(saved)
+
+
+def create_release_from_archive(
+    db: Session,
+    *,
+    asset_id: str,
+    release_tag: str | None,
+    archive_filename: str,
+    archive_content: bytes,
+    actor_user_id: str,
+) -> AtpAssetReleaseDetail:
+    asset = get_asset_by_id(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+
+    voltage_level, tower_type, scene_type = _require_asset_dimensions(asset)
+    next_release_no = int(
+        db.scalar(select(func.max(AtpAssetRelease.release_no)).where(AtpAssetRelease.asset_id == asset_id)) or 0
+    ) + 1
+    storage_root_path = _build_release_storage_root(asset.code, next_release_no)
+
+    mount = _resolve_mount(db, "main")
+    driver = _build_driver_or_400(mount)
+    _write_archive_to_storage(
+        driver,
+        storage_root_path=storage_root_path,
+        archive_filename=archive_filename,
+        archive_content=archive_content,
+    )
+
+    try:
+        tree = _walk_storage_tree(driver, storage_root_path)
+        payload = AtpAssetReleaseCreateRequest(
+            release_tag=_normalize_optional_str(release_tag),
+            status="released",
+            voltage_level=voltage_level,
+            tower_type=tower_type,
+            scene_type=scene_type,
+            runner_kind=_resolve_runner_kind_from_tree(tree),  # type: ignore[arg-type]
+            storage_mount_code="main",
+            storage_root_path=storage_root_path,
+        )
+        return create_release(db, asset_id=asset_id, payload=payload, actor_user_id=actor_user_id)
+    except Exception:
+        try:
+            driver.delete_path(storage_root_path, is_dir=True, recursive=True)
+        except Exception:
+            pass
+        raise
 
 
 def update_release(

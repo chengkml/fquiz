@@ -833,7 +833,6 @@ export type AtpAssetSummary = {
   voltage_level: string | null;
   tower_type: string | null;
   scene_type: string | null;
-  tags_json: string[];
   latest_release_no: number;
   active_release_no: number | null;
   active_release_id: string | null;

@@ -6,10 +6,12 @@ import {
   Alert,
   App,
   Button,
+  Col,
   Form,
   Input,
   Modal,
   Popconfirm,
+  Row,
   Select,
   Space,
   Table,
@@ -21,8 +23,10 @@ import { useMemo, useState } from "react";
 
 import { AdminPageLoading } from "@/components/admin-page-loading";
 import { useAuth } from "@/components/auth-provider";
+import { CreatableSingleSelect } from "@/components/creatable-single-select";
 import { Card } from "@/components/ui-antd";
 import { readApiError } from "@/lib/api";
+import { getAtpAssetStatusDisplay } from "@/lib/atp-asset-display";
 import type { AtpAssetListResponse, AtpAssetSummary, AtpEngineStatusResponse } from "@/types/auth";
 
 type AssetFormValues = {
@@ -33,7 +37,6 @@ type AssetFormValues = {
   voltage_level: string;
   tower_type: string;
   scene_type: string;
-  tags_text: string;
 };
 
 const EMPTY_FORM: AssetFormValues = {
@@ -44,7 +47,6 @@ const EMPTY_FORM: AssetFormValues = {
   voltage_level: "",
   tower_type: "",
   scene_type: "",
-  tags_text: "",
 };
 
 function formatDateTime(value: string | null | undefined): string {
@@ -58,14 +60,6 @@ function formatDateTime(value: string | null | undefined): string {
   return date.toLocaleString("zh-CN", { hour12: false });
 }
 
-function statusColor(value: string): string {
-  if (value === "enabled" || value === "released") return "green";
-  if (value === "draft") return "gold";
-  if (value === "disabled") return "default";
-  if (value === "archived") return "red";
-  return "blue";
-}
-
 function toFormValues(item: AtpAssetSummary): AssetFormValues {
   return {
     code: item.code,
@@ -75,7 +69,6 @@ function toFormValues(item: AtpAssetSummary): AssetFormValues {
     voltage_level: item.voltage_level ?? "",
     tower_type: item.tower_type ?? "",
     scene_type: item.scene_type ?? "",
-    tags_text: item.tags_json.join(", "),
   };
 }
 
@@ -88,11 +81,21 @@ function buildPayload(values: AssetFormValues) {
     voltage_level: values.voltage_level.trim() || null,
     tower_type: values.tower_type.trim() || null,
     scene_type: values.scene_type.trim() || null,
-    tags_json: values.tags_text
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean),
   };
+}
+
+function buildDimensionOptions(items: AtpAssetSummary[], picker: (item: AtpAssetSummary) => string | null): Array<{ label: string; value: string }> {
+  const values = new Set<string>();
+  for (const item of items) {
+    const value = picker(item)?.trim();
+    if (!value) {
+      continue;
+    }
+    values.add(value);
+  }
+  return Array.from(values)
+    .sort((left, right) => left.localeCompare(right, "zh-CN"))
+    .map((value) => ({ label: value, value }));
 }
 
 export default function AtpModelsPage() {
@@ -163,13 +166,13 @@ export default function AtpModelsPage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["atp-assets"] });
-      message.success(editingAsset ? "资料包已更新" : "资料包已创建");
+      message.success(editingAsset ? "模型已更新" : "模型已创建");
       setModalOpen(false);
       setEditingAsset(null);
       form.resetFields();
     },
     onError: (candidate) => {
-      message.error(candidate instanceof Error ? candidate.message : "保存资料包失败");
+      message.error(candidate instanceof Error ? candidate.message : "保存模型失败");
     },
   });
 
@@ -182,19 +185,22 @@ export default function AtpModelsPage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["atp-assets"] });
-      message.success("资料包已删除");
+      message.success("模型已删除");
     },
     onError: (candidate) => {
-      message.error(candidate instanceof Error ? candidate.message : "删除资料包失败");
+      message.error(candidate instanceof Error ? candidate.message : "删除模型失败");
     },
   });
 
   const assetItems = assetsQuery.data?.items ?? [];
+  const voltageLevelOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.voltage_level), [assetItems]);
+  const towerTypeOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.tower_type), [assetItems]);
+  const sceneTypeOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.scene_type), [assetItems]);
 
   const columns = useMemo<ColumnsType<AtpAssetSummary>>(
     () => [
       {
-        title: "资料包",
+        title: "模型",
         key: "asset",
         render: (_, item) => (
           <Space direction="vertical" size={0}>
@@ -210,20 +216,20 @@ export default function AtpModelsPage() {
         key: "dimensions",
         render: (_, item) => (
           <Space size={[4, 4]} wrap>
-            <Tag>{item.voltage_level || "未标注电压"}</Tag>
-            <Tag>{item.tower_type || "未标注塔型"}</Tag>
-            <Tag>{item.scene_type || "未标注场景"}</Tag>
+            <Tag>{item.voltage_level || "未设置电压等级"}</Tag>
+            <Tag>{item.tower_type || "未设置塔型"}</Tag>
+            <Tag>{item.scene_type || "未设置场景"}</Tag>
           </Space>
         ),
       },
       {
-        title: "当前发布",
+        title: "当前 Release",
         key: "release",
         render: (_, item) => (
           <Space direction="vertical" size={0}>
             <Typography.Text>{item.active_release_tag || (item.active_release_no ? `r${item.active_release_no}` : "-")}</Typography.Text>
             <Typography.Text type="secondary">
-              {item.release_count} 个 release / {item.run_count} 次运行
+              {item.release_count} 个 Release / {item.run_count} 次运行
             </Typography.Text>
           </Space>
         ),
@@ -231,7 +237,10 @@ export default function AtpModelsPage() {
       {
         title: "状态",
         dataIndex: "status",
-        render: (value: string) => <Tag color={statusColor(value)}>{value}</Tag>,
+        render: (value: string) => {
+          const display = getAtpAssetStatusDisplay(value);
+          return <Tag color={display.color}>{display.label}</Tag>;
+        },
       },
       {
         title: "更新时间",
@@ -260,8 +269,8 @@ export default function AtpModelsPage() {
               编辑
             </Button>
             <Popconfirm
-              title="删除资料包"
-              description="这会同时删除其 release 与运行记录。"
+              title="删除模型"
+              description="这会同时删除其 Release 与运行记录。"
               okText="删除"
               cancelText="取消"
               onConfirm={() => void deleteMutation.mutateAsync(item.id)}
@@ -279,14 +288,14 @@ export default function AtpModelsPage() {
   );
 
   if (initializing) {
-    return <AdminPageLoading tip="加载 ATP 资料包中..." minHeightClassName="min-h-[280px]" />;
+    return <AdminPageLoading tip="加载 ATP 模型中..." minHeightClassName="min-h-[280px]" />;
   }
 
   if (!user || !canRead) {
     return (
-      <Card title="ATP 资料包管理">
+      <Card title="ATP 模型管理">
         <Typography.Text type="secondary">
-          {!user ? "请先登录后再查看 ATP 资料包管理。" : "当前账号无 ATP 模块权限（需要 atp.read/atp.run/atp.manage）。"}
+          {!user ? "请先登录后再查看 ATP 模型管理。" : "当前账号无 ATP 模块权限（需要 atp.read/atp.run/atp.manage）。"}
         </Typography.Text>
       </Card>
     );
@@ -295,24 +304,19 @@ export default function AtpModelsPage() {
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
       <Card
-        title="ATP 资料包管理"
+        title="ATP 模型管理"
         extra={
-          <Space wrap>
-            <Link href="/admin/power-lines/atp-viewer">
-              <Button>Legacy 文本工具</Button>
-            </Link>
-            <Button
-              type="primary"
-              disabled={!canManage}
-              onClick={() => {
-                setEditingAsset(null);
-                form.setFieldsValue(EMPTY_FORM);
-                setModalOpen(true);
-              }}
-            >
-              新建资料包
-            </Button>
-          </Space>
+          <Button
+            type="primary"
+            disabled={!canManage}
+            onClick={() => {
+              setEditingAsset(null);
+              form.setFieldsValue(EMPTY_FORM);
+              setModalOpen(true);
+            }}
+          >
+            新建模型
+          </Button>
         }
       >
         <Space direction="vertical" size={16} style={{ width: "100%" }}>
@@ -325,7 +329,7 @@ export default function AtpModelsPage() {
                 ? `模式：${engineQuery.data.mode}，执行器：${engineQuery.data.resolved_executable || engineQuery.data.executable_path}。`
                 : engineQuery.error instanceof Error
                   ? engineQuery.error.message
-                  : "目录化 release 会在运行前物化到 wine 允许运行根目录。"
+                  : "Release ZIP 会自动解压到约定目录，入口文件与 EGM 目录会自动识别。"
             }
           />
           <Space wrap>
@@ -344,16 +348,16 @@ export default function AtpModelsPage() {
               style={{ width: 180 }}
               onChange={(value) => setStatusFilter(value)}
               options={[
-                { value: "draft", label: "draft" },
-                { value: "enabled", label: "enabled" },
-                { value: "disabled", label: "disabled" },
-                { value: "archived", label: "archived" },
+                { value: "draft", label: "草稿" },
+                { value: "enabled", label: "启用" },
+                { value: "disabled", label: "停用" },
+                { value: "archived", label: "归档" },
               ]}
             />
           </Space>
 
           {assetsQuery.error instanceof Error ? (
-            <Alert type="error" showIcon message="ATP 资料包加载失败" description={assetsQuery.error.message} />
+            <Alert type="error" showIcon message="ATP 模型加载失败" description={assetsQuery.error.message} />
           ) : null}
 
           <Table<AtpAssetSummary>
@@ -361,7 +365,7 @@ export default function AtpModelsPage() {
             loading={assetsQuery.isLoading}
             columns={columns}
             dataSource={assetItems}
-            locale={{ emptyText: "暂无 ATP 资料包" }}
+            locale={{ emptyText: "暂无 ATP 模型" }}
             pagination={false}
             scroll={{ x: 1080 }}
           />
@@ -369,7 +373,7 @@ export default function AtpModelsPage() {
       </Card>
 
       <Modal
-        title={editingAsset ? "编辑 ATP 资料包" : "新建 ATP 资料包"}
+        title={editingAsset ? "编辑 ATP 模型" : "新建 ATP 模型"}
         open={modalOpen}
         onCancel={() => {
           setModalOpen(false);
@@ -379,6 +383,7 @@ export default function AtpModelsPage() {
         onOk={() => void form.submit()}
         confirmLoading={saveMutation.isPending}
         destroyOnClose
+        width={760}
       >
         <Form<AssetFormValues>
           form={form}
@@ -386,37 +391,50 @@ export default function AtpModelsPage() {
           initialValues={EMPTY_FORM}
           onFinish={(values) => void saveMutation.mutateAsync(values)}
         >
-          <Form.Item name="code" label="编码" rules={[{ required: true, message: "请输入资料包编码" }]}>
-            <Input disabled={Boolean(editingAsset)} />
-          </Form.Item>
-          <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入资料包名称" }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="description" label="描述">
-            <Input.TextArea rows={3} />
-          </Form.Item>
-          <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
-            <Select
-              options={[
-                { value: "draft", label: "draft" },
-                { value: "enabled", label: "enabled" },
-                { value: "disabled", label: "disabled" },
-                { value: "archived", label: "archived" },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item name="voltage_level" label="电压等级">
-            <Input placeholder="如 220 / 500 / 1000" />
-          </Form.Item>
-          <Form.Item name="tower_type" label="塔型">
-            <Input placeholder="如 sihuita / ganzi" />
-          </Form.Item>
-          <Form.Item name="scene_type" label="场景">
-            <Input placeholder="如 fanji / raoji3" />
-          </Form.Item>
-          <Form.Item name="tags_text" label="标签">
-            <Input placeholder="多个标签用逗号分隔" />
-          </Form.Item>
+          <Row gutter={16}>
+            <Col xs={24} md={12}>
+              <Form.Item name="code" label="编码" rules={[{ required: true, message: "请输入模型编码" }]}>
+                <Input disabled={Boolean(editingAsset)} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入模型名称" }]}>
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
+                <Select
+                  options={[
+                    { value: "draft", label: "草稿" },
+                    { value: "enabled", label: "启用" },
+                    { value: "disabled", label: "停用" },
+                    { value: "archived", label: "归档" },
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="voltage_level" label="电压等级" rules={[{ required: true, message: "请选择或新建电压等级" }]}>
+                <CreatableSingleSelect options={voltageLevelOptions} placeholder="请选择或新建电压等级" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="tower_type" label="塔型" rules={[{ required: true, message: "请选择或新建塔型" }]}>
+                <CreatableSingleSelect options={towerTypeOptions} placeholder="请选择或新建塔型" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="scene_type" label="场景" rules={[{ required: true, message: "请选择或新建场景" }]}>
+                <CreatableSingleSelect options={sceneTypeOptions} placeholder="请选择或新建场景" />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item name="description" label="描述">
+                <Input.TextArea rows={3} />
+              </Form.Item>
+            </Col>
+          </Row>
         </Form>
       </Modal>
     </Space>

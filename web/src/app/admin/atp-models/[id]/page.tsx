@@ -18,14 +18,22 @@ import {
   Table,
   Tag,
   Typography,
+  Upload,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import type { UploadFile } from "antd/es/upload/interface";
 import { useMemo, useState } from "react";
 
 import { AdminPageLoading } from "@/components/admin-page-loading";
 import { useAuth } from "@/components/auth-provider";
 import { Card } from "@/components/ui-antd";
 import { readApiError } from "@/lib/api";
+import {
+  getAtpAssetStatusDisplay,
+  getAtpReleaseStatusDisplay,
+  getAtpRunStatusDisplay,
+  getAtpRunnerKindLabel,
+} from "@/lib/atp-asset-display";
 import type {
   AtpAssetFileEntry,
   AtpAssetFileListResponse,
@@ -42,19 +50,6 @@ import type {
 type ReleaseFormValues = {
   release_tag: string;
   status: "draft" | "released" | "archived";
-  voltage_level: string;
-  tower_type: string;
-  scene_type: string;
-  scenario_code: string;
-  runner_kind: "atp" | "egm" | "hybrid";
-  storage_mount_code: string;
-  storage_root_path: string;
-  entry_file: string;
-  result_file: string;
-  egm_subdir: string;
-  egm_result_file: string;
-  preprocess_script: string;
-  postprocess_script: string;
 };
 
 type RunFormValues = {
@@ -66,19 +61,6 @@ type RunFormValues = {
 const EMPTY_RELEASE_FORM: ReleaseFormValues = {
   release_tag: "",
   status: "released",
-  voltage_level: "",
-  tower_type: "",
-  scene_type: "",
-  scenario_code: "",
-  runner_kind: "atp",
-  storage_mount_code: "main",
-  storage_root_path: "",
-  entry_file: "",
-  result_file: "",
-  egm_subdir: "",
-  egm_result_file: "",
-  preprocess_script: "",
-  postprocess_script: "",
 };
 
 const EMPTY_RUN_FORM: RunFormValues = {
@@ -98,52 +80,17 @@ function formatDateTime(value: string | null | undefined): string {
   return date.toLocaleString("zh-CN", { hour12: false });
 }
 
-function statusColor(value: string): string {
-  if (value === "enabled" || value === "released" || value === "success") return "green";
-  if (value === "draft" || value === "running") return "gold";
-  if (value === "pending") return "blue";
-  if (value === "disabled") return "default";
-  if (value === "failed" || value === "archived") return "red";
-  return "blue";
-}
-
 function toReleaseFormValues(item: AtpAssetReleaseSummary): ReleaseFormValues {
   return {
     release_tag: item.release_tag ?? "",
     status: item.status,
-    voltage_level: item.voltage_level,
-    tower_type: item.tower_type,
-    scene_type: item.scene_type,
-    scenario_code: item.scenario_code ?? "",
-    runner_kind: item.runner_kind,
-    storage_mount_code: item.storage_mount_code,
-    storage_root_path: item.storage_root_path,
-    entry_file: item.entry_file ?? "",
-    result_file: item.result_file ?? "",
-    egm_subdir: item.egm_subdir ?? "",
-    egm_result_file: item.egm_result_file ?? "",
-    preprocess_script: item.preprocess_script ?? "",
-    postprocess_script: item.postprocess_script ?? "",
   };
 }
 
-function buildReleasePayload(values: ReleaseFormValues) {
+function buildReleasePatch(values: ReleaseFormValues) {
   return {
     release_tag: values.release_tag.trim() || null,
     status: values.status,
-    voltage_level: values.voltage_level.trim(),
-    tower_type: values.tower_type.trim(),
-    scene_type: values.scene_type.trim(),
-    scenario_code: values.scenario_code.trim() || null,
-    runner_kind: values.runner_kind,
-    storage_mount_code: values.storage_mount_code.trim(),
-    storage_root_path: values.storage_root_path.trim(),
-    entry_file: values.entry_file.trim() || null,
-    result_file: values.result_file.trim() || null,
-    egm_subdir: values.egm_subdir.trim() || null,
-    egm_result_file: values.egm_result_file.trim() || null,
-    preprocess_script: values.preprocess_script.trim() || null,
-    postprocess_script: values.postprocess_script.trim() || null,
   };
 }
 
@@ -170,7 +117,8 @@ export default function AtpAssetDetailPage() {
   const [releaseModalOpen, setReleaseModalOpen] = useState(false);
   const [runModalOpen, setRunModalOpen] = useState(false);
   const [editingRelease, setEditingRelease] = useState<AtpAssetReleaseSummary | null>(null);
-  const [selectedReleaseIdState, setSelectedReleaseIdState] = useState<string>("");
+  const [selectedReleaseIdState, setSelectedReleaseIdState] = useState("");
+  const [releaseArchiveFileList, setReleaseArchiveFileList] = useState<UploadFile[]>([]);
 
   const canRead = hasPermission("atp.read") || hasPermission("atp.run") || hasPermission("atp.manage");
   const canRun = hasPermission("atp.run") || hasPermission("atp.manage");
@@ -244,10 +192,10 @@ export default function AtpAssetDetailPage() {
   });
 
   const runsQuery = useQuery({
-    queryKey: ["atp-release-runs", selectedReleaseIdState],
-    enabled: Boolean(user && canRead && selectedReleaseIdState),
+    queryKey: ["atp-release-runs", selectedReleaseId],
+    enabled: Boolean(user && canRead && selectedReleaseId),
     queryFn: async () => {
-      const response = await fetchWithAuth(`/api/v1/atp/releases/${selectedReleaseIdState}/runs`);
+      const response = await fetchWithAuth(`/api/v1/atp/releases/${selectedReleaseId}/runs`);
       if (!response.ok) {
         throw new Error(await readApiError(response));
       }
@@ -257,18 +205,30 @@ export default function AtpAssetDetailPage() {
 
   const saveReleaseMutation = useMutation({
     mutationFn: async (values: ReleaseFormValues) => {
-      const payload = buildReleasePayload(values);
-      const response = editingRelease
-        ? await fetchWithAuth(`/api/v1/atp/releases/${editingRelease.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          })
-        : await fetchWithAuth(`/api/v1/atp/assets/${assetId}/releases`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
+      if (editingRelease) {
+        const response = await fetchWithAuth(`/api/v1/atp/releases/${editingRelease.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(buildReleasePatch(values)),
+        });
+        if (!response.ok) {
+          throw new Error(await readApiError(response));
+        }
+        return (await response.json()) as AtpAssetReleaseDetail;
+      }
+
+      const archiveFile = releaseArchiveFileList[0]?.originFileObj;
+      if (!(archiveFile instanceof File)) {
+        throw new Error("请上传 Release ZIP 包");
+      }
+
+      const formData = new FormData();
+      formData.append("release_tag", values.release_tag.trim());
+      formData.append("archive", archiveFile);
+      const response = await fetchWithAuth(`/api/v1/atp/assets/${assetId}/releases/upload`, {
+        method: "POST",
+        body: formData,
+      });
       if (!response.ok) {
         throw new Error(await readApiError(response));
       }
@@ -278,14 +238,17 @@ export default function AtpAssetDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["atp-asset-detail", assetId] });
       void queryClient.invalidateQueries({ queryKey: ["atp-asset-releases", assetId] });
       void queryClient.invalidateQueries({ queryKey: ["atp-release-detail", result.id] });
+      void queryClient.invalidateQueries({ queryKey: ["atp-release-files", result.id] });
+      void queryClient.invalidateQueries({ queryKey: ["atp-release-runs", result.id] });
       setSelectedReleaseIdState(result.id);
       setReleaseModalOpen(false);
       setEditingRelease(null);
+      setReleaseArchiveFileList([]);
       releaseForm.resetFields();
       message.success(editingRelease ? "Release 已更新" : "Release 已创建");
     },
     onError: (candidate) => {
-      message.error(candidate instanceof Error ? candidate.message : "保存 release 失败");
+      message.error(candidate instanceof Error ? candidate.message : "保存 Release 失败");
     },
   });
 
@@ -299,10 +262,10 @@ export default function AtpAssetDetailPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["atp-asset-detail", assetId] });
       void queryClient.invalidateQueries({ queryKey: ["atp-asset-releases", assetId] });
-      message.success("已切换当前激活 release");
+      message.success("已切换当前激活 Release");
     },
     onError: (candidate) => {
-      message.error(candidate instanceof Error ? candidate.message : "激活 release 失败");
+      message.error(candidate instanceof Error ? candidate.message : "激活 Release 失败");
     },
   });
 
@@ -328,7 +291,6 @@ export default function AtpAssetDetailPage() {
       message.error(candidate instanceof Error ? candidate.message : "提交运行任务失败");
     },
   });
-  const releaseDetail = releaseDetailQuery.data ?? null;
 
   const releaseColumns = useMemo<ColumnsType<AtpAssetReleaseSummary>>(
     () => [
@@ -339,37 +301,34 @@ export default function AtpAssetDetailPage() {
           <Space direction="vertical" size={0}>
             <Typography.Text strong>{item.release_tag || `r${item.release_no}`}</Typography.Text>
             <Typography.Text type="secondary">
-              {item.runner_kind} / {item.storage_mount_code}
+              {getAtpRunnerKindLabel(item.runner_kind)} / {item.storage_mount_code}
             </Typography.Text>
           </Space>
         ),
       },
       {
-        title: "维度",
-        key: "dimensions",
-        render: (_, item) => (
-          <Space size={[4, 4]} wrap>
-            <Tag>{item.voltage_level}</Tag>
-            <Tag>{item.tower_type}</Tag>
-            <Tag>{item.scene_type}</Tag>
-            {item.scenario_code ? <Tag color="blue">{item.scenario_code}</Tag> : null}
-          </Space>
-        ),
-      },
-      {
-        title: "存储根",
+        title: "存储目录",
         dataIndex: "storage_root_path",
         render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
       },
       {
         title: "状态",
         key: "status",
-        render: (_, item) => (
-          <Space wrap>
-            <Tag color={statusColor(item.status)}>{item.status}</Tag>
-            {item.is_active ? <Tag color="green">active</Tag> : null}
-          </Space>
-        ),
+        render: (_, item) => {
+          const display = getAtpReleaseStatusDisplay(item.status);
+          return (
+            <Space wrap>
+              <Tag color={display.color}>{display.label}</Tag>
+              {item.is_active ? <Tag color="green">当前生效</Tag> : null}
+              {item.scenario_code ? <Tag color="blue">{item.scenario_code}</Tag> : null}
+            </Space>
+          );
+        },
+      },
+      {
+        title: "更新时间",
+        dataIndex: "update_date",
+        render: (value: string) => formatDateTime(value),
       },
       {
         title: "操作",
@@ -384,6 +343,7 @@ export default function AtpAssetDetailPage() {
               disabled={!canManage}
               onClick={() => {
                 setEditingRelease(item);
+                setReleaseArchiveFileList([]);
                 releaseForm.setFieldsValue(toReleaseFormValues(item));
                 setReleaseModalOpen(true);
               }}
@@ -426,19 +386,24 @@ export default function AtpAssetDetailPage() {
       {
         title: "状态",
         key: "status",
-        render: (_, item) => (
-          <Space direction="vertical" size={0}>
-            <Tag color={statusColor(item.status)}>{item.status}</Tag>
-            <Typography.Text type="secondary">{formatDateTime(item.create_date)}</Typography.Text>
-          </Space>
-        ),
+        render: (_, item) => {
+          const display = getAtpRunStatusDisplay(item.status);
+          return (
+            <Space direction="vertical" size={0}>
+              <Tag color={display.color}>{display.label}</Tag>
+              <Typography.Text type="secondary">{formatDateTime(item.create_date)}</Typography.Text>
+            </Space>
+          );
+        },
       },
       {
         title: "执行信息",
         key: "execution",
         render: (_, item) => (
           <Space direction="vertical" size={0}>
-            <Typography.Text>{item.runner_kind} / {item.engine_mode}</Typography.Text>
+            <Typography.Text>
+              {getAtpRunnerKindLabel(item.runner_kind)} / {item.engine_mode}
+            </Typography.Text>
             <Typography.Text type="secondary">
               {item.timeout_seconds}s / exit {item.exit_code ?? "-"}
             </Typography.Text>
@@ -460,27 +425,27 @@ export default function AtpAssetDetailPage() {
   );
 
   if (initializing) {
-    return <AdminPageLoading tip="加载 ATP 资料包详情中..." minHeightClassName="min-h-[280px]" />;
+    return <AdminPageLoading tip="加载 ATP 模型详情中..." minHeightClassName="min-h-[280px]" />;
   }
 
   if (!user || !canRead) {
     return (
-      <Card title="ATP 资料包详情">
+      <Card title="ATP 模型详情">
         <Typography.Text type="secondary">
-          {!user ? "请先登录后再查看 ATP 资料包详情。" : "当前账号无 ATP 模块权限（需要 atp.read/atp.run/atp.manage）。"}
+          {!user ? "请先登录后再查看 ATP 模型详情。" : "当前账号无 ATP 模块权限（需要 atp.read/atp.run/atp.manage）。"}
         </Typography.Text>
       </Card>
     );
   }
 
   if (assetQuery.isLoading) {
-    return <AdminPageLoading tip="加载 ATP 资料包详情中..." minHeightClassName="min-h-[280px]" />;
+    return <AdminPageLoading tip="加载 ATP 模型详情中..." minHeightClassName="min-h-[280px]" />;
   }
 
   if (assetQuery.error instanceof Error) {
     return (
-      <Card title="ATP 资料包详情">
-        <Alert type="error" showIcon message="资料包详情加载失败" description={assetQuery.error.message} />
+      <Card title="ATP 模型详情">
+        <Alert type="error" showIcon message="模型详情加载失败" description={assetQuery.error.message} />
       </Card>
     );
   }
@@ -488,11 +453,15 @@ export default function AtpAssetDetailPage() {
   const asset = assetQuery.data;
   if (!asset) {
     return (
-      <Card title="ATP 资料包详情">
-        <Empty description="未找到对应资料包" />
+      <Card title="ATP 模型详情">
+        <Empty description="未找到对应模型" />
       </Card>
     );
   }
+
+  const assetStatusDisplay = getAtpAssetStatusDisplay(asset.status);
+  const nextReleaseStoragePath = `/atp-library/releases/${asset.code}/r${asset.latest_release_no + 1}`;
+  const releaseDetail = releaseDetailQuery.data ?? null;
 
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
@@ -503,20 +472,13 @@ export default function AtpAssetDetailPage() {
             <Link href="/admin/atp-models">
               <Button>返回列表</Button>
             </Link>
-            <Link href="/admin/power-lines/atp-viewer">
-              <Button>Legacy 文本工具</Button>
-            </Link>
             <Button
               type="primary"
               disabled={!canManage}
               onClick={() => {
                 setEditingRelease(null);
-                releaseForm.setFieldsValue({
-                  ...EMPTY_RELEASE_FORM,
-                  voltage_level: asset.voltage_level ?? "",
-                  tower_type: asset.tower_type ?? "",
-                  scene_type: asset.scene_type ?? "",
-                });
+                setReleaseArchiveFileList([]);
+                releaseForm.setFieldsValue(EMPTY_RELEASE_FORM);
                 setReleaseModalOpen(true);
               }}
             >
@@ -535,19 +497,19 @@ export default function AtpAssetDetailPage() {
                 ? `模式：${engineQuery.data.mode}，执行器：${engineQuery.data.resolved_executable || engineQuery.data.executable_path}。`
                 : engineQuery.error instanceof Error
                   ? engineQuery.error.message
-                  : "目录化 release 会在运行前物化到本地 wine 允许运行根目录。"
+                  : "新建 Release 时会自动解压 ZIP 到约定目录，并自动识别入口文件与 EGM 目录。"
             }
           />
 
           <Descriptions column={2} bordered size="small">
             <Descriptions.Item label="编码">{asset.code}</Descriptions.Item>
             <Descriptions.Item label="状态">
-              <Tag color={statusColor(asset.status)}>{asset.status}</Tag>
+              <Tag color={assetStatusDisplay.color}>{assetStatusDisplay.label}</Tag>
             </Descriptions.Item>
             <Descriptions.Item label="电压等级">{asset.voltage_level || "-"}</Descriptions.Item>
             <Descriptions.Item label="塔型">{asset.tower_type || "-"}</Descriptions.Item>
             <Descriptions.Item label="场景">{asset.scene_type || "-"}</Descriptions.Item>
-            <Descriptions.Item label="当前激活发布">
+            <Descriptions.Item label="当前激活 Release">
               {asset.active_release_tag || (asset.active_release_no ? `r${asset.active_release_no}` : "-")}
             </Descriptions.Item>
             <Descriptions.Item label="说明" span={2}>
@@ -566,7 +528,7 @@ export default function AtpAssetDetailPage() {
             loading={releasesQuery.isLoading}
             columns={releaseColumns}
             dataSource={releases}
-            locale={{ emptyText: "暂无 release" }}
+            locale={{ emptyText: "暂无 Release" }}
             pagination={false}
             scroll={{ x: 1080 }}
           />
@@ -576,18 +538,19 @@ export default function AtpAssetDetailPage() {
       <Card
         title={selectedRelease ? `当前 Release：${selectedRelease.release_tag || `r${selectedRelease.release_no}`}` : "当前 Release"}
         extra={
-          <Space wrap>
-            <Button disabled={!selectedReleaseId || !canRun} onClick={() => {
+          <Button
+            disabled={!selectedReleaseId || !canRun}
+            onClick={() => {
               runForm.setFieldsValue(EMPTY_RUN_FORM);
               setRunModalOpen(true);
-            }}>
-              运行 / Dry Run
-            </Button>
-          </Space>
+            }}
+          >
+            运行 / Dry Run
+          </Button>
         }
       >
         {!selectedRelease ? (
-          <Empty description="请选择一个 release" />
+          <Empty description="请选择一个 Release" />
         ) : (
           <Space direction="vertical" size={16} style={{ width: "100%" }}>
             {releaseDetailQuery.error instanceof Error ? (
@@ -597,17 +560,22 @@ export default function AtpAssetDetailPage() {
             {releaseDetail ? (
               <>
                 <Descriptions column={2} bordered size="small">
-                  <Descriptions.Item label="Runner">{releaseDetail.runner_kind}</Descriptions.Item>
-                  <Descriptions.Item label="Storage Mount">{releaseDetail.storage_mount_code}</Descriptions.Item>
-                  <Descriptions.Item label="Storage Root" span={2}>
+                  <Descriptions.Item label="状态">
+                    <Tag color={getAtpReleaseStatusDisplay(releaseDetail.status).color}>
+                      {getAtpReleaseStatusDisplay(releaseDetail.status).label}
+                    </Tag>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="运行类型">{getAtpRunnerKindLabel(releaseDetail.runner_kind)}</Descriptions.Item>
+                  <Descriptions.Item label="存储挂载">{releaseDetail.storage_mount_code}</Descriptions.Item>
+                  <Descriptions.Item label="存储目录">
                     <Typography.Text code>{releaseDetail.storage_root_path}</Typography.Text>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Entry File">{releaseDetail.entry_file || "-"}</Descriptions.Item>
-                  <Descriptions.Item label="Result File">{releaseDetail.result_file || "-"}</Descriptions.Item>
-                  <Descriptions.Item label="EGM Subdir">{releaseDetail.egm_subdir || "-"}</Descriptions.Item>
-                  <Descriptions.Item label="EGM Result">{releaseDetail.egm_result_file || "-"}</Descriptions.Item>
-                  <Descriptions.Item label="Preprocess">{releaseDetail.preprocess_script || "-"}</Descriptions.Item>
-                  <Descriptions.Item label="Postprocess">{releaseDetail.postprocess_script || "-"}</Descriptions.Item>
+                  <Descriptions.Item label="入口文件">{releaseDetail.entry_file || "-"}</Descriptions.Item>
+                  <Descriptions.Item label="结果文件">{releaseDetail.result_file || "-"}</Descriptions.Item>
+                  <Descriptions.Item label="EGM 目录">{releaseDetail.egm_subdir || "-"}</Descriptions.Item>
+                  <Descriptions.Item label="EGM 结果">{releaseDetail.egm_result_file || "-"}</Descriptions.Item>
+                  <Descriptions.Item label="预处理脚本">{releaseDetail.preprocess_script || "-"}</Descriptions.Item>
+                  <Descriptions.Item label="后处理脚本">{releaseDetail.postprocess_script || "-"}</Descriptions.Item>
                 </Descriptions>
 
                 <Space direction="vertical" size={8} style={{ width: "100%" }}>
@@ -635,7 +603,7 @@ export default function AtpAssetDetailPage() {
             loading={filesQuery.isLoading}
             columns={fileColumns}
             dataSource={filesQuery.data?.items ?? []}
-            locale={{ emptyText: selectedReleaseId ? "当前 release 暂无文件" : "请先选择 release" }}
+            locale={{ emptyText: selectedReleaseId ? "当前 Release 暂无文件" : "请先选择 Release" }}
             pagination={false}
             scroll={{ x: 980, y: 320 }}
           />
@@ -651,7 +619,7 @@ export default function AtpAssetDetailPage() {
             loading={runsQuery.isLoading}
             columns={runColumns}
             dataSource={runsQuery.data?.items ?? []}
-            locale={{ emptyText: selectedReleaseId ? "当前 release 暂无运行记录" : "请先选择 release" }}
+            locale={{ emptyText: selectedReleaseId ? "当前 Release 暂无运行记录" : "请先选择 Release" }}
             pagination={false}
             scroll={{ x: 980 }}
           />
@@ -664,12 +632,13 @@ export default function AtpAssetDetailPage() {
         onCancel={() => {
           setReleaseModalOpen(false);
           setEditingRelease(null);
+          setReleaseArchiveFileList([]);
           releaseForm.resetFields();
         }}
         onOk={() => void releaseForm.submit()}
         confirmLoading={saveReleaseMutation.isPending}
         destroyOnClose
-        width={760}
+        width={720}
       >
         <Form<ReleaseFormValues>
           form={releaseForm}
@@ -677,63 +646,48 @@ export default function AtpAssetDetailPage() {
           initialValues={EMPTY_RELEASE_FORM}
           onFinish={(values) => void saveReleaseMutation.mutateAsync(values)}
         >
-          <Form.Item name="release_tag" label="Release 标签">
-            <Input placeholder="如 r1 / 220-raoji3" />
-          </Form.Item>
-          <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
-            <Select
-              options={[
-                { value: "draft", label: "draft" },
-                { value: "released", label: "released" },
-                { value: "archived", label: "archived" },
-              ]}
+          {!editingRelease ? (
+            <Alert
+              type="info"
+              showIcon
+              message="Release 目录会自动约定"
+              description={
+                <span>
+                  上传 ZIP 后会自动解压到 <Typography.Text code>{nextReleaseStoragePath}</Typography.Text>，并自动识别入口文件与 EGM 目录。
+                </span>
+              }
+              style={{ marginBottom: 16 }}
             />
+          ) : null}
+
+          <Form.Item name="release_tag" label="Release 标签" rules={[{ required: true, message: "请输入 Release 标签" }]}>
+            <Input placeholder="如 220-raoji3-v1" />
           </Form.Item>
-          <Form.Item name="voltage_level" label="电压等级" rules={[{ required: true, message: "请输入电压等级" }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="tower_type" label="塔型" rules={[{ required: true, message: "请输入塔型" }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="scene_type" label="场景" rules={[{ required: true, message: "请输入场景" }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="scenario_code" label="工况编码">
-            <Input />
-          </Form.Item>
-          <Form.Item name="runner_kind" label="Runner" rules={[{ required: true, message: "请选择 runner" }]}>
-            <Select
-              options={[
-                { value: "atp", label: "ATP" },
-                { value: "egm", label: "EGM" },
-                { value: "hybrid", label: "HYBRID" },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item name="storage_mount_code" label="Storage Mount" rules={[{ required: true, message: "请输入 mount code" }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="storage_root_path" label="Storage Root" rules={[{ required: true, message: "请输入目录根路径" }]}>
-            <Input placeholder="/atp-library/releases/demo/r1" />
-          </Form.Item>
-          <Form.Item name="entry_file" label="入口文件">
-            <Input placeholder="留空则自动探测 work.atp / 唯一 .atp" />
-          </Form.Item>
-          <Form.Item name="result_file" label="结果文件">
-            <Input />
-          </Form.Item>
-          <Form.Item name="egm_subdir" label="EGM 子目录">
-            <Input />
-          </Form.Item>
-          <Form.Item name="egm_result_file" label="EGM 结果文件">
-            <Input />
-          </Form.Item>
-          <Form.Item name="preprocess_script" label="预处理脚本">
-            <Input placeholder="仅支持 .py，相对 release 根目录" />
-          </Form.Item>
-          <Form.Item name="postprocess_script" label="后处理脚本">
-            <Input placeholder="仅支持 .py，相对 release 根目录" />
-          </Form.Item>
+
+          {editingRelease ? (
+            <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
+              <Select
+                options={[
+                  { value: "draft", label: "草稿" },
+                  { value: "released", label: "已发布" },
+                  { value: "archived", label: "归档" },
+                ]}
+              />
+            </Form.Item>
+          ) : (
+            <Form.Item label="Release ZIP 包" required>
+              <Upload
+                accept=".zip,application/zip,application/x-zip-compressed"
+                beforeUpload={() => false}
+                fileList={releaseArchiveFileList}
+                maxCount={1}
+                onChange={(info) => setReleaseArchiveFileList(info.fileList.slice(-1))}
+              >
+                <Button>选择 ZIP 包</Button>
+              </Upload>
+              <Typography.Text type="secondary">仅支持 ZIP。系统会自动解压后写入 MinIO/VFS 约定目录。</Typography.Text>
+            </Form.Item>
+          )}
         </Form>
       </Modal>
 
