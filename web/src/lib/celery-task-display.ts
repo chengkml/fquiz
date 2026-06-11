@@ -1,4 +1,5 @@
 const TASK_NAME_LABELS: Record<string, string> = {
+  "app.tasks.atp_asset_tasks.execute_atp_asset_run_job": "ATP 资料包运行",
   "app.tasks.atp_model_tasks.execute_atp_model_run_job": "ATP 模型仿真",
   "app.tasks.elevation_tasks.analyze_elevation_dataset_job": "高程数据集分析",
   "app.tasks.elevation_tasks.import_elevation_dataset_data_job": "高程数据导入",

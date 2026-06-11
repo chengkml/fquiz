@@ -11,6 +11,7 @@ celery_app = Celery(
     broker=settings.resolved_celery_broker_url,
     backend=settings.resolved_celery_result_backend,
     include=[
+        "app.tasks.atp_asset_tasks",
         "app.tasks.atp_model_tasks",
         "app.tasks.elevation_tasks",
         "app.tasks.fl_analysis_tasks",

@@ -819,6 +819,137 @@ export type AtpEngineStatusResponse = {
   error: string | null;
 };
 
+export type AtpAssetStatus = "draft" | "enabled" | "disabled" | "archived";
+export type AtpAssetReleaseStatus = "draft" | "released" | "archived";
+export type AtpAssetRunnerKind = "atp" | "egm" | "hybrid";
+export type AtpAssetRunStatus = "pending" | "running" | "success" | "failed";
+
+export type AtpAssetSummary = {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  status: AtpAssetStatus;
+  voltage_level: string | null;
+  tower_type: string | null;
+  scene_type: string | null;
+  tags_json: string[];
+  latest_release_no: number;
+  active_release_no: number | null;
+  active_release_id: string | null;
+  active_release_tag: string | null;
+  release_count: number;
+  run_count: number;
+  last_run_status: AtpAssetRunStatus | null;
+  last_run_date: string | null;
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
+};
+
+export type AtpAssetListResponse = {
+  items: AtpAssetSummary[];
+  total: number;
+};
+
+export type AtpAssetReleaseSummary = {
+  id: string;
+  asset_id: string;
+  asset_code: string;
+  asset_name: string;
+  release_no: number;
+  release_tag: string | null;
+  status: AtpAssetReleaseStatus;
+  voltage_level: string;
+  tower_type: string;
+  scene_type: string;
+  scenario_code: string | null;
+  runner_kind: AtpAssetRunnerKind;
+  storage_mount_code: string;
+  storage_root_path: string;
+  entry_file: string | null;
+  result_file: string | null;
+  egm_subdir: string | null;
+  egm_result_file: string | null;
+  preprocess_script: string | null;
+  postprocess_script: string | null;
+  content_hash: string;
+  is_active: boolean;
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
+};
+
+export type AtpAssetReleaseDetail = AtpAssetReleaseSummary & {
+  manifest_json: Record<string, unknown>;
+  validation_json: Record<string, unknown>;
+};
+
+export type AtpAssetReleaseListResponse = {
+  items: AtpAssetReleaseSummary[];
+  total: number;
+};
+
+export type AtpAssetFileEntry = {
+  relative_path: string;
+  name: string;
+  is_dir: boolean;
+  size: number;
+  mime_type: string | null;
+  file_role: string | null;
+};
+
+export type AtpAssetFileListResponse = {
+  release_id: string;
+  storage_mount_code: string;
+  storage_root_path: string;
+  items: AtpAssetFileEntry[];
+  total: number;
+};
+
+export type AtpAssetRunSummary = {
+  id: string;
+  asset_id: string;
+  asset_code: string;
+  asset_name: string;
+  release_id: string;
+  release_no: number;
+  release_tag: string | null;
+  status: AtpAssetRunStatus;
+  engine_mode: AtpEngineMode;
+  runner_kind: AtpAssetRunnerKind;
+  task_id: string | null;
+  storage_mount_code: string | null;
+  storage_root_path: string | null;
+  materialized_root_path: string | null;
+  engine_command: string | null;
+  working_dir: string | null;
+  timeout_seconds: number;
+  exit_code: number | null;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number | null;
+  error_message: string | null;
+  stdout_size: number;
+  stderr_size: number;
+  create_date: string;
+  create_user: string | null;
+};
+
+export type AtpAssetRunDetail = AtpAssetRunSummary & {
+  stdout_text: string | null;
+  stderr_text: string | null;
+  output_manifest_json: Record<string, unknown>;
+  result_summary_json: Record<string, unknown>;
+};
+
+export type AtpAssetRunListResponse = {
+  items: AtpAssetRunSummary[];
+  total: number;
+};
+
 export type LightningPolarity = "positive" | "negative" | "mixed" | "unknown";
 
 export type LightningCurrentEventSummary = {
