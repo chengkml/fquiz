@@ -27,7 +27,7 @@ import { CreatableSingleSelect } from "@/components/creatable-single-select";
 import { Card } from "@/components/ui-antd";
 import { readApiError } from "@/lib/api";
 import { getAtpAssetStatusDisplay } from "@/lib/atp-asset-display";
-import type { AtpAssetListResponse, AtpAssetSummary, AtpEngineStatusResponse } from "@/types/auth";
+import type { AtpAssetListResponse, AtpAssetSummary } from "@/types/auth";
 
 type AssetFormValues = {
   code: string;
@@ -133,18 +133,6 @@ export default function AtpModelsPage() {
     },
   });
 
-  const engineQuery = useQuery({
-    queryKey: ["atp-asset-engine-status"],
-    enabled: Boolean(user && canRead),
-    queryFn: async () => {
-      const response = await fetchWithAuth("/api/v1/atp/engine/status");
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-      return (await response.json()) as AtpEngineStatusResponse;
-    },
-  });
-
   const saveMutation = useMutation({
     mutationFn: async (values: AssetFormValues) => {
       const payload = buildPayload(values);
@@ -223,13 +211,13 @@ export default function AtpModelsPage() {
         ),
       },
       {
-        title: "当前 Release",
+        title: "当前版本",
         key: "release",
         render: (_, item) => (
           <Space direction="vertical" size={0}>
             <Typography.Text>{item.active_release_tag || (item.active_release_no ? `r${item.active_release_no}` : "-")}</Typography.Text>
             <Typography.Text type="secondary">
-              {item.release_count} 个 Release / {item.run_count} 次运行
+              {item.release_count} 个版本 / {item.run_count} 次运行
             </Typography.Text>
           </Space>
         ),
@@ -270,7 +258,7 @@ export default function AtpModelsPage() {
             </Button>
             <Popconfirm
               title="删除模型"
-              description="这会同时删除其 Release 与运行记录。"
+              description="这会同时删除其版本与运行记录。"
               okText="删除"
               cancelText="取消"
               onConfirm={() => void deleteMutation.mutateAsync(item.id)}
@@ -320,18 +308,6 @@ export default function AtpModelsPage() {
         }
       >
         <Space direction="vertical" size={16} style={{ width: "100%" }}>
-          <Alert
-            type={engineQuery.data?.available ? "success" : "warning"}
-            showIcon
-            message={engineQuery.data?.available ? "ATP/Wine 执行环境可用" : "ATP/Wine 执行环境待检查"}
-            description={
-              engineQuery.data
-                ? `模式：${engineQuery.data.mode}，执行器：${engineQuery.data.resolved_executable || engineQuery.data.executable_path}。`
-                : engineQuery.error instanceof Error
-                  ? engineQuery.error.message
-                  : "Release ZIP 会自动解压到约定目录，入口文件与 EGM 目录会自动识别。"
-            }
-          />
           <Space wrap>
             <Input.Search
               allowClear

@@ -44,7 +44,6 @@ import type {
   AtpAssetRunListResponse,
   AtpAssetRunSummary,
   AtpAssetSummary,
-  AtpEngineStatusResponse,
 } from "@/types/auth";
 
 type ReleaseFormValues = {
@@ -148,18 +147,6 @@ export default function AtpAssetDetailPage() {
     },
   });
 
-  const engineQuery = useQuery({
-    queryKey: ["atp-asset-engine-status"],
-    enabled: Boolean(user && canRead),
-    queryFn: async () => {
-      const response = await fetchWithAuth("/api/v1/atp/engine/status");
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-      return (await response.json()) as AtpEngineStatusResponse;
-    },
-  });
-
   const releases = releasesQuery.data?.items ?? [];
   const selectedReleaseId =
     selectedReleaseIdState && releases.some((item) => item.id === selectedReleaseIdState)
@@ -219,7 +206,7 @@ export default function AtpAssetDetailPage() {
 
       const archiveFile = releaseArchiveFileList[0]?.originFileObj;
       if (!(archiveFile instanceof File)) {
-        throw new Error("请上传 Release ZIP 包");
+        throw new Error("请上传版本 ZIP 包");
       }
 
       const formData = new FormData();
@@ -245,10 +232,10 @@ export default function AtpAssetDetailPage() {
       setEditingRelease(null);
       setReleaseArchiveFileList([]);
       releaseForm.resetFields();
-      message.success(editingRelease ? "Release 已更新" : "Release 已创建");
+      message.success(editingRelease ? "版本已更新" : "版本已创建");
     },
     onError: (candidate) => {
-      message.error(candidate instanceof Error ? candidate.message : "保存 Release 失败");
+      message.error(candidate instanceof Error ? candidate.message : "保存版本失败");
     },
   });
 
@@ -262,10 +249,10 @@ export default function AtpAssetDetailPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["atp-asset-detail", assetId] });
       void queryClient.invalidateQueries({ queryKey: ["atp-asset-releases", assetId] });
-      message.success("已切换当前激活 Release");
+      message.success("已切换当前激活版本");
     },
     onError: (candidate) => {
-      message.error(candidate instanceof Error ? candidate.message : "激活 Release 失败");
+      message.error(candidate instanceof Error ? candidate.message : "激活版本失败");
     },
   });
 
@@ -295,7 +282,7 @@ export default function AtpAssetDetailPage() {
   const releaseColumns = useMemo<ColumnsType<AtpAssetReleaseSummary>>(
     () => [
       {
-        title: "Release",
+        title: "版本",
         key: "release",
         render: (_, item) => (
           <Space direction="vertical" size={0}>
@@ -460,7 +447,6 @@ export default function AtpAssetDetailPage() {
   }
 
   const assetStatusDisplay = getAtpAssetStatusDisplay(asset.status);
-  const nextReleaseStoragePath = `/atp-library/releases/${asset.code}/r${asset.latest_release_no + 1}`;
   const releaseDetail = releaseDetailQuery.data ?? null;
 
   return (
@@ -482,25 +468,12 @@ export default function AtpAssetDetailPage() {
                 setReleaseModalOpen(true);
               }}
             >
-              新建 Release
+              新建版本
             </Button>
           </Space>
         }
       >
         <Space direction="vertical" size={16} style={{ width: "100%" }}>
-          <Alert
-            type={engineQuery.data?.available ? "success" : "warning"}
-            showIcon
-            message={engineQuery.data?.available ? "运行环境可用" : "运行环境待检查"}
-            description={
-              engineQuery.data
-                ? `模式：${engineQuery.data.mode}，执行器：${engineQuery.data.resolved_executable || engineQuery.data.executable_path}。`
-                : engineQuery.error instanceof Error
-                  ? engineQuery.error.message
-                  : "新建 Release 时会自动解压 ZIP 到约定目录，并自动识别入口文件与 EGM 目录。"
-            }
-          />
-
           <Descriptions column={2} bordered size="small">
             <Descriptions.Item label="编码">{asset.code}</Descriptions.Item>
             <Descriptions.Item label="状态">
@@ -509,7 +482,7 @@ export default function AtpAssetDetailPage() {
             <Descriptions.Item label="电压等级">{asset.voltage_level || "-"}</Descriptions.Item>
             <Descriptions.Item label="塔型">{asset.tower_type || "-"}</Descriptions.Item>
             <Descriptions.Item label="场景">{asset.scene_type || "-"}</Descriptions.Item>
-            <Descriptions.Item label="当前激活 Release">
+            <Descriptions.Item label="当前激活版本">
               {asset.active_release_tag || (asset.active_release_no ? `r${asset.active_release_no}` : "-")}
             </Descriptions.Item>
             <Descriptions.Item label="说明" span={2}>
@@ -519,16 +492,16 @@ export default function AtpAssetDetailPage() {
         </Space>
       </Card>
 
-      <Card title="Release 列表">
+      <Card title="版本列表">
         {releasesQuery.error instanceof Error ? (
-          <Alert type="error" showIcon message="Release 列表加载失败" description={releasesQuery.error.message} />
+          <Alert type="error" showIcon message="版本列表加载失败" description={releasesQuery.error.message} />
         ) : (
           <Table<AtpAssetReleaseSummary>
             rowKey="id"
             loading={releasesQuery.isLoading}
             columns={releaseColumns}
             dataSource={releases}
-            locale={{ emptyText: "暂无 Release" }}
+            locale={{ emptyText: "暂无版本" }}
             pagination={false}
             scroll={{ x: 1080 }}
           />
@@ -536,7 +509,7 @@ export default function AtpAssetDetailPage() {
       </Card>
 
       <Card
-        title={selectedRelease ? `当前 Release：${selectedRelease.release_tag || `r${selectedRelease.release_no}`}` : "当前 Release"}
+        title={selectedRelease ? `当前版本：${selectedRelease.release_tag || `r${selectedRelease.release_no}`}` : "当前版本"}
         extra={
           <Button
             disabled={!selectedReleaseId || !canRun}
@@ -550,11 +523,11 @@ export default function AtpAssetDetailPage() {
         }
       >
         {!selectedRelease ? (
-          <Empty description="请选择一个 Release" />
+          <Empty description="请选择一个版本" />
         ) : (
           <Space direction="vertical" size={16} style={{ width: "100%" }}>
             {releaseDetailQuery.error instanceof Error ? (
-              <Alert type="error" showIcon message="Release 详情加载失败" description={releaseDetailQuery.error.message} />
+              <Alert type="error" showIcon message="版本详情加载失败" description={releaseDetailQuery.error.message} />
             ) : null}
 
             {releaseDetail ? (
@@ -603,7 +576,7 @@ export default function AtpAssetDetailPage() {
             loading={filesQuery.isLoading}
             columns={fileColumns}
             dataSource={filesQuery.data?.items ?? []}
-            locale={{ emptyText: selectedReleaseId ? "当前 Release 暂无文件" : "请先选择 Release" }}
+            locale={{ emptyText: selectedReleaseId ? "当前版本暂无文件" : "请先选择版本" }}
             pagination={false}
             scroll={{ x: 980, y: 320 }}
           />
@@ -619,7 +592,7 @@ export default function AtpAssetDetailPage() {
             loading={runsQuery.isLoading}
             columns={runColumns}
             dataSource={runsQuery.data?.items ?? []}
-            locale={{ emptyText: selectedReleaseId ? "当前 Release 暂无运行记录" : "请先选择 Release" }}
+            locale={{ emptyText: selectedReleaseId ? "当前版本暂无运行记录" : "请先选择版本" }}
             pagination={false}
             scroll={{ x: 980 }}
           />
@@ -627,7 +600,7 @@ export default function AtpAssetDetailPage() {
       </Card>
 
       <Modal
-        title={editingRelease ? "编辑 Release" : "新建 Release"}
+        title={editingRelease ? "编辑版本" : "新建版本"}
         open={releaseModalOpen}
         onCancel={() => {
           setReleaseModalOpen(false);
@@ -646,21 +619,7 @@ export default function AtpAssetDetailPage() {
           initialValues={EMPTY_RELEASE_FORM}
           onFinish={(values) => void saveReleaseMutation.mutateAsync(values)}
         >
-          {!editingRelease ? (
-            <Alert
-              type="info"
-              showIcon
-              message="Release 目录会自动约定"
-              description={
-                <span>
-                  上传 ZIP 后会自动解压到 <Typography.Text code>{nextReleaseStoragePath}</Typography.Text>，并自动识别入口文件与 EGM 目录。
-                </span>
-              }
-              style={{ marginBottom: 16 }}
-            />
-          ) : null}
-
-          <Form.Item name="release_tag" label="Release 标签" rules={[{ required: true, message: "请输入 Release 标签" }]}>
+          <Form.Item name="release_tag" label="版本标签" rules={[{ required: true, message: "请输入版本标签" }]}>
             <Input placeholder="如 220-raoji3-v1" />
           </Form.Item>
 
@@ -675,7 +634,7 @@ export default function AtpAssetDetailPage() {
               />
             </Form.Item>
           ) : (
-            <Form.Item label="Release ZIP 包" required>
+            <Form.Item label="版本 ZIP 包" required>
               <Upload
                 accept=".zip,application/zip,application/x-zip-compressed"
                 beforeUpload={() => false}
@@ -685,14 +644,14 @@ export default function AtpAssetDetailPage() {
               >
                 <Button>选择 ZIP 包</Button>
               </Upload>
-              <Typography.Text type="secondary">仅支持 ZIP。系统会自动解压后写入 MinIO/VFS 约定目录。</Typography.Text>
+              <Typography.Text type="secondary">仅支持 ZIP 文件。</Typography.Text>
             </Form.Item>
           )}
         </Form>
       </Modal>
 
       <Modal
-        title="运行 Release"
+        title="运行版本"
         open={runModalOpen}
         onCancel={() => {
           setRunModalOpen(false);
