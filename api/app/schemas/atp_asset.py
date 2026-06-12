@@ -204,3 +204,8 @@ class AtpAssetRunRequest(BaseModel):
     extra_args: list[str] = Field(default_factory=list, max_length=32)
     environment: dict[str, str] = Field(default_factory=dict, max_length=16)
     dry_run: bool = False
+
+
+class AtpAssetReleaseUploadResponse(BaseModel):
+    task_id: str
+    status: str

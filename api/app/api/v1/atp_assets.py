@@ -14,6 +14,7 @@ from ...schemas.atp_asset import (
     AtpAssetReleaseDetail,
     AtpAssetReleaseListResponse,
     AtpAssetReleaseUpdateRequest,
+    AtpAssetReleaseUploadResponse,
     AtpAssetRunDetail,
     AtpAssetRunListResponse,
     AtpAssetRunRequest,
@@ -152,14 +153,14 @@ def create_atp_asset_release_endpoint(
     return create_release(db, asset_id=asset_id, payload=payload, actor_user_id=current_user.user.id)
 
 
-@router.post("/assets/{asset_id}/releases/upload", response_model=AtpAssetReleaseDetail)
+@router.post("/assets/{asset_id}/releases/upload", response_model=AtpAssetReleaseUploadResponse)
 def upload_atp_asset_release_endpoint(
     asset_id: str,
     release_tag: str | None = Form(default=None),
     archive: UploadFile = File(...),
     current_user: CurrentUser = Depends(require_permission("atp.manage")),
     db: Session = Depends(get_db),
-) -> dict:
+) -> AtpAssetReleaseUploadResponse:
     from ...tasks.atp_asset_tasks import process_release_archive_upload_task
 
     try:
@@ -178,7 +179,7 @@ def upload_atp_asset_release_endpoint(
         actor_user_id=current_user.user.id,
     )
 
-    return {"task_id": task.id, "status": "processing"}
+    return AtpAssetReleaseUploadResponse(task_id=task.id, status="processing")
 
 
 @router.get("/releases", response_model=AtpAssetReleaseListResponse)
