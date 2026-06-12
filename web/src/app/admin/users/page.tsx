@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Checkbox,
+  Dropdown,
   Empty,
   Form,
   Input,
@@ -17,6 +18,7 @@ import {
   Tag,
   Typography,
   type CardProps,
+  type MenuProps,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import Link from "next/link";
@@ -76,6 +78,8 @@ export default function AdminUsersPage() {
   const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserPublic | null>(null);
   const [resetPasswordTarget, setResetPasswordTarget] = useState<UserPublic | null>(null);
+  const [assigningRolesUser, setAssigningRolesUser] = useState<UserPublic | null>(null);
+  const [roleForm] = Form.useForm<{ role_codes: string[] }>();
   const [keywordInput, setKeywordInput] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "disabled">("all");
@@ -354,6 +358,31 @@ export default function AdminUsersPage() {
     resetPasswordForm.resetFields();
   };
 
+  const openAssignRolesModal = (target: UserPublic) => {
+    setError("");
+    setSuccess("");
+    setAssigningRolesUser(target);
+    roleForm.setFieldsValue({ role_codes: target.role_codes });
+  };
+
+  const closeAssignRolesModal = () => {
+    if (updateRolesMutation.isPending) return;
+    setAssigningRolesUser(null);
+    roleForm.resetFields();
+  };
+
+  const handleSubmitAssignRoles = (values: { role_codes: string[] }) => {
+    if (!assigningRolesUser) return;
+    updateRolesMutation.mutate(
+      { userId: assigningRolesUser.id, roleCodes: values.role_codes },
+      {
+        onSuccess: () => {
+          closeAssignRolesModal();
+        },
+      },
+    );
+  };
+
   const openEditUserModal = (target: UserPublic) => {
     setError("");
     setSuccess("");
@@ -518,14 +547,14 @@ export default function AdminUsersPage() {
       render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
     },
     {
-      title: "邮箱",
-      dataIndex: "email",
-      width: 240,
-    },
-    {
       title: "用户名",
       dataIndex: "username",
       width: 180,
+    },
+    {
+      title: "邮箱",
+      dataIndex: "email",
+      width: 240,
     },
     {
       title: "状态",
@@ -536,39 +565,6 @@ export default function AdminUsersPage() {
       ),
     },
     {
-      title: "角色",
-      dataIndex: "role_codes",
-      width: 340,
-      render: (_roleCodes: string[], row) => {
-        if (roleOptions.length === 0) {
-          return <Typography.Text type="secondary">暂无可分配角色</Typography.Text>;
-        }
-
-        return (
-          <Space wrap size={[8, 8]}>
-            {roleOptions.map((roleCode) => {
-              const checked = row.role_codes.includes(roleCode);
-              return (
-                <Checkbox
-                  key={`${row.id}-${roleCode}`}
-                  checked={checked}
-                  disabled={savingUserId === row.id}
-                  onChange={(event) => {
-                    const nextRoles = event.target.checked
-                      ? Array.from(new Set([...row.role_codes, roleCode]))
-                      : row.role_codes.filter((code) => code !== roleCode);
-                    updateRolesMutation.mutate({ userId: row.id, roleCodes: nextRoles });
-                  }}
-                >
-                  {roleCode}
-                </Checkbox>
-              );
-            })}
-          </Space>
-        );
-      },
-    },
-    {
       title: "操作",
       key: "actions",
       fixed: "right",
@@ -577,41 +573,45 @@ export default function AdminUsersPage() {
         const updatingLoading = updatingStatusUserId === row.id;
         const resetLoading = resettingUserId === row.id;
         const deleteLoading = deletingUserId === row.id;
-        const rowBusy = updatingLoading || resetLoading || deleteLoading;
+        const savingLoading = savingUserId === row.id;
+        const rowBusy = updatingLoading || resetLoading || deleteLoading || savingLoading;
+
+        const moreMenuItems: MenuProps["items"] = [
+          {
+            key: "assign-roles",
+            label: "分配角色",
+            disabled: rowBusy,
+            onClick: () => openAssignRolesModal(row),
+          },
+          {
+            key: "toggle-status",
+            label: row.status === "active" ? "禁用" : "启用",
+            disabled: rowBusy || row.id === user?.id,
+            onClick: () => {
+              if (row.id === user?.id) {
+                setError("不能修改当前登录账号的状态");
+                return;
+              }
+              const nextStatus: "active" | "disabled" = row.status === "active" ? "disabled" : "active";
+              updateUserProfileMutation.mutate({ userId: row.id, payload: { status: nextStatus } });
+            },
+          },
+          {
+            key: "reset-password",
+            label: "重置密码",
+            disabled: rowBusy,
+            onClick: () => openResetPasswordModal(row),
+          },
+        ];
 
         return (
           <Space wrap>
-            <Button
-              size="small"
-              loading={updatingLoading}
-              disabled={rowBusy || row.id === user?.id}
-              onClick={() => {
-                if (row.id === user?.id) {
-                  setError("不能修改当前登录账号的状态");
-                  return;
-                }
-                const nextStatus: "active" | "disabled" = row.status === "active" ? "disabled" : "active";
-                updateUserProfileMutation.mutate({ userId: row.id, payload: { status: nextStatus } });
-              }}
-            >
-              {row.status === "active" ? "禁用" : "启用"}
-            </Button>
-
             <Button
               size="small"
               disabled={rowBusy}
               onClick={() => openEditUserModal(row)}
             >
               编辑
-            </Button>
-
-            <Button
-              size="small"
-              loading={resetLoading}
-              disabled={rowBusy}
-              onClick={() => openResetPasswordModal(row)}
-            >
-              重置密码
             </Button>
 
             <Popconfirm
@@ -626,6 +626,12 @@ export default function AdminUsersPage() {
                 删除
               </Button>
             </Popconfirm>
+
+            <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+              <Button size="small" disabled={rowBusy}>
+                ···
+              </Button>
+            </Dropdown>
           </Space>
         );
       },
@@ -901,6 +907,37 @@ export default function AdminUsersPage() {
             ]}
           >
             <Input.Password placeholder="请输入新密码" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={assigningRolesUser ? `分配角色：${assigningRolesUser.username}（${assigningRolesUser.id}）` : "分配角色"}
+        open={!!assigningRolesUser}
+        destroyOnClose
+        onCancel={closeAssignRolesModal}
+        onOk={() => roleForm.submit()}
+        okText="保存"
+        cancelText="取消"
+        confirmLoading={updateRolesMutation.isPending && savingUserId === assigningRolesUser?.id}
+      >
+        <Form<{ role_codes: string[] }>
+          form={roleForm}
+          layout="vertical"
+          onFinish={handleSubmitAssignRoles}
+          autoComplete="off"
+        >
+          <Form.Item
+            label="角色"
+            name="role_codes"
+            rules={[{ required: false }]}
+          >
+            <Select
+              mode="multiple"
+              placeholder="请选择角色"
+              options={roleOptions.map((code) => ({ label: code, value: code }))}
+              allowClear
+            />
           </Form.Item>
         </Form>
       </Modal>
