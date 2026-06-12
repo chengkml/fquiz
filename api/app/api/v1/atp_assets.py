@@ -159,7 +159,9 @@ def upload_atp_asset_release_endpoint(
     archive: UploadFile = File(...),
     current_user: CurrentUser = Depends(require_permission("atp.manage")),
     db: Session = Depends(get_db),
-) -> AtpAssetReleaseDetail:
+) -> dict:
+    from ...tasks.atp_asset_tasks import process_release_archive_upload_task
+
     try:
         archive_content = archive.file.read()
     finally:
@@ -168,14 +170,15 @@ def upload_atp_asset_release_endpoint(
         except Exception:
             pass
 
-    return create_release_from_archive(
-        db,
+    task = process_release_archive_upload_task.delay(
         asset_id=asset_id,
         release_tag=release_tag,
         archive_filename=archive.filename or "release.zip",
         archive_content=archive_content,
         actor_user_id=current_user.user.id,
     )
+
+    return {"task_id": task.id, "status": "processing"}
 
 
 @router.get("/releases", response_model=AtpAssetReleaseListResponse)

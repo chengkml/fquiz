@@ -37,6 +37,7 @@ type AssetFormValues = {
   voltage_level: string;
   tower_type: string;
   scene_type: string;
+  arrester_config: string;
 };
 
 const EMPTY_FORM: AssetFormValues = {
@@ -47,6 +48,7 @@ const EMPTY_FORM: AssetFormValues = {
   voltage_level: "",
   tower_type: "",
   scene_type: "",
+  arrester_config: "",
 };
 
 function formatDateTime(value: string | null | undefined): string {
@@ -69,6 +71,7 @@ function toFormValues(item: AtpAssetSummary): AssetFormValues {
     voltage_level: item.voltage_level ?? "",
     tower_type: item.tower_type ?? "",
     scene_type: item.scene_type ?? "",
+    arrester_config: item.arrester_config ?? "",
   };
 }
 
@@ -81,6 +84,7 @@ function buildPayload(values: AssetFormValues) {
     voltage_level: values.voltage_level.trim() || null,
     tower_type: values.tower_type.trim() || null,
     scene_type: values.scene_type.trim() || null,
+    arrester_config: values.arrester_config.trim() || null,
   };
 }
 
@@ -184,6 +188,7 @@ export default function AtpModelsPage() {
   const voltageLevelOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.voltage_level), [assetItems]);
   const towerTypeOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.tower_type), [assetItems]);
   const sceneTypeOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.scene_type), [assetItems]);
+  const arresterConfigOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.arrester_config), [assetItems]);
 
   const columns = useMemo<ColumnsType<AtpAssetSummary>>(
     () => [
@@ -403,6 +408,11 @@ export default function AtpModelsPage() {
             <Col xs={24} md={12}>
               <Form.Item name="scene_type" label="场景" rules={[{ required: true, message: "请选择或新建场景" }]}>
                 <CreatableSingleSelect options={sceneTypeOptions} placeholder="请选择或新建场景" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="arrester_config" label="避雷器装设组合">
+                <CreatableSingleSelect options={arresterConfigOptions} placeholder="请选择或新建避雷器装设组合" />
               </Form.Item>
             </Col>
             <Col span={24}>

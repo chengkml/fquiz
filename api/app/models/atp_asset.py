@@ -19,6 +19,7 @@ class AtpAsset(Base):
         Index("idx_atp_asset_voltage_level", "voltage_level"),
         Index("idx_atp_asset_tower_type", "tower_type"),
         Index("idx_atp_asset_scene_type", "scene_type"),
+        Index("idx_atp_asset_arrester_config", "arrester_config"),
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
@@ -29,6 +30,7 @@ class AtpAsset(Base):
     voltage_level: Mapped[str | None] = mapped_column(String(16), index=True)
     tower_type: Mapped[str | None] = mapped_column(String(64), index=True)
     scene_type: Mapped[str | None] = mapped_column(String(32), index=True)
+    arrester_config: Mapped[str | None] = mapped_column(String(64), index=True)
     tags_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     latest_release_no: Mapped[int] = mapped_column(Integer, default=0)
     active_release_no: Mapped[int | None] = mapped_column(Integer)

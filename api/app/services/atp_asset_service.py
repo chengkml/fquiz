@@ -981,6 +981,30 @@ def create_release_from_archive(
         raise
 
 
+def process_release_archive_upload(
+    asset_id: str,
+    release_tag: str | None,
+    archive_filename: str,
+    archive_content: bytes,
+    actor_user_id: str,
+) -> dict:
+    from ..core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        result = create_release_from_archive(
+            db,
+            asset_id=asset_id,
+            release_tag=release_tag,
+            archive_filename=archive_filename,
+            archive_content=archive_content,
+            actor_user_id=actor_user_id,
+        )
+        return result.model_dump()
+    finally:
+        db.close()
+
+
 def update_release(
     db: Session,
     *,
