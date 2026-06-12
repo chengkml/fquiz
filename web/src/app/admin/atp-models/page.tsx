@@ -425,7 +425,6 @@ export default function AtpModelsPage() {
   const handleResetSearch = () => {
     setKeywordInput("");
     setKeyword("");
-    setStatusFilter(undefined);
   };
 
   return (
