@@ -8,6 +8,7 @@ import {
   Alert,
   Button,
   Descriptions,
+  Dropdown,
   Empty,
   Form,
   Input,
@@ -638,7 +639,7 @@ export default function AdminElevationPage() {
         title: "分析状态",
         dataIndex: "analysis_status",
         width: 120,
-        render: (value: string) => {
+        render: (value: string, row) => {
           const colorMap: Record<string, string> = {
             queued: "orange",
             running: "processing",
@@ -646,14 +647,36 @@ export default function AdminElevationPage() {
             failed: "red",
             not_started: "default",
           };
-          return <Tag color={colorMap[value] || "default"}>{value}</Tag>;
+          return (
+            <Tag
+              color={colorMap[value] || "default"}
+              style={{ cursor: "pointer" }}
+              onClick={() => {
+                setAnalysisDataset(row);
+                setAnalysisModalOpen(true);
+              }}
+            >
+              {value}
+            </Tag>
+          );
         },
       },
       {
         title: "地形状态",
         dataIndex: "terrain_status",
         width: 120,
-        render: (value: string) => <Tag color={terrainStatusTagColor(value)}>{terrainStatusLabel(value)}</Tag>,
+        render: (value: string, row) => (
+          <Tag
+            color={terrainStatusTagColor(value)}
+            style={{ cursor: "pointer" }}
+            onClick={() => {
+              setTerrainDataset(row);
+              setTerrainModalOpen(true);
+            }}
+          >
+            {terrainStatusLabel(value)}
+          </Tag>
+        ),
       },
       {
         title: "地形层级",
@@ -696,7 +719,15 @@ export default function AdminElevationPage() {
             return <Typography.Text type="secondary">-</Typography.Text>;
           }
           return (
-            <Space direction="vertical" size={0}>
+            <Space
+              direction="vertical"
+              size={0}
+              style={{ cursor: "pointer" }}
+              onClick={() => {
+                setImportJob(latestJob);
+                setImportJobModalOpen(true);
+              }}
+            >
               <Tag color={statusTagColor(latestJob.status)}>{importJobStatusLabel(latestJob.status)}</Tag>
               <Typography.Text type="secondary">{importJobStageLabel(latestJob.current_stage)}</Typography.Text>
               <Typography.Text type="secondary">{`${latestJob.progress_percent}%`}</Typography.Text>
@@ -708,7 +739,7 @@ export default function AdminElevationPage() {
         title: "操作",
         key: "actions",
         fixed: "right",
-        width: 460,
+        width: 240,
         render: (_, row) => (
           <Space size="small" wrap>
             <Typography.Link
@@ -741,67 +772,6 @@ export default function AdminElevationPage() {
               预览
             </Typography.Link>
             <Typography.Link
-              onClick={() => {
-                setDatasetFilesDataset(row);
-                setDatasetFiles([]);
-                setDatasetFilesModalOpen(true);
-                setDatasetFilesLoading(true);
-                datasetFilesMutation.mutate(row.id);
-              }}
-            >
-              文件明细
-            </Typography.Link>
-            <Typography.Link
-              onClick={() => {
-                setAnalysisDataset(row);
-                setAnalysisModalOpen(true);
-              }}
-            >
-              分析进度
-            </Typography.Link>
-            <Typography.Link
-              onClick={() => {
-                setTerrainDataset(row);
-                setTerrainModalOpen(true);
-              }}
-            >
-              地形状态
-            </Typography.Link>
-            <Typography.Link
-              disabled={!latestImportJobByDataset.get(row.id)}
-              onClick={() => {
-                const latestJob = latestImportJobByDataset.get(row.id);
-                if (!latestJob) return;
-                setImportJob(latestJob);
-                setImportJobModalOpen(true);
-              }}
-            >
-              导入进度
-            </Typography.Link>
-            <Typography.Link
-              disabled={
-                !canManage
-                || terrainBuildMutation.isPending
-                || row.terrain_status === "not_supported"
-                || row.status !== "active"
-              }
-              onClick={() => {
-                if (
-                  !canManage
-                  || terrainBuildMutation.isPending
-                  || row.terrain_status === "not_supported"
-                  || row.status !== "active"
-                ) {
-                  return;
-                }
-                setTerrainDataset(row);
-                setTerrainModalOpen(true);
-                terrainBuildMutation.mutate(row.id);
-              }}
-            >
-              {terrainBuildActionLabel(row.terrain_status)}
-            </Typography.Link>
-            <Typography.Link
               disabled={!canManage || datasetDataImportMutation.isPending}
               onClick={() => {
                 if (!canManage || datasetDataImportMutation.isPending) return;
@@ -812,6 +782,47 @@ export default function AdminElevationPage() {
             >
               导入数据
             </Typography.Link>
+            <Dropdown
+              menu={{
+                items: [
+                  {
+                    key: "files",
+                    label: "文件明细",
+                    onClick: () => {
+                      setDatasetFilesDataset(row);
+                      setDatasetFiles([]);
+                      setDatasetFilesModalOpen(true);
+                      setDatasetFilesLoading(true);
+                      datasetFilesMutation.mutate(row.id);
+                    },
+                  },
+                  {
+                    key: "terrain",
+                    label: terrainBuildActionLabel(row.terrain_status),
+                    disabled:
+                      !canManage
+                      || terrainBuildMutation.isPending
+                      || row.terrain_status === "not_supported"
+                      || row.status !== "active",
+                    onClick: () => {
+                      if (
+                        !canManage
+                        || terrainBuildMutation.isPending
+                        || row.terrain_status === "not_supported"
+                        || row.status !== "active"
+                      ) {
+                        return;
+                      }
+                      setTerrainDataset(row);
+                      setTerrainModalOpen(true);
+                      terrainBuildMutation.mutate(row.id);
+                    },
+                  },
+                ],
+              }}
+            >
+              <Typography.Link>更多</Typography.Link>
+            </Dropdown>
             <Typography.Link
               disabled={!canManage || datasetDeleteMutation.isPending}
               onClick={() => {
