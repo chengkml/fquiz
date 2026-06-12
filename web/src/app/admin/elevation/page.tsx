@@ -54,7 +54,6 @@ import type {
 } from "@/types/auth";
 
 type DatasetFormValues = {
-  code: string;
   name: string;
   source: string;
   resolution_m: number | null;
@@ -68,7 +67,6 @@ type ApplyFormValues = {
 };
 
 const DEFAULT_DATASET_FORM: DatasetFormValues = {
-  code: "",
   name: "",
   source: "",
   resolution_m: null,
@@ -319,8 +317,13 @@ export default function AdminElevationPage() {
 
   const datasetCreateMutation = useMutation({
     mutationFn: async (values: DatasetFormValues) => {
+      // 自动生成唯一编码：使用时间戳+随机数
+      const timestamp = Date.now();
+      const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+      const autoCode = `dataset_${timestamp}_${random}`;
+
       const payload = {
-        code: values.code.trim(),
+        code: autoCode,
         name: values.name.trim(),
         source: values.source.trim() || null,
         mount_code: null,
@@ -624,9 +627,6 @@ export default function AdminElevationPage() {
       { title: "编码", dataIndex: "code", width: 140 },
       { title: "名称", dataIndex: "name", width: 220 },
       { title: "来源", dataIndex: "source", width: 140, render: (value: string | null) => value || "-" },
-      { title: "挂载", dataIndex: "mount_code", width: 100 },
-      { title: "数据集目录", dataIndex: "dataset_dir", width: 220 },
-      { title: "文件路径", dataIndex: "file_path", width: 260 },
       { title: "分辨率(m)", dataIndex: "resolution_m", width: 110, render: (value: number | null) => value ?? "-" },
       { title: "样本数", dataIndex: "sample_count", width: 100 },
       {
@@ -1076,7 +1076,7 @@ export default function AdminElevationPage() {
     );
   }
 
-  const datasetTableScrollX = 2520;
+  const datasetTableScrollX = 1940;
 
   return (
     <div className="space-y-6">
@@ -1170,7 +1170,7 @@ export default function AdminElevationPage() {
                 setPagination({ current: page, pageSize });
               },
             }}
-            scroll={{ x: 2520, y: tableScrollY }}
+            scroll={{ x: 1940, y: tableScrollY }}
             locale={{
               emptyText: (
                 <Empty
@@ -1372,7 +1372,7 @@ export default function AdminElevationPage() {
             type="info"
             showIcon
             message="支持文件格式：CSV（点集）/ IMG / TIF / TIFF（栅格）/ ZIP（解压后 csv/img/tif）"
-            description="先新建数据集，再使用“导入数据”上传多个高程文件。数据集目录自动固定为 /elevation/datasets/{数据集编码}，导入完成后自动触发分析。"
+            description="先新建数据集，再使用 '导入数据' 上传多个高程文件。数据集目录自动固定为 /elevation/datasets/{数据集编码}，导入完成后自动触发分析。"
           />
           {importDataset && (
             <Descriptions bordered size="small" column={1}>
@@ -1396,7 +1396,7 @@ export default function AdminElevationPage() {
             type="info"
             showIcon
             message="导入任务会在后台异步执行"
-            description="提交后可在“高程导入任务”列表或数据集行的“导入进度”里回看处理进度、告警和分析任务状态。"
+            description="提交后可在 '高程导入任务' 列表或数据集行的 '导入进度' 里回看处理进度、告警和分析任务状态。"
           />
         </div>
       </Modal>
@@ -1650,22 +1650,12 @@ export default function AdminElevationPage() {
         confirmLoading={datasetCreateMutation.isPending}
       >
         <Form<DatasetFormValues> form={datasetForm} layout="vertical" initialValues={DEFAULT_DATASET_FORM}>
-          <Form.Item name="code" label="编码" rules={[{ required: true, message: "请输入编码" }]}> 
-            <Input placeholder="dem_china_90m_v1" />
-          </Form.Item>
-          <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}> 
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
             <Input placeholder="中国90米DEM（IMG）" />
           </Form.Item>
           <Form.Item name="source" label="来源">
             <Input placeholder="中科院地理空间数据云" />
           </Form.Item>
-          <Alert
-            type="info"
-            showIcon
-            className="mb-4"
-            message="数据目录自动生成"
-            description="创建后目录自动固定为 /elevation/datasets/{编码}。请在列表里使用“导入数据”上传 csv/img/tif/tiff/zip。"
-          />
           <Form.Item name="resolution_m" label="分辨率（米）">
             <InputNumber className="w-full" min={1} max={10000} />
           </Form.Item>
