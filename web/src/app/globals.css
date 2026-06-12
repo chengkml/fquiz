@@ -1,42 +1,42 @@
 @import "tailwindcss";
 
 :root {
-  /* AntD base fallbacks */
-  --ant-color-primary: #1677ff;
+  /* AntD base fallbacks - Lightning theme */
+  --ant-color-primary: #8b5cf6;
   --ant-color-text: rgba(0, 0, 0, 0.88);
   --ant-color-text-secondary: rgba(0, 0, 0, 0.65);
-  --ant-color-bg-layout: #f5f5f5;
+  --ant-color-bg-layout: #faf8ff;
   --ant-color-bg-container: #ffffff;
-  --ant-color-fill-alter: #fafafa;
-  --ant-color-border-secondary: #d9d9d9;
+  --ant-color-fill-alter: #f5f3ff;
+  --ant-color-border-secondary: #e0d4ff;
   --ant-border-radius: 6px;
   --ant-border-radius-lg: 8px;
   --ant-padding: 16px;
   --ant-padding-lg: 24px;
   --ant-margin-lg: 24px;
-  --ant-box-shadow-tertiary: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+  --ant-box-shadow-tertiary: 0 1px 2px 0 rgba(139, 92, 246, 0.05);
 
   /* Legacy semantic vars (overridden by Theme token bridge at runtime) */
   --color-panel-solid: #ffffff;
-  --border: #d9d9d9;
+  --border: #e0d4ff;
 
   --gray-1: #ffffff;
-  --gray-2: #fafafa;
-  --gray-6: #d9d9d9;
+  --gray-2: #f5f3ff;
+  --gray-6: #e0d4ff;
   --gray-10: rgba(0, 0, 0, 0.45);
   --gray-11: rgba(0, 0, 0, 0.65);
   --gray-12: rgba(0, 0, 0, 0.88);
-  --gray-a2: rgba(0, 0, 0, 0.02);
-  --gray-a3: rgba(0, 0, 0, 0.06);
+  --gray-a2: rgba(139, 92, 246, 0.04);
+  --gray-a3: rgba(139, 92, 246, 0.08);
 
-  --accent-6: #91caff;
-  --accent-7: #69b1ff;
-  --accent-9: #1677ff;
-  --accent-10: #0958d9;
-  --accent-11: #0958d9;
-  --accent-12: #003eb3;
-  --accent-a2: rgba(22, 119, 255, 0.1);
-  --accent-a3: rgba(22, 119, 255, 0.16);
+  --accent-6: #c4b5fd;
+  --accent-7: #a78bfa;
+  --accent-9: #8b5cf6;
+  --accent-10: #7c3aed;
+  --accent-11: #6d28d9;
+  --accent-12: #5b21b6;
+  --accent-a2: rgba(139, 92, 246, 0.12);
+  --accent-a3: rgba(139, 92, 246, 0.18);
   --accent-contrast: #ffffff;
 
   --indigo-2: #eef2ff;
@@ -61,8 +61,8 @@
   --orange-a3: rgba(250, 173, 20, 0.24);
   --amber-11: #ad6800;
 
-  --fquiz-scrollbar-thumb: var(--ant-color-fill-secondary, rgba(0, 0, 0, 0.15));
-  --fquiz-scrollbar-thumb-hover: var(--ant-color-fill, rgba(0, 0, 0, 0.25));
+  --fquiz-scrollbar-thumb: var(--ant-color-fill-secondary, rgba(139, 92, 246, 0.2));
+  --fquiz-scrollbar-thumb-hover: var(--ant-color-fill, rgba(139, 92, 246, 0.35));
 
   /* Theme semantic bridge vars (for pages/components avoid hard-coded colors) */
   --fquiz-theme-bg-layout: var(--ant-color-bg-layout);
@@ -84,8 +84,8 @@
   --fquiz-theme-shell-header-bg: var(--fquiz-theme-bg-elevated);
   --fquiz-theme-shell-sider-bg: var(--fquiz-theme-bg-elevated);
 
-  --fquiz-theme-shadow-card: 0 10px 24px color-mix(in srgb, var(--gray-12) 12%, transparent);
-  --fquiz-theme-shadow-soft: var(--ant-box-shadow-tertiary);
+  --fquiz-theme-shadow-card: 0 10px 24px color-mix(in srgb, var(--accent-9) 15%, transparent);
+  --fquiz-theme-shadow-soft: 0 2px 8px color-mix(in srgb, var(--accent-9) 8%, transparent);
 }
 
 :root[data-fquiz-theme="dark"] {

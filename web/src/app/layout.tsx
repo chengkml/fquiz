@@ -23,7 +23,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full">
-        <Theme accentColor="blue" grayColor="slate" radius="medium" scaling="100%">
+        <Theme accentColor="electric" grayColor="slate" radius="medium" scaling="100%">
           <div className="flex min-h-full flex-col">
             <ChunkLoadRecovery />
             <AppQueryProvider>

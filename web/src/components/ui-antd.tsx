@@ -141,9 +141,11 @@ const PRIMARY_COLOR_MAP: Record<string, string> = {
   orange: "#ea580c",
   pink: "#db2777",
   purple: "#7c3aed",
+  electric: "#8b5cf6",
 };
 
 export const THEME_ACCENT_OPTIONS = [
+  { value: "electric", label: "电光紫" },
   { value: "indigo", label: "靛蓝" },
   { value: "blue", label: "蓝色" },
   { value: "cyan", label: "青色" },
@@ -192,7 +194,7 @@ function normalizeAccentColor(nextColor: string | undefined | null): ThemeAccent
   if (nextColor && nextColor in PRIMARY_COLOR_MAP) {
     return nextColor as ThemeAccentColor;
   }
-  return "blue";
+  return "electric";
 }
 
 function normalizeLegacyThemeMode(nextMode: string | undefined | null): ThemeMode {
@@ -235,7 +237,7 @@ export function useThemeAppearance(): ThemeAppearanceContextValue {
     return context;
   }
   return {
-    accentColor: "blue",
+    accentColor: "electric",
     setAccentColor: () => {},
     themeMode: "light",
     setThemeMode: () => {},
