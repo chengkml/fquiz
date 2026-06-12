@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   App,
@@ -161,6 +161,10 @@ function formatImportJobCounts(job: Pick<ElevationDataImportJobSummary, "uploade
   return `上传 ${job.uploaded_file_count} / 解压 ${job.extracted_file_count} / 可用 ${job.imported_file_count}`;
 }
 
+const DATASETS_TABLE_MIN_SCROLL_Y = 180;
+const DATASETS_TABLE_VIEWPORT_GAP = 40;
+const DATASETS_TABLE_FALLBACK_RESERVE = 220;
+
 export default function AdminElevationPage() {
   const queryClient = useQueryClient();
   const {
@@ -199,6 +203,13 @@ export default function AdminElevationPage() {
 
   const [jobsModalOpen, setJobsModalOpen] = useState(false);
   const [importJobsModalOpen, setImportJobsModalOpen] = useState(false);
+
+  const [keywordInput, setKeywordInput] = useState("");
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "disabled">("all");
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
+  const [tableScrollY, setTableScrollY] = useState(DATASETS_TABLE_MIN_SCROLL_Y);
+  const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const [datasetForm] = Form.useForm<DatasetFormValues>();
   const [applyForm] = Form.useForm<ApplyFormValues>();
@@ -505,6 +516,32 @@ export default function AdminElevationPage() {
   const jobs = useMemo(() => jobsQuery.data?.items ?? [], [jobsQuery.data?.items]);
   const importJobs = useMemo(() => importJobsQuery.data?.items ?? [], [importJobsQuery.data?.items]);
   const lines = useMemo(() => linesQuery.data?.items ?? [], [linesQuery.data?.items]);
+
+  const trimmedKeyword = searchKeyword.trim().toLowerCase();
+  const filteredDatasets = useMemo(() => {
+    let result = datasets;
+
+    if (trimmedKeyword) {
+      result = result.filter((item) =>
+        item.code.toLowerCase().includes(trimmedKeyword) ||
+        item.name.toLowerCase().includes(trimmedKeyword) ||
+        (item.source && item.source.toLowerCase().includes(trimmedKeyword))
+      );
+    }
+
+    if (statusFilter !== "all") {
+      result = result.filter((item) => item.status === statusFilter);
+    }
+
+    return result;
+  }, [datasets, trimmedKeyword, statusFilter]);
+
+  const paginatedDatasets = useMemo(() => {
+    const start = (pagination.current - 1) * pagination.pageSize;
+    const end = start + pagination.pageSize;
+    return filteredDatasets.slice(start, end);
+  }, [filteredDatasets, pagination.current, pagination.pageSize]);
+
   const latestImportJobByDataset = useMemo(() => {
     const mapping = new Map<string, ElevationDataImportJobSummary>();
     for (const item of importJobs) {
@@ -912,6 +949,86 @@ export default function AdminElevationPage() {
     [],
   );
 
+  const handleSearch = () => {
+    setSearchKeyword(keywordInput);
+    setPagination((prev) => ({ ...prev, current: 1 }));
+  };
+
+  const handleResetSearch = () => {
+    setKeywordInput("");
+    setSearchKeyword("");
+    setStatusFilter("all");
+    setPagination((prev) => ({ ...prev, current: 1 }));
+  };
+
+  const updateTableScrollY = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - DATASETS_TABLE_FALLBACK_RESERVE);
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? DATASETS_TABLE_MIN_SCROLL_Y;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - DATASETS_TABLE_VIEWPORT_GAP);
+    }
+
+    const clampedHeight = Math.max(DATASETS_TABLE_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.requestAnimationFrame(updateTableScrollY);
+  }, [error, pagination.current, pagination.pageSize, paginatedDatasets.length, datasetsQuery.isFetching, updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updateTableScrollY);
+    };
+
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateTableScrollY);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTableScrollY]);
+
   if (initializing || datasetsQuery.isLoading || jobsQuery.isLoading || importJobsQuery.isLoading || linesQuery.isLoading) {
     return (
       <div className="flex min-h-[280px] items-center justify-center">
@@ -958,6 +1075,7 @@ export default function AdminElevationPage() {
         title="高程数据集"
         extra={(
           <Space>
+            {datasetsQuery.isFetching && <Spin size="small" />}
             <Button
               onClick={() => setJobsModalOpen(true)}
             >
@@ -969,32 +1087,89 @@ export default function AdminElevationPage() {
               高程导入任务
             </Button>
             {canManage && (
-              <>
-                <a
-                  onClick={(event) => {
-                    event.preventDefault();
-                    datasetForm.setFieldsValue(DEFAULT_DATASET_FORM);
-                    setDatasetModalOpen(true);
-                  }}
-                >
-                  新建数据集
-                </a>
-              </>
+              <Button
+                type="primary"
+                onClick={(event) => {
+                  event.preventDefault();
+                  datasetForm.setFieldsValue(DEFAULT_DATASET_FORM);
+                  setDatasetModalOpen(true);
+                }}
+              >
+                新建数据集
+              </Button>
             )}
           </Space>
         )}
       >
-        {datasets.length === 0 ? (
-          <Empty description="暂无高程数据集，请先上传 CSV/IMG/TIF 并创建数据集。" />
-        ) : (
+        <Form layout="inline" style={{ rowGap: 12 }}>
+          <Form.Item label="关键词" className="min-w-[240px]">
+            <Input
+              allowClear
+              placeholder="按编码/名称/来源搜索"
+              value={keywordInput}
+              onChange={(event) => setKeywordInput(event.target.value)}
+              onPressEnter={handleSearch}
+            />
+          </Form.Item>
+
+          <Form.Item label="状态" className="min-w-[170px]">
+            <Select<"all" | "active" | "disabled">
+              value={statusFilter}
+              options={[
+                { value: "all", label: "全部" },
+                { value: "active", label: "启用" },
+                { value: "disabled", label: "禁用" },
+              ]}
+              onChange={(value) => {
+                setStatusFilter(value);
+                setPagination((prev) => ({ ...prev, current: 1 }));
+              }}
+            />
+          </Form.Item>
+
+          <Form.Item>
+            <Button type="primary" onClick={handleSearch}>
+              搜索
+            </Button>
+          </Form.Item>
+
+          <Form.Item>
+            <Button onClick={handleResetSearch}>重置筛选</Button>
+          </Form.Item>
+        </Form>
+
+        <div
+          ref={tableScrollAnchorRef}
+          className="admin-datasets-table-anchor mt-4"
+          style={{ "--admin-datasets-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+        >
           <Table<ElevationDatasetSummary>
             rowKey={(row) => row.id}
             columns={datasetColumns}
-            dataSource={datasets}
-            pagination={false}
-            scroll={{ x: datasetTableScrollX }}
+            dataSource={paginatedDatasets}
+            pagination={{
+              current: pagination.current,
+              pageSize: pagination.pageSize,
+              total: filteredDatasets.length,
+              showSizeChanger: true,
+              pageSizeOptions: [10, 20, 50, 100],
+              showTotal: (total) => `共 ${total} 条`,
+              style: { marginBottom: 0 },
+              onChange: (page, pageSize) => {
+                setPagination({ current: page, pageSize });
+              },
+            }}
+            scroll={{ x: 2520, y: tableScrollY }}
+            locale={{
+              emptyText: (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="未找到符合筛选条件的数据集。"
+                />
+              ),
+            }}
           />
-        )}
+        </div>
       </Card>
 
       <Modal
