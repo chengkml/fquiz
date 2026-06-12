@@ -6,6 +6,7 @@ import {
   Alert,
   App,
   Button,
+  Card,
   Col,
   Form,
   Input,
@@ -14,20 +15,23 @@ import {
   Row,
   Select,
   Space,
+  Spin,
   Table,
   Tag,
   Typography,
+  type CardProps,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
 
 import { AdminPageLoading } from "@/components/admin-page-loading";
 import { useAuth } from "@/components/auth-provider";
 import { CreatableSingleSelect } from "@/components/creatable-single-select";
-import { Card } from "@/components/ui-antd";
 import { readApiError } from "@/lib/api";
 import { getAtpAssetStatusDisplay } from "@/lib/atp-asset-display";
 import type { AtpAssetListResponse, AtpAssetSummary } from "@/types/auth";
+
+const AntCard = Card as unknown as ComponentType<CardProps>;
 
 type AssetFormValues = {
   code: string;
@@ -155,6 +159,10 @@ function buildDimensionOptions(items: AtpAssetSummary[], picker: (item: AtpAsset
     .map((value) => ({ label: optionsMap.get(value) || value, value }));
 }
 
+const ATP_TABLE_MIN_SCROLL_Y = 180;
+const ATP_TABLE_VIEWPORT_GAP = 40;
+const ATP_TABLE_FALLBACK_RESERVE = 220;
+
 export default function AtpModelsPage() {
   const { message } = App.useApp();
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
@@ -166,6 +174,8 @@ export default function AtpModelsPage() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const [editingAsset, setEditingAsset] = useState<AtpAssetSummary | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [tableScrollY, setTableScrollY] = useState(ATP_TABLE_MIN_SCROLL_Y);
+  const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const canRead = hasPermission("atp.read") || hasPermission("atp.run") || hasPermission("atp.manage");
   const canManage = hasPermission("atp.manage");
@@ -242,6 +252,74 @@ export default function AtpModelsPage() {
   const towerTypeOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.tower_type, DEFAULT_TOWER_TYPES), [assetItems]);
   const sceneTypeOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.scene_type, DEFAULT_SCENE_TYPES), [assetItems]);
   const arresterConfigOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.arrester_config, DEFAULT_ARRESTER_CONFIGS), [assetItems]);
+
+  const updateTableScrollY = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - ATP_TABLE_FALLBACK_RESERVE);
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? ATP_TABLE_MIN_SCROLL_Y;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - ATP_TABLE_VIEWPORT_GAP);
+    }
+
+    const clampedHeight = Math.max(ATP_TABLE_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.requestAnimationFrame(updateTableScrollY);
+  }, [assetsQuery.error, keyword, statusFilter, assetItems.length, assetsQuery.isFetching, updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updateTableScrollY);
+    };
+
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateTableScrollY);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTableScrollY]);
 
   const columns = useMemo<ColumnsType<AtpAssetSummary>>(
     () => [
@@ -339,47 +417,61 @@ export default function AtpModelsPage() {
 
   if (!user || !canRead) {
     return (
-      <Card title="ATP 模型管理">
+      <AntCard title="ATP 模型管理">
         <Typography.Text type="secondary">
           {!user ? "请先登录后再查看 ATP 模型管理。" : "当前账号无 ATP 模块权限（需要 atp.read/atp.run/atp.manage）。"}
         </Typography.Text>
-      </Card>
+      </AntCard>
     );
   }
 
+  const handleSearch = () => {
+    setKeyword(keywordInput);
+  };
+
+  const handleResetSearch = () => {
+    setKeywordInput("");
+    setKeyword("");
+    setStatusFilter(undefined);
+  };
+
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Card
+    <div className="space-y-6">
+      <AntCard
         title="ATP 模型管理"
-        extra={
-          <Button
-            type="primary"
-            disabled={!canManage}
-            onClick={() => {
-              setEditingAsset(null);
-              form.setFieldsValue(EMPTY_FORM);
-              setModalOpen(true);
-            }}
-          >
-            新建模型
-          </Button>
-        }
+        extra={(
+          <Space>
+            {assetsQuery.isFetching && <Spin size="small" />}
+            <Button
+              type="primary"
+              disabled={!canManage}
+              onClick={() => {
+                setEditingAsset(null);
+                form.setFieldsValue(EMPTY_FORM);
+                setModalOpen(true);
+              }}
+            >
+              新建模型
+            </Button>
+          </Space>
+        )}
       >
-        <Space direction="vertical" size={16} style={{ width: "100%" }}>
-          <Space wrap>
-            <Input.Search
+        <Form layout="inline" style={{ rowGap: 12 }}>
+          <Form.Item label="关键词" className="min-w-[240px]">
+            <Input
               allowClear
               value={keywordInput}
               onChange={(event) => setKeywordInput(event.target.value)}
-              onSearch={(value) => setKeyword(value)}
+              onPressEnter={handleSearch}
               placeholder="按编码 / 名称 / 描述搜索"
-              style={{ width: 280 }}
             />
+          </Form.Item>
+
+          <Form.Item label="状态" className="min-w-[170px]">
             <Select
               allowClear
               value={statusFilter}
               placeholder="状态筛选"
-              style={{ width: 180 }}
               onChange={(value) => setStatusFilter(value)}
               options={[
                 { value: "draft", label: "草稿" },
@@ -388,12 +480,28 @@ export default function AtpModelsPage() {
                 { value: "archived", label: "归档" },
               ]}
             />
-          </Space>
+          </Form.Item>
 
-          {assetsQuery.error instanceof Error ? (
-            <Alert type="error" showIcon message="ATP 模型加载失败" description={assetsQuery.error.message} />
-          ) : null}
+          <Form.Item>
+            <Button type="primary" onClick={handleSearch}>
+              搜索
+            </Button>
+          </Form.Item>
 
+          <Form.Item>
+            <Button onClick={handleResetSearch}>重置筛选</Button>
+          </Form.Item>
+        </Form>
+
+        {assetsQuery.error instanceof Error ? (
+          <Alert type="error" showIcon message="ATP 模型加载失败" description={assetsQuery.error.message} className="mt-4" />
+        ) : null}
+
+        <div
+          ref={tableScrollAnchorRef}
+          className="admin-atp-models-table-anchor mt-4"
+          style={{ "--admin-atp-models-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+        >
           <Table<AtpAssetSummary>
             rowKey="id"
             loading={assetsQuery.isLoading}
@@ -401,10 +509,10 @@ export default function AtpModelsPage() {
             dataSource={assetItems}
             locale={{ emptyText: "暂无 ATP 模型" }}
             pagination={false}
-            scroll={{ x: 1080 }}
+            scroll={{ x: 1080, y: tableScrollY }}
           />
-        </Space>
-      </Card>
+        </div>
+      </AntCard>
 
       <Modal
         title={editingAsset ? "编辑 ATP 模型" : "新建 ATP 模型"}
@@ -476,6 +584,6 @@ export default function AtpModelsPage() {
           </Row>
         </Form>
       </Modal>
-    </Space>
+    </div>
   );
 }
