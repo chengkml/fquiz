@@ -20,6 +20,7 @@ import {
   type CardProps,
   type MenuProps,
 } from "antd";
+import { MoreOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
@@ -568,7 +569,7 @@ export default function AdminUsersPage() {
       title: "操作",
       key: "actions",
       fixed: "right",
-      width: 260,
+      width: 120,
       render: (_value, row) => {
         const updatingLoading = updatingStatusUserId === row.id;
         const resetLoading = resettingUserId === row.id;
@@ -628,9 +629,7 @@ export default function AdminUsersPage() {
             </Popconfirm>
 
             <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
-              <Button size="small" disabled={rowBusy}>
-                ···
-              </Button>
+              <Button size="small" disabled={rowBusy} icon={<MoreOutlined />} />
             </Dropdown>
           </Space>
         );
