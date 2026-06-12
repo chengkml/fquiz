@@ -38,7 +38,7 @@ function normalizeCode(value: string | null | undefined): string {
 }
 
 function containsChineseText(value: string): boolean {
-  return /[\u3400-\u9fff]/.test(value);
+  return /\p{Script=Han}/u.test(value);
 }
 
 export function getTaskStateDisplay(state: string | null | undefined): TagDisplay {
