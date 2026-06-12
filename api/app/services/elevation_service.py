@@ -3083,6 +3083,7 @@ def _build_dataset_terrain_tiles(db: Session, dataset: ElevationDataset) -> _Ter
 
         layer_payload = ElevationTerrainLayerResponse(
             tiles=[f"{{z}}/{{x}}/{{y}}.terrain?v={TERRAIN_TILE_VERSION}"],
+            minzoom=0,
             maxzoom=max_zoom,
             attribution=f"{dataset.code} {dataset.name}",
             bounds=[bounds["west"], bounds["south"], bounds["east"], bounds["north"]],

@@ -206,6 +206,7 @@ class ElevationTerrainLayerResponse(BaseModel):
     scheme: Literal["tms"] = "tms"
     projection: Literal["EPSG:4326"] = "EPSG:4326"
     tiles: list[str]
+    minzoom: int
     maxzoom: int
     extensions: list[str] = Field(default_factory=list)
     attribution: str | None = None
