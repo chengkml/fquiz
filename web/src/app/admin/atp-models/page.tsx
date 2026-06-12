@@ -88,18 +88,71 @@ function buildPayload(values: AssetFormValues) {
   };
 }
 
-function buildDimensionOptions(items: AtpAssetSummary[], picker: (item: AtpAssetSummary) => string | null): Array<{ label: string; value: string }> {
+const DEFAULT_VOLTAGE_LEVELS = [
+  { label: "35kV", value: "35" },
+  { label: "66kV", value: "66" },
+  { label: "110kV", value: "110" },
+  { label: "220kV", value: "220" },
+  { label: "330kV", value: "330" },
+  { label: "500kV", value: "500" },
+  { label: "750kV", value: "750" },
+  { label: "800kV", value: "800" },
+  { label: "1000kV", value: "1000" },
+];
+
+const DEFAULT_TOWER_TYPES = [
+  { label: "干字塔", value: "ganzi" },
+  { label: "鼓型塔", value: "guxing" },
+  { label: "鼓型双回路塔", value: "guxingd" },
+  { label: "酒杯塔", value: "jiubei" },
+  { label: "猫头塔", value: "maotou" },
+  { label: "上字塔", value: "shangzi" },
+  { label: "四回路塔", value: "sihuita" },
+  { label: "直流V型塔", value: "vzhiliu" },
+  { label: "直流塔", value: "zhiliu" },
+];
+
+const DEFAULT_SCENE_TYPES = [
+  { label: "反击", value: "fanji" },
+  { label: "绕击1", value: "raoji1" },
+  { label: "绕击2", value: "raoji2" },
+  { label: "绕击3", value: "raoji3" },
+];
+
+const DEFAULT_ARRESTER_CONFIGS = [
+  { label: "M1", value: "M1" },
+  { label: "M2", value: "M2" },
+  { label: "M3", value: "M3" },
+  { label: "M12", value: "M12" },
+  { label: "M13", value: "M13" },
+  { label: "M23", value: "M23" },
+  { label: "M123", value: "M123" },
+  { label: "noM", value: "noM" },
+];
+
+function buildDimensionOptions(items: AtpAssetSummary[], picker: (item: AtpAssetSummary) => string | null, defaults: Array<{ label: string; value: string }>): Array<{ label: string; value: string }> {
   const values = new Set<string>();
+  const optionsMap = new Map<string, string>();
+
+  for (const defaultOption of defaults) {
+    values.add(defaultOption.value);
+    optionsMap.set(defaultOption.value, defaultOption.label);
+  }
+
   for (const item of items) {
     const value = picker(item)?.trim();
     if (!value) {
       continue;
     }
     values.add(value);
+    if (!optionsMap.has(value)) {
+      optionsMap.set(value, value);
+    }
   }
+
   return Array.from(values)
     .sort((left, right) => left.localeCompare(right, "zh-CN"))
-    .map((value) => ({ label: value, value }));
+    .map((value) => ({ label: optionsMap.get(value) || value, value }));
 }
 
 export default function AtpModelsPage() {
@@ -185,10 +238,10 @@ export default function AtpModelsPage() {
   });
 
   const assetItems = assetsQuery.data?.items ?? [];
-  const voltageLevelOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.voltage_level), [assetItems]);
-  const towerTypeOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.tower_type), [assetItems]);
-  const sceneTypeOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.scene_type), [assetItems]);
-  const arresterConfigOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.arrester_config), [assetItems]);
+  const voltageLevelOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.voltage_level, DEFAULT_VOLTAGE_LEVELS), [assetItems]);
+  const towerTypeOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.tower_type, DEFAULT_TOWER_TYPES), [assetItems]);
+  const sceneTypeOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.scene_type, DEFAULT_SCENE_TYPES), [assetItems]);
+  const arresterConfigOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.arrester_config, DEFAULT_ARRESTER_CONFIGS), [assetItems]);
 
   const columns = useMemo<ColumnsType<AtpAssetSummary>>(
     () => [
