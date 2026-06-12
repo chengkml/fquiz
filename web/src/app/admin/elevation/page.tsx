@@ -618,6 +618,22 @@ export default function AdminElevationPage() {
         width: 160,
         render: (value: string | null) => value || "-",
       },
+      {
+        title: "坐标范围",
+        key: "bbox",
+        width: 320,
+        render: (_, row) => {
+          if (row.bbox_min_lon === null || row.bbox_max_lon === null ||
+              row.bbox_min_lat === null || row.bbox_max_lat === null) {
+            return <Typography.Text type="secondary">-</Typography.Text>;
+          }
+          return (
+            <Typography.Text type="secondary">
+              {formatNumber(row.bbox_min_lon, 6)}, {formatNumber(row.bbox_min_lat, 6)} ~ {formatNumber(row.bbox_max_lon, 6)}, {formatNumber(row.bbox_max_lat, 6)}
+            </Typography.Text>
+          );
+        },
+      },
     ],
     [],
   );
@@ -1489,7 +1505,7 @@ export default function AdminElevationPage() {
                 columns={fileColumns}
                 dataSource={datasetFiles}
                 pagination={false}
-                scroll={{ x: 1000 }}
+                scroll={{ x: 1320 }}
               />
             )}
           </div>

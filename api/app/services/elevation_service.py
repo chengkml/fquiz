@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from ..core.database import SessionLocal
 from ..models.base import utcnow
-from ..models.elevation import ElevationApplyJob, ElevationDataImportJob, ElevationDataset
+from ..models.elevation import ElevationApplyJob, ElevationDataImportJob, ElevationDataset, ElevationDatasetFileMeta
 from ..models.line import Line
 from ..models.line_tower import LineTower
 from ..models.user import User
@@ -380,6 +380,12 @@ def list_dataset_files(
     except StorageDriverError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
+    # Query file metadata with bbox information
+    stmt = select(ElevationDatasetFileMeta).where(
+        ElevationDatasetFileMeta.dataset_id == dataset_id
+    )
+    file_metas = {meta.file_path: meta for meta in db.execute(stmt).scalars().all()}
+
     files = [
         ElevationDatasetFileItem(
             path=item.path,
@@ -387,6 +393,10 @@ def list_dataset_files(
             size=max(0, int(item.size)),
             modified_at=item.modified_at,
             mime_type=item.mime_type,
+            bbox_min_lon=file_metas[item.path].bbox_min_lon if item.path in file_metas else None,
+            bbox_max_lon=file_metas[item.path].bbox_max_lon if item.path in file_metas else None,
+            bbox_min_lat=file_metas[item.path].bbox_min_lat if item.path in file_metas else None,
+            bbox_max_lat=file_metas[item.path].bbox_max_lat if item.path in file_metas else None,
         )
         for item in entries
         if not item.is_dir
@@ -2398,16 +2408,53 @@ def _analyze_dataset_content(
     db: Session,
     dataset: ElevationDataset,
 ) -> tuple[dict[str, float | int], list[str]]:
+    # First, analyze the main dataset file (for overall stats)
     file_format = _resolve_dataset_file_format(dataset)
     if file_format == "csv":
         points, warnings = _load_dataset_points(db, dataset)
-        return _compute_dataset_stats(points), warnings
-    if file_format in RASTER_FILE_FORMATS:
-        return _compute_raster_stats(db, dataset)
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail=f"不支持的高程文件格式: {file_format}",
-    )
+        overall_stats = _compute_dataset_stats(points)
+    elif file_format in RASTER_FILE_FORMATS:
+        overall_stats, warnings = _compute_raster_stats(db, dataset)
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"不支持的高程文件格式: {file_format}",
+        )
+
+    # Then, analyze each file in the dataset directory for file-level metadata
+    try:
+        mount = _require_mount(db, dataset.mount_code)
+        driver = _build_driver_or_400(mount)
+        dataset_dir = _resolve_dataset_dir(dataset.code)
+
+        try:
+            entries = driver.list_dir(dataset_dir)
+        except (StoragePathNotFoundError, StorageInvalidPathError, StorageDriverError):
+            entries = []
+
+        for entry in entries:
+            if entry.is_dir:
+                continue
+
+            file_ext = Path(entry.path).suffix.lower()
+            if file_ext not in ELEVATION_FILE_EXT_FORMAT_MAP:
+                continue
+
+            file_stats_result = _analyze_single_file(db, dataset, entry.path)
+            if file_stats_result is not None:
+                file_stats, _ = file_stats_result
+                _store_file_metadata(
+                    db,
+                    dataset_id=dataset.id,
+                    file_path=entry.path,
+                    file_name=entry.name,
+                    stats=file_stats,
+                )
+    except Exception:
+        # If file-level analysis fails, don't fail the whole dataset analysis
+        pass
+
+    return overall_stats, warnings
 
 
 def _apply_points_to_line_towers(
@@ -3541,3 +3588,125 @@ def _fire_and_forget(coro: object) -> None:
             close()
         return
     loop.create_task(coro)
+
+
+def _analyze_single_file(
+    db: Session,
+    dataset: ElevationDataset,
+    file_path: str,
+) -> tuple[dict[str, float | int], list[str]] | None:
+    """Analyze a single elevation file and return its bbox stats."""
+    mount = _require_mount(db, dataset.mount_code)
+    driver = _build_driver_or_400(mount)
+    
+    file_ext = Path(file_path).suffix.lower()
+    if file_ext not in ELEVATION_FILE_EXT_FORMAT_MAP:
+        return None
+    
+    file_format = ELEVATION_FILE_EXT_FORMAT_MAP[file_ext]
+    
+    try:
+        if file_format == "csv":
+            read_result = driver.read_file(file_path)
+            text = _decode_csv_bytes(read_result.content)
+            rows = list(csv.DictReader(io.StringIO(text)))
+            if not rows:
+                return None
+            
+            points: list[ElevationSamplePoint] = []
+            for row in rows:
+                lon = _pick_float(row, ["longitude", "lon", "lng", "经度"])
+                lat = _pick_float(row, ["latitude", "lat", "纬度"])
+                altitude = _pick_float(row, ["altitude_m", "altitude", "elevation", "dem", "海拔m", "高程"])
+                if lon is None or lat is None or altitude is None:
+                    continue
+                if lon < -180 or lon > 180 or lat < -90 or lat > 90:
+                    continue
+                points.append(ElevationSamplePoint(lon=lon, lat=lat, altitude_m=altitude))
+            
+            if not points:
+                return None
+            
+            lon_values = [p.lon for p in points]
+            lat_values = [p.lat for p in points]
+            return {
+                "sample_count": len(points),
+                "bbox_min_lon": min(lon_values),
+                "bbox_max_lon": max(lon_values),
+                "bbox_min_lat": min(lat_values),
+                "bbox_max_lat": max(lat_values),
+            }, []
+        
+        elif file_format in RASTER_FILE_FORMATS:
+            # For raster files, open and extract bounds
+            try:
+                import rasterio
+            except ImportError:
+                return None
+            
+            read_result = driver.read_file(file_path)
+            with NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_file:
+                tmp_file.write(read_result.content)
+                tmp_path = tmp_file.name
+            
+            try:
+                with rasterio.open(tmp_path) as src:
+                    bounds = src.bounds
+                    wgs84_bounds = _compute_raster_wgs84_bounds(rasterio=rasterio, src=src)
+                    width = int(src.width or 0)
+                    height = int(src.height or 0)
+                    sample_count = width * height
+                    if sample_count > MAX_SAMPLE_COUNT_INT:
+                        sample_count = MAX_SAMPLE_COUNT_INT
+                    
+                    return {
+                        "sample_count": sample_count,
+                        "bbox_min_lon": float(wgs84_bounds["west"]),
+                        "bbox_max_lon": float(wgs84_bounds["east"]),
+                        "bbox_min_lat": float(wgs84_bounds["south"]),
+                        "bbox_max_lat": float(wgs84_bounds["north"]),
+                    }, []
+            finally:
+                import os
+                os.unlink(tmp_path)
+        
+        return None
+    except Exception:
+        return None
+
+
+def _store_file_metadata(
+    db: Session,
+    dataset_id: str,
+    file_path: str,
+    file_name: str,
+    stats: dict[str, float | int],
+) -> None:
+    """Store or update file metadata in database."""
+    stmt = select(ElevationDatasetFileMeta).where(
+        ElevationDatasetFileMeta.dataset_id == dataset_id,
+        ElevationDatasetFileMeta.file_path == file_path,
+    )
+    existing = db.execute(stmt).scalar_one_or_none()
+    
+    if existing:
+        existing.bbox_min_lon = stats.get("bbox_min_lon")
+        existing.bbox_max_lon = stats.get("bbox_max_lon")
+        existing.bbox_min_lat = stats.get("bbox_min_lat")
+        existing.bbox_max_lat = stats.get("bbox_max_lat")
+        existing.sample_count = int(stats.get("sample_count", 0))
+        existing.update_date = utcnow()
+    else:
+        meta = ElevationDatasetFileMeta(
+            dataset_id=dataset_id,
+            file_path=file_path,
+            file_name=file_name,
+            bbox_min_lon=stats.get("bbox_min_lon"),
+            bbox_max_lon=stats.get("bbox_max_lon"),
+            bbox_min_lat=stats.get("bbox_min_lat"),
+            bbox_max_lat=stats.get("bbox_max_lat"),
+            sample_count=int(stats.get("sample_count", 0)),
+        )
+        db.add(meta)
+    
+    db.commit()

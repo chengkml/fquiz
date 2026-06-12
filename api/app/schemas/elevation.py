@@ -165,6 +165,10 @@ class ElevationDatasetFileItem(BaseModel):
     size: int
     modified_at: datetime | None = None
     mime_type: str | None = None
+    bbox_min_lon: float | None = None
+    bbox_max_lon: float | None = None
+    bbox_min_lat: float | None = None
+    bbox_max_lat: float | None = None
 
 
 class ElevationDatasetFileListResponse(BaseModel):

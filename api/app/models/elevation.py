@@ -163,3 +163,38 @@ class ElevationDataImportJob(Base):
     update_user: Mapped[str | None] = mapped_column(String(64), index=True)
 
     dataset: Mapped[ElevationDataset] = relationship("ElevationDataset", lazy="selectin")
+
+
+class ElevationDatasetFileMeta(Base):
+    __tablename__ = "elevation_dataset_file_meta"
+    __table_args__ = (
+        Index("idx_elevation_file_meta_dataset", "dataset_id"),
+        Index("idx_elevation_file_meta_path", "dataset_id", "file_path"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(32),
+        primary_key=True,
+        default=lambda: uuid4().hex,
+    )
+    dataset_id: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("elevation_dataset.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    file_path: Mapped[str] = mapped_column(String(2048), nullable=False)
+    file_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    bbox_min_lon: Mapped[float | None] = mapped_column(Float)
+    bbox_max_lon: Mapped[float | None] = mapped_column(Float)
+    bbox_min_lat: Mapped[float | None] = mapped_column(Float)
+    bbox_max_lat: Mapped[float | None] = mapped_column(Float)
+    sample_count: Mapped[int] = mapped_column(Integer, default=0)
+    create_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    update_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+    )
+
+    dataset: Mapped[ElevationDataset] = relationship("ElevationDataset", lazy="selectin")

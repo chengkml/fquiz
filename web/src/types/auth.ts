@@ -343,6 +343,10 @@ export type ElevationDatasetFileItem = {
   name: string;
   size: number;
   modified_at: string | null;
+  bbox_min_lon: number | null;
+  bbox_max_lon: number | null;
+  bbox_min_lat: number | null;
+  bbox_max_lat: number | null;
   mime_type: string | null;
 };
 
