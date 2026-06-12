@@ -197,8 +197,8 @@ export default function AdminElevationPage() {
   const [terrainModalOpen, setTerrainModalOpen] = useState(false);
   const [terrainDataset, setTerrainDataset] = useState<ElevationDatasetSummary | null>(null);
 
-  const [jobsVisible, setJobsVisible] = useState(false);
-  const [importJobsVisible, setImportJobsVisible] = useState(false);
+  const [jobsModalOpen, setJobsModalOpen] = useState(false);
+  const [importJobsModalOpen, setImportJobsModalOpen] = useState(false);
 
   const [datasetForm] = Form.useForm<DatasetFormValues>();
   const [applyForm] = Form.useForm<ApplyFormValues>();
@@ -958,6 +958,16 @@ export default function AdminElevationPage() {
         title="高程数据集"
         extra={(
           <Space>
+            <Button
+              onClick={() => setJobsModalOpen(true)}
+            >
+              高程回填任务
+            </Button>
+            <Button
+              onClick={() => setImportJobsModalOpen(true)}
+            >
+              高程导入任务
+            </Button>
             {canManage && (
               <>
                 <a
@@ -987,32 +997,28 @@ export default function AdminElevationPage() {
         )}
       </Card>
 
-      <Card
+      <Modal
         title="高程回填任务"
-        extra={(
-          <Space>
-            <Button
-              type="link"
-              onClick={() => setJobsVisible(!jobsVisible)}
-            >
-              {jobsVisible ? "收起" : "查看"}
-            </Button>
-            {canManage && (
-              <a
-                onClick={(event) => {
-                  event.preventDefault();
+        open={jobsModalOpen}
+        width={1200}
+        footer={null}
+        onCancel={() => setJobsModalOpen(false)}
+      >
+        <div className="space-y-3">
+          {canManage && (
+            <div className="mb-4">
+              <Button
+                type="primary"
+                onClick={() => {
                   applyForm.setFieldsValue(DEFAULT_APPLY_FORM);
                   setApplyModalOpen(true);
                 }}
               >
                 新建回填任务
-              </a>
-            )}
-          </Space>
-        )}
-      >
-        {jobsVisible && (
-          jobs.length === 0 ? (
+              </Button>
+            </div>
+          )}
+          {jobs.length === 0 ? (
             <Empty description="暂无回填任务。" />
           ) : (
             <Table<ElevationApplyJobSummary>
@@ -1022,23 +1028,19 @@ export default function AdminElevationPage() {
               pagination={false}
               scroll={{ x: 1900 }}
             />
-          )
-        )}
-      </Card>
+          )}
+        </div>
+      </Modal>
 
-      <Card
+      <Modal
         title="高程导入任务"
-        extra={(
-          <Button
-            type="link"
-            onClick={() => setImportJobsVisible(!importJobsVisible)}
-          >
-            {importJobsVisible ? "收起" : "查看"}
-          </Button>
-        )}
+        open={importJobsModalOpen}
+        width={1200}
+        footer={null}
+        onCancel={() => setImportJobsModalOpen(false)}
       >
-        {importJobsVisible && (
-          importJobs.length === 0 ? (
+        <div className="space-y-3">
+          {importJobs.length === 0 ? (
             <Empty description="暂无导入任务。" />
           ) : (
             <Table<ElevationDataImportJobSummary>
@@ -1048,9 +1050,9 @@ export default function AdminElevationPage() {
               pagination={false}
               scroll={{ x: 1600 }}
             />
-          )
-        )}
-      </Card>
+          )}
+        </div>
+      </Modal>
 
       <Modal
         title={currentPreviewDataset ? `高程预览：${currentPreviewDataset.code}` : "高程预览"}
