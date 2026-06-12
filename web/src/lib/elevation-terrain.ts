@@ -53,5 +53,5 @@ export function getElevationTerrainLayerUrl(dataset: Pick<
   if (typeof candidate === "string" && candidate.trim()) {
     return candidate.trim().replace(/\/layer\.json$/, "");
   }
-  return `/api/v1/elevation/datasets/${dataset.id}/terrain`;
+  return `/api/v1/elevation/datasets/${dataset.id}/terrain/layer.json`;
 }
