@@ -284,7 +284,7 @@ export default function AtpModelsPage() {
       return;
     }
     window.requestAnimationFrame(updateTableScrollY);
-  }, [assetsQuery.error, keyword, statusFilter, assetItems.length, assetsQuery.isFetching, updateTableScrollY]);
+  }, [assetsQuery.error, keyword, assetItems.length, assetsQuery.isFetching, updateTableScrollY]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
