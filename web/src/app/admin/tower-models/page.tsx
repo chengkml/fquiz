@@ -34,7 +34,6 @@ import type {
   FileStorageMount,
   TowerModelImageUploadResponse,
   TowerModelListResponse,
-  TowerModelSeedResponse,
   TowerModelSummary,
 } from "@/types/auth";
 
@@ -301,9 +300,6 @@ export default function AdminTowerModelsPage() {
   const { message: messageApi } = App.useApp();
   const [form] = Form.useForm<TowerModelFormValues>();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const seedSettingInputRef = useRef<HTMLInputElement | null>(null);
-  const seedGantaInputRef = useRef<HTMLInputElement | null>(null);
-  const seedImagesZipInputRef = useRef<HTMLInputElement | null>(null);
   const [keywordInput, setKeywordInput] = useState("");
   const [keyword, setKeyword] = useState("");
   const [enabledFilter, setEnabledFilter] = useState<"all" | "enabled" | "disabled">("all");
@@ -311,9 +307,6 @@ export default function AdminTowerModelsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<TowerModelSummary | null>(null);
   const [uploadModel, setUploadModel] = useState<TowerModelSummary | null>(null);
-  const [seedRunning, setSeedRunning] = useState(false);
-  const [seedUploadOpen, setSeedUploadOpen] = useState(false);
-  const [seedOverwrite, setSeedOverwrite] = useState(false);
   const [viewMode, setViewMode] = useState<TowerModelViewMode>("card");
   const [pagination, setPagination] = useState({ current: 1, pageSize: TOWER_MODEL_DEFAULT_PAGE_SIZE });
   const [tableScrollY, setTableScrollY] = useState(TOWER_MODEL_CARD_MIN_SCROLL_Y);
@@ -490,67 +483,6 @@ export default function AdminTowerModelsPage() {
     form.setFieldsValue(toEditValues(item));
     setDialogOpen(true);
   }, [form]);
-
-  const resetSeedUploadInputs = () => {
-    if (seedSettingInputRef.current) {
-      seedSettingInputRef.current.value = "";
-    }
-    if (seedGantaInputRef.current) {
-      seedGantaInputRef.current.value = "";
-    }
-    if (seedImagesZipInputRef.current) {
-      seedImagesZipInputRef.current.value = "";
-    }
-  };
-
-  const triggerSeedUpload = async () => {
-    const settingFile = seedSettingInputRef.current?.files?.[0];
-    const gantaFile = seedGantaInputRef.current?.files?.[0];
-    const imagesZipFile = seedImagesZipInputRef.current?.files?.[0];
-    if (!settingFile) {
-      setError("请先上传 LP_Setting 文件");
-      return;
-    }
-    if (!gantaFile) {
-      setError("请先上传 LP_GanTa 文件");
-      return;
-    }
-
-    setSeedRunning(true);
-    try {
-      const params = new URLSearchParams({ overwrite_existing: seedOverwrite ? "true" : "false" });
-      const formData = new FormData();
-      formData.append("setting_file", settingFile);
-      formData.append("ganta_file", gantaFile);
-      if (imagesZipFile) {
-        formData.append("images_zip", imagesZipFile);
-      }
-      const response = await fetchWithAuth(`/api/v1/tower-models/seed/upload?${params.toString()}`, {
-        method: "POST",
-        body: formData,
-      });
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-      const payload = (await response.json()) as TowerModelSeedResponse;
-      messageApi.success(
-        `初始化完成：新增 ${payload.imported_models}，更新 ${payload.updated_models}，跳过 ${payload.skipped_models}，图片 ${payload.copied_images}`,
-      );
-      if (payload.warnings.length > 0) {
-        setError(payload.warnings.slice(0, 8).join("; "));
-      } else {
-        setError("");
-      }
-      setSeedUploadOpen(false);
-      setSeedOverwrite(false);
-      resetSeedUploadInputs();
-      await refreshList();
-    } catch (candidate) {
-      setError(candidate instanceof Error ? candidate.message : "初始化失败");
-    } finally {
-      setSeedRunning(false);
-    }
-  };
 
   const handleSearch = () => {
     setKeyword(keywordInput);
@@ -751,18 +683,7 @@ export default function AdminTowerModelsPage() {
       <Card
         title="杆塔模型管理"
         extra={canManage ? (
-          <Space size={8} wrap>
-            <Button onClick={openCreate} type="primary">新建模型</Button>
-            <Button
-              onClick={() => {
-                setSeedOverwrite(false);
-                setSeedUploadOpen(true);
-              }}
-              loading={seedRunning}
-            >
-              上传文件初始化
-            </Button>
-          </Space>
+          <Button onClick={openCreate} type="primary">新建模型</Button>
         ) : null}
       >
         <Space direction="vertical" size={12} className="w-full">
@@ -935,62 +856,7 @@ export default function AdminTowerModelsPage() {
       </Modal>
 
       <Modal
-        title="上传初始化文件"
-        open={seedUploadOpen}
-        okText="开始初始化"
-        confirmLoading={seedRunning}
-        onCancel={() => {
-          if (seedRunning) {
-            return;
-          }
-          setSeedUploadOpen(false);
-          setSeedOverwrite(false);
-          resetSeedUploadInputs();
-        }}
-        onOk={async () => {
-          await triggerSeedUpload();
-        }}
-      >
-        <Space direction="vertical" size={12} className="w-full">
-          <Typography.Text type="secondary">
-            请上传老系统导出的 LP_Setting、LP_GanTa 文件；图片压缩包可选（zip，按“模型编码.扩展名”匹配）。
-          </Typography.Text>
-          <div>
-            <Typography.Text>LP_Setting 文件（必选）</Typography.Text>
-            <input
-              ref={seedSettingInputRef}
-              type="file"
-              accept=".txt,.csv,text/plain"
-              className="mt-1 block w-full"
-            />
-          </div>
-          <div>
-            <Typography.Text>LP_GanTa 文件（必选）</Typography.Text>
-            <input
-              ref={seedGantaInputRef}
-              type="file"
-              accept=".txt,.csv,text/plain"
-              className="mt-1 block w-full"
-            />
-          </div>
-          <div>
-            <Typography.Text>模型图片压缩包（可选，zip）</Typography.Text>
-            <input
-              ref={seedImagesZipInputRef}
-              type="file"
-              accept=".zip,application/zip,application/x-zip-compressed"
-              className="mt-1 block w-full"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch checked={seedOverwrite} onChange={setSeedOverwrite} />
-            <Typography.Text>覆盖已存在模型（关闭则仅新增）</Typography.Text>
-          </div>
-        </Space>
-      </Modal>
-
-      <Modal
-        title="上传模型图片"
+        title=”上传模型图片”
         open={!!uploadModel}
         okText="上传"
         confirmLoading={uploadImageMutation.isPending}
