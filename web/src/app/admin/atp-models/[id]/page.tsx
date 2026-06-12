@@ -22,11 +22,12 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { UploadFile } from "antd/es/upload/interface";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { AdminPageLoading } from "@/components/admin-page-loading";
 import { useAuth } from "@/components/auth-provider";
 import { Card } from "@/components/ui-antd";
+import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import {
   getAtpAssetStatusDisplay,
@@ -122,6 +123,23 @@ export default function AtpAssetDetailPage() {
   const canRead = hasPermission("atp.read") || hasPermission("atp.run") || hasPermission("atp.manage");
   const canRun = hasPermission("atp.run") || hasPermission("atp.manage");
   const canManage = hasPermission("atp.manage");
+
+  const refreshAtpData = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["atp-asset-detail", assetId] });
+    void queryClient.invalidateQueries({ queryKey: ["atp-asset-releases", assetId] });
+    if (selectedReleaseId) {
+      void queryClient.invalidateQueries({ queryKey: ["atp-release-detail", selectedReleaseId] });
+      void queryClient.invalidateQueries({ queryKey: ["atp-release-files", selectedReleaseId] });
+      void queryClient.invalidateQueries({ queryKey: ["atp-release-runs", selectedReleaseId] });
+    }
+  }, [queryClient, assetId, selectedReleaseId]);
+
+  useTopicSubscription(
+    "admin.atp-assets",
+    useCallback(() => {
+      void refreshAtpData();
+    }, [refreshAtpData]),
+  );
 
   const assetQuery = useQuery({
     queryKey: ["atp-asset-detail", assetId],
@@ -219,20 +237,28 @@ export default function AtpAssetDetailPage() {
       if (!response.ok) {
         throw new Error(await readApiError(response));
       }
-      return (await response.json()) as AtpAssetReleaseDetail;
+      // 后端返回 {task_id, status}，表示异步处理
+      return (await response.json()) as { task_id: string; status: string };
     },
     onSuccess: (result) => {
-      void queryClient.invalidateQueries({ queryKey: ["atp-asset-detail", assetId] });
-      void queryClient.invalidateQueries({ queryKey: ["atp-asset-releases", assetId] });
-      void queryClient.invalidateQueries({ queryKey: ["atp-release-detail", result.id] });
-      void queryClient.invalidateQueries({ queryKey: ["atp-release-files", result.id] });
-      void queryClient.invalidateQueries({ queryKey: ["atp-release-runs", result.id] });
-      setSelectedReleaseIdState(result.id);
       setReleaseModalOpen(false);
       setEditingRelease(null);
       setReleaseArchiveFileList([]);
       releaseForm.resetFields();
-      message.success(editingRelease ? "版本已更新" : "版本已创建");
+
+      if ("task_id" in result) {
+        // 异步上传：提示用户等待，WebSocket 会自动刷新数据
+        message.success("版本上传任务已提交，正在后台处理...");
+      } else {
+        // 同步更新：立即刷新数据并选中新版本
+        void queryClient.invalidateQueries({ queryKey: ["atp-asset-detail", assetId] });
+        void queryClient.invalidateQueries({ queryKey: ["atp-asset-releases", assetId] });
+        void queryClient.invalidateQueries({ queryKey: ["atp-release-detail", result.id] });
+        void queryClient.invalidateQueries({ queryKey: ["atp-release-files", result.id] });
+        void queryClient.invalidateQueries({ queryKey: ["atp-release-runs", result.id] });
+        setSelectedReleaseIdState(result.id);
+        message.success(editingRelease ? "版本已更新" : "版本已创建");
+      }
     },
     onError: (candidate) => {
       message.error(candidate instanceof Error ? candidate.message : "保存版本失败");
