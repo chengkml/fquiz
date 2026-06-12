@@ -156,8 +156,8 @@ def create_scheduled_task(
             payload.timezone.strip(),
             from_time=None,
         ) if payload.enabled else None,
-        create_user=actor_user_id,
-        update_user=actor_user_id,
+        create_user=actor_user_id if actor_user_id != "system" else None,
+        update_user=actor_user_id if actor_user_id != "system" else None,
     )
     db.add(task)
     db.commit()
@@ -208,7 +208,7 @@ def update_scheduled_task(
     item.enabled = next_enabled
     item.status = "disabled" if not next_enabled else ("idle" if item.status == "disabled" else item.status)
     item.next_run_at = compute_next_run_at(next_cron, next_timezone, from_time=None) if next_enabled else None
-    item.update_user = actor_user_id
+    item.update_user = actor_user_id if actor_user_id != "system" else None
     db.commit()
     saved = get_scheduled_task_by_id(db, task_id)
     if not saved:
@@ -232,7 +232,7 @@ def run_scheduled_task_now(
         return None
 
     item.status = "queued"
-    item.update_user = actor_user_id
+    item.update_user = actor_user_id if actor_user_id != "system" else None
     db.commit()
 
     from ..tasks.scheduled_task_tasks import execute_scheduled_task_job
@@ -289,7 +289,7 @@ def dispatch_due_scheduled_tasks(*, actor_user_id: str = "system") -> dict[str, 
         for item in items:
             scanned_count += 1
             item.status = "queued"
-            item.update_user = actor_user_id
+            item.update_user = actor_user_id if actor_user_id != "system" else None
             item.next_run_at = compute_next_run_at(item.cron_expression, item.timezone, from_time=now)
             db.commit()
             execute_scheduled_task_job.delay(item.id, actor_user_id)
@@ -372,7 +372,7 @@ def _execute_scheduled_task_with_session(
     now = utcnow()
     item.status = "running"
     item.last_run_at = now
-    item.update_user = actor_user_id
+    item.update_user = actor_user_id if actor_user_id != "system" else None
     db.commit()
     _publish_scheduled_task_changed(
         action="running",
@@ -389,7 +389,7 @@ def _execute_scheduled_task_with_session(
         item.last_error_message = None
         item.last_result_json = result.payload
         item.run_count += 1
-        item.update_user = actor_user_id
+        item.update_user = actor_user_id if actor_user_id != "system" else None
         if item.enabled:
             item.next_run_at = compute_next_run_at(item.cron_expression, item.timezone, from_time=now)
         db.add(
@@ -415,7 +415,7 @@ def _execute_scheduled_task_with_session(
         item.status = "failed"
         item.last_error_at = now
         item.last_error_message = str(exc)
-        item.update_user = actor_user_id
+        item.update_user = actor_user_id if actor_user_id != "system" else None
         if item.enabled:
             item.next_run_at = compute_next_run_at(item.cron_expression, item.timezone, from_time=now)
         db.add(
