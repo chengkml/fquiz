@@ -33,9 +33,7 @@ export function useToastFeedback({
       return;
     }
     lastErrorRef.current = errorMessage;
-    message.error({
-      content: `${errorTitle}：${errorMessage}`,
-    });
+    message.error(`${errorTitle}：${errorMessage}`);
     clearError?.();
   }, [clearError, errorMessage, errorTitle, message]);
 
@@ -48,9 +46,7 @@ export function useToastFeedback({
       return;
     }
     lastSuccessRef.current = successMessage;
-    message.success({
-      content: successTitle === "操作成功" ? successMessage : `${successTitle}：${successMessage}`,
-    });
+    message.success(successTitle === "操作成功" ? successMessage : `${successTitle}：${successMessage}`);
     clearSuccess?.();
   }, [clearSuccess, message, successMessage, successTitle]);
 }

@@ -248,7 +248,7 @@ export default function AtpAssetDetailPage() {
 
       if ("task_id" in result) {
         // 异步上传：提示用户等待，WebSocket 会自动刷新数据
-        message.success("版本上传任务已提交，正在后台处理...");
+        message.success("版本上传任务已提交，正在后台处理");
       } else {
         // 同步更新：立即刷新数据并选中新版本
         void queryClient.invalidateQueries({ queryKey: ["atp-asset-detail", assetId] });
