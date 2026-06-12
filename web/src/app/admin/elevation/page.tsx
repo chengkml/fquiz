@@ -197,6 +197,9 @@ export default function AdminElevationPage() {
   const [terrainModalOpen, setTerrainModalOpen] = useState(false);
   const [terrainDataset, setTerrainDataset] = useState<ElevationDatasetSummary | null>(null);
 
+  const [jobsVisible, setJobsVisible] = useState(false);
+  const [importJobsVisible, setImportJobsVisible] = useState(false);
+
   const [datasetForm] = Form.useForm<DatasetFormValues>();
   const [applyForm] = Form.useForm<ApplyFormValues>();
   const selectedApplyLineId = Form.useWatch("line_id", applyForm);
@@ -986,42 +989,66 @@ export default function AdminElevationPage() {
 
       <Card
         title="高程回填任务"
-        extra={canManage ? (
-          <a
-            onClick={(event) => {
-              event.preventDefault();
-              applyForm.setFieldsValue(DEFAULT_APPLY_FORM);
-              setApplyModalOpen(true);
-            }}
-          >
-            新建回填任务
-          </a>
-        ) : null}
+        extra={(
+          <Space>
+            <Button
+              type="link"
+              onClick={() => setJobsVisible(!jobsVisible)}
+            >
+              {jobsVisible ? "收起" : "查看"}
+            </Button>
+            {canManage && (
+              <a
+                onClick={(event) => {
+                  event.preventDefault();
+                  applyForm.setFieldsValue(DEFAULT_APPLY_FORM);
+                  setApplyModalOpen(true);
+                }}
+              >
+                新建回填任务
+              </a>
+            )}
+          </Space>
+        )}
       >
-        {jobs.length === 0 ? (
-          <Empty description="暂无回填任务。" />
-        ) : (
-          <Table<ElevationApplyJobSummary>
-            rowKey={(row) => row.id}
-            columns={jobColumns}
-            dataSource={jobs}
-            pagination={false}
-            scroll={{ x: 1900 }}
-          />
+        {jobsVisible && (
+          jobs.length === 0 ? (
+            <Empty description="暂无回填任务。" />
+          ) : (
+            <Table<ElevationApplyJobSummary>
+              rowKey={(row) => row.id}
+              columns={jobColumns}
+              dataSource={jobs}
+              pagination={false}
+              scroll={{ x: 1900 }}
+            />
+          )
         )}
       </Card>
 
-      <Card title="高程导入任务">
-        {importJobs.length === 0 ? (
-          <Empty description="暂无导入任务。" />
-        ) : (
-          <Table<ElevationDataImportJobSummary>
-            rowKey={(row) => row.id}
-            columns={importJobColumns}
-            dataSource={importJobs}
-            pagination={false}
-            scroll={{ x: 1600 }}
-          />
+      <Card
+        title="高程导入任务"
+        extra={(
+          <Button
+            type="link"
+            onClick={() => setImportJobsVisible(!importJobsVisible)}
+          >
+            {importJobsVisible ? "收起" : "查看"}
+          </Button>
+        )}
+      >
+        {importJobsVisible && (
+          importJobs.length === 0 ? (
+            <Empty description="暂无导入任务。" />
+          ) : (
+            <Table<ElevationDataImportJobSummary>
+              rowKey={(row) => row.id}
+              columns={importJobColumns}
+              dataSource={importJobs}
+              pagination={false}
+              scroll={{ x: 1600 }}
+            />
+          )
         )}
       </Card>
 
