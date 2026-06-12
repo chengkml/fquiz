@@ -127,7 +127,8 @@ function importJobStatusLabel(status: string): string {
 
 function importJobStageLabel(stage: string | null | undefined): string {
   if (!stage) return "-";
-  if (stage === "staging") return "接收文件";
+  if (stage === "pending") return "等待执行";
+  if (stage === "staging") return "暂存文件";
   if (stage === "queued") return "等待执行";
   if (stage === "running") return "开始执行";
   if (stage === "importing") return "导入文件";
