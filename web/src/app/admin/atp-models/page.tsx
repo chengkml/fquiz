@@ -34,10 +34,7 @@ import type { AtpAssetListResponse, AtpAssetSummary } from "@/types/auth";
 const AntCard = Card as unknown as ComponentType<CardProps>;
 
 type AssetFormValues = {
-  code: string;
-  name: string;
   description: string;
-  status: "draft" | "enabled" | "disabled" | "archived";
   voltage_level: string;
   tower_type: string;
   scene_type: string;
@@ -45,10 +42,7 @@ type AssetFormValues = {
 };
 
 const EMPTY_FORM: AssetFormValues = {
-  code: "",
-  name: "",
   description: "",
-  status: "enabled",
   voltage_level: "",
   tower_type: "",
   scene_type: "",
@@ -68,10 +62,7 @@ function formatDateTime(value: string | null | undefined): string {
 
 function toFormValues(item: AtpAssetSummary): AssetFormValues {
   return {
-    code: item.code,
-    name: item.name,
     description: item.description,
-    status: item.status,
     voltage_level: item.voltage_level ?? "",
     tower_type: item.tower_type ?? "",
     scene_type: item.scene_type ?? "",
@@ -79,12 +70,25 @@ function toFormValues(item: AtpAssetSummary): AssetFormValues {
   };
 }
 
+function generateName(values: AssetFormValues): string {
+  const parts = [
+    values.voltage_level,
+    values.tower_type,
+    values.scene_type,
+    values.arrester_config,
+  ].filter(Boolean);
+  return parts.join("-");
+}
+
+function generateCode(): string {
+  return `atp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
 function buildPayload(values: AssetFormValues) {
   return {
-    code: values.code.trim(),
-    name: values.name.trim(),
+    code: generateCode(),
+    name: generateName(values),
     description: values.description.trim(),
-    status: values.status,
     voltage_level: values.voltage_level.trim() || null,
     tower_type: values.tower_type.trim() || null,
     scene_type: values.scene_type.trim() || null,
@@ -171,7 +175,6 @@ export default function AtpModelsPage() {
 
   const [keywordInput, setKeywordInput] = useState("");
   const [keyword, setKeyword] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const [editingAsset, setEditingAsset] = useState<AtpAssetSummary | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [tableScrollY, setTableScrollY] = useState(ATP_TABLE_MIN_SCROLL_Y);
@@ -181,15 +184,12 @@ export default function AtpModelsPage() {
   const canManage = hasPermission("atp.manage");
 
   const assetsQuery = useQuery({
-    queryKey: ["atp-assets", keyword, statusFilter],
+    queryKey: ["atp-assets", keyword],
     enabled: Boolean(user && canRead),
     queryFn: async () => {
       const searchParams = new URLSearchParams();
       if (keyword.trim()) {
         searchParams.set("keyword", keyword.trim());
-      }
-      if (statusFilter) {
-        searchParams.set("status", statusFilter);
       }
       const suffix = searchParams.toString();
       const response = await fetchWithAuth(`/api/v1/atp/assets${suffix ? `?${suffix}` : ""}`);
@@ -343,6 +343,7 @@ export default function AtpModelsPage() {
             <Tag>{item.voltage_level || "未设置电压等级"}</Tag>
             <Tag>{item.tower_type || "未设置塔型"}</Tag>
             <Tag>{item.scene_type || "未设置场景"}</Tag>
+            <Tag>{item.arrester_config || "未设置避雷器"}</Tag>
           </Space>
         ),
       },
@@ -357,14 +358,6 @@ export default function AtpModelsPage() {
             </Typography.Text>
           </Space>
         ),
-      },
-      {
-        title: "状态",
-        dataIndex: "status",
-        render: (value: string) => {
-          const display = getAtpAssetStatusDisplay(value);
-          return <Tag color={display.color}>{display.label}</Tag>;
-        },
       },
       {
         title: "更新时间",
@@ -467,21 +460,6 @@ export default function AtpModelsPage() {
             />
           </Form.Item>
 
-          <Form.Item label="状态" className="min-w-[170px]">
-            <Select
-              allowClear
-              value={statusFilter}
-              placeholder="状态筛选"
-              onChange={(value) => setStatusFilter(value)}
-              options={[
-                { value: "draft", label: "草稿" },
-                { value: "enabled", label: "启用" },
-                { value: "disabled", label: "停用" },
-                { value: "archived", label: "归档" },
-              ]}
-            />
-          </Form.Item>
-
           <Form.Item>
             <Button type="primary" onClick={handleSearch}>
               搜索
@@ -535,28 +513,6 @@ export default function AtpModelsPage() {
         >
           <Row gutter={16}>
             <Col xs={24} md={12}>
-              <Form.Item name="code" label="编码" rules={[{ required: true, message: "请输入模型编码" }]}>
-                <Input disabled={Boolean(editingAsset)} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入模型名称" }]}>
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
-                <Select
-                  options={[
-                    { value: "draft", label: "草稿" },
-                    { value: "enabled", label: "启用" },
-                    { value: "disabled", label: "停用" },
-                    { value: "archived", label: "归档" },
-                  ]}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
               <Form.Item name="voltage_level" label="电压等级" rules={[{ required: true, message: "请选择或新建电压等级" }]}>
                 <CreatableSingleSelect options={voltageLevelOptions} placeholder="请选择或新建电压等级" />
               </Form.Item>
@@ -572,7 +528,7 @@ export default function AtpModelsPage() {
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item name="arrester_config" label="避雷器装设组合">
+              <Form.Item name="arrester_config" label="避雷器装设组合" rules={[{ required: true, message: "请选择或新建避雷器装设组合" }]}>
                 <CreatableSingleSelect options={arresterConfigOptions} placeholder="请选择或新建避雷器装设组合" />
               </Form.Item>
             </Col>
