@@ -127,12 +127,12 @@ export default function AtpAssetDetailPage() {
   const refreshAtpData = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["atp-asset-detail", assetId] });
     void queryClient.invalidateQueries({ queryKey: ["atp-asset-releases", assetId] });
-    if (selectedReleaseId) {
-      void queryClient.invalidateQueries({ queryKey: ["atp-release-detail", selectedReleaseId] });
-      void queryClient.invalidateQueries({ queryKey: ["atp-release-files", selectedReleaseId] });
-      void queryClient.invalidateQueries({ queryKey: ["atp-release-runs", selectedReleaseId] });
+    if (selectedReleaseIdState) {
+      void queryClient.invalidateQueries({ queryKey: ["atp-release-detail", selectedReleaseIdState] });
+      void queryClient.invalidateQueries({ queryKey: ["atp-release-files", selectedReleaseIdState] });
+      void queryClient.invalidateQueries({ queryKey: ["atp-release-runs", selectedReleaseIdState] });
     }
-  }, [queryClient, assetId, selectedReleaseId]);
+  }, [queryClient, assetId, selectedReleaseIdState]);
 
   useTopicSubscription(
     "admin.atp-assets",
