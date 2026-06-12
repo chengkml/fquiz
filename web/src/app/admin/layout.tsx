@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import Icon, {
   ApartmentOutlined,
   AppstoreOutlined,
+  BellOutlined,
   CalendarOutlined,
   ConsoleSqlOutlined,
   CompressOutlined,
@@ -226,6 +227,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const [menuOpenKeys, setMenuOpenKeys] = useState<string[]>([]);
   const [siderCollapsed, setSiderCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
 
   const loadMenus = useCallback(async () => {
     if (!user) {
@@ -366,6 +368,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     [logout],
   );
 
+  const onSystemMessageClick = useCallback(() => {
+    // TODO: Implement system message modal/drawer
+    // For now, just reset the unread count
+    setUnreadMessageCount(0);
+  }, []);
+
   const navigationMenu = (
     <AntMenu
       mode="inline"
@@ -445,6 +453,16 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               <Button icon={<ThemeIcon />} type="text" />
             </Tooltip>
           </Dropdown>
+
+          <Tooltip title="系统消息">
+            <Badge count={unreadMessageCount} size="small">
+              <Button
+                icon={<BellOutlined />}
+                type="text"
+                onClick={onSystemMessageClick}
+              />
+            </Badge>
+          </Tooltip>
 
           <Dropdown
             menu={{ items: accountMenuItems, onClick: onAccountMenuClick }}
