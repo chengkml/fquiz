@@ -150,6 +150,8 @@ body {
 }
 
 .admin-design-content {
+  display: flex;
+  flex-direction: column;
   min-height: calc(100vh - 64px);
   padding: 10px;
 }
@@ -168,7 +170,11 @@ body {
 }
 
 .admin-design-page-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .ant-message {
@@ -285,6 +291,10 @@ body {
   height: var(--admin-tower-models-card-body-height, 320px);
   overflow: auto;
   padding-right: 2px;
+}
+
+.admin-atp-models-table-anchor .ant-table-body {
+  min-height: var(--admin-atp-models-table-body-min-height, 180px);
 }
 
 .fquiz-row-selected > td {
