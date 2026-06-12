@@ -651,12 +651,21 @@ export default function AdminFilesPage() {
         dataIndex: "name",
         key: "name",
         render: (_value, item) => (
-          <Space size={8}>
-            {item.is_dir ? <FolderFilled className="text-[var(--accent-11)]" /> : <FileOutlined className="text-[var(--gray-11)]" />}
+          <Space size={10}>
             {item.is_dir ? (
-              <Typography.Link onClick={() => handleOpenDirectory(item)}>{item.name}</Typography.Link>
+              <FolderFilled className="text-lg text-[var(--accent-11)]" />
             ) : (
-              <Typography.Text>{item.name}</Typography.Text>
+              <FileOutlined className="text-base text-[var(--gray-10)]" />
+            )}
+            {item.is_dir ? (
+              <Typography.Link
+                onClick={() => handleOpenDirectory(item)}
+                className="font-medium hover:text-[var(--accent-10)]"
+              >
+                {item.name}
+              </Typography.Link>
+            ) : (
+              <Typography.Text className="font-medium">{item.name}</Typography.Text>
             )}
           </Space>
         ),
@@ -665,13 +674,21 @@ export default function AdminFilesPage() {
         title: "类型",
         key: "type",
         width: 180,
-        render: (_value, item) => (item.is_dir ? "目录" : item.mime_type ?? "文件"),
+        render: (_value, item) => (
+          <Typography.Text type="secondary" className="text-sm">
+            {item.is_dir ? "目录" : item.mime_type ?? "文件"}
+          </Typography.Text>
+        ),
       },
       {
         title: "大小",
         key: "size",
         width: 140,
-        render: (_value, item) => (item.is_dir ? "-" : formatFileSize(item.size)),
+        render: (_value, item) => (
+          <Typography.Text type="secondary" className="text-sm font-medium">
+            {item.is_dir ? "-" : formatFileSize(item.size)}
+          </Typography.Text>
+        ),
       },
       {
         title: "修改时间",
@@ -714,12 +731,12 @@ export default function AdminFilesPage() {
           ];
 
           return (
-            <Space wrap>
+            <Space wrap size="small">
               {item.is_dir ? (
                 <>
                   <Button
                     type="button"
-                    color="gray"
+                    color="blue"
                     size="1"
                     variant="soft"
                     onClick={() => handleOpenDirectory(item)}
@@ -815,13 +832,18 @@ export default function AdminFilesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {messageContextHolder}
 
       <AntCard
-        title="文件列表"
+        title={
+          <div className="flex items-center gap-2">
+            <FolderFilled className="text-lg text-[var(--accent-11)]" />
+            <span className="text-base font-semibold">文件管理</span>
+          </div>
+        }
         extra={(
-          <Space wrap>
+          <Space wrap size="small">
             {filesQuery.isFetching && <Spin size="small" />}
             <Button
               type="button"
@@ -838,7 +860,7 @@ export default function AdminFilesPage() {
             {canManage && (
               <Button
                 type="button"
-                color="gray"
+                color="blue"
                 size="1"
                 variant="soft"
                 onClick={() => {
@@ -864,9 +886,9 @@ export default function AdminFilesPage() {
               >
                 <Button
                   type="button"
-                  color="gray"
+                  color="blue"
                   size="1"
-                  variant="soft"
+                  variant="solid"
                   disabled={uploadMutation.isPending || !activeMountCode}
                   icon={<UploadOutlined />}
                 >
@@ -876,22 +898,44 @@ export default function AdminFilesPage() {
             )}
           </Space>
         )}
+        styles={{
+          header: {
+            borderBottom: '1px solid var(--ant-color-border-secondary)',
+            padding: '16px 20px',
+            background: 'var(--fquiz-theme-bg-elevated)'
+          },
+          body: { padding: '20px' }
+        }}
       >
         <div className="space-y-4">
           {uploadMutation.isPending && (
-            <div className="rounded-lg border border-[var(--gray-5)] bg-[var(--gray-a2)] px-3 py-2">
-              <div className="mb-1 flex items-center justify-between gap-3">
-                <Typography.Text ellipsis={{ tooltip: uploadFileName || undefined }} className="max-w-[420px]">
-                  正在上传：{uploadFileName || "未命名文件"}
+            <div className="rounded-xl border border-[var(--accent-6)] bg-gradient-to-r from-[var(--accent-a2)] to-transparent p-4 shadow-sm">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <UploadOutlined className="text-[var(--accent-11)] flex-shrink-0" />
+                  <Typography.Text
+                    ellipsis={{ tooltip: uploadFileName || undefined }}
+                    className="font-medium text-[var(--gray-12)]"
+                  >
+                    {uploadFileName || "未命名文件"}
+                  </Typography.Text>
+                </div>
+                <Typography.Text className="font-semibold text-[var(--accent-11)] flex-shrink-0">
+                  {uploadProgress}%
                 </Typography.Text>
-                <Typography.Text type="secondary">{uploadProgress}%</Typography.Text>
               </div>
-              <Progress percent={uploadProgress} size="small" showInfo={false} />
+              <Progress
+                percent={uploadProgress}
+                size="small"
+                showInfo={false}
+                strokeColor="var(--accent-11)"
+                trailColor="var(--accent-a3)"
+              />
             </div>
           )}
 
-          <div className="rounded-lg border border-[var(--gray-5)] bg-[var(--gray-a2)] px-3 py-2 [&_.ant-breadcrumb-link]:!text-[var(--gray-12)] [&_.ant-breadcrumb-separator]:!text-[var(--gray-10)]">
-            <Breadcrumb items={breadcrumbItems} />
+          <div className="rounded-xl border border-[var(--gray-6)] bg-gradient-to-br from-[var(--gray-a2)] to-transparent px-4 py-3 shadow-sm [&_.ant-breadcrumb-link]:!text-[var(--gray-12)] [&_.ant-breadcrumb-separator]:!text-[var(--gray-10)]">
+            <Breadcrumb items={breadcrumbItems} separator="/" />
           </div>
 
           <div
@@ -907,11 +951,13 @@ export default function AdminFilesPage() {
               loading={filesQuery.isLoading || filesQuery.isFetching}
               size="middle"
               scroll={{ x: 1100, y: tableScrollY }}
+              className="[&_.ant-table]:rounded-lg [&_.ant-table-thead>tr>th]:bg-[var(--fquiz-theme-table-header-bg)] [&_.ant-table-thead>tr>th]:font-semibold [&_.ant-table-tbody>tr:hover>td]:bg-[var(--accent-a2)]"
               locale={{
                 emptyText: (
                   <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
                     description="当前目录为空"
+                    className="py-12"
                   />
                 ),
               }}
@@ -929,6 +975,10 @@ export default function AdminFilesPage() {
         cancelText="取消"
         confirmLoading={createDirectoryMutation.isPending}
         destroyOnClose
+        styles={{
+          header: { paddingBottom: '12px', borderBottom: '1px solid var(--ant-color-border-secondary)' },
+          body: { paddingTop: '20px' }
+        }}
       >
         <Form layout="vertical">
           <Form.Item
@@ -943,6 +993,7 @@ export default function AdminFilesPage() {
               placeholder="请输入目录名称"
               allowClear
               autoFocus
+              size="large"
             />
           </Form.Item>
         </Form>
@@ -957,6 +1008,10 @@ export default function AdminFilesPage() {
         cancelText="取消"
         confirmLoading={renameMutation.isPending}
         destroyOnClose
+        styles={{
+          header: { paddingBottom: '12px', borderBottom: '1px solid var(--ant-color-border-secondary)' },
+          body: { paddingTop: '20px' }
+        }}
       >
         <Form layout="vertical">
           <Form.Item
@@ -970,6 +1025,7 @@ export default function AdminFilesPage() {
               onChange={(event) => setRenameName(event.currentTarget.value)}
               placeholder="请输入新名称"
               autoFocus
+              size="large"
             />
           </Form.Item>
         </Form>
@@ -984,6 +1040,10 @@ export default function AdminFilesPage() {
         cancelText="取消"
         confirmLoading={moveMutation.isPending}
         destroyOnClose
+        styles={{
+          header: { paddingBottom: '12px', borderBottom: '1px solid var(--ant-color-border-secondary)' },
+          body: { paddingTop: '20px' }
+        }}
       >
         <Form layout="vertical">
           <Form.Item
@@ -997,6 +1057,7 @@ export default function AdminFilesPage() {
               onChange={(event) => setMoveTargetParentPath(event.currentTarget.value)}
               placeholder="目标目录（如 /a/b）"
               autoFocus
+              size="large"
             />
           </Form.Item>
           <Form.Item label="新名称（可选）">
@@ -1004,6 +1065,7 @@ export default function AdminFilesPage() {
               value={moveNewName}
               onChange={(event) => setMoveNewName(event.currentTarget.value)}
               placeholder="留空则使用当前名称"
+              size="large"
             />
           </Form.Item>
         </Form>
