@@ -599,7 +599,6 @@ export default function AdminElevationPage() {
   const fileColumns = useMemo<ColumnsType<ElevationDatasetFileItem>>(
     () => [
       { title: "文件名", dataIndex: "name", width: 260 },
-      { title: "路径", dataIndex: "path", width: 420 },
       {
         title: "大小",
         dataIndex: "size",
@@ -1487,12 +1486,6 @@ export default function AdminElevationPage() {
       >
         {datasetFilesDataset && (
           <div className="space-y-3">
-            <Alert
-              type="info"
-              showIcon
-              message={`目录：${datasetFilesDataset.dataset_dir}`}
-              description={`挂载：${datasetFilesDataset.mount_code}`}
-            />
             {datasetFilesLoading ? (
               <div className="flex min-h-[180px] items-center justify-center">
                 <Spin tip="文件明细加载中..." />
@@ -1505,7 +1498,7 @@ export default function AdminElevationPage() {
                 columns={fileColumns}
                 dataSource={datasetFiles}
                 pagination={false}
-                scroll={{ x: 1320 }}
+                scroll={{ x: 900 }}
               />
             )}
           </div>
