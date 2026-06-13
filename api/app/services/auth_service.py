@@ -101,14 +101,79 @@ def login_user(
 ) -> AuthResult:
     requested_user_id = payload.user_id.strip()
     user = get_user_by_id(db, requested_user_id)
-    if not user or not verify_password(payload.password, user.password_hash):
+
+    # Check if user exists
+    if not user:
         write_audit_log(
             db,
             action="auth.login_failed",
-            actor_user_id=user.id if user else None,
+            actor_user_id=None,
+            detail=compose_audit_detail(
+                f"attempted_user_id={requested_user_id}",
+                "reason=user_not_found",
+            ),
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user_id or password",
+        )
+
+    # Check if account is locked
+    now = utcnow()
+    if user.failed_login_locked_until and user.failed_login_locked_until > now:
+        remaining_seconds = int((user.failed_login_locked_until - now).total_seconds())
+        write_audit_log(
+            db,
+            action="auth.login_failed",
+            actor_user_id=user.id,
+            detail=compose_audit_detail(
+                f"attempted_user_id={requested_user_id}",
+                f"username={user.username}",
+                "reason=account_locked",
+                f"remaining_seconds={remaining_seconds}",
+            ),
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Account is locked. Please try again in {remaining_seconds} seconds.",
+        )
+
+    # Verify password
+    if not verify_password(payload.password, user.password_hash):
+        # Increment failed login attempts
+        user.failed_login_attempts += 1
+
+        # Lock account if attempts >= 5
+        if user.failed_login_attempts >= 5:
+            user.failed_login_locked_until = now + timedelta(minutes=30)
+            write_audit_log(
+                db,
+                action="auth.login_failed",
+                actor_user_id=user.id,
+                detail=compose_audit_detail(
+                    f"attempted_user_id={requested_user_id}",
+                    "reason=invalid_credentials",
+                    f"failed_attempts={user.failed_login_attempts}",
+                    "account_locked=true",
+                    "lock_duration_minutes=30",
+                ),
+            )
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Too many failed login attempts. Account locked for 30 minutes.",
+            )
+
+        write_audit_log(
+            db,
+            action="auth.login_failed",
+            actor_user_id=user.id,
             detail=compose_audit_detail(
                 f"attempted_user_id={requested_user_id}",
                 "reason=invalid_credentials",
+                f"failed_attempts={user.failed_login_attempts}",
             ),
         )
         db.commit()
@@ -133,6 +198,10 @@ def login_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User is disabled",
         )
+
+    # Reset failed login attempts on successful login
+    user.failed_login_attempts = 0
+    user.failed_login_locked_until = None
 
     return issue_auth_result_for_user(
         db,

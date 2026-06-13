@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..core.config import get_settings
@@ -55,6 +55,15 @@ class User(Base):
         DateTime(timezone=False),
         default=utcnow,
         onupdate=utcnow,
+    )
+    failed_login_attempts: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    failed_login_locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False),
+        nullable=True,
     )
     @property
     def last_login_at(self) -> datetime | None:
