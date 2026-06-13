@@ -44,6 +44,7 @@ import {
   Layout as AntLayout,
   List,
   Menu as AntMenu,
+  Popover,
   Result,
   Space,
   Spin,
@@ -371,7 +372,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     [logout],
   );
 
-  const [messageDrawerOpen, setMessageDrawerOpen] = useState(false);
+  const [messagePopoverOpen, setMessagePopoverOpen] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
 
@@ -412,7 +413,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }, [loadUnreadCount, user]);
 
   const onSystemMessageClick = useCallback(() => {
-    setMessageDrawerOpen(true);
+    setMessagePopoverOpen(true);
     void loadMessages();
   }, [loadMessages]);
 
@@ -512,13 +513,86 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           </Dropdown>
 
           <Tooltip title="系统消息">
-            <Badge count={unreadMessageCount} size="small">
-              <Button
-                icon={<BellOutlined />}
-                type="text"
-                onClick={onSystemMessageClick}
-              />
-            </Badge>
+            <Popover
+              title="系统消息"
+              trigger="click"
+              open={messagePopoverOpen}
+              onOpenChange={(open) => {
+                setMessagePopoverOpen(open);
+                if (open) {
+                  void loadMessages();
+                }
+              }}
+              content={
+                <div style={{ width: 360, maxHeight: 480, overflowY: "auto" }}>
+                  {loadingMessages ? (
+                    <div style={{ textAlign: "center", padding: "40px 0" }}>
+                      <Spin />
+                    </div>
+                  ) : messages.length === 0 ? (
+                    <Empty description="暂无消息" />
+                  ) : (
+                    <List
+                      dataSource={messages}
+                      renderItem={(item: any) => (
+                        <List.Item
+                          key={item.id}
+                          style={{
+                            opacity: item.is_read ? 0.6 : 1,
+                            backgroundColor: item.is_read ? "transparent" : "var(--ant-color-bg-container-active)",
+                          }}
+                          actions={
+                            !item.is_read
+                              ? [
+                                  <Button
+                                    key="mark-read"
+                                    type="link"
+                                    size="small"
+                                    onClick={() => markAsRead([item.id])}
+                                  >
+                                    标记已读
+                                  </Button>,
+                                ]
+                              : undefined
+                          }
+                        >
+                          <List.Item.Meta
+                            title={
+                              <Space>
+                                <span>{item.title}</span>
+                                <Tag color={
+                                  item.message_type === "error" ? "red" :
+                                  item.message_type === "warning" ? "orange" :
+                                  item.message_type === "success" ? "green" : "blue"
+                                }>
+                                  {item.message_type}
+                                </Tag>
+                              </Space>
+                            }
+                            description={
+                              <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                                <Typography.Text>{item.content}</Typography.Text>
+                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                  {new Date(item.created_at).toLocaleString("zh-CN")}
+                                </Typography.Text>
+                              </Space>
+                            }
+                          />
+                        </List.Item>
+                      )}
+                    />
+                  )}
+                </div>
+              }
+              placement="bottomRight"
+            >
+              <Badge count={unreadMessageCount} size="small">
+                <Button
+                  icon={<BellOutlined />}
+                  type="text"
+                />
+              </Badge>
+            </Popover>
           </Tooltip>
 
           <Dropdown
@@ -570,72 +644,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           onClose={() => setMobileMenuOpen(false)}
         >
           {navigationMenu}
-        </Drawer>
-
-        <Drawer
-          title="系统消息"
-          placement="right"
-          open={messageDrawerOpen}
-          width={480}
-          onClose={() => setMessageDrawerOpen(false)}
-        >
-          {loadingMessages ? (
-            <div style={{ textAlign: "center", padding: "40px 0" }}>
-              <Spin />
-            </div>
-          ) : messages.length === 0 ? (
-            <Empty description="暂无消息" />
-          ) : (
-            <List
-              dataSource={messages}
-              renderItem={(item: any) => (
-                <List.Item
-                  key={item.id}
-                  style={{
-                    opacity: item.is_read ? 0.6 : 1,
-                    backgroundColor: item.is_read ? "transparent" : "var(--ant-color-bg-container-active)",
-                  }}
-                  actions={
-                    !item.is_read
-                      ? [
-                          <Button
-                            key="mark-read"
-                            type="link"
-                            size="small"
-                            onClick={() => markAsRead([item.id])}
-                          >
-                            标记已读
-                          </Button>,
-                        ]
-                      : undefined
-                  }
-                >
-                  <List.Item.Meta
-                    title={
-                      <Space>
-                        <span>{item.title}</span>
-                        <Tag color={
-                          item.message_type === "error" ? "red" :
-                          item.message_type === "warning" ? "orange" :
-                          item.message_type === "success" ? "green" : "blue"
-                        }>
-                          {item.message_type}
-                        </Tag>
-                      </Space>
-                    }
-                    description={
-                      <Space direction="vertical" size={4} style={{ width: "100%" }}>
-                        <Typography.Text>{item.content}</Typography.Text>
-                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                          {new Date(item.created_at).toLocaleString("zh-CN")}
-                        </Typography.Text>
-                      </Space>
-                    }
-                  />
-                </List.Item>
-              )}
-            />
-          )}
         </Drawer>
 
         <AntLayout className="admin-design-main">
