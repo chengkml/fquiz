@@ -856,7 +856,7 @@ export default function AdminTowerModelsPage() {
       </Modal>
 
       <Modal
-        title=”上传模型图片”
+        title="上传模型图片"
         open={!!uploadModel}
         okText="上传"
         confirmLoading={uploadImageMutation.isPending}
