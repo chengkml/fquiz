@@ -6,6 +6,7 @@ import {
   App,
   Alert,
   Button,
+  Dropdown,
   Empty,
   Form,
   Input,
@@ -17,7 +18,9 @@ import {
   Space,
   Table,
   Typography,
+  type MenuProps,
 } from "antd";
+import { MoreOutlined } from "@ant-design/icons";
 import type { DefaultOptionType } from "antd/es/select";
 import type { ColumnsType } from "antd/es/table";
 import type { CSSProperties } from "react";
@@ -1335,38 +1338,57 @@ export default function AdminPowerLinesPage() {
     {
       title: "操作",
       key: "actions",
-      width: 160,
+      width: 120,
       fixed: "right",
-      render: (_: unknown, row) => (
-        <Space size={8}>
-          {canTowerManage && (
-            <Button size="small" onClick={() => openEditTowerModal(row)}>
-              编辑
-            </Button>
-          )}
-          {canTowerManage && (
-            <Button size="small" onClick={() => openTowerProfileModal(row)}>
-              专业参数
-            </Button>
-          )}
-          {canTowerManage && (
-            <Popconfirm
-              title="删除杆塔"
-              description={`确认删除杆塔 ${row.tower_no} 吗？`}
-              okText="删除"
-              cancelText="取消"
-              okButtonProps={{ danger: true }}
-              onConfirm={async () => {
-                await deleteTowerMutation.mutateAsync(row.id);
-              }}
-            >
-              <Button size="small" danger loading={deleteTowerMutation.isPending}>
-                删除
+      render: (_: unknown, row) => {
+        const moreMenuItems: MenuProps["items"] = [
+          {
+            key: "delete",
+            label: "删除",
+            danger: true,
+            disabled: deleteTowerMutation.isPending,
+          },
+        ];
+
+        return (
+          <Space size="small" wrap>
+            {canTowerManage && (
+              <Button size="small" onClick={() => openEditTowerModal(row)}>
+                编辑
               </Button>
-            </Popconfirm>
-          )}
-        </Space>
-      ),
+            )}
+            {canTowerManage && (
+              <Button size="small" onClick={() => openTowerProfileModal(row)}>
+                专业参数
+              </Button>
+            )}
+            {canTowerManage && (
+              <Dropdown
+                menu={{
+                  items: moreMenuItems,
+                  onClick: ({ key }) => {
+                    if (key === "delete") {
+                      Modal.confirm({
+                        title: "删除杆塔",
+                        content: `确认删除杆塔 ${row.tower_no} 吗？`,
+                        okText: "删除",
+                        cancelText: "取消",
+                        okButtonProps: { danger: true },
+                        onOk: async () => {
+                          await deleteTowerMutation.mutateAsync(row.id);
+                        },
+                      });
+                    }
+                  },
+                }}
+                trigger={["click"]}
+              >
+                <Button size="small" icon={<MoreOutlined />} />
+              </Dropdown>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 

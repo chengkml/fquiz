@@ -8,6 +8,7 @@ import {
   Button,
   Card,
   Col,
+  Dropdown,
   Form,
   Input,
   Modal,
@@ -20,7 +21,9 @@ import {
   Tag,
   Typography,
   type CardProps,
+  type MenuProps,
 } from "antd";
+import { MoreOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
 
@@ -367,38 +370,57 @@ export default function AtpModelsPage() {
       {
         title: "操作",
         key: "actions",
-        render: (_, item) => (
-          <Space wrap>
-            <Link href={`/admin/atp-models/${item.id}`}>
-              <Button size="small" type="primary">
-                详情
+        render: (_, item) => {
+          const moreMenuItems: MenuProps["items"] = [
+            {
+              key: "delete",
+              label: "删除",
+              danger: true,
+              disabled: !canManage || deleteMutation.isPending,
+            },
+          ];
+
+          return (
+            <Space wrap>
+              <Link href={`/admin/atp-models/${item.id}`}>
+                <Button size="small" type="primary">
+                  详情
+                </Button>
+              </Link>
+              <Button
+                size="small"
+                disabled={!canManage}
+                onClick={() => {
+                  setEditingAsset(item);
+                  form.setFieldsValue(toFormValues(item));
+                  setModalOpen(true);
+                }}
+              >
+                编辑
               </Button>
-            </Link>
-            <Button
-              size="small"
-              disabled={!canManage}
-              onClick={() => {
-                setEditingAsset(item);
-                form.setFieldsValue(toFormValues(item));
-                setModalOpen(true);
-              }}
-            >
-              编辑
-            </Button>
-            <Popconfirm
-              title="删除模型"
-              description="这会同时删除其版本与运行记录。"
-              okText="删除"
-              cancelText="取消"
-              onConfirm={() => void deleteMutation.mutateAsync(item.id)}
-              disabled={!canManage}
-            >
-              <Button size="small" danger disabled={!canManage}>
-                删除
-              </Button>
-            </Popconfirm>
-          </Space>
-        ),
+              <Dropdown
+                menu={{
+                  items: moreMenuItems,
+                  onClick: ({ key }) => {
+                    if (key === "delete") {
+                      Modal.confirm({
+                        title: "删除模型",
+                        content: "这会同时删除其版本与运行记录。",
+                        okText: "删除",
+                        cancelText: "取消",
+                        okButtonProps: { danger: true },
+                        onOk: () => void deleteMutation.mutateAsync(item.id),
+                      });
+                    }
+                  },
+                }}
+                trigger={["click"]}
+              >
+                <Button size="small" icon={<MoreOutlined />} disabled={!canManage} />
+              </Dropdown>
+            </Space>
+          );
+        },
       },
     ],
     [canManage, deleteMutation, form],

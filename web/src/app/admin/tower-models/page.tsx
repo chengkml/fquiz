@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   App,
   Button,
+  Dropdown,
   Empty,
   Form,
   Input,
@@ -19,7 +20,9 @@ import {
   Table,
   Tag,
   Typography,
+  type MenuProps,
 } from "antd";
+import { MoreOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
@@ -553,34 +556,53 @@ export default function AdminTowerModelsPage() {
       {
         title: "操作",
         key: "actions",
-        width: 240,
+        width: 120,
         fixed: "right",
-        render: (_: unknown, row) => (
-          <Space size={8}>
-            {canManage && <Button size="small" onClick={() => openEdit(row)}>编辑</Button>}
-            {canManage && (
-              <Button size="small" onClick={() => setUploadModel(row)}>
-                上传图片
-              </Button>
-            )}
-            {canManage && (
-              <Popconfirm
-                title="删除杆塔模型"
-                description={`确认删除模型 ${row.code} 吗？`}
-                okText="删除"
-                cancelText="取消"
-                okButtonProps={{ danger: true }}
-                onConfirm={async () => {
-                  await deleteMutation.mutateAsync(row.id);
-                }}
-              >
-                <Button size="small" danger loading={deleteMutation.isPending}>
-                  删除
+        render: (_: unknown, row) => {
+          const moreMenuItems: MenuProps["items"] = [
+            {
+              key: "delete",
+              label: "删除",
+              danger: true,
+              disabled: deleteMutation.isPending,
+            },
+          ];
+
+          return (
+            <Space size="small" wrap>
+              {canManage && <Button size="small" onClick={() => openEdit(row)}>编辑</Button>}
+              {canManage && (
+                <Button size="small" onClick={() => setUploadModel(row)}>
+                  上传图片
                 </Button>
-              </Popconfirm>
-            )}
-          </Space>
-        ),
+              )}
+              {canManage && (
+                <Dropdown
+                  menu={{
+                    items: moreMenuItems,
+                    onClick: ({ key }) => {
+                      if (key === "delete") {
+                        Modal.confirm({
+                          title: "删除杆塔模型",
+                          content: `确认删除模型 ${row.code} 吗？`,
+                          okText: "删除",
+                          cancelText: "取消",
+                          okButtonProps: { danger: true },
+                          onOk: async () => {
+                            await deleteMutation.mutateAsync(row.id);
+                          },
+                        });
+                      }
+                    },
+                  }}
+                  trigger={["click"]}
+                >
+                  <Button size="small" icon={<MoreOutlined />} />
+                </Dropdown>
+              )}
+            </Space>
+          );
+        },
       },
     ],
     [canManage, deleteMutation, fetchWithAuth, handleImagePreviewError, openEdit],
