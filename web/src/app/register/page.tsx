@@ -1,25 +1,22 @@
 "use client";
 
-import { IdcardOutlined, LockOutlined } from "@ant-design/icons";
+import { IdcardOutlined, LockOutlined, MailOutlined, UserOutlined } from "@ant-design/icons";
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Button, Checkbox, Input, Space, Typography } from "antd";
+import { Alert, Button, Input, Space, Typography } from "antd";
 
 import { useAuth } from "@/components/auth-provider";
 import { Card } from "@/components/ui-antd";
 import { withBasePath } from "@/lib/base-path";
 
-const LOGIN_REMEMBER_KEY = "login.remember";
-const LOGIN_USER_ID_KEY = "login.user_id";
-const LOGIN_PASSWORD_KEY = "login.password";
-
-export default function LoginPage() {
+export default function RegisterPage() {
   const router = useRouter();
-  const { user, initializing, login } = useAuth();
+  const { user, initializing, register } = useAuth();
 
-  const [userId, setUserId] = useState("");
+  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [rememberPassword, setRememberPassword] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -29,43 +26,24 @@ export default function LoginPage() {
     }
   }, [initializing, router, user]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const remembered = window.localStorage.getItem(LOGIN_REMEMBER_KEY) === "1";
-    if (!remembered) {
-      return;
-    }
-
-    setRememberPassword(true);
-    setUserId(window.localStorage.getItem(LOGIN_USER_ID_KEY) ?? "");
-    setPassword(window.localStorage.getItem(LOGIN_PASSWORD_KEY) ?? "");
-  }, []);
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
+
+    if (password !== confirmPassword) {
+      setError("两次输入的密码不一致");
+      return;
+    }
+
+    if (password.length < 8) {
+      setError("密码长度至少为 8 个字符");
+      return;
+    }
+
     setBusy(true);
 
     try {
-      const normalizedUserId = userId.trim();
-      await login(normalizedUserId, password);
-
-      if (typeof window !== "undefined") {
-        if (rememberPassword) {
-          window.localStorage.setItem(LOGIN_REMEMBER_KEY, "1");
-          window.localStorage.setItem(LOGIN_USER_ID_KEY, normalizedUserId);
-          window.localStorage.setItem(LOGIN_PASSWORD_KEY, password);
-        } else {
-          window.localStorage.removeItem(LOGIN_REMEMBER_KEY);
-          window.localStorage.removeItem(LOGIN_USER_ID_KEY);
-          window.localStorage.removeItem(LOGIN_PASSWORD_KEY);
-        }
-      }
-
-      setPassword("");
+      await register(email, username, password);
     } catch (submitError) {
       const message = submitError instanceof Error ? submitError.message : "未知错误";
       setError(message);
@@ -92,7 +70,7 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[var(--fquiz-theme-bg-layout)] px-4 py-8">
-      <Card className="w-full max-w-[360px]">
+      <Card className="w-full max-w-[400px]">
         <Space direction="vertical" size={20} className="w-full">
           <div className="flex justify-center">
             <img
@@ -105,17 +83,30 @@ export default function LoginPage() {
           </div>
 
           <Typography.Title level={3} className="!mb-0 !text-center">
-            防雷计算
+            用户注册
           </Typography.Title>
 
           <form className="space-y-4" onSubmit={handleSubmit}>
             <Input
               size="large"
-              value={userId}
-              prefix={<IdcardOutlined />}
-              placeholder="用户 ID"
-              onChange={(event: ChangeEvent<HTMLInputElement>) => setUserId(event.currentTarget.value)}
+              value={email}
+              prefix={<MailOutlined />}
+              placeholder="邮箱"
+              type="email"
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setEmail(event.currentTarget.value)}
+              autoComplete="email"
+              required
+            />
+
+            <Input
+              size="large"
+              value={username}
+              prefix={<UserOutlined />}
+              placeholder="用户名（3-64 个字符）"
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setUsername(event.currentTarget.value)}
               autoComplete="username"
+              minLength={3}
+              maxLength={64}
               required
             />
 
@@ -123,25 +114,28 @@ export default function LoginPage() {
               size="large"
               value={password}
               prefix={<LockOutlined />}
-              placeholder="密码"
+              placeholder="密码（至少 8 个字符）"
               onChange={(event: ChangeEvent<HTMLInputElement>) => setPassword(event.currentTarget.value)}
-              autoComplete="current-password"
-              minLength={1}
+              autoComplete="new-password"
+              minLength={8}
               maxLength={128}
               required
             />
 
-            <div className="flex items-center justify-between">
-              <Checkbox
-                checked={rememberPassword}
-                onChange={(event) => setRememberPassword(event.target.checked)}
-              >
-                记住密码
-              </Checkbox>
-            </div>
+            <Input.Password
+              size="large"
+              value={confirmPassword}
+              prefix={<LockOutlined />}
+              placeholder="确认密码"
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setConfirmPassword(event.currentTarget.value)}
+              autoComplete="new-password"
+              minLength={8}
+              maxLength={128}
+              required
+            />
 
             <Button block size="large" type="primary" htmlType="submit" loading={busy}>
-              登录
+              注册
             </Button>
           </form>
 
@@ -149,8 +143,8 @@ export default function LoginPage() {
 
           <div className="text-center">
             <Typography.Text type="secondary">
-              没有账号？{" "}
-              <Typography.Link href="/register">立即注册</Typography.Link>
+              已有账号？{" "}
+              <Typography.Link href="/login">立即登录</Typography.Link>
             </Typography.Text>
           </div>
         </Space>
