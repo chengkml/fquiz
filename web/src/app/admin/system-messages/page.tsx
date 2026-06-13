@@ -34,12 +34,12 @@ type CreateMessageValues = {
 
 const AntCard = Card as unknown as ComponentType<CardProps>;
 
-const MESSAGE_TYPE_OPTIONS = [
+const MESSAGE_TYPE_OPTIONS: Array<{ label: string; value: SystemMessageType }> = [
   { label: "通知", value: "info" },
   { label: "成功", value: "success" },
   { label: "警告", value: "warning" },
   { label: "错误", value: "error" },
-] as const satisfies ReadonlyArray<{ label: string; value: SystemMessageType }>;
+];
 
 const MESSAGE_TYPE_LABELS: Record<SystemMessageType, string> = {
   info: "通知",
