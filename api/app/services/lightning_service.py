@@ -1335,12 +1335,12 @@ def prepare_line_lightning_current(
     peaks = [
         float(item)
         for item in db.execute(select(LightningCurrentEvent.peak_abs_current_ka).where(*filters)).scalars().all()
-        if item is not None and float(item) > 0
+        if item is not None
     ]
     if not peaks:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="未找到可用于线路雷电流拟合的幅值样本")
 
-    current_a, current_b, warnings = _fit_line_current_parameters(peaks)
+    current_a, current_b, peak_max, peak_min, warnings = _fit_line_current_parameters(peaks)
     now = utcnow()
     tower_ids = [tower.id for tower in towers]
     existing_profiles = db.execute(select(TowerProfile).where(TowerProfile.tower_id.in_(tower_ids))).scalars().all()
@@ -1369,6 +1369,8 @@ def prepare_line_lightning_current(
             "line_code": line.code,
             "current_a": current_a,
             "current_b": current_b,
+            "peak_max": peak_max,
+            "peak_min": peak_min,
             "sampled_event_count": len(peaks),
             "region_id": normalized_region,
             "is_synthetic": payload.is_synthetic,
@@ -1398,6 +1400,8 @@ def prepare_line_lightning_current(
             "is_synthetic": payload.is_synthetic,
             "current_a": current_a,
             "current_b": current_b,
+            "peak_max": peak_max,
+            "peak_min": peak_min,
         },
     )
     db.commit()
@@ -1411,6 +1415,8 @@ def prepare_line_lightning_current(
         line=serialize_line(line, tower_count=len(towers), preparation_json=preparation_json),
         current_a=current_a,
         current_b=current_b,
+        peak_max=peak_max,
+        peak_min=peak_min,
         sampled_event_count=len(peaks),
         updated_tower_count=len(towers),
         created_profile_count=created_profile_count,
@@ -2356,15 +2362,15 @@ def _parse_float(value: Any) -> float | None:
         return None
 
 
-def _fit_line_current_parameters(values: list[float]) -> tuple[float, float, list[str]]:
-    cleaned = sorted(float(item) for item in values if item > 0)
+def _fit_line_current_parameters(values: list[float]) -> tuple[float, float, float, float, list[str]]:
+    cleaned = sorted(abs(float(item)) for item in values)
     if not cleaned:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="雷电流幅值样本为空")
 
     warnings: list[str] = []
     unique_values = {round(item, 6) for item in cleaned}
     if len(unique_values) == 1:
-        return round(cleaned[0], 3), 2.6, ["样本幅值单一，已使用默认 b=2.6"]
+        return round(cleaned[0], 3), 2.6, round(cleaned[0], 3), round(cleaned[0], 3), ["样本幅值单一，已使用默认 b=2.6"]
 
     peak_max = max(cleaned)
     peak_min = min(cleaned)
@@ -2430,7 +2436,7 @@ def _fit_line_current_parameters(values: list[float]) -> tuple[float, float, lis
         current_b = 2.6
         warnings.append("样本分布不足以稳定拟合 b，已使用默认 b=2.6")
 
-    return round(current_a, 3), round(current_b, 3), warnings
+    return round(current_a, 3), round(current_b, 3), round(peak_max, 3), round(peak_min, 3), warnings
 
 
 def _normalize_str(value: Any) -> str | None:

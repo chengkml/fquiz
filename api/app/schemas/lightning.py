@@ -308,6 +308,8 @@ class LightningCurrentPreparationResponse(BaseModel):
     line: LineSummary
     current_a: float
     current_b: float
+    peak_max: float
+    peak_min: float
     sampled_event_count: int
     updated_tower_count: int
     created_profile_count: int = 0
