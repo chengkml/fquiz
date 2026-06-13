@@ -39,12 +39,15 @@ import {
   Button,
   Drawer,
   Dropdown,
+  Empty,
   Grid,
   Layout as AntLayout,
+  List,
   Menu as AntMenu,
   Result,
   Space,
   Spin,
+  Tag,
   Tooltip,
   Typography,
   type MenuProps,
@@ -368,11 +371,65 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     [logout],
   );
 
+  const [messageDrawerOpen, setMessageDrawerOpen] = useState(false);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+
+  const loadMessages = useCallback(async () => {
+    setLoadingMessages(true);
+    try {
+      const response = await fetchWithAuth("/api/v1/system-messages/me?limit=50");
+      if (!response.ok) {
+        return;
+      }
+      const data = await response.json();
+      setMessages(data.items || []);
+      setUnreadMessageCount(data.unread_count || 0);
+    } catch (error) {
+      console.error("Failed to load messages:", error);
+    } finally {
+      setLoadingMessages(false);
+    }
+  }, [fetchWithAuth]);
+
+  const loadUnreadCount = useCallback(async () => {
+    try {
+      const response = await fetchWithAuth("/api/v1/system-messages/me/unread-count");
+      if (!response.ok) {
+        return;
+      }
+      const data = await response.json();
+      setUnreadMessageCount(data.unread_count || 0);
+    } catch (error) {
+      console.error("Failed to load unread count:", error);
+    }
+  }, [fetchWithAuth]);
+
+  useEffect(() => {
+    if (user) {
+      void loadUnreadCount();
+    }
+  }, [loadUnreadCount, user]);
+
   const onSystemMessageClick = useCallback(() => {
-    // TODO: Implement system message modal/drawer
-    // For now, just reset the unread count
-    setUnreadMessageCount(0);
-  }, []);
+    setMessageDrawerOpen(true);
+    void loadMessages();
+  }, [loadMessages]);
+
+  const markAsRead = useCallback(async (messageIds: string[]) => {
+    try {
+      const response = await fetchWithAuth("/api/v1/system-messages/me/mark-read", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message_ids: messageIds }),
+      });
+      if (response.ok) {
+        await loadMessages();
+      }
+    } catch (error) {
+      console.error("Failed to mark messages as read:", error);
+    }
+  }, [fetchWithAuth, loadMessages]);
 
   const navigationMenu = (
     <AntMenu
@@ -513,6 +570,72 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           onClose={() => setMobileMenuOpen(false)}
         >
           {navigationMenu}
+        </Drawer>
+
+        <Drawer
+          title="系统消息"
+          placement="right"
+          open={messageDrawerOpen}
+          width={480}
+          onClose={() => setMessageDrawerOpen(false)}
+        >
+          {loadingMessages ? (
+            <div style={{ textAlign: "center", padding: "40px 0" }}>
+              <Spin />
+            </div>
+          ) : messages.length === 0 ? (
+            <Empty description="暂无消息" />
+          ) : (
+            <List
+              dataSource={messages}
+              renderItem={(item: any) => (
+                <List.Item
+                  key={item.id}
+                  style={{
+                    opacity: item.is_read ? 0.6 : 1,
+                    backgroundColor: item.is_read ? "transparent" : "var(--ant-color-bg-container-active)",
+                  }}
+                  actions={
+                    !item.is_read
+                      ? [
+                          <Button
+                            key="mark-read"
+                            type="link"
+                            size="small"
+                            onClick={() => markAsRead([item.id])}
+                          >
+                            标记已读
+                          </Button>,
+                        ]
+                      : undefined
+                  }
+                >
+                  <List.Item.Meta
+                    title={
+                      <Space>
+                        <span>{item.title}</span>
+                        <Tag color={
+                          item.message_type === "error" ? "red" :
+                          item.message_type === "warning" ? "orange" :
+                          item.message_type === "success" ? "green" : "blue"
+                        }>
+                          {item.message_type}
+                        </Tag>
+                      </Space>
+                    }
+                    description={
+                      <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                        <Typography.Text>{item.content}</Typography.Text>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          {new Date(item.created_at).toLocaleString("zh-CN")}
+                        </Typography.Text>
+                      </Space>
+                    }
+                  />
+                </List.Item>
+              )}
+            />
+          )}
         </Drawer>
 
         <AntLayout className="admin-design-main">
