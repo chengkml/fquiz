@@ -16,7 +16,6 @@ import Icon, {
   FileTextOutlined,
   FolderOpenOutlined,
   GlobalOutlined,
-  HomeOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuOutlined,
@@ -334,11 +333,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         ),
       },
       { type: "divider" },
-      {
-        key: "home",
-        icon: <HomeOutlined />,
-        label: <Link href="/users">用户管理</Link>,
-      },
       {
         key: "logout",
         danger: true,
