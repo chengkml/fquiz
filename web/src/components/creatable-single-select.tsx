@@ -27,7 +27,7 @@ export function CreatableSingleSelect({
       maxCount={1}
       options={options}
       placeholder={placeholder}
-      value={value ? [value] : []}
+      value={value !== null && value !== undefined ? [value] : []}
       onChange={(nextValue) => onChange?.(Array.isArray(nextValue) ? (nextValue.at(-1) ?? "") : "")}
     />
   );
