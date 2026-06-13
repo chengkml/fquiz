@@ -321,7 +321,7 @@ class LightningDensityPreparationRequest(BaseModel):
     line_id: str = Field(min_length=1, max_length=64)
     region_id: str | None = Field(default=None, max_length=64)
     is_synthetic: bool | None = None
-    radius_km: float = Field(default=3.0, gt=0.05, le=50.0)
+    radius_km: float | None = Field(default=None, gt=0.05, le=50.0)
     years: float | None = Field(default=None, gt=0)
 
 

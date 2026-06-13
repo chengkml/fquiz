@@ -69,6 +69,36 @@ DEGREE_TO_KM = 111.32
 TERRAIN_ALGORITHM_VERSION = "horn_3x3.v1"
 
 
+def recommend_radius_km(voltage_kv: int | None) -> float:
+    """
+    根据线路电压等级推荐地闪密度计算的缓冲区半径。
+
+    参考规则（来自参考工程FormDiShanMiDu.cs）：
+    - 35/66/110kV → 2.0 km
+    - 220/330kV → 3.0 km
+    - 500/750/800/1000kV → 5.0 km
+    - ±500/±800直流 → 5.0 km
+    - 默认（未知或无电压等级） → 2.0 km
+
+    Args:
+        voltage_kv: 线路电压等级（kV）
+
+    Returns:
+        推荐的缓冲区半径（km）
+    """
+    if voltage_kv is None:
+        return 2.0
+
+    if voltage_kv in (35, 66, 110):
+        return 2.0
+    elif voltage_kv in (220, 330):
+        return 3.0
+    elif voltage_kv in (500, 750, 800, 1000):
+        return 5.0
+    else:
+        return 2.0
+
+
 @dataclass
 class ParsedSeries:
     currents_ka: list[float]
@@ -1435,6 +1465,12 @@ def prepare_line_lightning_density(
     if not line:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="线路不存在")
 
+    # 当radius_km未指定时，根据电压等级自动推荐半径
+    if payload.radius_km is None:
+        actual_radius_km = recommend_radius_km(line.voltage_kv)
+    else:
+        actual_radius_km = payload.radius_km
+
     towers = db.execute(
         select(LineTower)
         .where(LineTower.line_id == line.id)
@@ -1447,9 +1483,9 @@ def prepare_line_lightning_density(
     if not geo_towers:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前线路缺少杆塔经纬度，无法计算地闪密度")
 
-    lat_delta = payload.radius_km / DEGREE_TO_KM
+    lat_delta = actual_radius_km / DEGREE_TO_KM
     lon_deltas = [
-        payload.radius_km / _safe_km_per_lon(float(tower.latitude))
+        actual_radius_km / _safe_km_per_lon(float(tower.latitude))
         for tower in geo_towers
         if tower.latitude is not None
     ]
@@ -1481,7 +1517,7 @@ def prepare_line_lightning_density(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="未找到可用于地闪密度计算的雷击分布数据")
 
     now = utcnow()
-    area_km2 = math.pi * (payload.radius_km ** 2)
+    area_km2 = math.pi * (actual_radius_km ** 2)
     updated_tower_count = 0
     missing_geo_count = 0
     density_values: list[float] = []
@@ -1505,7 +1541,7 @@ def prepare_line_lightning_density(
                 float(row.latitude),
                 float(row.longitude),
             )
-            if distance_km > payload.radius_km:
+            if distance_km > actual_radius_km:
                 continue
             strike_count += 1
             if row.event_time is not None:
@@ -1521,7 +1557,7 @@ def prepare_line_lightning_density(
         raw_extra["lightning_density"] = {
             "line_id": line.id,
             "line_code": line.code,
-            "radius_km": payload.radius_km,
+            "radius_km": actual_radius_km,
             "data_years": round(tower_years, 6),
             "strike_count": strike_count,
             "region_id": _normalize_str(payload.region_id),
@@ -1545,7 +1581,7 @@ def prepare_line_lightning_density(
             "prepared_by_user_id": actor_user_id,
             "region_id": _normalize_str(payload.region_id),
             "is_synthetic": payload.is_synthetic,
-            "radius_km": payload.radius_km,
+            "radius_km": actual_radius_km,
             "data_years": round(source_years, 6),
             "updated_tower_count": updated_tower_count,
             "missing_geo_count": missing_geo_count,
@@ -1565,7 +1601,7 @@ def prepare_line_lightning_density(
         line=serialize_line(line, tower_count=len(towers), preparation_json=preparation_json),
         updated_tower_count=updated_tower_count,
         missing_geo_count=missing_geo_count,
-        radius_km=payload.radius_km,
+        radius_km=actual_radius_km,
         data_years=round(source_years, 6),
         avg_density=round(sum(density_values) / len(density_values), 6) if density_values else None,
         min_density=round(min(density_values), 6) if density_values else None,
