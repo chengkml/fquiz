@@ -33,7 +33,6 @@ PROTECTED_ROLE_IDS = {"admin", "user", "sys_mgr"}
 REMOVED_MENU_CODES = {
     "dashboard",
     "admin.wxapp",
-    "admin.system_message",
     "admin.inbox",
     "admin.code_review",
     "admin.git_desktop",
@@ -66,6 +65,7 @@ PROTECTED_MENU_CODES = {
     "admin.roles",
     "admin.menus",
     "admin.system_params",
+    "admin.system_message",
     "admin.system",
     "admin.system_monitor",
     "admin.wxapp",

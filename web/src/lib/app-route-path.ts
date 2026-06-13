@@ -5,6 +5,7 @@ const APP_ROUTE_ALIASES: Record<string, string> = {
   "/role": "/roles",
   "/menu": "/menus",
   "/system-param": "/system-params",
+  "/system-message": "/system-messages",
   "/power-line": "/power-lines",
   "/power-lines/atp-viewer": "/atp-models",
   "/lightning-current": "/lightning-currents",

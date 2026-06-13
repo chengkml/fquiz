@@ -58,7 +58,7 @@ import { useAuth } from "@/components/auth-provider";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import { normalizeAppRoutePath } from "@/lib/app-route-path";
-import type { MenuTreeItem } from "@/types/auth";
+import type { MenuTreeItem, SystemMessageListResponse, SystemMessageSummary } from "@/types/auth";
 import { useThemeAppearance } from "@/components/ui-antd";
 import { withBasePath } from "@/lib/base-path";
 
@@ -119,6 +119,7 @@ const MENU_ICON_COMPONENTS = {
   Database: DatabaseOutlined,
   FileText: FileTextOutlined,
   Terminal: ConsoleSqlOutlined,
+  Bell: BellOutlined,
   TeamOutlined,
   SafetyCertificateOutlined,
   AppstoreOutlined,
@@ -134,6 +135,7 @@ const MENU_ICON_COMPONENTS = {
   DatabaseOutlined,
   FileTextOutlined,
   ConsoleSqlOutlined,
+  BellOutlined,
 } as const;
 
 function resolveMenuIcon(icon: string | null): ReactNode {
@@ -367,7 +369,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   );
 
   const [messagePopoverOpen, setMessagePopoverOpen] = useState(false);
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<SystemMessageSummary[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
 
   const loadMessages = useCallback(async () => {
@@ -377,7 +379,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       if (!response.ok) {
         return;
       }
-      const data = await response.json();
+      const data = (await response.json()) as SystemMessageListResponse;
       setMessages(data.items || []);
       setUnreadMessageCount(data.unread_count || 0);
     } catch (error) {
@@ -393,7 +395,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       if (!response.ok) {
         return;
       }
-      const data = await response.json();
+      const data = (await response.json()) as { unread_count: number };
       setUnreadMessageCount(data.unread_count || 0);
     } catch (error) {
       console.error("Failed to load unread count:", error);
@@ -526,9 +528,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                   ) : messages.length === 0 ? (
                     <Empty description="暂无消息" />
                   ) : (
-                    <List
+                    <List<SystemMessageSummary>
                       dataSource={messages}
-                      renderItem={(item: any) => (
+                      renderItem={(item) => (
                         <List.Item
                           key={item.id}
                           style={{

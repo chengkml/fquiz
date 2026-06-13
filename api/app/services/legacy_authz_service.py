@@ -18,6 +18,7 @@ DEFAULT_ADMIN_PERMISSION_CODES: set[str] = {
     "menu.manage",
     "system_param.read",
     "system_param.manage",
+    "admin.system_message",
     "file.read",
     "file.manage",
     "line.read",
@@ -49,7 +50,6 @@ ADMIN_ROLE_IDS = {
 DISABLED_MENU_CODES: set[str] = {
     "dashboard",
     "admin.wxapp",
-    "admin.system_message",
     "admin.inbox",
     "admin.code_review",
     "admin.git_desktop",
@@ -88,6 +88,7 @@ MENU_CODE_PERMISSION_MAP: dict[str, set[str]] = {
     "admin.roles": {"role.read", "role.manage"},
     "admin.menus": {"menu.read", "menu.manage"},
     "admin.system_params": {"system_param.read", "system_param.manage"},
+    "admin.system_message": {"admin.system_message"},
     "admin.fl_analysis": {"line.read", "line.manage"},
     "admin.files": {"file.read", "file.manage"},
     "admin.elevation": {"elevation.read", "elevation.manage"},

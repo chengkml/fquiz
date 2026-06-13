@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from ..models.system_message import SystemMessage
@@ -45,17 +45,17 @@ def list_user_messages(
         query = query.where(SystemMessage.is_read == False)
 
     # 获取总数
-    total_query = select(SystemMessage).where(
+    total_query = select(func.count()).select_from(SystemMessage).where(
         (SystemMessage.target_user_id == user_id) | (SystemMessage.target_user_id.is_(None))
     )
-    total = db.scalar(select(len(total_query.subquery().c.message_id)))
+    total = db.scalar(total_query)
 
     # 获取未读数
-    unread_query = select(SystemMessage).where(
+    unread_query = select(func.count()).select_from(SystemMessage).where(
         (SystemMessage.target_user_id == user_id) | (SystemMessage.target_user_id.is_(None)),
         SystemMessage.is_read == False,
     )
-    unread_count = db.scalar(select(len(unread_query.subquery().c.message_id)))
+    unread_count = db.scalar(unread_query)
 
     # 按创建时间倒序
     query = query.order_by(SystemMessage.created_at.desc())
@@ -88,9 +88,9 @@ def mark_messages_as_read(
 
 def get_unread_count(db: Session, user_id: str) -> int:
     """获取用户未读消息数量"""
-    query = select(SystemMessage).where(
+    query = select(func.count()).select_from(SystemMessage).where(
         (SystemMessage.target_user_id == user_id) | (SystemMessage.target_user_id.is_(None)),
         SystemMessage.is_read == False,
     )
-    count = db.scalar(select(len(query.subquery().c.message_id)))
+    count = db.scalar(query)
     return count or 0

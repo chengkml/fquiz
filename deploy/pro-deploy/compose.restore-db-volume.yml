@@ -1,0 +1,9 @@
+volumes:
+  fquiz_db_data:
+    external: true
+    name: fquiz_fquiz_db_data
+
+services:
+  db:
+    volumes:
+      - fquiz_db_data:/var/lib/postgresql/data

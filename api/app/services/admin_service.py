@@ -34,7 +34,6 @@ AUDIT_LOG_LOAD_OPTIONS = (
 REMOVED_MENU_CODES = {
     "dashboard",
     "admin.wxapp",
-    "admin.system_message",
     "admin.inbox",
     "admin.code_review",
     "admin.git_desktop",
@@ -408,6 +407,7 @@ def delete_menu(db: Session, menu_id: int) -> bool:
         "admin.roles",
         "admin.menus",
         "admin.system_params",
+        "admin.system_message",
         "admin.system",
         "admin.system_monitor",
         "admin.basic_data",

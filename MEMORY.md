@@ -212,7 +212,7 @@
 - `admin.wxapp` 已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口，确保可见、可达且不被误删。
 - `单词统计` 菜单迁移采用最小改动策略：保留菜单编码 `admin.knowledge_mastery`（`/admin/vocabulary-proficiency`，权限 `vocabulary.read`），并由 `web/src/app/admin/vocabulary-proficiency/page.tsx` 承载词条总量、状态分布、缺失字段与最近更新趋势统计能力；已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
 - `队列管理` 菜单迁移采用最小改动策略：新增菜单编码 `admin.queue_mgr`（`/admin/jobqueue`，权限 `todo.read`），并由 `web/src/app/admin/jobqueue/page.tsx` 复用 `todos` 页面承载队列任务清单能力；已加入后端与前端受保护菜单集合、admin 默认菜单绑定与后台首页入口。
-- `提示词管理` 菜单能力已于 2026-04-26 下线：`admin.system_message`、`system_message.read/system_message.manage`、`/admin/prompt`、`/admin/system-message` 与 `/api/v1/admin/system-messages*` 均不再作为有效功能入口；历史数据库表不主动删除。
+- `提示词管理` 菜单能力已于 2026-04-26 下线：`/admin/prompt`、`/admin/system-message`、`system_message.read/system_message.manage` 与 `/api/v1/admin/system-messages*` 均不再作为有效功能入口；历史数据库表不主动删除。`admin.system_message` 已恢复为“系统消息”菜单权限码，当前有效路由为 `/admin/system-messages`，接口入口为 `/api/v1/system-messages*`。
 - `收件箱`、`代码评审`、`Git管理` 功能已于 2026-04-26 下线：`admin.inbox`、`admin.code_review`、`admin.git_desktop` 仅保留在 removed/disabled 过滤集合中，用于屏蔽存量菜单；前端路由 `/admin/inbox`、`/admin/code-review`、`/admin/git-desktop` 不再提供页面。
 - `历史答卷` 菜单迁移采用最小改动策略：保留菜单编码 `admin.history`（`/admin/history`，权限 `question_bank.read`），并由 `web/src/app/admin/history/page.tsx` 复用 `question-bank` 页面承载历史答卷查询与管理能力；已加入后端与前端受保护菜单集合与后台首页入口。
 - `脚本管理` 菜单迁移采用最小改动策略：保留菜单编码 `admin.cron_task_mgr`（`/admin/cron`，权限 `todo.read`），菜单文案统一为“脚本管理”，并继续由 `web/src/app/admin/cron/page.tsx` 复用 `todos` 页面承载脚本任务清单能力。

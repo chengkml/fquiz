@@ -103,6 +103,25 @@ export type SystemParamListResponse = {
   total: number;
 };
 
+export type SystemMessageType = "info" | "warning" | "error" | "success";
+
+export type SystemMessageSummary = {
+  id: string;
+  title: string;
+  content: string;
+  message_type: SystemMessageType;
+  target_user_id: string | null;
+  is_read: boolean;
+  created_at: string;
+  read_at: string | null;
+};
+
+export type SystemMessageListResponse = {
+  items: SystemMessageSummary[];
+  total: number;
+  unread_count: number;
+};
+
 export type ScheduledTaskStatus = "idle" | "queued" | "running" | "success" | "failed" | "disabled";
 export type ScheduledTaskType = "syslog_cleanup";
 
