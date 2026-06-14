@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Alert,
   Button,
   Checkbox,
   Descriptions,
@@ -26,11 +27,15 @@ import { Card } from "@/components/ui-antd";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
+import { readLinePreparation } from "@/lib/line-preparation";
 import type {
+  LineListResponse,
+  LineSummary,
   LightningCurrentEventListResponse,
   LightningCurrentEventSummary,
   LightningCurrentExceedanceResponse,
   LightningCurrentImportResponse,
+  LightningCurrentPreparationResponse,
   LightningCurrentSampleListResponse,
   LightningCurrentSampleItem,
   LightningPolarity,
@@ -107,6 +112,7 @@ export default function AdminLightningCurrentsPage() {
   const [polarityFilter, setPolarityFilter] = useState<(typeof POLARITY_OPTIONS)[number]["value"]>("all");
   const [syntheticFilter, setSyntheticFilter] = useState<(typeof SYNTHETIC_OPTIONS)[number]["value"]>("all");
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [selectedLineId, setSelectedLineId] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -145,6 +151,19 @@ export default function AdminLightningCurrentsPage() {
     }
     return `/api/v1/lightning-currents/stats/exceedance${params.toString() ? `?${params.toString()}` : ""}`;
   }, [regionFilter, polarityFilter, syntheticFilter]);
+
+  const linesQuery = useQuery({
+    queryKey: ["/api/v1/lines"],
+    enabled: !!user && canRead,
+    queryFn: async () => {
+      const response = await fetchWithAuth("/api/v1/lines");
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as LineListResponse;
+    },
+  });
+  const activeSelectedLineId = selectedLineId || linesQuery.data?.items[0]?.id || "";
 
   const eventsQuery = useQuery({
     queryKey: [eventListPath],
@@ -231,6 +250,11 @@ export default function AdminLightningCurrentsPage() {
     () => events.find((item) => item.id === activeSelectedEventId) ?? null,
     [activeSelectedEventId, events],
   );
+  const selectedLine = useMemo(
+    () => linesQuery.data?.items.find((item) => item.id === activeSelectedLineId) ?? null,
+    [activeSelectedLineId, linesQuery.data?.items],
+  );
+  const selectedLinePreparation = useMemo(() => readLinePreparation(selectedLine), [selectedLine]);
 
   const importMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -299,6 +323,36 @@ export default function AdminLightningCurrentsPage() {
     onError: (candidate) => {
       setSuccess("");
       setError(candidate instanceof Error ? candidate.message : "删除失败");
+    },
+  });
+
+  const prepareCurrentMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeSelectedLineId) {
+        throw new Error("请选择线路");
+      }
+      const response = await fetchWithAuth("/api/v1/lightning-currents/prepare-current", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          line_id: activeSelectedLineId,
+          region_id: regionFilter.trim() || null,
+          is_synthetic: syntheticFilter === "all" ? null : syntheticFilter === "true",
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as LightningCurrentPreparationResponse;
+    },
+    onSuccess: async (payload) => {
+      setError("");
+      setSuccess(`已为 ${payload.line.name || payload.line.code} 回填雷电流幅值 a/b = ${payload.current_a} / ${payload.current_b}`);
+      await refreshAll();
+    },
+    onError: (candidate) => {
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "线路雷电流回填失败");
     },
   });
 
@@ -445,6 +499,64 @@ export default function AdminLightningCurrentsPage() {
 
   return (
     <Space direction="vertical" size={16} className="w-full">
+      <Card title="线路参数准备">
+        <Space direction="vertical" size={12} className="w-full">
+          <Typography.Text type="secondary">
+            将当前雷电数据筛选结果按线路回填为"雷电流幅值"准备项；创建防雷分析任务前会使用这里的就绪状态做校验。
+          </Typography.Text>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <Select
+              showSearch
+              optionFilterProp="label"
+              value={activeSelectedLineId || undefined}
+              onChange={setSelectedLineId}
+              placeholder="选择线路"
+              loading={linesQuery.isLoading}
+              options={(linesQuery.data?.items ?? []).map((item: LineSummary) => ({
+                value: item.id,
+                label: `${item.name || item.code} / ${item.code}`,
+              }))}
+            />
+            <Button
+              type="primary"
+              onClick={() => prepareCurrentMutation.mutate()}
+              loading={prepareCurrentMutation.isPending}
+              disabled={!canManage || !activeSelectedLineId}
+              block
+            >
+              回填雷电流幅值
+            </Button>
+          </div>
+          {selectedLine ? (
+            <Alert
+              type={selectedLinePreparation.all_ready ? "success" : "warning"}
+              showIcon
+              message={selectedLinePreparation.all_ready ? "当前线路准备已齐备" : `缺少：${selectedLinePreparation.missing_items.join("、")}`}
+              description={
+                <Space size={[8, 8]} wrap>
+                  {[
+                    selectedLinePreparation.lightning_current,
+                    selectedLinePreparation.lightning_density,
+                    selectedLinePreparation.ground_slope,
+                  ].map((item) => {
+                    const source = item.source;
+                    const preparedAt = typeof source.prepared_at === "string" ? source.prepared_at : null;
+                    const values = item.values;
+                    const currentA = typeof values.current_a === "number" ? values.current_a : null;
+                    const currentB = typeof values.current_b === "number" ? values.current_b : null;
+                    return (
+                      <Tag key={item.key} color={item.ready ? "green" : "red"}>
+                        {`${item.label}${currentA !== null && currentB !== null ? ` (${formatNumber(currentA, 3)} / ${formatNumber(currentB, 3)})` : ""} ${item.tower_ready_count}/${item.tower_total_count}${preparedAt ? ` @ ${new Date(preparedAt).toLocaleString("zh-CN", { hour12: false })}` : ""}`}
+                      </Tag>
+                    );
+                  })}
+                </Space>
+              }
+            />
+          ) : null}
+        </Space>
+      </Card>
+
       <Card title="雷电幅值统计导入与事件管理">
         <Space direction="vertical" size={12} className="w-full">
           <Typography.Text type="secondary">
