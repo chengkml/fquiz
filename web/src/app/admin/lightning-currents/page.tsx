@@ -11,6 +11,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Modal,
   Popconfirm,
   Select,
   Space,
@@ -115,6 +116,7 @@ export default function AdminLightningCurrentsPage() {
   const [selectedLineId, setSelectedLineId] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [importModalOpen, setImportModalOpen] = useState(false);
 
   const canRead = hasPermission("lightning.read") || hasPermission("lightning.manage");
   const canManage = hasPermission("lightning.manage");
@@ -294,6 +296,8 @@ export default function AdminLightningCurrentsPage() {
           : "导入完成并已提取防雷特征参数",
       );
       setSelectedEventId(payload.event.id);
+      setImportModalOpen(false);
+      importForm.resetFields();
       await refreshAll();
     },
     onError: (candidate) => {
@@ -502,7 +506,7 @@ export default function AdminLightningCurrentsPage() {
       <Card title="线路参数准备">
         <Space direction="vertical" size={12} className="w-full">
           <Typography.Text type="secondary">
-            将当前雷电数据筛选结果按线路回填为"雷电流幅值"准备项；创建防雷分析任务前会使用这里的就绪状态做校验。
+            将当前雷电数据筛选结果按线路回填为&quot;雷电流幅值&quot;准备项；创建防雷分析任务前会使用这里的就绪状态做校验。
           </Typography.Text>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             <Select
@@ -580,70 +584,83 @@ export default function AdminLightningCurrentsPage() {
           </div>
 
           {canManage && (
-            <Form<ImportFormValues> form={importForm} layout="vertical" initialValues={INITIAL_IMPORT_VALUES}>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <Form.Item name="event_id" label="事件编号（可选）">
-                  <Input placeholder="例如 LC-20260425-0001" />
-                </Form.Item>
-                <Form.Item name="sample_interval_us" label="采样间隔(us)" rules={[{ required: true, message: "请填写采样间隔" }]}>
-                  <InputNumber className="w-full" min={0.000001} precision={6} />
-                </Form.Item>
-                <Form.Item name="region_id" label="Region ID">
-                  <Input placeholder="例如 CN-SH-PD" />
-                </Form.Item>
-                <Form.Item name="location_tag" label="地域标签">
-                  <Input placeholder="例如 上海-浦东" />
-                </Form.Item>
-                <Form.Item name="city" label="城市">
-                  <Input placeholder="例如 上海" />
-                </Form.Item>
-                <Form.Item name="sensor_model" label="传感器型号">
-                  <Input placeholder="例如 LCS-1000" />
-                </Form.Item>
-                <Form.Item name="install_position" label="安装位置">
-                  <Input placeholder="例如 楼顶避雷针" />
-                </Form.Item>
-                <Form.Item name="weather_level" label="雷暴等级">
-                  <Input placeholder="例如 强雷暴" />
-                </Form.Item>
-              </div>
-              <Form.Item name="notes" label="备注">
-                <Input.TextArea rows={2} placeholder="可填写天气背景、场景备注等" />
-              </Form.Item>
-              <Form.Item name="is_synthetic" valuePropName="checked" className="mb-0">
-                <Checkbox>这是合成数据</Checkbox>
-              </Form.Item>
-            </Form>
-          )}
-
-          {canManage && (
-            <Space>
-              <Button type="primary" onClick={() => uploadInputRef.current?.click()} loading={importMutation.isPending}>
-                上传并提取特征
-              </Button>
-              <input
-                ref={uploadInputRef}
-                type="file"
-                accept=".txt,.csv,text/plain,text/csv"
-                className="hidden"
-                onChange={async (event) => {
-                  const file = event.target.files?.[0];
-                  if (file) {
-                    try {
-                      await importForm.validateFields();
-                      importMutation.mutate(file);
-                    } catch {
-                      // 表单校验失败时不触发导入。
-                    }
-                  }
-                  event.target.value = "";
-                }}
-              />
-              <Typography.Text type="secondary">支持单列电流序列（每行一个值）或"双列 time,current"格式。</Typography.Text>
-            </Space>
+            <Button type="primary" onClick={() => setImportModalOpen(true)}>
+              导入雷电流数据
+            </Button>
           )}
         </Space>
       </Card>
+
+      <Modal
+        title="导入雷电流数据"
+        open={importModalOpen}
+        onCancel={() => {
+          setImportModalOpen(false);
+          importForm.resetFields();
+        }}
+        footer={null}
+        width={800}
+        destroyOnClose
+      >
+        <Form<ImportFormValues> form={importForm} layout="vertical" initialValues={INITIAL_IMPORT_VALUES}>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Form.Item name="event_id" label="事件编号（可选）">
+              <Input placeholder="例如 LC-20260425-0001" />
+            </Form.Item>
+            <Form.Item name="sample_interval_us" label="采样间隔(us)" rules={[{ required: true, message: "请填写采样间隔" }]}>
+              <InputNumber className="w-full" min={0.000001} precision={6} />
+            </Form.Item>
+            <Form.Item name="region_id" label="Region ID">
+              <Input placeholder="例如 CN-SH-PD" />
+            </Form.Item>
+            <Form.Item name="location_tag" label="地域标签">
+              <Input placeholder="例如 上海-浦东" />
+            </Form.Item>
+            <Form.Item name="city" label="城市">
+              <Input placeholder="例如 上海" />
+            </Form.Item>
+            <Form.Item name="sensor_model" label="传感器型号">
+              <Input placeholder="例如 LCS-1000" />
+            </Form.Item>
+            <Form.Item name="install_position" label="安装位置">
+              <Input placeholder="例如 楼顶避雷针" />
+            </Form.Item>
+            <Form.Item name="weather_level" label="雷暴等级">
+              <Input placeholder="例如 强雷暴" />
+            </Form.Item>
+          </div>
+          <Form.Item name="notes" label="备注">
+            <Input.TextArea rows={2} placeholder="可填写天气背景、场景备注等" />
+          </Form.Item>
+          <Form.Item name="is_synthetic" valuePropName="checked">
+            <Checkbox>这是合成数据</Checkbox>
+          </Form.Item>
+          <Space>
+            <Button type="primary" onClick={() => uploadInputRef.current?.click()} loading={importMutation.isPending}>
+              选择文件并导入
+            </Button>
+            <input
+              ref={uploadInputRef}
+              type="file"
+              accept=".txt,.csv,text/plain,text/csv"
+              className="hidden"
+              onChange={async (event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  try {
+                    await importForm.validateFields();
+                    importMutation.mutate(file);
+                  } catch {
+                    // 表单校验失败时不触发导入。
+                  }
+                }
+                event.target.value = "";
+              }}
+            />
+            <Typography.Text type="secondary">支持单列电流序列（每行一个值）或&quot;双列 time,current&quot;格式。</Typography.Text>
+          </Space>
+        </Form>
+      </Modal>
 
       <Card title="峰值超越概率（P 曲线）">
         {exceedance.length === 0 ? (
