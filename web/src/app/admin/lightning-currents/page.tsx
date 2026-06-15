@@ -16,10 +16,11 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip as AntTooltip,
   Typography,
   type MenuProps,
 } from "antd";
-import { MoreOutlined } from "@ant-design/icons";
+import { MoreOutlined, QuestionCircleOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
@@ -42,10 +43,7 @@ import type {
 import type { CSSProperties } from "react";
 
 type ImportFormValues = {
-  event_id: string;
   sample_interval_us: number;
-  region_id: string;
-  location_tag: string;
   city: string;
   sensor_model: string;
   install_position: string;
@@ -55,10 +53,7 @@ type ImportFormValues = {
 };
 
 const INITIAL_IMPORT_VALUES: ImportFormValues = {
-  event_id: "",
   sample_interval_us: 1,
-  region_id: "",
-  location_tag: "",
   city: "",
   sensor_model: "",
   install_position: "",
@@ -267,12 +262,9 @@ export default function AdminLightningCurrentsPage() {
       const values = importForm.getFieldsValue(true);
       const formData = new FormData();
       formData.append("file", file);
-      if (values.event_id?.trim()) formData.append("event_id", values.event_id.trim());
       if (values.sample_interval_us !== null && values.sample_interval_us !== undefined) {
         formData.append("sample_interval_us", String(values.sample_interval_us));
       }
-      if (values.region_id?.trim()) formData.append("region_id", values.region_id.trim());
-      if (values.location_tag?.trim()) formData.append("location_tag", values.location_tag.trim());
       if (values.city?.trim()) formData.append("city", values.city.trim());
       if (values.sensor_model?.trim()) formData.append("sensor_model", values.sensor_model.trim());
       if (values.install_position?.trim()) formData.append("install_position", values.install_position.trim());
@@ -345,15 +337,33 @@ export default function AdminLightningCurrentsPage() {
   const eventColumns = useMemo<ColumnsType<LightningCurrentEventSummary>>(
     () => [
       {
-        title: "事件编号",
-        dataIndex: "event_id",
-        width: 180,
-        render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
-      },
-      {
         title: "文件名称",
         dataIndex: "source_file_name",
         width: 200,
+        render: (value: string | null) => value || "-",
+      },
+      {
+        title: "城市",
+        dataIndex: "city",
+        width: 120,
+        render: (value: string | null) => value || "-",
+      },
+      {
+        title: "安装位置",
+        dataIndex: "install_position",
+        width: 150,
+        render: (value: string | null) => value || "-",
+      },
+      {
+        title: "传感器型号",
+        dataIndex: "sensor_model",
+        width: 150,
+        render: (value: string | null) => value || "-",
+      },
+      {
+        title: "雷暴等级",
+        dataIndex: "weather_level",
+        width: 120,
         render: (value: string | null) => value || "-",
       },
       {
@@ -361,49 +371,6 @@ export default function AdminLightningCurrentsPage() {
         dataIndex: "create_date",
         width: 180,
         render: (value: string) => new Date(value).toLocaleString("zh-CN", { hour12: false }),
-      },
-      {
-        title: "峰值电流(kA)",
-        dataIndex: "peak_abs_current_ka",
-        width: 120,
-        render: (value: number | null) => formatNumber(value, 2),
-      },
-      {
-        title: "波形分类",
-        dataIndex: "wave_shape",
-        width: 100,
-        render: (value: string | null) => value || "-",
-      },
-      {
-        title: "极性",
-        dataIndex: "polarity",
-        width: 90,
-        render: (value: LightningPolarity) => (
-          <Tag color={value === "negative" ? "red" : value === "positive" ? "blue" : "default"}>{formatPolarity(value)}</Tag>
-        ),
-      },
-      {
-        title: "回击数",
-        dataIndex: "stroke_count",
-        width: 80,
-      },
-      {
-        title: "区域",
-        dataIndex: "region_id",
-        width: 120,
-        render: (value: string | null) => value || "-",
-      },
-      {
-        title: "地域标签",
-        dataIndex: "location_tag",
-        width: 150,
-        render: (value: string | null) => value || "-",
-      },
-      {
-        title: "来源",
-        dataIndex: "is_synthetic",
-        width: 80,
-        render: (value: boolean) => (value ? <Tag color="purple">合成</Tag> : <Tag color="green">实测</Tag>),
       },
       {
         title: "采样点数",
@@ -491,7 +458,7 @@ export default function AdminLightningCurrentsPage() {
       <Card>
         <Space direction="vertical" size={12}>
           <Typography.Text type="secondary">
-            请先登录后再访问雷电幅值统计页面。
+            请先登录后再访问雷电流幅值统计页面。
           </Typography.Text>
           <Button>
             <Link href="/">返回首页</Link>
@@ -525,7 +492,7 @@ export default function AdminLightningCurrentsPage() {
   return (
     <Space direction="vertical" size={16} className="w-full">
       <Card
-        title="雷电幅值统计"
+        title="雷电流幅值统计"
         extra={
           canManage && (
             <Button type="primary" onClick={() => setImportModalOpen(true)}>
@@ -545,7 +512,7 @@ export default function AdminLightningCurrentsPage() {
             dataSource={events}
             loading={eventsQuery.isFetching}
             pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
-            scroll={{ x: 1800, y: tableScrollY }}
+            scroll={{ x: 1200, y: tableScrollY }}
           />
         </div>
       </Card>
@@ -563,17 +530,8 @@ export default function AdminLightningCurrentsPage() {
       >
         <Form<ImportFormValues> form={importForm} layout="vertical" initialValues={INITIAL_IMPORT_VALUES}>
           <div className="grid gap-3 md:grid-cols-2">
-            <Form.Item name="event_id" label="事件编号（可选）">
-              <Input placeholder="例如 LC-20260425-0001" />
-            </Form.Item>
             <Form.Item name="sample_interval_us" label="采样间隔(us)" rules={[{ required: true, message: "请填写采样间隔" }]}>
               <InputNumber className="w-full" min={0.000001} precision={6} />
-            </Form.Item>
-            <Form.Item name="region_id" label="Region ID">
-              <Input placeholder="例如 CN-SH-PD" />
-            </Form.Item>
-            <Form.Item name="location_tag" label="地域标签">
-              <Input placeholder="例如 上海-浦东" />
             </Form.Item>
             <Form.Item name="city" label="城市">
               <Input placeholder="例如 上海" />
@@ -669,20 +627,118 @@ export default function AdminLightningCurrentsPage() {
         {selectedEventForModal && (
           <Space direction="vertical" size={12} className="w-full">
             <Descriptions bordered size="small" column={3}>
-              <Descriptions.Item label="峰值电流(kA)">{formatNumber(selectedEventForModal.peak_current_ka, 3)}</Descriptions.Item>
+              <Descriptions.Item label={
+                <span>
+                  事件编号{" "}
+                  <AntTooltip title="每次导入时自动生成的唯一编号（格式：LC-时间戳-随机码），也可在导入时手动指定。">
+                    <QuestionCircleOutlined style={{ color: "#999", fontSize: "12px" }} />
+                  </AntTooltip>
+                </span>
+              }>
+                {formatNullable(selectedEventForModal.event_id)}
+              </Descriptions.Item>
+              <Descriptions.Item label={
+                <span>
+                  峰值电流(kA){" "}
+                  <AntTooltip title="波形序列中绝对值最大的电流值（kA），代表该次雷击的最强瞬间。是衡量雷击强度的核心指标。">
+                    <QuestionCircleOutlined style={{ color: "#999", fontSize: "12px" }} />
+                  </AntTooltip>
+                </span>
+              }>
+                {formatNumber(selectedEventForModal.peak_current_ka, 3)}
+              </Descriptions.Item>
               <Descriptions.Item label="绝对峰值(kA)">{formatNumber(selectedEventForModal.peak_abs_current_ka, 3)}</Descriptions.Item>
-              <Descriptions.Item label="波形分类">{formatNullable(selectedEventForModal.wave_shape)}</Descriptions.Item>
-              <Descriptions.Item label="T1(us)">{formatNumber(selectedEventForModal.wavefront_time_t1_us, 3)}</Descriptions.Item>
-              <Descriptions.Item label="T2(us)">{formatNumber(selectedEventForModal.half_value_time_t2_us, 3)}</Descriptions.Item>
-              <Descriptions.Item label="陡度(kA/us)">{formatNumber(selectedEventForModal.steepness_ka_per_us, 6)}</Descriptions.Item>
-              <Descriptions.Item label="I²t (J/Ω)">{formatNumber(selectedEventForModal.action_integral_j_ohm, 3)}</Descriptions.Item>
-              <Descriptions.Item label="采样间隔(us)">{formatNumber(selectedEventForModal.sample_interval_us, 6)}</Descriptions.Item>
+              <Descriptions.Item label={
+                <span>
+                  波形分类{" "}
+                  <AntTooltip title="将实际波形的波前时间（T1）和半峰值时间（T2）与 IEC 标准波形模板匹配，归入最接近的分类：10/350（T1=10μs, T2=350μs，典型直击雷波形）、8/20（T1=8μs, T2=20μs，典型感应雷/测试波形）、1.2/50（T1=1.2μs, T2=50μs，典型操作冲击波形）。">
+                    <QuestionCircleOutlined style={{ color: "#999", fontSize: "12px" }} />
+                  </AntTooltip>
+                </span>
+              }>
+                {formatNullable(selectedEventForModal.wave_shape)}
+              </Descriptions.Item>
+              <Descriptions.Item label={
+                <span>
+                  波前时间 T1(us){" "}
+                  <AntTooltip title="电流从峰值的 10% 上升到 90% 所需时间的 1.25 倍（μs），反映雷电流上升的陡度。">
+                    <QuestionCircleOutlined style={{ color: "#999", fontSize: "12px" }} />
+                  </AntTooltip>
+                </span>
+              }>
+                {formatNumber(selectedEventForModal.wavefront_time_t1_us, 3)}
+              </Descriptions.Item>
+              <Descriptions.Item label={
+                <span>
+                  半峰值时间 T2(us){" "}
+                  <AntTooltip title="从虚拟零点到电流下降到峰值 50% 的时间（μs），反映脉冲宽度。">
+                    <QuestionCircleOutlined style={{ color: "#999", fontSize: "12px" }} />
+                  </AntTooltip>
+                </span>
+              }>
+                {formatNumber(selectedEventForModal.half_value_time_t2_us, 3)}
+              </Descriptions.Item>
+              <Descriptions.Item label={
+                <span>
+                  陡度(kA/us){" "}
+                  <AntTooltip title="波形中电流变化率的最大值（kA/μs），影响感应过电压的大小。">
+                    <QuestionCircleOutlined style={{ color: "#999", fontSize: "12px" }} />
+                  </AntTooltip>
+                </span>
+              }>
+                {formatNumber(selectedEventForModal.steepness_ka_per_us, 6)}
+              </Descriptions.Item>
+              <Descriptions.Item label={
+                <span>
+                  I²t 作用积分(J/Ω){" "}
+                  <AntTooltip title="电流平方对时间的积分（J/Ω），衡量雷电流的热效应能量。">
+                    <QuestionCircleOutlined style={{ color: "#999", fontSize: "12px" }} />
+                  </AntTooltip>
+                </span>
+              }>
+                {formatNumber(selectedEventForModal.action_integral_j_ohm, 3)}
+              </Descriptions.Item>
+              <Descriptions.Item label={
+                <span>
+                  采样间隔(us){" "}
+                  <AntTooltip title="采样点之间的时间间隔（μs）。">
+                    <QuestionCircleOutlined style={{ color: "#999", fontSize: "12px" }} />
+                  </AntTooltip>
+                </span>
+              }>
+                {formatNumber(selectedEventForModal.sample_interval_us, 6)}
+              </Descriptions.Item>
               <Descriptions.Item label="采样频率(Hz)">{formatNumber(selectedEventForModal.sampling_frequency_hz, 2)}</Descriptions.Item>
-              <Descriptions.Item label="极性">{formatPolarity(selectedEventForModal.polarity)}</Descriptions.Item>
-              <Descriptions.Item label="回击数">{selectedEventForModal.stroke_count}</Descriptions.Item>
-              <Descriptions.Item label="采样点数">{selectedEventForModal.sample_count}</Descriptions.Item>
-              <Descriptions.Item label="区域">{formatNullable(selectedEventForModal.region_id)}</Descriptions.Item>
-              <Descriptions.Item label="地域标签">{formatNullable(selectedEventForModal.location_tag)}</Descriptions.Item>
+              <Descriptions.Item label={
+                <span>
+                  极性{" "}
+                  <AntTooltip title="雷电流的主导方向。自然界约 90% 为负极性雷击，正极性雷击虽少但峰值更大、危害更强。正极性：正峰值大于负峰值；负极性：负峰值大于正峰值；混合：正负峰值相近。">
+                    <QuestionCircleOutlined style={{ color: "#999", fontSize: "12px" }} />
+                  </AntTooltip>
+                </span>
+              }>
+                {formatPolarity(selectedEventForModal.polarity)}
+              </Descriptions.Item>
+              <Descriptions.Item label={
+                <span>
+                  回击数{" "}
+                  <AntTooltip title="一次雷击过程中检测到的多次放电次数。一次雷击通常包含 3~5 次回击，主峰最高，后续回击会产生累积热效应。">
+                    <QuestionCircleOutlined style={{ color: "#999", fontSize: "12px" }} />
+                  </AntTooltip>
+                </span>
+              }>
+                {selectedEventForModal.stroke_count}
+              </Descriptions.Item>
+              <Descriptions.Item label={
+                <span>
+                  采样点数{" "}
+                  <AntTooltip title="导入波形文件中解析出的数值行数，即该次雷击波形的时序采样长度。点数越多，波形记录越精细。">
+                    <QuestionCircleOutlined style={{ color: "#999", fontSize: "12px" }} />
+                  </AntTooltip>
+                </span>
+              }>
+                {selectedEventForModal.sample_count}
+              </Descriptions.Item>
               <Descriptions.Item label="城市">{formatNullable(selectedEventForModal.city)}</Descriptions.Item>
               <Descriptions.Item label="经纬度">
                 {selectedEventForModal.longitude !== null && selectedEventForModal.latitude !== null
@@ -691,6 +747,8 @@ export default function AdminLightningCurrentsPage() {
               </Descriptions.Item>
               <Descriptions.Item label="传感器">{formatNullable(selectedEventForModal.sensor_model)}</Descriptions.Item>
               <Descriptions.Item label="安装位置">{formatNullable(selectedEventForModal.install_position)}</Descriptions.Item>
+              <Descriptions.Item label="雷暴等级">{formatNullable(selectedEventForModal.weather_level)}</Descriptions.Item>
+              <Descriptions.Item label="来源">{selectedEventForModal.is_synthetic ? "合成" : "实测"}</Descriptions.Item>
             </Descriptions>
 
             <Typography.Text type="secondary">
@@ -719,7 +777,7 @@ export default function AdminLightningCurrentsPage() {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="time_us" label={{ value: "时间 (μs)", position: "insideBottom", offset: -5 }} />
               <YAxis label={{ value: "电流 (kA)", angle: -90, position: "insideLeft" }} />
-              <Tooltip />
+              <AntTooltip />
               <Legend />
               <Line type="monotone" dataKey="current_ka" stroke="#8884d8" name="电流 (kA)" dot={false} />
             </LineChart>
