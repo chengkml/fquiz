@@ -637,10 +637,10 @@ export default function AdminUsersPage() {
     },
   ];
 
-  if (initializing || usersQuery.isLoading || rolesQuery.isLoading) {
+  if (initializing) {
     return (
       <div className="flex min-h-[240px] items-center justify-center">
-        <Spin tip="用户数据加载中..." />
+        <Spin tip="初始化中..." />
       </div>
     );
   }
@@ -732,6 +732,7 @@ export default function AdminUsersPage() {
             rowKey="id"
             dataSource={users}
             columns={columns}
+            loading={usersQuery.isLoading || rolesQuery.isLoading}
             pagination={{
               current: pagination.current,
               pageSize: pagination.pageSize,

@@ -467,10 +467,10 @@ export default function AdminScheduledTasksPage() {
     };
   }, [updateTableScrollY]);
 
-  if (initializing || listQuery.isLoading) {
+  if (initializing) {
     return (
       <div className="flex min-h-[240px] items-center justify-center">
-        <Spin tip="定时任务加载中..." />
+        <Spin tip="初始化中..." />
       </div>
     );
   }

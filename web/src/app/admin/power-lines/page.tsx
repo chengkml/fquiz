@@ -1578,8 +1578,8 @@ export default function AdminPowerLinesPage() {
     }
     return `当前 DEM：${selectedTerrainDataset.code}，地形状态为${terrainStatusLabel(selectedTerrainDataset.terrain_status)}，就绪前将回退到椭球地表。`;
   }, [canElevationRead, selectedTerrainDataset]);
-  if (initializing || linesQuery.isLoading) {
-    return <AdminPageLoading tip="加载线路数据中..." minHeightClassName="min-h-[280px]" />;
+  if (initializing) {
+    return <AdminPageLoading tip="初始化中..." minHeightClassName="min-h-[280px]" />;
   }
 
   if (!user) {

@@ -1055,10 +1055,10 @@ export default function AdminElevationPage() {
     };
   }, [updateTableScrollY]);
 
-  if (initializing || datasetsQuery.isLoading || jobsQuery.isLoading || importJobsQuery.isLoading || linesQuery.isLoading) {
+  if (initializing) {
     return (
       <div className="flex min-h-[280px] items-center justify-center">
-        <Spin tip="高程数据加载中..." />
+        <Spin tip="初始化中..." />
       </div>
     );
   }
@@ -1226,6 +1226,7 @@ export default function AdminElevationPage() {
               rowKey={(row) => row.id}
               columns={jobColumns}
               dataSource={jobs}
+              loading={jobsQuery.isLoading}
               pagination={false}
               scroll={{ x: 1900 }}
             />
@@ -1248,6 +1249,7 @@ export default function AdminElevationPage() {
               rowKey={(row) => row.id}
               columns={importJobColumns}
               dataSource={importJobs}
+              loading={importJobsQuery.isLoading}
               pagination={false}
               scroll={{ x: 1600 }}
             />

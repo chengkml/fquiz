@@ -454,10 +454,10 @@ export default function AdminTaskMonitorPage() {
     };
   }, [updateTableScrollY]);
 
-  if (initializing || (workersOverviewQuery.isLoading && !workersOverviewQuery.data && canRead && Boolean(user))) {
+  if (initializing) {
     return (
       <div className="flex min-h-[240px] items-center justify-center">
-        <Spin tip="任务监控数据加载中..." />
+        <Spin tip="初始化中..." />
       </div>
     );
   }

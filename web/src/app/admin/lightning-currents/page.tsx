@@ -444,10 +444,10 @@ export default function AdminLightningCurrentsPage() {
     [canManage, deleteMutation],
   );
 
-  if (initializing || eventsQuery.isLoading) {
+  if (initializing) {
     return (
       <AdminPageLoading
-        tip="加载雷电流数据中..."
+        tip="初始化中..."
         minHeightClassName="min-h-[280px]"
       />
     );

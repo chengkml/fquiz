@@ -391,10 +391,10 @@ export default function AdminLightningDistributionPage() {
     [],
   );
 
-  if (initializing || distributionStatsQuery.isLoading) {
+  if (initializing) {
     return (
       <AdminPageLoading
-        tip="加载地闪密度数据中..."
+        tip="初始化中..."
         minHeightClassName="min-h-[280px]"
       />
     );

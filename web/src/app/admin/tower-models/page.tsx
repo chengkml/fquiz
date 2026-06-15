@@ -674,8 +674,8 @@ export default function AdminTowerModelsPage() {
 
   const mounts = mountsQuery.data?.mounts ?? [];
 
-  if (initializing || towerModelsQuery.isLoading) {
-    return <AdminPageLoading tip="加载杆塔模型中..." minHeightClassName="min-h-[280px]" />;
+  if (initializing) {
+    return <AdminPageLoading tip="初始化中..." minHeightClassName="min-h-[280px]" />;
   }
 
   if (!user) {

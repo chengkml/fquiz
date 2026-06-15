@@ -466,7 +466,7 @@ export default function AdminMenusPage() {
   if (initializing) {
     return (
       <div className="flex min-h-[240px] items-center justify-center">
-        <Spin tip="菜单加载中..." />
+        <Spin tip="初始化中..." />
       </div>
     );
   }

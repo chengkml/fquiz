@@ -487,8 +487,8 @@ export default function AdminWorkersPage() {
     };
   }, [updateTableScrollY]);
 
-  if (initializing || (overviewQuery.isLoading && !overviewQuery.data && canRead && Boolean(user))) {
-    return <AdminPageLoading tip="Worker监控数据加载中..." minHeightClassName="min-h-[280px]" />;
+  if (initializing) {
+    return <AdminPageLoading tip="初始化中..." minHeightClassName="min-h-[280px]" />;
   }
 
   if (!user) {
