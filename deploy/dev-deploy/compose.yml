@@ -192,8 +192,8 @@ services:
 
   web:
     build:
-      context: ../../web
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: web/Dockerfile
       args:
         NODE_BASE_IMAGE: ${NODE_BASE_IMAGE}
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}

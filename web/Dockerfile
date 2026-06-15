@@ -1,10 +1,11 @@
-ARG NODE_BASE_IMAGE=docker.m.daocloud.io/library/node:22-alpine
+ARG NODE_BASE_IMAGE=docker.m.daocloud.io/library/node:22-slim
 
 FROM ${NODE_BASE_IMAGE} AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-COPY scripts ./scripts
+COPY web/package.json ./web/
+COPY web/scripts ./web/scripts
 RUN npm config set registry https://mirrors.cloud.tencent.com/npm/
 RUN npm ci
 
@@ -17,7 +18,8 @@ ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
 ENV NEXT_PUBLIC_APP_BASE_PATH=${NEXT_PUBLIC_APP_BASE_PATH}
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY web ./web
+WORKDIR /app/web
 RUN npm run build
 
 FROM ${NODE_BASE_IMAGE} AS runner
@@ -28,11 +30,12 @@ ENV PORT=3000
 ARG NEXT_PUBLIC_APP_BASE_PATH=/fl
 ENV NEXT_PUBLIC_APP_BASE_PATH=${NEXT_PUBLIC_APP_BASE_PATH}
 
-RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
+RUN groupadd --system --gid 1001 nodejs && \
+    useradd --system --uid 1001 --gid nodejs nextjs
 
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/web/public ./public
+COPY --from=builder /app/web/.next/standalone ./
+COPY --from=builder /app/web/.next/static ./.next/static
 
 USER nextjs
 
