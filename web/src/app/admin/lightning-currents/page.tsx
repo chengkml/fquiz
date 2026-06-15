@@ -21,7 +21,7 @@ import {
 } from "antd";
 import { MoreOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 import { useAuth } from "@/components/auth-provider";
@@ -39,6 +39,7 @@ import type {
   LightningCurrentSampleItem,
   LightningPolarity,
 } from "@/types/auth";
+import type { CSSProperties } from "react";
 
 type ImportFormValues = {
   event_id: string;
@@ -87,11 +88,16 @@ function formatPolarity(polarity: LightningPolarity): string {
   return "未知";
 }
 
+const LIGHTNING_TABLE_MIN_SCROLL_Y = 180;
+const LIGHTNING_TABLE_VIEWPORT_GAP = 40;
+const LIGHTNING_TABLE_FALLBACK_RESERVE = 220;
+
 export default function AdminLightningCurrentsPage() {
   const { user, initializing, hasPermission, fetchWithAuth } = useAuth();
   const queryClient = useQueryClient();
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [importForm] = Form.useForm<ImportFormValues>();
+  const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -100,6 +106,7 @@ export default function AdminLightningCurrentsPage() {
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [sampleModalOpen, setSampleModalOpen] = useState(false);
   const [selectedEventForModal, setSelectedEventForModal] = useState<LightningCurrentEventSummary | null>(null);
+  const [tableScrollY, setTableScrollY] = useState(LIGHTNING_TABLE_MIN_SCROLL_Y);
 
   const canRead = hasPermission("lightning.read") || hasPermission("lightning.manage");
   const canManage = hasPermission("lightning.manage");
@@ -183,6 +190,74 @@ export default function AdminLightningCurrentsPage() {
       void refreshAll();
     }, [refreshAll]),
   );
+
+  const updateTableScrollY = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - LIGHTNING_TABLE_FALLBACK_RESERVE);
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? LIGHTNING_TABLE_MIN_SCROLL_Y;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - LIGHTNING_TABLE_VIEWPORT_GAP);
+    }
+
+    const clampedHeight = Math.max(LIGHTNING_TABLE_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.requestAnimationFrame(updateTableScrollY);
+  }, [error, listError, sampleError, statsError, events.length, eventsQuery.isFetching, updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updateTableScrollY);
+    };
+
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateTableScrollY);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTableScrollY]);
 
   const importMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -338,20 +413,10 @@ export default function AdminLightningCurrentsPage() {
       {
         title: "操作",
         key: "actions",
-        width: 100,
+        width: 200,
         fixed: "right",
         render: (_: unknown, row) => {
           const moreMenuItems: MenuProps["items"] = [
-            {
-              key: "exceedance",
-              label: "峰值超越概率（P 曲线）",
-              onClick: () => openExceedanceModal(row),
-            },
-            {
-              key: "detail",
-              label: "雷电流事件详情",
-              onClick: () => openDetailModal(row),
-            },
             {
               key: "sample",
               label: "采样预览",
@@ -369,28 +434,42 @@ export default function AdminLightningCurrentsPage() {
           ];
 
           return (
-            <Dropdown
-              menu={{
-                items: moreMenuItems,
-                onClick: ({ key }) => {
-                  if (key === "delete") {
-                    Modal.confirm({
-                      title: "删除事件",
-                      content: `确认删除事件 ${row.event_id} 吗？`,
-                      okText: "删除",
-                      cancelText: "取消",
-                      okButtonProps: { danger: true },
-                      onOk: async () => {
-                        await deleteMutation.mutateAsync(row.id);
-                      },
-                    });
-                  }
-                },
-              }}
-              trigger={["click"]}
-            >
-              <Button size="small" icon={<MoreOutlined />} />
-            </Dropdown>
+            <Space wrap>
+              <Button
+                size="small"
+                onClick={() => openExceedanceModal(row)}
+              >
+                峰值超越概率
+              </Button>
+              <Button
+                size="small"
+                onClick={() => openDetailModal(row)}
+              >
+                事件详情
+              </Button>
+              <Dropdown
+                menu={{
+                  items: moreMenuItems,
+                  onClick: ({ key }) => {
+                    if (key === "delete") {
+                      Modal.confirm({
+                        title: "删除事件",
+                        content: `确认删除事件 ${row.event_id} 吗？`,
+                        okText: "删除",
+                        cancelText: "取消",
+                        okButtonProps: { danger: true },
+                        onOk: async () => {
+                          await deleteMutation.mutateAsync(row.id);
+                        },
+                      });
+                    }
+                  },
+                }}
+                trigger={["click"]}
+              >
+                <Button size="small" icon={<MoreOutlined />} />
+              </Dropdown>
+            </Space>
           );
         },
       },
@@ -446,7 +525,7 @@ export default function AdminLightningCurrentsPage() {
   return (
     <Space direction="vertical" size={16} className="w-full">
       <Card
-        title="导入记录管理"
+        title="雷电幅值统计"
         extra={
           canManage && (
             <Button type="primary" onClick={() => setImportModalOpen(true)}>
@@ -455,14 +534,20 @@ export default function AdminLightningCurrentsPage() {
           )
         }
       >
-        <Table<LightningCurrentEventSummary>
-          rowKey={(row) => row.id}
-          columns={eventColumns}
-          dataSource={events}
-          loading={eventsQuery.isFetching}
-          pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
-          scroll={{ x: 1700 }}
-        />
+        <div
+          ref={tableScrollAnchorRef}
+          className="lightning-table-anchor"
+          style={{ "--lightning-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+        >
+          <Table<LightningCurrentEventSummary>
+            rowKey={(row) => row.id}
+            columns={eventColumns}
+            dataSource={events}
+            loading={eventsQuery.isFetching}
+            pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
+            scroll={{ x: 1800, y: tableScrollY }}
+          />
+        </div>
       </Card>
 
       <Modal
