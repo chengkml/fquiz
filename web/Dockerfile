@@ -34,11 +34,11 @@ ENV NEXT_PUBLIC_APP_BASE_PATH=${NEXT_PUBLIC_APP_BASE_PATH}
 RUN groupadd --system --gid 1001 nodejs && \
     useradd --system --uid 1001 --gid nodejs nextjs
 
-COPY --from=builder /app/web/public ./public
+COPY --from=builder /app/web/public ./web/public
 COPY --from=builder /app/web/.next/standalone ./
-COPY --from=builder /app/web/.next/static ./.next/static
+COPY --from=builder /app/web/.next/static ./web/.next/static
 
 USER nextjs
 
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["node", "web/server.js"]
