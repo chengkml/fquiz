@@ -297,6 +297,10 @@ body {
   min-height: var(--admin-atp-models-table-body-min-height, 180px);
 }
 
+.lightning-table-anchor .ant-table-body {
+  min-height: var(--lightning-table-body-min-height, 180px);
+}
+
 .fquiz-row-selected > td {
   background: var(--fquiz-theme-bg-active) !important;
 }

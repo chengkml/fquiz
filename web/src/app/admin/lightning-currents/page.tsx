@@ -486,7 +486,7 @@ export default function AdminLightningCurrentsPage() {
   }));
 
   return (
-    <Space direction="vertical" size={16} className="w-full">
+    <Space direction="vertical" size={16} className="w-full h-full">
       <Card
         title="雷电流幅值统计"
         extra={
