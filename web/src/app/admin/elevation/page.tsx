@@ -1094,12 +1094,11 @@ export default function AdminElevationPage() {
   const datasetTableScrollX = 1940;
 
   return (
-    <div className="flex min-h-screen flex-col space-y-6">
+    <div className="space-y-6">
       {messageContextHolder}
 
       <Card
         title="高程数据集"
-        className="flex-1 flex flex-col"
         extra={(
           <Space>
             {datasetsQuery.isFetching && <Spin size="small" />}
@@ -1127,11 +1126,8 @@ export default function AdminElevationPage() {
             )}
           </Space>
         )}
-        styles={{
-          body: { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }
-        }}
       >
-        <Form layout="inline" style={{ rowGap: 12, flexShrink: 0 }}>
+        <Form layout="inline" style={{ rowGap: 12 }}>
           <Form.Item label="关键词" className="min-w-[240px]">
             <Input
               allowClear
@@ -1170,7 +1166,7 @@ export default function AdminElevationPage() {
 
         <div
           ref={tableScrollAnchorRef}
-          className="admin-datasets-table-anchor mt-4 flex-1"
+          className="admin-datasets-table-anchor mt-4"
           style={{ "--admin-datasets-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
         >
           <Table<ElevationDatasetSummary>
