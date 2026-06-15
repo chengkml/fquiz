@@ -18,6 +18,16 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ReferenceLine,
+  ResponsiveContainer,
+} from "recharts";
 
 import { useAuth } from "@/components/auth-provider";
 import { AdminPageLoading } from "@/components/admin-page-loading";
@@ -690,22 +700,93 @@ export default function AdminLightningDistributionPage() {
         {distributionPCurve.length === 0 ? (
           <Empty description="暂无统计数据" />
         ) : (
-          <Table
-            rowKey={(row) => `${row.threshold_ka}`}
-            pagination={false}
-            dataSource={distributionPCurve}
-            columns={[
-              { title: "阈值(kA)", dataIndex: "threshold_ka", width: 140, render: (value: number) => formatNumber(value, 2) },
-              {
-                title: "超越概率",
-                dataIndex: "exceedance_probability",
-                width: 140,
-                render: (value: number) => `${(value * 100).toFixed(2)}%`,
-              },
-              { title: "超越次数", dataIndex: "exceedance_count", width: 140 },
-            ]}
-            size="small"
-          />
+          <Space direction="vertical" size={16} className="w-full">
+            <div className="w-full" style={{ height: 400 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={distributionPCurve}
+                  margin={{ top: 10, right: 30, left: 10, bottom: 30 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="threshold_ka"
+                    type="number"
+                    domain={['dataMin', 'dataMax']}
+                    label={{ value: '电流阈值 (kA)', position: 'insideBottom', offset: -10 }}
+                    tickFormatter={(value) => `${value}`}
+                  />
+                  <YAxis
+                    domain={[0, 1]}
+                    label={{ value: '超越概率', angle: -90, position: 'insideLeft' }}
+                    tickFormatter={(value) => `${(value * 100).toFixed(0)}%`}
+                  />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        return (
+                          <div className="rounded-md border bg-white p-2 shadow-md">
+                            <p className="text-sm">
+                              <strong>阈值:</strong> {formatNumber(data.threshold_ka, 2)} kA
+                            </p>
+                            <p className="text-sm">
+                              <strong>超越概率:</strong> {(data.exceedance_probability * 100).toFixed(2)}%
+                            </p>
+                            <p className="text-sm">
+                              <strong>超越次数:</strong> {data.exceedance_count}
+                            </p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <ReferenceLine
+                    y={0.5}
+                    stroke="#666"
+                    strokeDasharray="5 5"
+                    label={{
+                      value: '50% (中值)',
+                      position: 'right',
+                      fill: '#666',
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="exceedance_probability"
+                    stroke="#1890ff"
+                    strokeWidth={2}
+                    dot={{ r: 4 }}
+                    activeDot={{ r: 6 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            <details className="w-full">
+              <summary className="cursor-pointer select-none text-sm font-medium text-gray-700">
+                查看精确数值表格
+              </summary>
+              <div className="mt-3">
+                <Table
+                  rowKey={(row) => `${row.threshold_ka}`}
+                  pagination={false}
+                  dataSource={distributionPCurve}
+                  columns={[
+                    { title: "阈值(kA)", dataIndex: "threshold_ka", width: 140, render: (value: number) => formatNumber(value, 2) },
+                    {
+                      title: "超越概率",
+                      dataIndex: "exceedance_probability",
+                      width: 140,
+                      render: (value: number) => `${(value * 100).toFixed(2)}%`,
+                    },
+                    { title: "超越次数", dataIndex: "exceedance_count", width: 140 },
+                  ]}
+                  size="small"
+                />
+              </div>
+            </details>
+          </Space>
         )}
       </Card>
     </Space>
