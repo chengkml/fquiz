@@ -99,6 +99,8 @@ export default function AdminLightningCurrentsPage() {
   const [sampleModalOpen, setSampleModalOpen] = useState(false);
   const [selectedEventForModal, setSelectedEventForModal] = useState<LightningCurrentEventSummary | null>(null);
   const [tableScrollY, setTableScrollY] = useState(LIGHTNING_TABLE_MIN_SCROLL_Y);
+  const [samplePage, setSamplePage] = useState(1);
+  const [samplePageSize, setSamplePageSize] = useState(50);
 
   const canRead = hasPermission("lightning.read") || hasPermission("lightning.manage");
   const canManage = hasPermission("lightning.manage");
@@ -138,8 +140,9 @@ export default function AdminLightningCurrentsPage() {
 
   const samplePath = useMemo(() => {
     if (!selectedEventForModal?.id) return "";
-    return `/api/v1/lightning-currents/${selectedEventForModal.id}/samples?limit=200&offset=0`;
-  }, [selectedEventForModal?.id]);
+    const offset = (samplePage - 1) * samplePageSize;
+    return `/api/v1/lightning-currents/${selectedEventForModal.id}/samples?limit=${samplePageSize}&offset=${offset}`;
+  }, [selectedEventForModal?.id, samplePage, samplePageSize]);
 
   const samplesQuery = useQuery({
     queryKey: [samplePath],
@@ -327,6 +330,7 @@ export default function AdminLightningCurrentsPage() {
 
   const openSampleModal = (event: LightningCurrentEventSummary) => {
     setSelectedEventForModal(event);
+    setSamplePage(1);
     setSampleModalOpen(true);
   };
 
@@ -580,29 +584,60 @@ export default function AdminLightningCurrentsPage() {
           setSelectedEventForModal(null);
         }}
         footer={null}
-        width={800}
+        width={900}
         destroyOnClose
       >
         {exceedance.length === 0 ? (
           <Empty description="暂无统计数据" />
         ) : (
-          <Table
-            rowKey={(row) => `${row.threshold_ka}`}
-            pagination={false}
-            dataSource={exceedance}
-            columns={[
-              { title: "阈值(kA)", dataIndex: "threshold_ka", width: 140, render: (value: number) => formatNumber(value, 2) },
-              {
-                title: "超越概率",
-                dataIndex: "exceedance_probability",
-                width: 140,
-                render: (value: number) => `${(value * 100).toFixed(2)}%`,
-              },
-              { title: "超越次数", dataIndex: "exceedance_count", width: 140 },
-            ]}
-            size="small"
-            loading={exceedanceQuery.isFetching}
-          />
+          <Space direction="vertical" size={16} className="w-full">
+            <ResponsiveContainer width="100%" height={400}>
+              <LineChart data={exceedance.map((point) => ({
+                threshold_ka: point.threshold_ka,
+                exceedance_probability_pct: point.exceedance_probability * 100,
+              }))}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="threshold_ka"
+                  label={{ value: "阈值 (kA)", position: "insideBottom", offset: -5 }}
+                />
+                <YAxis
+                  label={{ value: "超越概率 (%)", angle: -90, position: "insideLeft" }}
+                  domain={[0, 100]}
+                />
+                <Tooltip
+                  formatter={(value: any) => [`${Number(value).toFixed(2)}%`, "超越概率"]}
+                  labelFormatter={(label) => `阈值: ${Number(label).toFixed(2)} kA`}
+                />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey="exceedance_probability_pct"
+                  stroke="#1890ff"
+                  name="超越概率 (%)"
+                  strokeWidth={2}
+                  dot={{ r: 4 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+            <Table
+              rowKey={(row) => `${row.threshold_ka}`}
+              pagination={false}
+              dataSource={exceedance}
+              columns={[
+                { title: "阈值(kA)", dataIndex: "threshold_ka", width: 140, render: (value: number) => formatNumber(value, 2) },
+                {
+                  title: "超越概率",
+                  dataIndex: "exceedance_probability",
+                  width: 140,
+                  render: (value: number) => `${(value * 100).toFixed(2)}%`,
+                },
+                { title: "超越次数", dataIndex: "exceedance_count", width: 140 },
+              ]}
+              size="small"
+              loading={exceedanceQuery.isFetching}
+            />
+          </Space>
         )}
       </Modal>
 
@@ -807,26 +842,60 @@ export default function AdminLightningCurrentsPage() {
         onCancel={() => {
           setSampleModalOpen(false);
           setSelectedEventForModal(null);
+          setSamplePage(1);
         }}
         footer={null}
-        width={1000}
+        width={1200}
         destroyOnClose
       >
-        {samples.length === 0 ? (
-          <Empty description="暂无采样数据" />
-        ) : (
-          <ResponsiveContainer width="100%" height={400}>
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="time_us" label={{ value: "时间 (μs)", position: "insideBottom", offset: -5 }} />
-              <YAxis label={{ value: "电流 (kA)", angle: -90, position: "insideLeft" }} />
-              <AntTooltip />
-              <Legend />
-              <Line type="monotone" dataKey="current_ka" stroke="#8884d8" name="电流 (kA)" dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        )}
-        {samplesQuery.isFetching && <Typography.Text type="secondary">加载中...</Typography.Text>}
+        <Space direction="vertical" size={16} className="w-full">
+          {samples.length === 0 ? (
+            <Empty description="暂无采样数据" />
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={400}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="time_us" label={{ value: "时间 (μs)", position: "insideBottom", offset: -5 }} />
+                  <YAxis label={{ value: "电流 (kA)", angle: -90, position: "insideLeft" }} />
+                  <Tooltip
+                    formatter={(value: any) => [formatNumber(value, 3), "电流 (kA)"]}
+                    labelFormatter={(label) => `时间: ${formatNumber(label, 2)} μs`}
+                  />
+                  <Legend />
+                  <Line type="monotone" dataKey="current_ka" stroke="#8884d8" name="电流 (kA)" dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+              <Table<LightningCurrentSampleItem>
+                rowKey={(row) => row.id}
+                dataSource={samples}
+                loading={samplesQuery.isFetching}
+                pagination={{
+                  current: samplePage,
+                  pageSize: samplePageSize,
+                  total: samplesQuery.data?.total ?? 0,
+                  showSizeChanger: true,
+                  showTotal: (total) => `共 ${total} 条`,
+                  pageSizeOptions: [20, 50, 100, 200],
+                  onChange: (page, pageSize) => {
+                    setSamplePage(page);
+                    if (pageSize !== samplePageSize) {
+                      setSamplePageSize(pageSize);
+                      setSamplePage(1);
+                    }
+                  },
+                }}
+                columns={[
+                  { title: "序号", dataIndex: "seq_no", width: 100 },
+                  { title: "时间 (μs)", dataIndex: "time_us", width: 150, render: (value: number) => formatNumber(value, 2) },
+                  { title: "电流 (kA)", dataIndex: "current_ka", width: 150, render: (value: number) => formatNumber(value, 3) },
+                ]}
+                size="small"
+                scroll={{ y: 300 }}
+              />
+            </>
+          )}
+        </Space>
       </Modal>
     </Space>
   );
