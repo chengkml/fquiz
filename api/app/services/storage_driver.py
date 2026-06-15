@@ -302,12 +302,22 @@ class S3StorageDriver:
     def __init__(self, *, config: dict[str, Any], mount_root_path: str) -> None:
         try:
             import boto3
+            from botocore.config import Config
         except ImportError as exc:
             raise StorageNotConfiguredError("S3 driver requires boto3 dependency") from exc
 
         bucket = _coerce_non_empty_string(config.get("bucket"))
         if not bucket:
             raise StorageNotConfiguredError("S3 backend requires config.bucket")
+
+        client_config = Config(
+            connect_timeout=_coerce_positive_number(config.get("connect_timeout_seconds"), default=3.0),
+            read_timeout=_coerce_positive_number(config.get("read_timeout_seconds"), default=10.0),
+            retries={"max_attempts": int(_coerce_positive_number(config.get("max_attempts"), default=2.0))},
+            s3={"addressing_style": _coerce_non_empty_string(config.get("addressing_style")) or "path"},
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+        )
 
         session = boto3.session.Session(
             aws_access_key_id=_coerce_non_empty_string(config.get("access_key_id")),
@@ -319,9 +329,11 @@ class S3StorageDriver:
             "s3",
             endpoint_url=_coerce_non_empty_string(config.get("endpoint_url")),
             region_name=_coerce_non_empty_string(config.get("region_name")),
+            config=client_config,
         )
         self._bucket = bucket
         self._root_prefix = _normalize_s3_prefix(mount_root_path)
+        self._should_write_directory_markers = bool(config.get("write_directory_markers", False))
 
     def list_dir(self, path: str) -> list[StorageObject]:
         normalized = normalize_virtual_path(path)
@@ -400,6 +412,12 @@ class S3StorageDriver:
     def ensure_directory(self, path: str) -> None:
         normalized = normalize_virtual_path(path)
         if normalized == "/":
+            return
+
+        # S3-compatible object stores do not require directory marker objects
+        # before nested keys are written. The marker PUT is optional and is
+        # expensive on high-file-count uploads.
+        if not self._should_write_directory_markers:
             return
 
         key = self._key_for_path(normalized)
@@ -709,6 +727,21 @@ def _coerce_non_empty_string(value: Any) -> str | None:
         return None
     stripped = value.strip()
     return stripped if stripped else None
+
+
+def _coerce_positive_number(value: Any, *, default: float) -> float:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float)):
+        number = float(value)
+    elif isinstance(value, str):
+        try:
+            number = float(value.strip())
+        except ValueError:
+            return default
+    else:
+        return default
+    return number if number > 0 else default
 
 
 def _is_s3_not_found(exc: Exception) -> bool:

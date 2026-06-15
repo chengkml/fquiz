@@ -286,6 +286,7 @@ def _write_archive_to_storage(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Release ZIP 包不能为空")
 
     driver.ensure_directory(storage_root_path)
+    ensured_directories = {normalize_virtual_path(storage_root_path)}
     extracted_count = 0
     try:
         with zipfile.ZipFile(io.BytesIO(archive_content)) as archive:
@@ -296,7 +297,10 @@ def _write_archive_to_storage(
                 if relative_path is None:
                     continue
                 target_path = normalize_virtual_path(f"{storage_root_path.rstrip('/')}/{relative_path}")
-                driver.ensure_directory(_parent_virtual_path(target_path))
+                parent_path = _parent_virtual_path(target_path)
+                if parent_path not in ensured_directories:
+                    driver.ensure_directory(parent_path)
+                    ensured_directories.add(parent_path)
                 try:
                     content = archive.read(member)
                 except Exception as exc:
