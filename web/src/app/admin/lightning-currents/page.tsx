@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
-  Checkbox,
   Descriptions,
   Dropdown,
   Empty,
@@ -48,7 +47,6 @@ type ImportFormValues = {
   sensor_model: string;
   install_position: string;
   weather_level: string;
-  is_synthetic: boolean;
   notes: string;
 };
 
@@ -58,7 +56,6 @@ const INITIAL_IMPORT_VALUES: ImportFormValues = {
   sensor_model: "",
   install_position: "",
   weather_level: "",
-  is_synthetic: false,
   notes: "",
 };
 
@@ -270,7 +267,6 @@ export default function AdminLightningCurrentsPage() {
       if (values.install_position?.trim()) formData.append("install_position", values.install_position.trim());
       if (values.weather_level?.trim()) formData.append("weather_level", values.weather_level.trim());
       if (values.notes?.trim()) formData.append("notes", values.notes.trim());
-      formData.append("is_synthetic", values.is_synthetic ? "true" : "false");
 
       const response = await fetchWithAuth("/api/v1/lightning-currents/import", {
         method: "POST",
@@ -549,9 +545,6 @@ export default function AdminLightningCurrentsPage() {
           <Form.Item name="notes" label="备注">
             <Input.TextArea rows={2} placeholder="可填写天气背景、场景备注等" />
           </Form.Item>
-          <Form.Item name="is_synthetic" valuePropName="checked">
-            <Checkbox>这是合成数据</Checkbox>
-          </Form.Item>
           <Space>
             <Button type="primary" onClick={() => uploadInputRef.current?.click()} loading={importMutation.isPending}>
               选择文件并导入
@@ -748,7 +741,6 @@ export default function AdminLightningCurrentsPage() {
               <Descriptions.Item label="传感器">{formatNullable(selectedEventForModal.sensor_model)}</Descriptions.Item>
               <Descriptions.Item label="安装位置">{formatNullable(selectedEventForModal.install_position)}</Descriptions.Item>
               <Descriptions.Item label="雷暴等级">{formatNullable(selectedEventForModal.weather_level)}</Descriptions.Item>
-              <Descriptions.Item label="来源">{selectedEventForModal.is_synthetic ? "合成" : "实测"}</Descriptions.Item>
             </Descriptions>
 
             <Typography.Text type="secondary">
