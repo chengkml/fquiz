@@ -409,7 +409,9 @@ export default function AtpModelsPage() {
                         okText: "删除",
                         cancelText: "取消",
                         okButtonProps: { danger: true },
-                        onOk: () => void deleteMutation.mutateAsync(item.id),
+                        onOk: async () => {
+                          await deleteMutation.mutateAsync(item.id);
+                        },
                       });
                     }
                   },
