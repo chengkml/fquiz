@@ -3,24 +3,26 @@
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Alert,
   Button,
   Checkbox,
   Descriptions,
+  Dropdown,
   Empty,
   Form,
   Input,
   InputNumber,
   Modal,
   Popconfirm,
-  Select,
   Space,
   Table,
   Tag,
   Typography,
+  type MenuProps,
 } from "antd";
+import { MoreOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 import { useAuth } from "@/components/auth-provider";
 import { AdminPageLoading } from "@/components/admin-page-loading";
@@ -28,15 +30,11 @@ import { Card } from "@/components/ui-antd";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
-import { readLinePreparation } from "@/lib/line-preparation";
 import type {
-  LineListResponse,
-  LineSummary,
   LightningCurrentEventListResponse,
   LightningCurrentEventSummary,
   LightningCurrentExceedanceResponse,
   LightningCurrentImportResponse,
-  LightningCurrentPreparationResponse,
   LightningCurrentSampleListResponse,
   LightningCurrentSampleItem,
   LightningPolarity,
@@ -68,20 +66,6 @@ const INITIAL_IMPORT_VALUES: ImportFormValues = {
   notes: "",
 };
 
-const POLARITY_OPTIONS = [
-  { value: "all", label: "全部极性" },
-  { value: "positive", label: "正极性" },
-  { value: "negative", label: "负极性" },
-  { value: "mixed", label: "混合" },
-  { value: "unknown", label: "未知" },
-] as const;
-
-const SYNTHETIC_OPTIONS = [
-  { value: "all", label: "全部来源" },
-  { value: "false", label: "实测" },
-  { value: "true", label: "合成" },
-] as const;
-
 function formatNullable(value: number | string | null | undefined): string {
   if (value === null || value === undefined || value === "") {
     return "-";
@@ -108,64 +92,19 @@ export default function AdminLightningCurrentsPage() {
   const queryClient = useQueryClient();
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [importForm] = Form.useForm<ImportFormValues>();
-  const [keyword, setKeyword] = useState("");
-  const [regionFilter, setRegionFilter] = useState("");
-  const [polarityFilter, setPolarityFilter] = useState<(typeof POLARITY_OPTIONS)[number]["value"]>("all");
-  const [syntheticFilter, setSyntheticFilter] = useState<(typeof SYNTHETIC_OPTIONS)[number]["value"]>("all");
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [selectedLineId, setSelectedLineId] = useState("");
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [exceedanceModalOpen, setExceedanceModalOpen] = useState(false);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [sampleModalOpen, setSampleModalOpen] = useState(false);
+  const [selectedEventForModal, setSelectedEventForModal] = useState<LightningCurrentEventSummary | null>(null);
 
   const canRead = hasPermission("lightning.read") || hasPermission("lightning.manage");
   const canManage = hasPermission("lightning.manage");
 
-  const eventListPath = useMemo(() => {
-    const params = new URLSearchParams();
-    if (keyword.trim()) {
-      params.set("keyword", keyword.trim());
-    }
-    if (regionFilter.trim()) {
-      params.set("region_id", regionFilter.trim());
-    }
-    if (polarityFilter !== "all") {
-      params.set("polarity", polarityFilter);
-    }
-    if (syntheticFilter !== "all") {
-      params.set("is_synthetic", syntheticFilter);
-    }
-    params.set("limit", "200");
-    params.set("offset", "0");
-    return `/api/v1/lightning-currents?${params.toString()}`;
-  }, [keyword, regionFilter, polarityFilter, syntheticFilter]);
-
-  const exceedancePath = useMemo(() => {
-    const params = new URLSearchParams();
-    if (regionFilter.trim()) {
-      params.set("region_id", regionFilter.trim());
-    }
-    if (polarityFilter !== "all") {
-      params.set("polarity", polarityFilter);
-    }
-    if (syntheticFilter !== "all") {
-      params.set("is_synthetic", syntheticFilter);
-    }
-    return `/api/v1/lightning-currents/stats/exceedance${params.toString() ? `?${params.toString()}` : ""}`;
-  }, [regionFilter, polarityFilter, syntheticFilter]);
-
-  const linesQuery = useQuery({
-    queryKey: ["/api/v1/lines"],
-    enabled: !!user && canRead,
-    queryFn: async () => {
-      const response = await fetchWithAuth("/api/v1/lines");
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-      return (await response.json()) as LineListResponse;
-    },
-  });
-  const activeSelectedLineId = selectedLineId || linesQuery.data?.items[0]?.id || "";
+  const eventListPath = "/api/v1/lightning-currents?limit=200&offset=0";
 
   const eventsQuery = useQuery({
     queryKey: [eventListPath],
@@ -178,20 +117,34 @@ export default function AdminLightningCurrentsPage() {
       return (await response.json()) as LightningCurrentEventListResponse;
     },
   });
+
   const events = useMemo(() => eventsQuery.data?.items ?? [], [eventsQuery.data?.items]);
-  const activeSelectedEventId = selectedEventId && events.some((item) => item.id === selectedEventId)
-    ? selectedEventId
-    : (events[0]?.id ?? null);
+
+  const exceedancePath = useMemo(() => {
+    if (!selectedEventForModal?.id) return "";
+    return `/api/v1/lightning-currents/stats/exceedance`;
+  }, [selectedEventForModal?.id]);
+
+  const exceedanceQuery = useQuery({
+    queryKey: [exceedancePath, selectedEventForModal?.id],
+    enabled: !!user && canRead && exceedanceModalOpen && !!selectedEventForModal,
+    queryFn: async () => {
+      const response = await fetchWithAuth(exceedancePath);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as LightningCurrentExceedanceResponse;
+    },
+  });
+
   const samplePath = useMemo(() => {
-    if (!activeSelectedEventId) {
-      return "";
-    }
-    return `/api/v1/lightning-currents/${activeSelectedEventId}/samples?limit=200&offset=0`;
-  }, [activeSelectedEventId]);
+    if (!selectedEventForModal?.id) return "";
+    return `/api/v1/lightning-currents/${selectedEventForModal.id}/samples?limit=200&offset=0`;
+  }, [selectedEventForModal?.id]);
 
   const samplesQuery = useQuery({
     queryKey: [samplePath],
-    enabled: !!user && canRead && !!activeSelectedEventId,
+    enabled: !!user && canRead && sampleModalOpen && !!selectedEventForModal,
     queryFn: async () => {
       if (!samplePath) {
         return { items: [], total: 0, limit: 0, offset: 0 } satisfies LightningCurrentSampleListResponse;
@@ -201,18 +154,6 @@ export default function AdminLightningCurrentsPage() {
         throw new Error(await readApiError(response));
       }
       return (await response.json()) as LightningCurrentSampleListResponse;
-    },
-  });
-
-  const exceedanceQuery = useQuery({
-    queryKey: [exceedancePath],
-    enabled: !!user && canRead,
-    queryFn: async () => {
-      const response = await fetchWithAuth(exceedancePath);
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-      return (await response.json()) as LightningCurrentExceedanceResponse;
     },
   });
 
@@ -232,10 +173,7 @@ export default function AdminLightningCurrentsPage() {
       predicate: (query) =>
         Array.isArray(query.queryKey)
         && typeof query.queryKey[0] === "string"
-        && (
-          query.queryKey[0].startsWith("/api/v1/lightning-currents")
-          || query.queryKey[0].startsWith("/api/v1/lines")
-        ),
+        && query.queryKey[0].startsWith("/api/v1/lightning-currents"),
     });
   }, [queryClient]);
 
@@ -245,18 +183,6 @@ export default function AdminLightningCurrentsPage() {
       void refreshAll();
     }, [refreshAll]),
   );
-
-  const samples = samplesQuery.data?.items ?? [];
-  const exceedance = exceedanceQuery.data?.thresholds ?? [];
-  const selectedEvent = useMemo(
-    () => events.find((item) => item.id === activeSelectedEventId) ?? null,
-    [activeSelectedEventId, events],
-  );
-  const selectedLine = useMemo(
-    () => linesQuery.data?.items.find((item) => item.id === activeSelectedLineId) ?? null,
-    [activeSelectedLineId, linesQuery.data?.items],
-  );
-  const selectedLinePreparation = useMemo(() => readLinePreparation(selectedLine), [selectedLine]);
 
   const importMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -295,7 +221,6 @@ export default function AdminLightningCurrentsPage() {
           ? `导入完成，存在 ${payload.warning_count} 条告警`
           : "导入完成并已提取防雷特征参数",
       );
-      setSelectedEventId(payload.event.id);
       setImportModalOpen(false);
       importForm.resetFields();
       await refreshAll();
@@ -316,10 +241,7 @@ export default function AdminLightningCurrentsPage() {
       }
       return eventId;
     },
-    onSuccess: async (eventId) => {
-      if (selectedEventId === eventId) {
-        setSelectedEventId(null);
-      }
+    onSuccess: async () => {
       setError("");
       setSuccess("雷电流事件已删除");
       await refreshAll();
@@ -330,35 +252,20 @@ export default function AdminLightningCurrentsPage() {
     },
   });
 
-  const prepareCurrentMutation = useMutation({
-    mutationFn: async () => {
-      if (!activeSelectedLineId) {
-        throw new Error("请选择线路");
-      }
-      const response = await fetchWithAuth("/api/v1/lightning-currents/prepare-current", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          line_id: activeSelectedLineId,
-          region_id: regionFilter.trim() || null,
-          is_synthetic: syntheticFilter === "all" ? null : syntheticFilter === "true",
-        }),
-      });
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-      return (await response.json()) as LightningCurrentPreparationResponse;
-    },
-    onSuccess: async (payload) => {
-      setError("");
-      setSuccess(`已为 ${payload.line.name || payload.line.code} 回填雷电流幅值 a/b = ${payload.current_a} / ${payload.current_b}`);
-      await refreshAll();
-    },
-    onError: (candidate) => {
-      setSuccess("");
-      setError(candidate instanceof Error ? candidate.message : "线路雷电流回填失败");
-    },
-  });
+  const openExceedanceModal = (event: LightningCurrentEventSummary) => {
+    setSelectedEventForModal(event);
+    setExceedanceModalOpen(true);
+  };
+
+  const openDetailModal = (event: LightningCurrentEventSummary) => {
+    setSelectedEventForModal(event);
+    setDetailModalOpen(true);
+  };
+
+  const openSampleModal = (event: LightningCurrentEventSummary) => {
+    setSelectedEventForModal(event);
+    setSampleModalOpen(true);
+  };
 
   const eventColumns = useMemo<ColumnsType<LightningCurrentEventSummary>>(
     () => [
@@ -369,34 +276,28 @@ export default function AdminLightningCurrentsPage() {
         render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
       },
       {
-        title: "峰值(kA)",
-        dataIndex: "peak_abs_current_ka",
-        width: 100,
-        render: (value: number | null) => formatNumber(value, 2),
-      },
-      {
-        title: "波形",
-        dataIndex: "wave_shape",
-        width: 90,
+        title: "文件名称",
+        dataIndex: "source_file_name",
+        width: 200,
         render: (value: string | null) => value || "-",
       },
       {
-        title: "T1/T2(us)",
-        key: "t1t2",
-        width: 140,
-        render: (_: unknown, row) => `${formatNumber(row.wavefront_time_t1_us, 2)} / ${formatNumber(row.half_value_time_t2_us, 2)}`,
+        title: "导入时间",
+        dataIndex: "create_date",
+        width: 180,
+        render: (value: string) => new Date(value).toLocaleString("zh-CN", { hour12: false }),
       },
       {
-        title: "陡度(kA/us)",
-        dataIndex: "steepness_ka_per_us",
-        width: 130,
-        render: (value: number | null) => formatNumber(value, 3),
-      },
-      {
-        title: "I²t(J/Ω)",
-        dataIndex: "action_integral_j_ohm",
-        width: 140,
+        title: "峰值电流(kA)",
+        dataIndex: "peak_abs_current_ka",
+        width: 120,
         render: (value: number | null) => formatNumber(value, 2),
+      },
+      {
+        title: "波形分类",
+        dataIndex: "wave_shape",
+        width: 100,
+        render: (value: string | null) => value || "-",
       },
       {
         title: "极性",
@@ -413,14 +314,15 @@ export default function AdminLightningCurrentsPage() {
       },
       {
         title: "区域",
-        dataIndex: "location_tag",
-        width: 160,
+        dataIndex: "region_id",
+        width: 120,
         render: (value: string | null) => value || "-",
       },
       {
-        title: "采样点数",
-        dataIndex: "sample_count",
-        width: 100,
+        title: "地域标签",
+        dataIndex: "location_tag",
+        width: 150,
+        render: (value: string | null) => value || "-",
       },
       {
         title: "来源",
@@ -429,39 +331,71 @@ export default function AdminLightningCurrentsPage() {
         render: (value: boolean) => (value ? <Tag color="purple">合成</Tag> : <Tag color="green">实测</Tag>),
       },
       {
+        title: "采样点数",
+        dataIndex: "sample_count",
+        width: 100,
+      },
+      {
         title: "操作",
         key: "actions",
         width: 100,
         fixed: "right",
-        render: (_: unknown, row) =>
-          canManage ? (
-            <Popconfirm
-              title="删除事件"
-              description={`确认删除事件 ${row.event_id} 吗？`}
-              okText="删除"
-              cancelText="取消"
-              okButtonProps={{ danger: true }}
-              onConfirm={async () => {
-                await deleteMutation.mutateAsync(row.id);
+        render: (_: unknown, row) => {
+          const moreMenuItems: MenuProps["items"] = [
+            {
+              key: "exceedance",
+              label: "峰值超越概率（P 曲线）",
+              onClick: () => openExceedanceModal(row),
+            },
+            {
+              key: "detail",
+              label: "雷电流事件详情",
+              onClick: () => openDetailModal(row),
+            },
+            {
+              key: "sample",
+              label: "采样预览",
+              onClick: () => openSampleModal(row),
+            },
+            {
+              type: "divider",
+            },
+            {
+              key: "delete",
+              label: "删除",
+              danger: true,
+              disabled: !canManage,
+            },
+          ];
+
+          return (
+            <Dropdown
+              menu={{
+                items: moreMenuItems,
+                onClick: ({ key }) => {
+                  if (key === "delete") {
+                    Modal.confirm({
+                      title: "删除事件",
+                      content: `确认删除事件 ${row.event_id} 吗？`,
+                      okText: "删除",
+                      cancelText: "取消",
+                      okButtonProps: { danger: true },
+                      onOk: async () => {
+                        await deleteMutation.mutateAsync(row.id);
+                      },
+                    });
+                  }
+                },
               }}
+              trigger={["click"]}
             >
-              <Button size="small" danger loading={deleteMutation.isPending}>
-                删除
-              </Button>
-            </Popconfirm>
-          ) : null,
+              <Button size="small" icon={<MoreOutlined />} />
+            </Dropdown>
+          );
+        },
       },
     ],
     [canManage, deleteMutation],
-  );
-
-  const sampleColumns = useMemo<ColumnsType<LightningCurrentSampleItem>>(
-    () => [
-      { title: "序号", dataIndex: "seq_no", width: 90 },
-      { title: "时间(us)", dataIndex: "time_us", width: 140, render: (value: number) => formatNumber(value, 6) },
-      { title: "电流(kA)", dataIndex: "current_ka", width: 140, render: (value: number) => formatNumber(value, 6) },
-    ],
-    [],
   );
 
   if (initializing || eventsQuery.isLoading) {
@@ -501,94 +435,34 @@ export default function AdminLightningCurrentsPage() {
     );
   }
 
+  const samples = samplesQuery.data?.items ?? [];
+  const exceedance = exceedanceQuery.data?.thresholds ?? [];
+
+  const chartData = samples.map((item) => ({
+    time_us: item.time_us,
+    current_ka: item.current_ka,
+  }));
+
   return (
     <Space direction="vertical" size={16} className="w-full">
-      <Card title="线路参数准备">
-        <Space direction="vertical" size={12} className="w-full">
-          <Typography.Text type="secondary">
-            将当前雷电数据筛选结果按线路回填为&quot;雷电流幅值&quot;准备项；创建防雷分析任务前会使用这里的就绪状态做校验。
-          </Typography.Text>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <Select
-              showSearch
-              optionFilterProp="label"
-              value={activeSelectedLineId || undefined}
-              onChange={setSelectedLineId}
-              placeholder="选择线路"
-              loading={linesQuery.isLoading}
-              options={(linesQuery.data?.items ?? []).map((item: LineSummary) => ({
-                value: item.id,
-                label: `${item.name || item.code} / ${item.code}`,
-              }))}
-            />
-            <Button
-              type="primary"
-              onClick={() => prepareCurrentMutation.mutate()}
-              loading={prepareCurrentMutation.isPending}
-              disabled={!canManage || !activeSelectedLineId}
-              block
-            >
-              回填雷电流幅值
-            </Button>
-          </div>
-          {selectedLine ? (
-            <Alert
-              type={selectedLinePreparation.all_ready ? "success" : "warning"}
-              showIcon
-              message={selectedLinePreparation.all_ready ? "当前线路准备已齐备" : `缺少：${selectedLinePreparation.missing_items.join("、")}`}
-              description={
-                <Space size={[8, 8]} wrap>
-                  {[
-                    selectedLinePreparation.lightning_current,
-                    selectedLinePreparation.lightning_density,
-                    selectedLinePreparation.ground_slope,
-                  ].map((item) => {
-                    const source = item.source;
-                    const preparedAt = typeof source.prepared_at === "string" ? source.prepared_at : null;
-                    const values = item.values;
-                    const currentA = typeof values.current_a === "number" ? values.current_a : null;
-                    const currentB = typeof values.current_b === "number" ? values.current_b : null;
-                    return (
-                      <Tag key={item.key} color={item.ready ? "green" : "red"}>
-                        {`${item.label}${currentA !== null && currentB !== null ? ` (${formatNumber(currentA, 3)} / ${formatNumber(currentB, 3)})` : ""} ${item.tower_ready_count}/${item.tower_total_count}${preparedAt ? ` @ ${new Date(preparedAt).toLocaleString("zh-CN", { hour12: false })}` : ""}`}
-                      </Tag>
-                    );
-                  })}
-                </Space>
-              }
-            />
-          ) : null}
-        </Space>
-      </Card>
-
-      <Card title="雷电幅值统计导入与事件管理">
-        <Space direction="vertical" size={12} className="w-full">
-          <Typography.Text type="secondary">
-            上传原始雷电流序列后，系统将自动提取峰值、T1/T2、陡度、I²t、多回击等防雷计算参数。
-          </Typography.Text>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <Input
-              value={keyword}
-              allowClear
-              onChange={(event) => setKeyword(event.target.value)}
-              placeholder="按事件编号/地点/城市筛选"
-            />
-            <Input
-              value={regionFilter}
-              allowClear
-              onChange={(event) => setRegionFilter(event.target.value)}
-              placeholder="按 Region ID 筛选"
-            />
-            <Select value={polarityFilter} options={[...POLARITY_OPTIONS]} onChange={(value) => setPolarityFilter(value)} />
-            <Select value={syntheticFilter} options={[...SYNTHETIC_OPTIONS]} onChange={(value) => setSyntheticFilter(value)} />
-          </div>
-
-          {canManage && (
+      <Card
+        title="导入记录管理"
+        extra={
+          canManage && (
             <Button type="primary" onClick={() => setImportModalOpen(true)}>
               导入雷电流数据
             </Button>
-          )}
-        </Space>
+          )
+        }
+      >
+        <Table<LightningCurrentEventSummary>
+          rowKey={(row) => row.id}
+          columns={eventColumns}
+          dataSource={events}
+          loading={eventsQuery.isFetching}
+          pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
+          scroll={{ x: 1700 }}
+        />
       </Card>
 
       <Modal
@@ -662,7 +536,17 @@ export default function AdminLightningCurrentsPage() {
         </Form>
       </Modal>
 
-      <Card title="峰值超越概率（P 曲线）">
+      <Modal
+        title={selectedEventForModal ? `峰值超越概率（P 曲线） - ${selectedEventForModal.event_id}` : "峰值超越概率（P 曲线）"}
+        open={exceedanceModalOpen}
+        onCancel={() => {
+          setExceedanceModalOpen(false);
+          setSelectedEventForModal(null);
+        }}
+        footer={null}
+        width={800}
+        destroyOnClose
+      >
         {exceedance.length === 0 ? (
           <Empty description="暂无统计数据" />
         ) : (
@@ -681,77 +565,83 @@ export default function AdminLightningCurrentsPage() {
               { title: "超越次数", dataIndex: "exceedance_count", width: 140 },
             ]}
             size="small"
+            loading={exceedanceQuery.isFetching}
           />
         )}
-      </Card>
+      </Modal>
 
-      <Card title="雷电流事件列表">
-        <Table<LightningCurrentEventSummary>
-          rowKey={(row) => row.id}
-          columns={eventColumns}
-          dataSource={events}
-          loading={eventsQuery.isFetching}
-          pagination={false}
-          scroll={{ x: 1700 }}
-          rowClassName={(row) => (row.id === activeSelectedEventId ? "fquiz-row-selected" : "")}
-          onRow={(row) => ({
-            onClick: () => setSelectedEventId(row.id),
-          })}
-        />
-      </Card>
-
-      <Card title={selectedEvent ? `事件详情 - ${selectedEvent.event_id}` : "事件详情"}>
-        {!selectedEvent ? (
-          <Empty description="请先选择一条事件" />
-        ) : (
+      <Modal
+        title={selectedEventForModal ? `事件详情 - ${selectedEventForModal.event_id}` : "事件详情"}
+        open={detailModalOpen}
+        onCancel={() => {
+          setDetailModalOpen(false);
+          setSelectedEventForModal(null);
+        }}
+        footer={null}
+        width={900}
+        destroyOnClose
+      >
+        {selectedEventForModal && (
           <Space direction="vertical" size={12} className="w-full">
             <Descriptions bordered size="small" column={3}>
-              <Descriptions.Item label="峰值电流(kA)">{formatNumber(selectedEvent.peak_current_ka, 3)}</Descriptions.Item>
-              <Descriptions.Item label="绝对峰值(kA)">{formatNumber(selectedEvent.peak_abs_current_ka, 3)}</Descriptions.Item>
-              <Descriptions.Item label="波形分类">{formatNullable(selectedEvent.wave_shape)}</Descriptions.Item>
-              <Descriptions.Item label="T1(us)">{formatNumber(selectedEvent.wavefront_time_t1_us, 3)}</Descriptions.Item>
-              <Descriptions.Item label="T2(us)">{formatNumber(selectedEvent.half_value_time_t2_us, 3)}</Descriptions.Item>
-              <Descriptions.Item label="陡度(kA/us)">{formatNumber(selectedEvent.steepness_ka_per_us, 6)}</Descriptions.Item>
-              <Descriptions.Item label="I²t (J/Ω)">{formatNumber(selectedEvent.action_integral_j_ohm, 3)}</Descriptions.Item>
-              <Descriptions.Item label="采样间隔(us)">{formatNumber(selectedEvent.sample_interval_us, 6)}</Descriptions.Item>
-              <Descriptions.Item label="采样频率(Hz)">{formatNumber(selectedEvent.sampling_frequency_hz, 2)}</Descriptions.Item>
-              <Descriptions.Item label="极性">{formatPolarity(selectedEvent.polarity)}</Descriptions.Item>
-              <Descriptions.Item label="回击数">{selectedEvent.stroke_count}</Descriptions.Item>
-              <Descriptions.Item label="采样点数">{selectedEvent.sample_count}</Descriptions.Item>
-              <Descriptions.Item label="区域">{formatNullable(selectedEvent.region_id)}</Descriptions.Item>
-              <Descriptions.Item label="地域标签">{formatNullable(selectedEvent.location_tag)}</Descriptions.Item>
-              <Descriptions.Item label="城市">{formatNullable(selectedEvent.city)}</Descriptions.Item>
+              <Descriptions.Item label="峰值电流(kA)">{formatNumber(selectedEventForModal.peak_current_ka, 3)}</Descriptions.Item>
+              <Descriptions.Item label="绝对峰值(kA)">{formatNumber(selectedEventForModal.peak_abs_current_ka, 3)}</Descriptions.Item>
+              <Descriptions.Item label="波形分类">{formatNullable(selectedEventForModal.wave_shape)}</Descriptions.Item>
+              <Descriptions.Item label="T1(us)">{formatNumber(selectedEventForModal.wavefront_time_t1_us, 3)}</Descriptions.Item>
+              <Descriptions.Item label="T2(us)">{formatNumber(selectedEventForModal.half_value_time_t2_us, 3)}</Descriptions.Item>
+              <Descriptions.Item label="陡度(kA/us)">{formatNumber(selectedEventForModal.steepness_ka_per_us, 6)}</Descriptions.Item>
+              <Descriptions.Item label="I²t (J/Ω)">{formatNumber(selectedEventForModal.action_integral_j_ohm, 3)}</Descriptions.Item>
+              <Descriptions.Item label="采样间隔(us)">{formatNumber(selectedEventForModal.sample_interval_us, 6)}</Descriptions.Item>
+              <Descriptions.Item label="采样频率(Hz)">{formatNumber(selectedEventForModal.sampling_frequency_hz, 2)}</Descriptions.Item>
+              <Descriptions.Item label="极性">{formatPolarity(selectedEventForModal.polarity)}</Descriptions.Item>
+              <Descriptions.Item label="回击数">{selectedEventForModal.stroke_count}</Descriptions.Item>
+              <Descriptions.Item label="采样点数">{selectedEventForModal.sample_count}</Descriptions.Item>
+              <Descriptions.Item label="区域">{formatNullable(selectedEventForModal.region_id)}</Descriptions.Item>
+              <Descriptions.Item label="地域标签">{formatNullable(selectedEventForModal.location_tag)}</Descriptions.Item>
+              <Descriptions.Item label="城市">{formatNullable(selectedEventForModal.city)}</Descriptions.Item>
               <Descriptions.Item label="经纬度">
-                {selectedEvent.longitude !== null && selectedEvent.latitude !== null
-                  ? `${selectedEvent.longitude}, ${selectedEvent.latitude}`
+                {selectedEventForModal.longitude !== null && selectedEventForModal.latitude !== null
+                  ? `${selectedEventForModal.longitude}, ${selectedEventForModal.latitude}`
                   : "-"}
               </Descriptions.Item>
-              <Descriptions.Item label="传感器">{formatNullable(selectedEvent.sensor_model)}</Descriptions.Item>
-              <Descriptions.Item label="安装位置">{formatNullable(selectedEvent.install_position)}</Descriptions.Item>
+              <Descriptions.Item label="传感器">{formatNullable(selectedEventForModal.sensor_model)}</Descriptions.Item>
+              <Descriptions.Item label="安装位置">{formatNullable(selectedEventForModal.install_position)}</Descriptions.Item>
             </Descriptions>
 
             <Typography.Text type="secondary">
-              多回击峰值点：{JSON.stringify(selectedEvent.stroke_peaks_json)}
+              多回击峰值点：{JSON.stringify(selectedEventForModal.stroke_peaks_json)}
             </Typography.Text>
           </Space>
         )}
-      </Card>
+      </Modal>
 
-      <Card title={selectedEvent ? `采样预览（前 200 点） - ${selectedEvent.event_id}` : "采样预览"}>
-        {!selectedEvent ? (
-          <Empty description="请先选择一条事件" />
+      <Modal
+        title={selectedEventForModal ? `采样预览 - ${selectedEventForModal.event_id}` : "采样预览"}
+        open={sampleModalOpen}
+        onCancel={() => {
+          setSampleModalOpen(false);
+          setSelectedEventForModal(null);
+        }}
+        footer={null}
+        width={1000}
+        destroyOnClose
+      >
+        {samples.length === 0 ? (
+          <Empty description="暂无采样数据" />
         ) : (
-          <Table<LightningCurrentSampleItem>
-            rowKey={(row) => row.id}
-            columns={sampleColumns}
-            dataSource={samples}
-            loading={samplesQuery.isFetching}
-            pagination={false}
-            size="small"
-            scroll={{ y: 420 }}
-          />
+          <ResponsiveContainer width="100%" height={400}>
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="time_us" label={{ value: "时间 (μs)", position: "insideBottom", offset: -5 }} />
+              <YAxis label={{ value: "电流 (kA)", angle: -90, position: "insideLeft" }} />
+              <Tooltip />
+              <Legend />
+              <Line type="monotone" dataKey="current_ka" stroke="#8884d8" name="电流 (kA)" dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
         )}
-      </Card>
+        {samplesQuery.isFetching && <Typography.Text type="secondary">加载中...</Typography.Text>}
+      </Modal>
     </Space>
   );
 }
