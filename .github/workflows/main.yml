@@ -69,7 +69,7 @@ jobs:
       - name: 构建并推送 Web 镜像
         uses: docker/build-push-action@v7
         with:
-          context: ./web
+          context: .
           file: ./web/Dockerfile
           pull: true
           push: true
