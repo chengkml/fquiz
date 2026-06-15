@@ -511,7 +511,7 @@ def _load_legacy_menus(db: Session) -> list[dict[str, Any]]:
             m.menu_icon,
             m.seq,
             m.state
-        FROM menu m
+        FROM menus m
         """
     )
     try:

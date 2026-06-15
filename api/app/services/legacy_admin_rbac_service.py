@@ -455,7 +455,7 @@ def get_menu_by_id(db: Session, menu_id: str) -> MenuPublic | None:
         text(
             """
             SELECT menu_id, menu_name, menu_label, menu_type, parent_id, url, menu_icon, seq, state, menu_descr
-            FROM menu
+            FROM menus
             WHERE menu_id = :menu_id
             """
         ),
@@ -477,14 +477,14 @@ def create_menu(db: Session, payload: MenuCreateRequest, *, actor_user_id: str |
     menu_name = payload.name.strip()
     if not menu_name:
         return None
-    exists = db.scalar(text("SELECT menu_id FROM menu WHERE menu_name = :menu_name"), {"menu_name": menu_code})
+    exists = db.scalar(text("SELECT menu_id FROM menus WHERE menu_name = :menu_name"), {"menu_name": menu_code})
     if exists:
         return None
 
     parent_id = payload.parent_id.strip() if payload.parent_id else None
     if parent_id and parent_id == menu_code:
         return None
-    if parent_id and not db.scalar(text("SELECT menu_id FROM menu WHERE menu_id = :menu_id"), {"menu_id": parent_id}):
+    if parent_id and not db.scalar(text("SELECT menu_id FROM menus WHERE menu_id = :menu_id"), {"menu_id": parent_id}):
         return None
 
     menu_id = menu_code if len(menu_code) <= 32 else uuid4().hex
@@ -492,7 +492,7 @@ def create_menu(db: Session, payload: MenuCreateRequest, *, actor_user_id: str |
         db.execute(
             text(
                 """
-                INSERT INTO menu (
+                INSERT INTO menus (
                     menu_id, menu_name, menu_label, menu_type, parent_id, url, menu_icon, seq, state,
                     menu_descr, create_date, update_date
                 )
@@ -568,7 +568,7 @@ def update_menu(db: Session, menu_id: str, payload: MenuUpdateRequest, *, actor_
             normalized_parent = parent_id.strip()
             if normalized_parent == menu.id:
                 return None
-            parent_exists = db.scalar(text("SELECT menu_id FROM menu WHERE menu_id = :menu_id"), {"menu_id": normalized_parent})
+            parent_exists = db.scalar(text("SELECT menu_id FROM menus WHERE menu_id = :menu_id"), {"menu_id": normalized_parent})
             if not parent_exists:
                 return None
             next_parent_id = normalized_parent
@@ -597,7 +597,7 @@ def update_menu(db: Session, menu_id: str, payload: MenuUpdateRequest, *, actor_
         db.execute(
             text(
                 """
-                UPDATE menu
+                UPDATE menus
                 SET
                     menu_label = :menu_label,
                     url = :url,
@@ -676,7 +676,7 @@ def delete_menu(db: Session, menu_id: str, *, actor_user_id: str | None) -> bool
         if menu.code in PROTECTED_MENU_CODES:
             return False
 
-        child_exists = db.scalar(text("SELECT menu_id FROM menu WHERE parent_id = :parent_id LIMIT 1"), {"parent_id": menu.id})
+        child_exists = db.scalar(text("SELECT menu_id FROM menus WHERE parent_id = :parent_id LIMIT 1"), {"parent_id": menu.id})
         if child_exists:
             return False
 
@@ -694,7 +694,7 @@ def delete_menu(db: Session, menu_id: str, *, actor_user_id: str | None) -> bool
                 ),
             )
             db.execute(text("DELETE FROM role_menu_rela WHERE menu_id = :menu_id"), {"menu_id": menu.id})
-            db.execute(text("DELETE FROM menu WHERE menu_id = :menu_id"), {"menu_id": menu.id})
+            db.execute(text("DELETE FROM menus WHERE menu_id = :menu_id"), {"menu_id": menu.id})
             db.commit()
         except SQLAlchemyError:
             db.rollback()
@@ -902,7 +902,7 @@ def _load_menus_map(db: Session, menu_ids: list[str], *, role_source: str = "leg
         stmt = text(
             """
             SELECT menu_id, menu_name, menu_type, state
-            FROM menu
+            FROM menus
             WHERE menu_id IN :menu_ids
             """
         )
@@ -1022,7 +1022,7 @@ def _menu_ids_exist(db: Session, menu_ids: list[str], *, role_source: str = "leg
         return True
     if role_source == "legacy":
         rows = db.execute(
-            text("SELECT menu_id, menu_name FROM menu WHERE menu_id IN :menu_ids").bindparams(bindparam("menu_ids", expanding=True)),
+            text("SELECT menu_id, menu_name FROM menus WHERE menu_id IN :menu_ids").bindparams(bindparam("menu_ids", expanding=True)),
             {"menu_ids": menu_ids},
         ).mappings().all()
     else:
@@ -1148,7 +1148,7 @@ def _load_menus_rows(db: Session) -> list[dict[str, object]]:
             text(
                 """
                 SELECT menu_id, menu_name, menu_label, menu_type, parent_id, url, menu_icon, seq, state, menu_descr
-                FROM menu
+                FROM menus
                 ORDER BY seq ASC NULLS LAST, menu_id ASC
                 """
             )
