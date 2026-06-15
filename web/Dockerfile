@@ -18,9 +18,10 @@ ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
 ENV NEXT_PUBLIC_APP_BASE_PATH=${NEXT_PUBLIC_APP_BASE_PATH}
 
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/web/node_modules ./web/node_modules
+COPY package.json package-lock.json ./
 COPY web ./web
-WORKDIR /app/web
-RUN npm run build
+RUN npm run build:web
 
 FROM ${NODE_BASE_IMAGE} AS runner
 WORKDIR /app
