@@ -502,15 +502,15 @@ def _load_legacy_menus(db: Session) -> list[dict[str, Any]]:
     stmt = text(
         """
         SELECT
-            m.menu_id,
-            m.menu_name,
-            m.menu_label,
-            m.menu_type,
+            m.id::text AS menu_id,
+            m.code AS menu_name,
+            m.name AS menu_label,
+            m.type AS menu_type,
             m.parent_id,
-            m.url,
-            m.menu_icon,
-            m.seq,
-            m.state
+            m.path AS url,
+            m.icon AS menu_icon,
+            m.sort_order AS seq,
+            m.status AS state
         FROM menus m
         """
     )
