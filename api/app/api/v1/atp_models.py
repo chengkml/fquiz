@@ -52,10 +52,12 @@ def get_atp_engine_status_endpoint(
 def get_atp_model_list(
     keyword: str | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     _: CurrentUser = Depends(require_any_permission("atp.read", "atp.run", "atp.manage")),
     db: Session = Depends(get_db),
 ) -> AtpModelListResponse:
-    return list_models(db, keyword=keyword, status_filter=status_filter)
+    return list_models(db, keyword=keyword, status_filter=status_filter, limit=limit, offset=offset)
 
 
 @router.post("", response_model=AtpModelSummary)

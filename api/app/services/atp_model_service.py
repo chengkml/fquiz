@@ -318,6 +318,8 @@ def list_models(
     *,
     keyword: str | None,
     status_filter: str | None,
+    limit: int = 100,
+    offset: int = 0,
 ) -> AtpModelListResponse:
     stmt = select(AtpModel)
     total_stmt = select(func.count()).select_from(AtpModel)
@@ -337,7 +339,11 @@ def list_models(
         total_stmt = total_stmt.where(AtpModel.status == normalized_status)
 
     total = int(db.scalar(total_stmt) or 0)
-    items = db.execute(stmt.order_by(AtpModel.update_date.desc(), AtpModel.code.asc())).scalars().all()
+    items = db.execute(
+        stmt.order_by(AtpModel.update_date.desc(), AtpModel.code.asc())
+        .offset(offset)
+        .limit(limit)
+    ).scalars().all()
     model_ids = [item.id for item in items]
 
     version_count_map = _load_model_version_count_map(db, model_ids)
