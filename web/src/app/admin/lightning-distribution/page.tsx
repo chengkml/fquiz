@@ -26,11 +26,7 @@ import { Card } from "@/components/ui-antd";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
-import { readLinePreparation } from "@/lib/line-preparation";
 import type {
-  LineListResponse,
-  LineSummary,
-  LightningDensityPreparationResponse,
   LightningDistributionImportResponse,
   LightningDistributionReportResponse,
   LightningDistributionStatsResponse,
@@ -141,9 +137,6 @@ export default function AdminLightningDistributionPage() {
   const [distributionFilters, setDistributionFilters] = useState<DistributionFilterValues>(INITIAL_DISTRIBUTION_FILTERS);
   const [towerBufferValues, setTowerBufferValues] = useState<TowerBufferFormValues>(INITIAL_TOWER_BUFFER_VALUES);
   const [reportPeriod, setReportPeriod] = useState<"week" | "month">("week");
-  const [selectedLineId, setSelectedLineId] = useState("");
-  const [prepareDensityRadiusKm, setPrepareDensityRadiusKm] = useState(3);
-  const [prepareDensityYears, setPrepareDensityYears] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -209,19 +202,6 @@ export default function AdminLightningDistributionPage() {
     if (syntheticFilter !== "all") params.set("is_synthetic", syntheticFilter);
     return `/api/v1/lightning-currents/reports/distribution?${params.toString()}`;
   }, [distributionFilters, keyword, regionFilter, reportPeriod, syntheticFilter]);
-
-  const linesQuery = useQuery({
-    queryKey: ["/api/v1/lines"],
-    enabled: !!user && canRead,
-    queryFn: async () => {
-      const response = await fetchWithAuth("/api/v1/lines");
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-      return (await response.json()) as LineListResponse;
-    },
-  });
-  const activeSelectedLineId = selectedLineId || linesQuery.data?.items[0]?.id || "";
 
   const distributionStatsQuery = useQuery({
     queryKey: [distributionStatsPath],
@@ -293,10 +273,7 @@ export default function AdminLightningDistributionPage() {
       predicate: (query) =>
         Array.isArray(query.queryKey)
         && typeof query.queryKey[0] === "string"
-        && (
-          query.queryKey[0].startsWith("/api/v1/lightning-currents")
-          || query.queryKey[0].startsWith("/api/v1/lines")
-        ),
+        && query.queryKey[0].startsWith("/api/v1/lightning-currents"),
     });
   }, [queryClient]);
 
@@ -315,11 +292,6 @@ export default function AdminLightningDistributionPage() {
   const towerTerrainMetrics = towerBufferStats?.terrain_metrics ?? null;
   const syntheticCompare = syntheticCompareQuery.data;
   const distributionReport = reportQuery.data;
-  const selectedLine = useMemo(
-    () => linesQuery.data?.items.find((item) => item.id === activeSelectedLineId) ?? null,
-    [activeSelectedLineId, linesQuery.data?.items],
-  );
-  const selectedLinePreparation = useMemo(() => readLinePreparation(selectedLine), [selectedLine]);
 
   const distributionImportMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -352,40 +324,6 @@ export default function AdminLightningDistributionPage() {
     onError: (candidate) => {
       setSuccess("");
       setError(candidate instanceof Error ? candidate.message : "分布导入失败");
-    },
-  });
-
-  const prepareDensityMutation = useMutation({
-    mutationFn: async () => {
-      if (!activeSelectedLineId) {
-        throw new Error("请选择线路");
-      }
-      const response = await fetchWithAuth("/api/v1/lightning-currents/prepare-density", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          line_id: activeSelectedLineId,
-          region_id: regionFilter.trim() || null,
-          is_synthetic: syntheticFilter === "all" ? null : syntheticFilter === "true",
-          radius_km: prepareDensityRadiusKm,
-          years: prepareDensityYears,
-        }),
-      });
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-      return (await response.json()) as LightningDensityPreparationResponse;
-    },
-    onSuccess: async (payload) => {
-      setError("");
-      setSuccess(
-        `已为 ${payload.line.name || payload.line.code} 回填地闪密度，平均值 ${formatNumber(payload.avg_density, 6)} Ng/km²·年`,
-      );
-      await refreshAll();
-    },
-    onError: (candidate) => {
-      setSuccess("");
-      setError(candidate instanceof Error ? candidate.message : "线路地闪密度回填失败");
     },
   });
 
@@ -482,84 +420,6 @@ export default function AdminLightningDistributionPage() {
 
   return (
     <Space direction="vertical" size={16} className="w-full">
-      <Card title="线路参数准备">
-        <Space direction="vertical" size={12} className="w-full">
-          <Typography.Text type="secondary">
-            将当前雷电数据筛选结果按线路回填为"地闪密度"准备项；创建防雷分析任务前会使用这里的就绪状态做校验。
-          </Typography.Text>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <Select
-              showSearch
-              optionFilterProp="label"
-              value={activeSelectedLineId || undefined}
-              onChange={setSelectedLineId}
-              placeholder="选择线路"
-              loading={linesQuery.isLoading}
-              options={(linesQuery.data?.items ?? []).map((item: LineSummary) => ({
-                value: item.id,
-                label: `${item.name || item.code} / ${item.code}`,
-              }))}
-            />
-            <InputNumber
-              min={0.05}
-              max={50}
-              step={0.5}
-              value={prepareDensityRadiusKm}
-              onChange={(value) => setPrepareDensityRadiusKm(typeof value === "number" ? value : 3)}
-              addonAfter="km"
-              placeholder="密度半径"
-              className="w-full"
-            />
-            <InputNumber
-              min={0.1}
-              max={100}
-              step={0.5}
-              value={prepareDensityYears}
-              onChange={(value) => setPrepareDensityYears(typeof value === "number" ? value : null)}
-              addonAfter="年"
-              placeholder="数据年限(可选)"
-              className="w-full"
-            />
-            <Button
-              type="primary"
-              onClick={() => prepareDensityMutation.mutate()}
-              loading={prepareDensityMutation.isPending}
-              disabled={!canManage || !activeSelectedLineId}
-              block
-            >
-              回填地闪密度
-            </Button>
-          </div>
-          {selectedLine ? (
-            <Alert
-              type={selectedLinePreparation.all_ready ? "success" : "warning"}
-              showIcon
-              message={selectedLinePreparation.all_ready ? "当前线路准备已齐备" : `缺少：${selectedLinePreparation.missing_items.join("、")}`}
-              description={
-                <Space size={[8, 8]} wrap>
-                  {[
-                    selectedLinePreparation.lightning_current,
-                    selectedLinePreparation.lightning_density,
-                    selectedLinePreparation.ground_slope,
-                  ].map((item) => {
-                    const source = item.source;
-                    const preparedAt = typeof source.prepared_at === "string" ? source.prepared_at : null;
-                    const values = item.values;
-                    const currentA = typeof values.current_a === "number" ? values.current_a : null;
-                    const currentB = typeof values.current_b === "number" ? values.current_b : null;
-                    return (
-                      <Tag key={item.key} color={item.ready ? "green" : "red"}>
-                        {`${item.label}${currentA !== null && currentB !== null ? ` (${formatNumber(currentA, 3)} / ${formatNumber(currentB, 3)})` : ""} ${item.tower_ready_count}/${item.tower_total_count}${preparedAt ? ` @ ${new Date(preparedAt).toLocaleString("zh-CN", { hour12: false })}` : ""}`}
-                      </Tag>
-                    );
-                  })}
-                </Space>
-              }
-            />
-          ) : null}
-        </Space>
-      </Card>
-
       <Card title="雷电分布统计（空间维度）">
         <Space direction="vertical" size={12} className="w-full">
           <Typography.Text type="secondary">

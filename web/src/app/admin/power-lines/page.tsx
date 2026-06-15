@@ -17,6 +17,7 @@ import {
   Select,
   Space,
   Table,
+  Tag,
   Typography,
   type MenuProps,
 } from "antd";
@@ -33,6 +34,7 @@ import { Card } from "@/components/ui-antd";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
+import { readLinePreparation } from "@/lib/line-preparation";
 import type {
   ElevationDatasetListResponse,
   ElevationDatasetSummary,
@@ -43,6 +45,8 @@ import type {
   LineTowerSummary,
   TowerModelSummary,
   TowerProfileDetail,
+  LightningCurrentPreparationResponse,
+  LightningDensityPreparationResponse,
 } from "@/types/auth";
 
 type LineFormValues = {
@@ -239,6 +243,13 @@ function parseJsonObjectText(value: string, label: string): Record<string, unkno
     throw new Error(`${label} 需要是 JSON 对象`);
   }
   return parsed as Record<string, unknown>;
+}
+
+function formatNumber(value: number | null | undefined, digits = 3): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "-";
+  }
+  return value.toFixed(digits);
 }
 
 type TowerTopologyKind = "single" | "double" | "quad" | "dc";
@@ -560,6 +571,7 @@ export default function AdminPowerLinesPage() {
   const [lineModalOpen, setLineModalOpen] = useState(false);
   const [towerModalOpen, setTowerModalOpen] = useState(false);
   const [towerProfileModalOpen, setTowerProfileModalOpen] = useState(false);
+  const [lineParamModalOpen, setLineParamModalOpen] = useState(false);
   const [towerProfileGeometryEditorMode, setTowerProfileGeometryEditorMode] = useState<TowerProfileGeometryEditorMode>("structured");
   const [editingLine, setEditingLine] = useState<LineSummary | null>(null);
   const [editingTower, setEditingTower] = useState<LineTowerSummary | null>(null);
@@ -567,7 +579,10 @@ export default function AdminPowerLinesPage() {
   const [towerViewMode, setTowerViewMode] = useState<"table" | "map">("map");
   const [selectedTerrainDatasetId, setSelectedTerrainDatasetId] = useState<string | null | undefined>(undefined);
   const [terrainExaggeration, setTerrainExaggeration] = useState<number>(1.5);
+  const [prepareDensityRadiusKm, setPrepareDensityRadiusKm] = useState(3);
+  const [prepareDensityYears, setPrepareDensityYears] = useState<number | null>(null);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [panelBodyHeight, setPanelBodyHeight] = useState(POWER_LINES_PANEL_MIN_HEIGHT);
 
   const canLineRead = hasPermission("line.read") || hasPermission("line.manage");
@@ -696,7 +711,9 @@ export default function AdminPowerLinesPage() {
 
   useToastFeedback({
     errorMessage: error || lineError || towerError || elevationDatasetError,
+    successMessage: success,
     clearError: () => setError(""),
+    clearSuccess: () => setSuccess(""),
   });
 
   const towerProfileGeometryParseResult = useMemo(() => {
@@ -876,6 +893,7 @@ export default function AdminPowerLinesPage() {
     () => lines.find((item) => item.id === effectiveSelectedLineId) ?? null,
     [lines, effectiveSelectedLineId],
   );
+  const selectedLinePreparation = useMemo(() => readLinePreparation(selectedLine), [selectedLine]);
   useEffect(() => {
     if (selectedLineId !== effectiveSelectedLineId) {
       const frameId = window.requestAnimationFrame(() => {
@@ -1184,6 +1202,64 @@ export default function AdminPowerLinesPage() {
     },
   });
 
+  const prepareCurrentMutation = useMutation({
+    mutationFn: async () => {
+      if (!effectiveSelectedLineId) {
+        throw new Error("请先选择线路");
+      }
+      const response = await fetchWithAuth("/api/v1/lightning-currents/prepare-current", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          line_id: effectiveSelectedLineId,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as LightningCurrentPreparationResponse;
+    },
+    onSuccess: async (payload) => {
+      setError("");
+      setSuccess(`已为 ${payload.line.name || payload.line.code} 回填雷电流幅值`);
+      await refreshLines();
+    },
+    onError: (candidate) => {
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "雷电流幅值回填失败");
+    },
+  });
+
+  const prepareDensityMutation = useMutation({
+    mutationFn: async () => {
+      if (!effectiveSelectedLineId) {
+        throw new Error("请先选择线路");
+      }
+      const response = await fetchWithAuth("/api/v1/lightning-currents/prepare-density", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          line_id: effectiveSelectedLineId,
+          radius_km: prepareDensityRadiusKm,
+          years: prepareDensityYears,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as LightningDensityPreparationResponse;
+    },
+    onSuccess: async (payload) => {
+      setError("");
+      setSuccess(`已为 ${payload.line.name || payload.line.code} 回填地闪密度`);
+      await refreshLines();
+    },
+    onError: (candidate) => {
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "地闪密度回填失败");
+    },
+  });
+
   const openCreateLineModal = () => {
     setEditingLine(null);
     lineForm.setFieldsValue(EMPTY_LINE_FORM);
@@ -1239,6 +1315,10 @@ export default function AdminPowerLinesPage() {
     towerProfileForm.setFieldsValue(EMPTY_TOWER_PROFILE_FORM);
     setTowerProfileGeometryEditorMode("structured");
     setTowerProfileModalOpen(true);
+  };
+
+  const openLineParamModal = () => {
+    setLineParamModalOpen(true);
   };
 
   const lineCards = lines.map((line) => {
@@ -1569,6 +1649,11 @@ export default function AdminPowerLinesPage() {
             title={selectedLine ? `${selectedLine.name} - 杆塔管理` : "杆塔管理"}
             extra={(
               <Space size={8} wrap>
+                {selectedLine && (
+                  <Button onClick={openLineParamModal}>
+                    线路参数准备
+                  </Button>
+                )}
                 <Segmented
                   value={towerViewMode}
                   options={[
@@ -2106,6 +2191,135 @@ export default function AdminPowerLinesPage() {
             </Form.Item>
           </div>
         </Form>
+      </Modal>
+
+      <Modal
+        title={selectedLine ? `线路参数准备 - ${selectedLine.name}` : "线路参数准备"}
+        open={lineParamModalOpen}
+        onCancel={() => {
+          setLineParamModalOpen(false);
+          setPrepareDensityRadiusKm(3);
+          setPrepareDensityYears(null);
+        }}
+        footer={null}
+        width={800}
+        destroyOnClose
+      >
+        {selectedLine ? (
+          <Space direction="vertical" size={16} className="w-full">
+            <Alert
+              type={selectedLinePreparation.all_ready ? "success" : "warning"}
+              showIcon
+              message={selectedLinePreparation.all_ready ? "当前线路参数已齐备" : `缺少：${selectedLinePreparation.missing_items.join("、")}`}
+            />
+            <Space direction="vertical" size={12} className="w-full">
+              <Typography.Text strong>准备项列表</Typography.Text>
+              <Space direction="vertical" size={8} className="w-full">
+                <div className="flex items-center justify-between rounded border border-slate-200 p-3">
+                  <Space>
+                    <Tag color={selectedLinePreparation.lightning_current.ready ? "green" : "red"}>
+                      {selectedLinePreparation.lightning_current.ready ? "已就绪" : "未就绪"}
+                    </Tag>
+                    <Typography.Text>雷电流幅值</Typography.Text>
+                    {selectedLinePreparation.lightning_current.ready && (
+                      <Typography.Text type="secondary">
+                        (a={selectedLinePreparation.lightning_current.values.current_a ?? "-"}, b={selectedLinePreparation.lightning_current.values.current_b ?? "-"})
+                      </Typography.Text>
+                    )}
+                    <Typography.Text type="secondary">
+                      {selectedLinePreparation.lightning_current.tower_ready_count}/{selectedLinePreparation.lightning_current.tower_total_count}
+                    </Typography.Text>
+                  </Space>
+                  <Button
+                    type="primary"
+                    size="small"
+                    onClick={() => prepareCurrentMutation.mutate()}
+                    loading={prepareCurrentMutation.isPending}
+                    disabled={!canTowerManage}
+                  >
+                    回填雷电流幅值
+                  </Button>
+                </div>
+
+                <div className="flex items-center justify-between rounded border border-slate-200 p-3">
+                  <Space>
+                    <Tag color={selectedLinePreparation.lightning_density.ready ? "green" : "red"}>
+                      {selectedLinePreparation.lightning_density.ready ? "已就绪" : "未就绪"}
+                    </Tag>
+                    <Typography.Text>地闪密度</Typography.Text>
+                    {selectedLinePreparation.lightning_density.ready && (
+                      <Typography.Text type="secondary">
+                        (Ng={selectedLinePreparation.lightning_density.values.ng ?? "-"})
+                      </Typography.Text>
+                    )}
+                    <Typography.Text type="secondary">
+                      {selectedLinePreparation.lightning_density.tower_ready_count}/{selectedLinePreparation.lightning_density.tower_total_count}
+                    </Typography.Text>
+                  </Space>
+                  <Button
+                    type="primary"
+                    size="small"
+                    onClick={() => {
+                      Modal.confirm({
+                        title: "回填地闪密度",
+                        content: (
+                          <Space direction="vertical" size={12} className="w-full pt-4">
+                            <div>
+                              <Typography.Text>半径(km):</Typography.Text>
+                              <InputNumber
+                                min={0.05}
+                                max={50}
+                                step={0.5}
+                                value={prepareDensityRadiusKm}
+                                onChange={(value) => setPrepareDensityRadiusKm(typeof value === "number" ? value : 3)}
+                                className="ml-2 w-32"
+                              />
+                            </div>
+                            <div>
+                              <Typography.Text>年限(可选):</Typography.Text>
+                              <InputNumber
+                                min={0.1}
+                                max={100}
+                                step={0.5}
+                                value={prepareDensityYears}
+                                onChange={(value) => setPrepareDensityYears(typeof value === "number" ? value : null)}
+                                className="ml-2 w-32"
+                              />
+                            </div>
+                          </Space>
+                        ),
+                        okText: "确定回填",
+                        cancelText: "取消",
+                        onOk: () => {
+                          prepareDensityMutation.mutate();
+                        },
+                      });
+                    }}
+                    loading={prepareDensityMutation.isPending}
+                    disabled={!canTowerManage}
+                  >
+                    回填地闪密度
+                  </Button>
+                </div>
+
+                <div className="flex items-center justify-between rounded border border-slate-200 p-3">
+                  <Space>
+                    <Tag color={selectedLinePreparation.ground_slope.ready ? "green" : "red"}>
+                      {selectedLinePreparation.ground_slope.ready ? "已就绪" : "未就绪"}
+                    </Tag>
+                    <Typography.Text>地面倾角</Typography.Text>
+                    <Typography.Text type="secondary">
+                      {selectedLinePreparation.ground_slope.tower_ready_count}/{selectedLinePreparation.ground_slope.tower_total_count}
+                    </Typography.Text>
+                    <Typography.Text type="secondary">(数据来源：地形分析)</Typography.Text>
+                  </Space>
+                </div>
+              </Space>
+            </Space>
+          </Space>
+        ) : (
+          <Empty description="请先选择线路" />
+        )}
       </Modal>
     </>
   );
