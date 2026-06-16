@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from ..models.system_message import SystemMessage
@@ -84,6 +84,14 @@ def mark_messages_as_read(
     result = db.execute(stmt)
     db.commit()
     return result.rowcount or 0
+
+
+def delete_system_message(db: Session, message_id: str) -> bool:
+    """删除系统消息"""
+    stmt = delete(SystemMessage).where(SystemMessage.id == message_id)
+    result = db.execute(stmt)
+    db.commit()
+    return (result.rowcount or 0) > 0
 
 
 def get_unread_count(db: Session, user_id: str) -> int:

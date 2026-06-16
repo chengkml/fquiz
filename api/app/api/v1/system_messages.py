@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from ...core.database import get_db
 from ...core.dependencies import CurrentUser, get_current_user, require_permission
+from ...schemas.auth import MessageResponse
 from ...schemas.system_message import (
     SystemMessageCreateRequest,
     SystemMessageListResponse,
@@ -11,6 +12,7 @@ from ...schemas.system_message import (
 )
 from ...services.system_message_service import (
     create_system_message,
+    delete_system_message,
     get_unread_count,
     list_user_messages,
     mark_messages_as_read,
@@ -72,3 +74,16 @@ def mark_my_messages_read(
     """标记消息为已读"""
     affected = mark_messages_as_read(db, current_user.user.id, payload.message_ids)
     return {"affected": affected}
+
+
+@router.delete("/{message_id}", response_model=MessageResponse)
+def remove_system_message(
+    message_id: str,
+    _: CurrentUser = Depends(require_permission("admin.system_message")),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    """删除系统消息（需要admin.system_message权限）"""
+    deleted = delete_system_message(db, message_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="System message not found")
+    return MessageResponse(message="System message deleted")

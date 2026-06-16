@@ -8,6 +8,7 @@ import {
   Empty,
   Form,
   Input,
+  Popconfirm,
   Select,
   Space,
   Spin,
@@ -72,6 +73,7 @@ export default function AdminSystemMessagesPage() {
   const [formApi] = Form.useForm<CreateMessageValues>();
   const [messageTypeFilter, setMessageTypeFilter] = useState<SystemMessageType | "all">("all");
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -160,6 +162,39 @@ export default function AdminSystemMessagesPage() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (messageId: string) => {
+      if (!canManage) {
+        throw new Error("缺少 admin.system_message 权限");
+      }
+
+      const response = await fetchWithAuth(`/api/v1/system-messages/${messageId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return response.json() as Promise<{ message: string }>;
+    },
+    onMutate: (messageId) => {
+      setDeletingMessageId(messageId);
+      setSuccess("");
+      setError("");
+    },
+    onSuccess: async () => {
+      setError("");
+      setSuccess("系统消息已删除");
+      await refreshMessages();
+    },
+    onError: (candidate) => {
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "删除失败");
+    },
+    onSettled: () => {
+      setDeletingMessageId(null);
+    },
+  });
+
   useToastFeedback({
     errorMessage: error,
     successMessage: success,
@@ -233,20 +268,40 @@ export default function AdminSystemMessagesPage() {
         key: "actions",
         width: 120,
         fixed: "right",
-        render: (_, item) => (
-          <Button
-            disabled={item.is_read}
-            loading={markReadMutation.isPending && markReadMutation.variables?.includes(item.id)}
-            size="small"
-            type="link"
-            onClick={() => markReadMutation.mutate([item.id])}
-          >
-            标记已读
-          </Button>
-        ),
+        render: (_, item) => {
+          const isDeleting = deletingMessageId === item.id;
+
+          return (
+            <Space size="small">
+              <Button
+                disabled={item.is_read || isDeleting}
+                loading={markReadMutation.isPending && markReadMutation.variables?.includes(item.id)}
+                size="small"
+                type="link"
+                onClick={() => markReadMutation.mutate([item.id])}
+              >
+                标记已读
+              </Button>
+              {canManage && (
+                <Popconfirm
+                  title="删除系统消息"
+                  description={`确认删除系统消息「${item.title}」吗？`}
+                  okText="删除"
+                  cancelText="取消"
+                  okButtonProps={{ danger: true, loading: isDeleting }}
+                  onConfirm={() => deleteMutation.mutate(item.id)}
+                >
+                  <Button danger loading={isDeleting} size="small" type="link">
+                    删除
+                  </Button>
+                </Popconfirm>
+              )}
+            </Space>
+          );
+        },
       },
     ],
-    [markReadMutation],
+    [canManage, deleteMutation, deletingMessageId, markReadMutation],
   );
 
   if (initializing) {
