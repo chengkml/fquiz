@@ -28,7 +28,7 @@ class User(Base):
         primary_key=True,
         default=lambda: uuid4().hex,
     )
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    email: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, nullable=True)
     username: Mapped[str] = mapped_column(
         settings.user_username_column,
         String(64),

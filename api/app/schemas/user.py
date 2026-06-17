@@ -36,7 +36,7 @@ class UserPasswordResetRequest(BaseModel):
 
 class UserCreateRequest(BaseModel):
     user_id: str = Field(min_length=3, max_length=64)
-    email: str
+    email: str | None = None
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=8, max_length=128)
 

@@ -39,7 +39,7 @@ type UserRolePayload = {
 
 type CreateUserValues = {
   user_id: string;
-  email: string;
+  email?: string;
   username: string;
   password: string;
 };
@@ -323,20 +323,23 @@ export default function AdminUsersPage() {
 
     const payload: CreateUserValues = {
       user_id: values.user_id.trim(),
-      email: values.email.trim(),
       username: values.username.trim(),
       password: values.password,
     };
 
+    if (values.email && values.email.trim()) {
+      payload.email = values.email.trim();
+    }
+
     const candidateUserId = payload.user_id.toLowerCase();
-    const candidateEmail = payload.email.toLowerCase();
+    const candidateEmail = payload.email?.toLowerCase();
     const candidateUsername = payload.username.toLowerCase();
 
     if (existingUserIds.has(candidateUserId)) {
       setError("用户 ID 已存在，请更换后重试");
       return;
     }
-    if (existingEmails.has(candidateEmail)) {
+    if (candidateEmail && existingEmails.has(candidateEmail)) {
       setError("邮箱已存在，请更换后重试");
       return;
     }
@@ -797,17 +800,6 @@ export default function AdminUsersPage() {
           </Form.Item>
 
           <Form.Item
-            label="邮箱"
-            name="email"
-            rules={[
-              { required: true, message: "请输入邮箱" },
-              { type: "email", message: "邮箱格式不正确" },
-            ]}
-          >
-            <Input placeholder="请输入邮箱" />
-          </Form.Item>
-
-          <Form.Item
             label="用户名"
             name="username"
             rules={[
@@ -829,6 +821,16 @@ export default function AdminUsersPage() {
             ]}
           >
             <Input.Password placeholder="至少 8 位" />
+          </Form.Item>
+
+          <Form.Item
+            label="邮箱"
+            name="email"
+            rules={[
+              { type: "email", message: "邮箱格式不正确" },
+            ]}
+          >
+            <Input placeholder="请输入邮箱（可选）" />
           </Form.Item>
         </Form>
       </Modal>

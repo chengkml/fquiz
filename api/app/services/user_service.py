@@ -95,17 +95,20 @@ def create_user(
 ) -> UserPublic | None:
     user_id = payload.user_id.strip()
 
+    # Build conditions for duplicate check
+    conditions = [User.id == user_id, User.username == payload.username]
+    if payload.email:
+        conditions.append(User.email == payload.email.lower())
+
     duplicate = db.scalar(
-        select(User.id).where(
-            (User.id == user_id) | (User.email == payload.email.lower()) | (User.username == payload.username)
-        )
+        select(User.id).where(or_(*conditions))
     )
     if duplicate:
         return None
 
     user = User(
         id=user_id,
-        email=payload.email.lower(),
+        email=payload.email.lower() if payload.email else None,
         username=payload.username,
         password_hash=hash_password(payload.password),
         status="ENABLED",
