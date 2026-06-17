@@ -413,7 +413,7 @@ export default function AdminRolesPage() {
   return (
     <div className="flex flex-1 flex-col space-y-6">
       <AntCard
-        title="角色列表"
+        title="角色管理"
         style={{ height: '100%' }}
         extra={
           canManage ? (
