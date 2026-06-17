@@ -482,7 +482,7 @@ export default function AdminRolesPage() {
             preserve={false}
           >
             <Row gutter={12}>
-              <Col xs={24} md={12}>
+              <Col xs={24}>
                 <Form.Item
                   label="角色编码"
                   name="code"
@@ -494,7 +494,7 @@ export default function AdminRolesPage() {
                   <Input disabled={editingRoleId !== null} placeholder="admin.operator" />
                 </Form.Item>
               </Col>
-              <Col xs={24} md={12}>
+              <Col xs={24}>
                 <Form.Item
                   label="角色名称"
                   name="name"
