@@ -449,6 +449,7 @@ export default function AdminRolesPage() {
             scroll={{ x: 1400, y: tableScrollY }}
             pagination={{
               pageSize: 20,
+              total: Math.max(roles.length, 1),
               showSizeChanger: true,
               pageSizeOptions: [10, 20, 50, 100],
               showTotal: (total) => `共 ${total} 条`,
