@@ -146,13 +146,6 @@ export default function LoginPage() {
           </form>
 
           {error && <Alert showIcon type="error" message={error} />}
-
-          <div className="text-center">
-            <Typography.Text type="secondary">
-              没有账号？{" "}
-              <Typography.Link href="/register">立即注册</Typography.Link>
-            </Typography.Text>
-          </div>
         </Space>
       </Card>
     </main>
