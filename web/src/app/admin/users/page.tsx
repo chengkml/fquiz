@@ -45,8 +45,9 @@ type CreateUserValues = {
 };
 
 type EditUserValues = {
-  email: string;
+  user_id: string;
   username: string;
+  email: string;
   status: "active" | "disabled";
 };
 
@@ -258,8 +259,9 @@ export default function AdminUsersPage() {
     mutationFn: async ({ userId, payload }: {
       userId: string;
       payload: {
-        email?: string;
+        new_user_id?: string;
         username?: string;
+        email?: string;
         status?: "active" | "disabled";
       };
     }) => {
@@ -389,8 +391,9 @@ export default function AdminUsersPage() {
     setSuccess("");
     setEditingUser(target);
     editUserForm.setFieldsValue({
-      email: target.email,
+      user_id: target.id,
       username: target.username,
+      email: target.email,
       status: target.status === "disabled" ? "disabled" : "active",
     });
   };
@@ -403,16 +406,26 @@ export default function AdminUsersPage() {
 
   const handleSubmitEditUser = (values: EditUserValues) => {
     if (!editingUser) return;
-    const nextEmail = values.email.trim().toLowerCase();
+    const nextUserId = values.user_id.trim();
     const nextUsername = values.username.trim();
+    const nextEmail = values.email ? values.email.trim().toLowerCase() : "";
     const nextStatus = values.status;
 
-    const payload: { email?: string; username?: string; status?: "active" | "disabled" } = {};
-    if (nextEmail !== editingUser.email.toLowerCase()) {
-      payload.email = nextEmail;
+    const payload: { new_user_id?: string; username?: string; email?: string; status?: "active" | "disabled" } = {};
+
+    if (nextUserId !== editingUser.id) {
+      const lowerUserId = nextUserId.toLowerCase();
+      if (existingUserIds.has(lowerUserId) && lowerUserId !== editingUser.id.toLowerCase()) {
+        setError("用户 ID 已存在，请更换后重试");
+        return;
+      }
+      payload.new_user_id = nextUserId;
     }
     if (nextUsername !== editingUser.username) {
       payload.username = nextUsername;
+    }
+    if (nextEmail && nextEmail !== editingUser.email.toLowerCase()) {
+      payload.email = nextEmail;
     }
     if (nextStatus !== editingUser.status) {
       payload.status = nextStatus;
@@ -842,14 +855,15 @@ export default function AdminUsersPage() {
           autoComplete="off"
         >
           <Form.Item
-            label="邮箱"
-            name="email"
+            label="用户 ID"
+            name="user_id"
             rules={[
-              { required: true, message: "请输入邮箱" },
-              { type: "email", message: "邮箱格式不正确" },
+              { required: true, message: "请输入用户 ID" },
+              { min: 3, message: "用户 ID 至少 3 位" },
+              { max: 64, message: "用户 ID 不能超过 64 位" },
             ]}
           >
-            <Input placeholder="请输入邮箱" />
+            <Input placeholder="请输入用户 ID" />
           </Form.Item>
           <Form.Item
             label="用户名"
@@ -861,6 +875,15 @@ export default function AdminUsersPage() {
             ]}
           >
             <Input placeholder="请输入用户名" />
+          </Form.Item>
+          <Form.Item
+            label="邮箱"
+            name="email"
+            rules={[
+              { type: "email", message: "邮箱格式不正确" },
+            ]}
+          >
+            <Input placeholder="请输入邮箱" />
           </Form.Item>
           <Form.Item
             label="状态"
