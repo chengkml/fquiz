@@ -8,14 +8,39 @@ import { Alert, Button, Checkbox, Input, Space, Typography } from "antd";
 import { useAuth } from "@/components/auth-provider";
 import { Card } from "@/components/ui-antd";
 import { withBasePath } from "@/lib/base-path";
+import { normalizeAppRoutePath } from "@/lib/app-route-path";
+import type { MenuTreeItem } from "@/types/auth";
 
 const LOGIN_REMEMBER_KEY = "login.remember";
 const LOGIN_USER_ID_KEY = "login.user_id";
 const LOGIN_PASSWORD_KEY = "login.password";
 
+function findFirstMenuPath(items: MenuTreeItem[]): string | null {
+  for (const item of items) {
+    if (item.path) {
+      return item.path;
+    }
+    if (item.children.length > 0) {
+      const childPath = findFirstMenuPath(item.children);
+      if (childPath) {
+        return childPath;
+      }
+    }
+  }
+  return null;
+}
+
+function normalizeMenuTreePaths(items: MenuTreeItem[]): MenuTreeItem[] {
+  return items.map((item) => ({
+    ...item,
+    path: normalizeAppRoutePath(item.path),
+    children: normalizeMenuTreePaths(item.children),
+  }));
+}
+
 export default function LoginPage() {
   const router = useRouter();
-  const { user, initializing, login } = useAuth();
+  const { user, initializing, login, fetchWithAuth } = useAuth();
 
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
@@ -25,9 +50,27 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!initializing && user) {
-      router.replace("/users");
+      const redirectToFirstMenu = async () => {
+        try {
+          const response = await fetchWithAuth("/api/v1/admin/me/menus");
+          if (!response.ok) {
+            router.replace("/users");
+            return;
+          }
+
+          const menuData = (await response.json()) as MenuTreeItem[];
+          const normalizedMenus = normalizeMenuTreePaths(menuData);
+          const firstPath = findFirstMenuPath(normalizedMenus);
+
+          router.replace(firstPath || "/users");
+        } catch {
+          router.replace("/users");
+        }
+      };
+
+      void redirectToFirstMenu();
     }
-  }, [initializing, router, user]);
+  }, [initializing, router, user, fetchWithAuth]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
