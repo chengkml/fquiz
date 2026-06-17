@@ -290,7 +290,7 @@ export default function AdminLightningDistributionPage() {
       <Card>
         <Space direction="vertical" size={12}>
           <Typography.Text type="secondary">
-            请先登录后再访问雷电分布统计页面。
+            请先登录后再访问地闪密度统计页面。
           </Typography.Text>
           <Button>
             <Link href="/">返回首页</Link>
@@ -320,7 +320,7 @@ export default function AdminLightningDistributionPage() {
         extra={
           canManage && (
             <Button type="primary" onClick={() => setImportModalOpen(true)}>
-              导入雷电分布数据
+              导入地闪密度数据
             </Button>
           )
         }
@@ -388,7 +388,7 @@ export default function AdminLightningDistributionPage() {
       </Card>
 
       <Modal
-        title="导入雷电分布数据"
+        title="导入地闪密度数据"
         open={importModalOpen}
         onCancel={() => {
           setImportModalOpen(false);

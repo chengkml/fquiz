@@ -583,7 +583,7 @@ def import_lightning_distribution_from_file(
         inserted_count += len(rows_to_insert)
 
     if inserted_count == 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="未解析到可导入的有效雷电分布记录")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="未解析到可导入的有效地闪密度记录")
 
     db.commit()
     _publish_lightning_change(
