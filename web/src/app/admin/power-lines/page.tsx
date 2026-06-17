@@ -1679,7 +1679,7 @@ export default function AdminPowerLinesPage() {
                   className="hidden"
                   onChange={(event) => {
                     const file = event.target.files?.[0];
-                    if (file) {
+                    if (file && effectiveSelectedLineId) {
                       importMutation.mutate(file);
                     }
                     event.target.value = "";
@@ -2235,7 +2235,7 @@ export default function AdminPowerLinesPage() {
                     size="small"
                     onClick={() => prepareCurrentMutation.mutate()}
                     loading={prepareCurrentMutation.isPending}
-                    disabled={!canTowerManage}
+                    disabled={!canTowerManage || !selectedLine}
                   >
                     回填雷电流幅值
                   </Button>
@@ -2296,7 +2296,7 @@ export default function AdminPowerLinesPage() {
                       });
                     }}
                     loading={prepareDensityMutation.isPending}
-                    disabled={!canTowerManage}
+                    disabled={!canTowerManage || !selectedLine}
                   >
                     回填地闪密度
                   </Button>
