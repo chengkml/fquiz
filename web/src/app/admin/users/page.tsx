@@ -555,12 +555,13 @@ export default function AdminUsersPage() {
     {
       title: "邮箱",
       dataIndex: "email",
-      width: 240,
+      width: 220,
     },
     {
       title: "状态",
       dataIndex: "status",
       width: 120,
+      align: "center",
       render: (value: string) => (
         <Tag color={value === "active" ? "green" : "default"}>{statusLabel(value)}</Tag>
       ),
@@ -569,7 +570,7 @@ export default function AdminUsersPage() {
       title: "操作",
       key: "actions",
       fixed: "right",
-      width: 120,
+      width: 180,
       render: (_value, row) => {
         const updatingLoading = updatingStatusUserId === row.id;
         const resetLoading = resettingUserId === row.id;
@@ -700,13 +701,13 @@ export default function AdminUsersPage() {
           <Form.Item label="状态" className="min-w-[170px]">
             <Select<"all" | "active" | "disabled">
               value={statusFilter}
+              allowClear
               options={[
-                { value: "all", label: "全部" },
                 { value: "active", label: "已启用" },
                 { value: "disabled", label: "已禁用" },
               ]}
               onChange={(value) => {
-                setStatusFilter(value);
+                setStatusFilter(value ?? "all");
                 setPagination((prev) => ({ ...prev, current: 1 }));
               }}
             />
@@ -716,10 +717,6 @@ export default function AdminUsersPage() {
             <Button type="primary" onClick={handleSearch}>
               搜索
             </Button>
-          </Form.Item>
-
-          <Form.Item>
-            <Button onClick={handleResetSearch}>重置筛选</Button>
           </Form.Item>
         </Form>
 
