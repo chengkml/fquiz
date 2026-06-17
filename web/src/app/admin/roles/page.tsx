@@ -434,17 +434,7 @@ export default function AdminRolesPage() {
             />
           </Form.Item>
           <Form.Item>
-            <Button onClick={() => void loadData()}>搜索</Button>
-          </Form.Item>
-          <Form.Item>
-            <Button
-              onClick={() => {
-                setSearchKeyword("");
-                // Will trigger reload via useEffect when searchKeyword changes
-              }}
-            >
-              重置筛选
-            </Button>
+            <Button type="primary" onClick={() => void loadData()}>搜索</Button>
           </Form.Item>
         </Form>
         <div
