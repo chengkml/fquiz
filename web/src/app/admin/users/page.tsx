@@ -748,10 +748,10 @@ export default function AdminUsersPage() {
             pagination={{
               current: pagination.current,
               pageSize: pagination.pageSize,
-              total: usersQuery.data?.total ?? 0,
+              total: Math.max(usersQuery.data?.total ?? 0, 1),
               showSizeChanger: true,
               pageSizeOptions: [10, 20, 50, 100],
-              showTotal: (total) => `共 ${total} 条`,
+              showTotal: (total) => `共 ${usersQuery.data?.total ?? 0} 条`,
               hideOnSinglePage: false,
               style: { marginBottom: 0 },
               onChange: (page, pageSize) => {
