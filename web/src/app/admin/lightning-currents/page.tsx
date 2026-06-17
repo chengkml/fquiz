@@ -101,11 +101,23 @@ export default function AdminLightningCurrentsPage() {
   const [tableScrollY, setTableScrollY] = useState(LIGHTNING_TABLE_MIN_SCROLL_Y);
   const [samplePage, setSamplePage] = useState(1);
   const [samplePageSize, setSamplePageSize] = useState(50);
+  const [keywordInput, setKeywordInput] = useState("");
+  const [searchKeyword, setSearchKeyword] = useState("");
 
   const canRead = hasPermission("lightning.read") || hasPermission("lightning.manage");
   const canManage = hasPermission("lightning.manage");
 
-  const eventListPath = "/api/v1/lightning-currents?limit=200&offset=0";
+  const trimmedKeyword = searchKeyword.trim();
+  const eventListParams = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("limit", "200");
+    params.set("offset", "0");
+    if (trimmedKeyword) {
+      params.set("keyword", trimmedKeyword);
+    }
+    return params.toString();
+  }, [trimmedKeyword]);
+  const eventListPath = `/api/v1/lightning-currents?${eventListParams}`;
 
   const eventsQuery = useQuery({
     queryKey: [eventListPath],
@@ -334,6 +346,15 @@ export default function AdminLightningCurrentsPage() {
     setSampleModalOpen(true);
   };
 
+  const handleSearch = () => {
+    setSearchKeyword(keywordInput);
+  };
+
+  const handleResetSearch = () => {
+    setKeywordInput("");
+    setSearchKeyword("");
+  };
+
   const eventColumns = useMemo<ColumnsType<LightningCurrentEventSummary>>(
     () => [
       {
@@ -501,6 +522,28 @@ export default function AdminLightningCurrentsPage() {
           )
         }
       >
+        <Form layout="inline" style={{ rowGap: 12, marginBottom: 16 }}>
+          <Form.Item label="文件名关键词" className="min-w-[240px]">
+            <Input
+              allowClear
+              placeholder="按文件名搜索"
+              value={keywordInput}
+              onChange={(event) => setKeywordInput(event.target.value)}
+              onPressEnter={handleSearch}
+            />
+          </Form.Item>
+
+          <Form.Item>
+            <Button type="primary" onClick={handleSearch}>
+              搜索
+            </Button>
+          </Form.Item>
+
+          <Form.Item>
+            <Button onClick={handleResetSearch}>重置筛选</Button>
+          </Form.Item>
+        </Form>
+
         <div
           ref={tableScrollAnchorRef}
           className="lightning-table-anchor"
