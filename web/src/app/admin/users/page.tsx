@@ -692,12 +692,9 @@ export default function AdminUsersPage() {
         title="用户列表"
         style={{ height: '100%' }}
         extra={(
-          <Space>
-            {usersQuery.isFetching && <Spin size="small" />}
-            <Button type="primary" onClick={openCreateUserModal}>
-              新增用户
-            </Button>
-          </Space>
+          <Button type="primary" onClick={openCreateUserModal}>
+            新增用户
+          </Button>
         )}
       >
         <Form layout="inline" style={{ rowGap: 12 }}>
