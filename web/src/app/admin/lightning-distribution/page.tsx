@@ -45,10 +45,6 @@ type ImportFormValues = {
 };
 
 type DistributionFilterValues = {
-  min_lat: number | null;
-  max_lat: number | null;
-  min_lon: number | null;
-  max_lon: number | null;
   grid_size_km: number;
   years: number | null;
 };
@@ -62,10 +58,6 @@ const INITIAL_IMPORT_VALUES: ImportFormValues = {
 };
 
 const INITIAL_DISTRIBUTION_FILTERS: DistributionFilterValues = {
-  min_lat: null,
-  max_lat: null,
-  min_lon: null,
-  max_lon: null,
   grid_size_km: 1,
   years: null,
 };
@@ -113,10 +105,6 @@ export default function AdminLightningDistributionPage() {
 
   const distributionStatsPath = useMemo(() => {
     const params = new URLSearchParams();
-    if (distributionFilters.min_lat !== null) params.set("min_lat", String(distributionFilters.min_lat));
-    if (distributionFilters.max_lat !== null) params.set("max_lat", String(distributionFilters.max_lat));
-    if (distributionFilters.min_lon !== null) params.set("min_lon", String(distributionFilters.min_lon));
-    if (distributionFilters.max_lon !== null) params.set("max_lon", String(distributionFilters.max_lon));
     if (regionFilter.trim()) params.set("region_id", regionFilter.trim());
     if (keyword.trim()) params.set("location_tag", keyword.trim());
     if (distributionFilters.years !== null) params.set("years", String(distributionFilters.years));
@@ -366,18 +354,6 @@ export default function AdminLightningDistributionPage() {
             }}
           >
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <Form.Item name="min_lat" label="最小纬度">
-                <InputNumber className="w-full" />
-              </Form.Item>
-              <Form.Item name="max_lat" label="最大纬度">
-                <InputNumber className="w-full" />
-              </Form.Item>
-              <Form.Item name="min_lon" label="最小经度">
-                <InputNumber className="w-full" />
-              </Form.Item>
-              <Form.Item name="max_lon" label="最大经度">
-                <InputNumber className="w-full" />
-              </Form.Item>
               <Form.Item name="grid_size_km" label="网格尺寸(km)" rules={[{ required: true, message: "请输入网格尺寸" }]}>
                 <InputNumber className="w-full" min={0.1} max={100} precision={2} />
               </Form.Item>
