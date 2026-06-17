@@ -745,6 +745,7 @@ export default function AdminUsersPage() {
             dataSource={users}
             columns={columns}
             loading={usersQuery.isLoading || rolesQuery.isLoading}
+            tableLayout="fixed"
             pagination={{
               current: pagination.current,
               pageSize: pagination.pageSize,
