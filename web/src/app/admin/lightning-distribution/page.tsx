@@ -316,7 +316,7 @@ export default function AdminLightningDistributionPage() {
   return (
     <Space direction="vertical" size={16} className="w-full">
       <Card
-        title="雷电分布统计（空间维度）"
+        title="地闪密度统计"
         extra={
           canManage && (
             <Button type="primary" onClick={() => setImportModalOpen(true)}>
