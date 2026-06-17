@@ -431,7 +431,7 @@ export default function AdminSystemParamsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-1 flex-col space-y-6">
       <AntCard
         title="参数列表"
         extra={(

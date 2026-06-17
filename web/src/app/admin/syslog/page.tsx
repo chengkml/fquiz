@@ -234,7 +234,7 @@ export default function AdminSyslogPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-1 flex-col space-y-6">
       {error ? <Alert type="error" showIcon message="日志加载失败" description={error} /> : null}
 
       <AntCard title="系统日志">

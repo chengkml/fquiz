@@ -523,7 +523,7 @@ export default function AdminWorkersPage() {
   const taskOverview = workerTasksQuery.data;
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-1 flex-col space-y-6">
       {overviewQuery.error && (
         <Alert
           type="error"

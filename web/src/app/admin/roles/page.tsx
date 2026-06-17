@@ -421,7 +421,7 @@ export default function AdminRolesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-1 flex-col space-y-6">
       <AntCard
         title="角色列表"
         extra={

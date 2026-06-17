@@ -566,7 +566,7 @@ export default function AdminSystemMessagesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-1 flex-col space-y-6">
       <AntCard
         title="消息列表"
         extra={(

@@ -674,7 +674,7 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-1 flex-col space-y-6">
       <AntCard
         title="用户列表"
         extra={(
