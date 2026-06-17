@@ -32,6 +32,13 @@ const AntCard = Card as unknown as ComponentType<CardProps>;
 
 type MenuListResponse = { items: MenuItem[]; total: number };
 
+type RolesWithMenusResponse = {
+  roles: RoleItem[];
+  roles_total: number;
+  menus: MenuItem[];
+  menus_total: number;
+};
+
 type RoleFormValues = {
   code: string;
   name: string;
@@ -90,27 +97,20 @@ export default function AdminRolesPage() {
     setError("");
     try {
       const keyword = searchKeyword.trim();
-      const roleUrl = keyword
-        ? `/api/v1/admin/roles?keyword=${encodeURIComponent(keyword)}`
-        : "/api/v1/admin/roles";
+      const url = keyword
+        ? `/api/v1/admin/roles-with-menus?keyword=${encodeURIComponent(keyword)}`
+        : "/api/v1/admin/roles-with-menus";
 
-      const [roleRes, menuRes] = await Promise.all([
-        fetchWithAuth(roleUrl),
-        fetchWithAuth("/api/v1/admin/menus"),
-      ]);
+      const response = await fetchWithAuth(url);
 
-      if (!roleRes.ok) {
-        throw new Error(await readApiError(roleRes));
-      }
-      if (!menuRes.ok) {
-        throw new Error(await readApiError(menuRes));
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
       }
 
-      const rolePayload = (await roleRes.json()) as RoleListResponse;
-      const menuPayload = (await menuRes.json()) as MenuListResponse;
+      const payload = (await response.json()) as RolesWithMenusResponse;
 
-      setRoles(rolePayload.items);
-      setMenus(menuPayload.items);
+      setRoles(payload.roles);
+      setMenus(payload.menus);
     } catch (candidate) {
       setError(candidate instanceof Error ? candidate.message : "角色数据加载失败");
     } finally {

@@ -14,6 +14,7 @@ from ...schemas.admin import (
     RoleListResponse,
     RoleMenuUpdateRequest,
     RolePublic,
+    RolesWithMenusResponse,
     SeedDefaultsResponse,
     RoleUpdateRequest,
 )
@@ -32,6 +33,7 @@ from ...services.legacy_admin_rbac_service import (
     list_permissions,
     list_role_menu_ids,
     list_roles,
+    list_roles_with_menus,
     replace_role_menus,
     update_menu,
     update_role,
@@ -48,6 +50,15 @@ def get_roles(
     db: Session = Depends(get_db),
 ) -> RoleListResponse:
     return list_roles(db, keyword=keyword)
+
+
+@router.get("/roles-with-menus", response_model=RolesWithMenusResponse)
+def get_roles_with_menus(
+    keyword: str | None = Query(default=None),
+    _: CurrentUser = Depends(require_any_permission("role.read", "role.manage")),
+    db: Session = Depends(get_db),
+) -> RolesWithMenusResponse:
+    return list_roles_with_menus(db, keyword=keyword)
 
 
 @router.post("/roles", response_model=RolePublic)

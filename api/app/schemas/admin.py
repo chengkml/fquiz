@@ -128,4 +128,11 @@ class SeedDefaultsResponse(BaseModel):
     summary: dict[str, SeedCategorySummary] = Field(default_factory=dict)
 
 
+class RolesWithMenusResponse(BaseModel):
+    roles: list[RolePublic]
+    roles_total: int
+    menus: list[MenuPublic]
+    menus_total: int
+
+
 MenuTreeItem.model_rebuild()

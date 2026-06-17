@@ -17,6 +17,7 @@ from ..schemas.admin import (
     RoleCreateRequest,
     RoleListResponse,
     RolePublic,
+    RolesWithMenusResponse,
     RoleUpdateRequest,
 )
 from .audit_service import compose_audit_detail, describe_changed_fields, summarize_values, write_audit_log
@@ -460,6 +461,18 @@ def list_menus(db: Session, keyword: str | None = None, status: str | None = Non
     rows = _load_menus_rows(db, keyword=keyword, status=status)
     items = [serialize_menu_row(row) for row in rows]
     return MenuListResponse(items=items, total=len(items))
+
+
+def list_roles_with_menus(db: Session, keyword: str | None = None) -> RolesWithMenusResponse:
+    """Get roles and menus in a single request to reduce network calls."""
+    roles_response = list_roles(db, keyword=keyword)
+    menus_response = list_menus(db)
+    return RolesWithMenusResponse(
+        roles=roles_response.items,
+        roles_total=roles_response.total,
+        menus=menus_response.items,
+        menus_total=menus_response.total,
+    )
 
 
 def get_menu_by_id(db: Session, menu_id: str) -> MenuPublic | None:
