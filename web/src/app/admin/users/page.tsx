@@ -689,7 +689,7 @@ export default function AdminUsersPage() {
   return (
     <div className="flex flex-1 flex-col space-y-6">
       <AntCard
-        title="用户列表"
+        title="用户管理"
         style={{ height: '100%' }}
         extra={(
           <Button type="primary" onClick={openCreateUserModal}>
