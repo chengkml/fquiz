@@ -133,34 +133,19 @@ export default function AdminMenusPage() {
   }, [menus]);
 
   const filteredMenus = useMemo(() => {
-    const query = keyword.trim().toLowerCase();
-
-    return menus
-      .filter((menu) => {
-        if (statusFilter !== "all" && menu.status !== statusFilter) {
-          return false;
-        }
-        if (!query) {
-          return true;
-        }
-        const haystack = [menu.code, menu.name, menu.path ?? ""]
-          .join(" ")
-          .toLowerCase();
-        return haystack.includes(query);
-      })
-      .sort((a, b) => {
-        if (sortKey === "name") {
-          return a.name.localeCompare(b.name, "zh-CN");
-        }
-        if (sortKey === "id") {
-          return compareMenuIds(a.id, b.id);
-        }
-        if (a.sort_order !== b.sort_order) {
-          return a.sort_order - b.sort_order;
-        }
+    return menus.sort((a, b) => {
+      if (sortKey === "name") {
+        return a.name.localeCompare(b.name, "zh-CN");
+      }
+      if (sortKey === "id") {
         return compareMenuIds(a.id, b.id);
-      });
-  }, [keyword, menus, sortKey, statusFilter]);
+      }
+      if (a.sort_order !== b.sort_order) {
+        return a.sort_order - b.sort_order;
+      }
+      return compareMenuIds(a.id, b.id);
+    });
+  }, [menus, sortKey]);
 
   const loadMenus = useCallback(async () => {
     if (!canRead) {
@@ -171,7 +156,16 @@ export default function AdminMenusPage() {
     setLoading(true);
     setError("");
 
-    const response = await fetchWithAuth("/api/v1/admin/menus");
+    const params = new URLSearchParams();
+    if (keyword.trim()) {
+      params.append("keyword", keyword.trim());
+    }
+    if (statusFilter !== "all") {
+      params.append("status", statusFilter);
+    }
+
+    const url = `/api/v1/admin/menus${params.toString() ? `?${params.toString()}` : ""}`;
+    const response = await fetchWithAuth(url);
     if (!response.ok) {
       setError(await readApiError(response));
       setLoading(false);
@@ -181,7 +175,7 @@ export default function AdminMenusPage() {
     const payload = (await response.json()) as MenuListResponse;
     setMenus(payload.items.map(normalizeMenuItemPath));
     setLoading(false);
-  }, [canRead, fetchWithAuth]);
+  }, [canRead, fetchWithAuth, keyword, statusFilter]);
 
   useEffect(() => {
     if (!user || !canRead) {
@@ -191,6 +185,20 @@ export default function AdminMenusPage() {
       void loadMenus();
     });
   }, [canRead, loadMenus, user]);
+
+  useEffect(() => {
+    if (!user || !canRead) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      void loadMenus();
+    }, 300);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [keyword, statusFilter, canRead, loadMenus, user]);
 
   useTopicSubscription(
     "admin.menus",

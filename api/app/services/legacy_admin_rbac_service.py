@@ -441,8 +441,8 @@ def list_permissions(_: Session) -> list[dict[str, str | int]]:
     return [{"id": idx + 1, "code": code, "name": code} for idx, code in enumerate(codes)]
 
 
-def list_menus(db: Session) -> MenuListResponse:
-    rows = _load_menus_rows(db)
+def list_menus(db: Session, keyword: str | None = None, status: str | None = None) -> MenuListResponse:
+    rows = _load_menus_rows(db, keyword=keyword, status=status)
     items = [serialize_menu_row(row) for row in rows]
     return MenuListResponse(items=items, total=len(items))
 
@@ -1140,22 +1140,55 @@ def _get_users_with_menu_access(db: Session, menu_id: str, *, role_source: str =
     return sorted({str(row[0]) for row in rows})
 
 
-def _load_menus_rows(db: Session) -> list[dict[str, object]]:
+def _load_menus_rows(db: Session, keyword: str | None = None, status: str | None = None) -> list[dict[str, object]]:
+    # Build WHERE conditions
+    where_clauses = []
+    params = {}
+
+    if keyword:
+        normalized_keyword = f"%{keyword.strip().lower()}%"
+        where_clauses.append("(LOWER(code) LIKE :keyword OR LOWER(name) LIKE :keyword OR LOWER(COALESCE(path, '')) LIKE :keyword)")
+        params["keyword"] = normalized_keyword
+
+    if status and status in ("enabled", "disabled"):
+        where_clauses.append("status = :status")
+        params["status"] = status
+
+    where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
     try:
         rows = db.execute(
             text(
-                """
+                f"""
                 SELECT id::text AS menu_id, code AS menu_name, name AS menu_label, type AS menu_type,
                        parent_id, path AS url, icon AS menu_icon, sort_order AS seq, status AS state,
                        permission_code AS menu_descr
                 FROM menus
+                {where_clause}
                 ORDER BY sort_order ASC NULLS LAST, id ASC
                 """
-            )
+            ),
+            params
         ).mappings().all()
     except SQLAlchemyError:
         db.rollback()
-        menus = db.query(Menu).order_by(Menu.sort_order.asc(), Menu.id.asc()).all()
+        query = db.query(Menu)
+
+        if keyword:
+            normalized_keyword = f"%{keyword.strip().lower()}%"
+            from sqlalchemy import func, or_
+            query = query.filter(
+                or_(
+                    func.lower(Menu.code).like(normalized_keyword),
+                    func.lower(Menu.name).like(normalized_keyword),
+                    func.lower(func.coalesce(Menu.path, '')).like(normalized_keyword)
+                )
+            )
+
+        if status and status in ("enabled", "disabled"):
+            query = query.filter(Menu.status == status)
+
+        menus = query.order_by(Menu.sort_order.asc(), Menu.id.asc()).all()
         rows = [
             {
                 "menu_id": str(menu.id),

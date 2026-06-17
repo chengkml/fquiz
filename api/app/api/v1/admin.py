@@ -149,10 +149,12 @@ def seed_defaults_endpoint(
 
 @router.get("/menus", response_model=MenuListResponse)
 def get_menus(
+    keyword: str | None = Query(default=None),
+    status: str | None = Query(default=None),
     _: CurrentUser = Depends(require_any_permission("menu.read", "menu.manage")),
     db: Session = Depends(get_db),
 ) -> MenuListResponse:
-    return list_menus(db)
+    return list_menus(db, keyword=keyword, status=status)
 
 
 @router.post("/menus", response_model=MenuPublic)
