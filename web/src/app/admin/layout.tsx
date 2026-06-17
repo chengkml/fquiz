@@ -330,7 +330,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           <Space direction="vertical" size={0}>
             <Typography.Text strong>{user?.username}</Typography.Text>
             <Typography.Text type="secondary">角色：{user?.role_codes.join(", ") || "-"}</Typography.Text>
-            <Typography.Text type="secondary">状态：{user?.status || "-"}</Typography.Text>
           </Space>
         ),
       },
@@ -342,7 +341,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         label: "退出登录",
       },
     ],
-    [user?.role_codes, user?.status, user?.username],
+    [user?.role_codes, user?.username],
   );
 
   const onThemeMenuClick = useCallback(
