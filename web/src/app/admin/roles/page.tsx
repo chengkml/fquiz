@@ -80,21 +80,6 @@ export default function AdminRolesPage() {
     return new Map(menus.map((menu) => [menu.id, `${menu.name} (${menu.code})`]));
   }, [menus]);
 
-  const filteredRoles = useMemo(() => {
-    const keyword = searchKeyword.trim().toLowerCase();
-    if (!keyword) {
-      return roles;
-    }
-
-    return roles.filter((role) => {
-      const menuNames = role.menu_ids
-        .map((menuId) => menuNameById.get(menuId) ?? String(menuId))
-        .join(" ");
-      const haystack = [role.code, role.name, menuNames].join(" ").toLowerCase();
-      return haystack.includes(keyword);
-    });
-  }, [menuNameById, roles, searchKeyword]);
-
   const loadData = useCallback(async () => {
     if (!canRead) {
       setLoading(false);
@@ -104,8 +89,13 @@ export default function AdminRolesPage() {
     setLoading(true);
     setError("");
     try {
+      const keyword = searchKeyword.trim();
+      const roleUrl = keyword
+        ? `/api/v1/admin/roles?keyword=${encodeURIComponent(keyword)}`
+        : "/api/v1/admin/roles";
+
       const [roleRes, menuRes] = await Promise.all([
-        fetchWithAuth("/api/v1/admin/roles"),
+        fetchWithAuth(roleUrl),
         fetchWithAuth("/api/v1/admin/menus"),
       ]);
 
@@ -126,7 +116,7 @@ export default function AdminRolesPage() {
     } finally {
       setLoading(false);
     }
-  }, [canRead, fetchWithAuth]);
+  }, [canRead, fetchWithAuth, searchKeyword]);
 
   useEffect(() => {
     if (!user || !canRead) {
@@ -347,7 +337,7 @@ export default function AdminRolesPage() {
 
   useEffect(() => {
     updateTableScrollY();
-  }, [error, filteredRoles.length, loading, updateTableScrollY]);
+  }, [error, roles.length, loading, updateTableScrollY]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -440,10 +430,21 @@ export default function AdminRolesPage() {
               placeholder="搜索角色编码、名称或菜单"
               value={searchKeyword}
               onChange={(event) => setSearchKeyword(event.currentTarget.value)}
+              onPressEnter={() => void loadData()}
             />
           </Form.Item>
           <Form.Item>
-            <Button onClick={() => setSearchKeyword("")}>重置筛选</Button>
+            <Button onClick={() => void loadData()}>搜索</Button>
+          </Form.Item>
+          <Form.Item>
+            <Button
+              onClick={() => {
+                setSearchKeyword("");
+                // Will trigger reload via useEffect when searchKeyword changes
+              }}
+            >
+              重置筛选
+            </Button>
           </Form.Item>
         </Form>
         <div
@@ -454,7 +455,7 @@ export default function AdminRolesPage() {
           <Table<RoleItem>
             rowKey="id"
             columns={columns}
-            dataSource={filteredRoles}
+            dataSource={roles}
             loading={loading}
             scroll={{ x: 1400, y: tableScrollY }}
             pagination={{

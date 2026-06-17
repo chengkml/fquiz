@@ -43,10 +43,11 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 @router.get("/roles", response_model=RoleListResponse)
 def get_roles(
+    keyword: str | None = Query(default=None),
     _: CurrentUser = Depends(require_any_permission("role.read", "role.manage")),
     db: Session = Depends(get_db),
 ) -> RoleListResponse:
-    return list_roles(db)
+    return list_roles(db, keyword=keyword)
 
 
 @router.post("/roles", response_model=RolePublic)

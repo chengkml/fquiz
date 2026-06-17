@@ -101,9 +101,9 @@ PROTECTED_MENU_CODES = {
 }
 
 
-def list_roles(db: Session) -> RoleListResponse:
+def list_roles(db: Session, keyword: str | None = None) -> RoleListResponse:
     role_source = "legacy" if _legacy_role_table_exists(db) else "modern"
-    rows = _load_role_rows(db, role_source=role_source)
+    rows = _load_role_rows(db, role_source=role_source, keyword=keyword)
     role_ids = [str(row["id"]) for row in rows]
     role_menu_ids = _load_role_menu_ids_map(db, role_ids, role_source=role_source)
     menu_rows = _load_menus_map(
@@ -120,6 +120,21 @@ def list_roles(db: Session) -> RoleListResponse:
         menu_ids = sorted(menu_id for menu_id in role_menu_ids.get(role_id, []) if menu_id in menu_rows)
         permission_codes = set(role_permission_codes.get(role_id, []))
         permission_codes.update(_permission_codes_from_menu_rows(menu_rows, menu_ids))
+
+        # Apply keyword filter on menu names if keyword provided
+        if keyword:
+            normalized_keyword = keyword.strip().lower()
+            # Collect menu names for this role
+            menu_names = " ".join(
+                str(menu_rows.get(menu_id, {}).get("menu_name", ""))
+                for menu_id in menu_ids
+            )
+            # Build search haystack
+            haystack = f"{role_code} {row.get('name', '')} {menu_names}".lower()
+            # Skip if keyword not found
+            if normalized_keyword not in haystack:
+                continue
+
         items.append(
             RolePublic(
                 id=role_id,
@@ -923,26 +938,40 @@ def _load_menus_map(db: Session, menu_ids: list[str], *, role_source: str = "leg
     }
 
 
-def _load_role_rows(db: Session, *, role_source: str) -> list[dict[str, object]]:
+def _load_role_rows(db: Session, *, role_source: str, keyword: str | None = None) -> list[dict[str, object]]:
+    where_clause = ""
+    params = {}
+
+    if keyword:
+        normalized_keyword = f"%{keyword.strip().lower()}%"
+        where_clause = "WHERE LOWER(id) LIKE :keyword OR LOWER(name) LIKE :keyword"
+        params["keyword"] = normalized_keyword
+
     if role_source == "legacy":
         rows = db.execute(
             text(
-                """
+                f"""
                 SELECT id, name
                 FROM user_role
+                {where_clause}
                 ORDER BY create_date DESC NULLS LAST, id ASC
                 """
-            )
+            ),
+            params
         ).mappings().all()
     else:
+        if keyword:
+            where_clause = "WHERE LOWER(code) LIKE :keyword OR LOWER(name) LIKE :keyword"
         rows = db.execute(
             text(
-                """
+                f"""
                 SELECT id::text AS id, code, name
                 FROM roles
+                {where_clause}
                 ORDER BY id ASC
                 """
-            )
+            ),
+            params
         ).mappings().all()
     return [dict(row) for row in rows]
 
