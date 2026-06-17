@@ -245,7 +245,6 @@ export default function AdminRolesPage() {
         title: "角色编码",
         dataIndex: "code",
         width: 180,
-        render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
       },
       {
         title: "角色名称",
