@@ -558,7 +558,6 @@ export default function AdminUsersPage() {
       title: "用户 ID",
       dataIndex: "id",
       width: 180,
-      render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
     },
     {
       title: "用户名",
