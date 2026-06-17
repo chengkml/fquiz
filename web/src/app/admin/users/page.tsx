@@ -83,7 +83,7 @@ export default function AdminUsersPage() {
   const [roleForm] = Form.useForm<{ role_codes: string[] }>();
   const [keywordInput, setKeywordInput] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "disabled">("all");
+  const [statusFilter, setStatusFilter] = useState<"active" | "disabled" | undefined>(undefined);
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [tableScrollY, setTableScrollY] = useState(USERS_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -102,7 +102,7 @@ export default function AdminUsersPage() {
     if (trimmedKeyword) {
       params.set("keyword", trimmedKeyword);
     }
-    if (statusFilter !== "all") {
+    if (statusFilter) {
       params.set("status", statusFilter);
     }
     return params.toString();
@@ -456,7 +456,7 @@ export default function AdminUsersPage() {
   const handleResetSearch = () => {
     setKeywordInput("");
     setSearchKeyword("");
-    setStatusFilter("all");
+    setStatusFilter(undefined);
     setPagination((prev) => ({ ...prev, current: 1 }));
   };
 
@@ -700,15 +700,16 @@ export default function AdminUsersPage() {
           </Form.Item>
 
           <Form.Item label="状态" className="min-w-[170px]">
-            <Select<"all" | "active" | "disabled">
+            <Select<"active" | "disabled">
               value={statusFilter}
               allowClear
+              placeholder="全部"
               options={[
                 { value: "active", label: "已启用" },
                 { value: "disabled", label: "已禁用" },
               ]}
               onChange={(value) => {
-                setStatusFilter(value ?? "all");
+                setStatusFilter(value);
                 setPagination((prev) => ({ ...prev, current: 1 }));
               }}
             />
