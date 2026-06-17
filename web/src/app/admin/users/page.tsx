@@ -787,54 +787,52 @@ export default function AdminUsersPage() {
           onFinish={handleCreateUser}
           autoComplete="off"
         >
-          <div className="grid gap-3 md:grid-cols-2">
-            <Form.Item
-              label="用户 ID"
-              name="user_id"
-              rules={[
-                { required: true, message: "请输入用户 ID" },
-                { min: 3, message: "用户 ID 至少 3 位" },
-                { max: 64, message: "用户 ID 不能超过 64 位" },
-              ]}
-            >
-              <Input placeholder="例如 ck001" />
-            </Form.Item>
+          <Form.Item
+            label="用户 ID"
+            name="user_id"
+            rules={[
+              { required: true, message: "请输入用户 ID" },
+              { min: 3, message: "用户 ID 至少 3 位" },
+              { max: 64, message: "用户 ID 不能超过 64 位" },
+            ]}
+          >
+            <Input placeholder="例如 ck001" />
+          </Form.Item>
 
-            <Form.Item
-              label="邮箱"
-              name="email"
-              rules={[
-                { required: true, message: "请输入邮箱" },
-                { type: "email", message: "邮箱格式不正确" },
-              ]}
-            >
-              <Input placeholder="请输入邮箱" />
-            </Form.Item>
+          <Form.Item
+            label="邮箱"
+            name="email"
+            rules={[
+              { required: true, message: "请输入邮箱" },
+              { type: "email", message: "邮箱格式不正确" },
+            ]}
+          >
+            <Input placeholder="请输入邮箱" />
+          </Form.Item>
 
-            <Form.Item
-              label="用户名"
-              name="username"
-              rules={[
-                { required: true, message: "请输入用户名" },
-                { min: 3, message: "用户名至少 3 位" },
-                { max: 64, message: "用户名不能超过 64 位" },
-              ]}
-            >
-              <Input placeholder="请输入用户名" />
-            </Form.Item>
+          <Form.Item
+            label="用户名"
+            name="username"
+            rules={[
+              { required: true, message: "请输入用户名" },
+              { min: 3, message: "用户名至少 3 位" },
+              { max: 64, message: "用户名不能超过 64 位" },
+            ]}
+          >
+            <Input placeholder="请输入用户名" />
+          </Form.Item>
 
-            <Form.Item
-              label="初始密码"
-              name="password"
-              rules={[
-                { required: true, message: "请输入初始密码" },
-                { min: 8, message: "密码至少 8 位" },
-                { max: 128, message: "密码不能超过 128 位" },
-              ]}
-            >
-              <Input.Password placeholder="至少 8 位" />
-            </Form.Item>
-          </div>
+          <Form.Item
+            label="初始密码"
+            name="password"
+            rules={[
+              { required: true, message: "请输入初始密码" },
+              { min: 8, message: "密码至少 8 位" },
+              { max: 128, message: "密码不能超过 128 位" },
+            ]}
+          >
+            <Input.Password placeholder="至少 8 位" />
+          </Form.Item>
         </Form>
       </Modal>
 
