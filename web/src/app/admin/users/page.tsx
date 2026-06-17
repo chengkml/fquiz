@@ -678,6 +678,7 @@ export default function AdminUsersPage() {
     <div className="flex flex-1 flex-col space-y-6">
       <AntCard
         title="用户列表"
+        style={{ height: '100%' }}
         extra={(
           <Space>
             {usersQuery.isFetching && <Spin size="small" />}

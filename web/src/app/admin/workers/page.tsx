@@ -541,6 +541,7 @@ export default function AdminWorkersPage() {
       {overview && (
         <AntCard
           title="Worker监控"
+          style={{ height: '100%' }}
           extra={
             <Space>
               {overviewQuery.isFetching && <Spin size="small" />}

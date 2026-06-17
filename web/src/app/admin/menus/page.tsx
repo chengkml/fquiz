@@ -511,6 +511,7 @@ export default function AdminMenusPage() {
     <div className="flex flex-1 flex-col space-y-6">
       <AntCard
         title="菜单列表"
+        style={{ height: '100%' }}
         extra={
           canManage ? (
             <Button type="primary" onClick={startCreate}>

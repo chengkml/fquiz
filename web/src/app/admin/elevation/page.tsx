@@ -1099,6 +1099,7 @@ export default function AdminElevationPage() {
 
       <Card
         title="高程数据集"
+        style={{ height: '100%' }}
         extra={(
           <Space>
             {datasetsQuery.isFetching && <Spin size="small" />}

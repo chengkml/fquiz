@@ -455,6 +455,7 @@ export default function AtpModelsPage() {
     <div className="flex flex-1 flex-col space-y-6">
       <AntCard
         title="ATP 模型管理"
+        style={{ height: '100%' }}
         extra={(
           <Space>
             {assetsQuery.isFetching && <Spin size="small" />}

@@ -494,6 +494,7 @@ export default function AdminTaskMonitorPage() {
     <div className="flex flex-1 flex-col space-y-6">
       <AntCard
         title="任务监控"
+        style={{ height: '100%' }}
         extra={(
           <Space>
             {(workersOverviewQuery.isFetching || allTasksQuery.isFetching) && <Spin size="small" />}

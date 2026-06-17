@@ -507,6 +507,7 @@ export default function AdminScheduledTasksPage() {
     <div className="flex flex-1 flex-col space-y-6">
       <AntCard
         title="定时任务管理"
+        style={{ height: '100%' }}
         extra={(
           <Space>
             {listQuery.isFetching && <Spin size="small" />}

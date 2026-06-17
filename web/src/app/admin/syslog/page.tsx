@@ -237,7 +237,7 @@ export default function AdminSyslogPage() {
     <div className="flex flex-1 flex-col space-y-6">
       {error ? <Alert type="error" showIcon message="日志加载失败" description={error} /> : null}
 
-      <AntCard title="系统日志">
+      <AntCard title="系统日志" style={{ height: '100%' }}>
         <Form layout="inline" style={{ rowGap: 12 }}>
           <Form.Item label="动作" className="min-w-[280px]">
             <Input

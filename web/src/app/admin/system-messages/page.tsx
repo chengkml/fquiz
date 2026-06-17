@@ -569,6 +569,7 @@ export default function AdminSystemMessagesPage() {
     <div className="flex flex-1 flex-col space-y-6">
       <AntCard
         title="消息列表"
+        style={{ height: '100%' }}
         extra={(
           <Space>
             {listQuery.isFetching && <Spin size="small" />}
