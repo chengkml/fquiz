@@ -557,22 +557,22 @@ export default function AdminUsersPage() {
     {
       title: "用户 ID",
       dataIndex: "id",
-      width: 180,
+      width: 140,
     },
     {
       title: "用户名",
       dataIndex: "username",
-      width: 180,
+      width: 140,
     },
     {
       title: "邮箱",
       dataIndex: "email",
-      width: 220,
+      width: 200,
     },
     {
       title: "状态",
       dataIndex: "status",
-      width: 120,
+      width: 100,
       align: "center",
       render: (value: string) => (
         <Tag color={value === "active" ? "green" : "default"}>{statusLabel(value)}</Tag>
@@ -758,7 +758,7 @@ export default function AdminUsersPage() {
                 setPagination({ current: page, pageSize });
               },
             }}
-            scroll={{ x: 1500, y: tableScrollY }}
+            scroll={{ y: tableScrollY }}
             locale={{
               emptyText: (
                 <Empty
