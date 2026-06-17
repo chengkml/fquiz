@@ -596,7 +596,7 @@ export default function AdminWorkersPage() {
               rowKey={(record) => record.worker}
               columns={workerColumns}
               dataSource={filteredWorkers}
-              pagination={{ pageSize: 10, showSizeChanger: true, style: { marginBottom: 0 } }}
+              pagination={{ pageSize: 10, showSizeChanger: true, hideOnSinglePage: false, style: { marginBottom: 0 } }}
               locale={{ emptyText: "暂无Worker数据" }}
               scroll={{ x: 1600, y: tableScrollY }}
             />

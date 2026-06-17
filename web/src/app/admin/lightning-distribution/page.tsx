@@ -381,7 +381,7 @@ export default function AdminLightningDistributionPage() {
             columns={eventColumns}
             dataSource={scatterPoints}
             loading={distributionStatsQuery.isFetching}
-            pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
+            pagination={{ pageSize: 20, showSizeChanger: true, hideOnSinglePage: false, showTotal: (total) => `共 ${total} 条` }}
             scroll={{ x: 1400 }}
           />
         </Space>

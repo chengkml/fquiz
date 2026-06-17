@@ -1779,6 +1779,7 @@ export default function AdminPowerLinesPage() {
                         total: towersQuery.data?.total ?? 0,
                         showSizeChanger: true,
                         showTotal: (total) => `共 ${total} 条`,
+                        hideOnSinglePage: false,
                         onChange: (page, pageSize) => {
                           setTowerPagination({ current: page, pageSize });
                         },

@@ -643,7 +643,7 @@ export default function AdminSystemMessagesPage() {
           dataSource={messages}
           loading={listQuery.isFetching}
           locale={{ emptyText: <Empty description="暂无系统消息" /> }}
-          pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
+          pagination={{ pageSize: 20, showSizeChanger: true, hideOnSinglePage: false, showTotal: (total) => `共 ${total} 条` }}
           scroll={{ x: 1100 }}
         />
       </AntCard>

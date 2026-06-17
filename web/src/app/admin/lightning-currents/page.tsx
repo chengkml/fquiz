@@ -554,7 +554,7 @@ export default function AdminLightningCurrentsPage() {
             columns={eventColumns}
             dataSource={events}
             loading={eventsQuery.isFetching}
-            pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
+            pagination={{ pageSize: 20, showSizeChanger: true, hideOnSinglePage: false, showTotal: (total) => `共 ${total} 条` }}
             scroll={{ x: 1200, y: tableScrollY }}
           />
         </div>
@@ -920,6 +920,7 @@ export default function AdminLightningCurrentsPage() {
                   showSizeChanger: true,
                   showTotal: (total) => `共 ${total} 条`,
                   pageSizeOptions: [20, 50, 100, 200],
+                  hideOnSinglePage: false,
                   onChange: (page, pageSize) => {
                     setSamplePage(page);
                     if (pageSize !== samplePageSize) {

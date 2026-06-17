@@ -1180,6 +1180,7 @@ export default function AdminElevationPage() {
               showSizeChanger: true,
               pageSizeOptions: [10, 20, 50, 100],
               showTotal: (total) => `共 ${total} 条`,
+              hideOnSinglePage: false,
               style: { marginBottom: 0 },
               onChange: (page, pageSize) => {
                 setPagination({ current: page, pageSize });

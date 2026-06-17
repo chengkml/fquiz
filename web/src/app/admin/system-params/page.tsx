@@ -491,6 +491,7 @@ export default function AdminSystemParamsPage() {
               showSizeChanger: true,
               pageSizeOptions: [10, 20, 50, 100],
               showTotal: (total) => `共 ${total} 条`,
+              hideOnSinglePage: false,
               style: { marginBottom: 0 },
             }}
             locale={{

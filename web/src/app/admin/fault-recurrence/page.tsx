@@ -383,7 +383,7 @@ export default function AdminFaultRecurrencePage() {
               rowKey={(record, index) => `${record.head_time_us}-${record.tail_time_us}-${index ?? 0}`}
               columns={columns}
               dataSource={result.data_points}
-              pagination={{ pageSize: 10 }}
+              pagination={{ pageSize: 10, hideOnSinglePage: false }}
               scroll={{ x: 720 }}
             />
           </Card>

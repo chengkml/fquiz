@@ -1634,7 +1634,7 @@ export default function AdminFlAnalysisPage() {
                   rowKey="id"
                   columns={resultColumns}
                   dataSource={towerResultsQuery.data?.items ?? []}
-                  pagination={{ pageSize: 20, showSizeChanger: false }}
+                  pagination={{ pageSize: 20, showSizeChanger: false, hideOnSinglePage: false }}
                   scroll={{ x: 1400 }}
                 />
               )}
@@ -1861,7 +1861,7 @@ export default function AdminFlAnalysisPage() {
               <Table<FlAnalysisTowerResultSummary>
                 rowKey="tower_id"
                 size="small"
-                pagination={{ pageSize: 8, showSizeChanger: false }}
+                pagination={{ pageSize: 8, showSizeChanger: false, hideOnSinglePage: false }}
                 rowSelection={{
                   selectedRowKeys: selectedMitigationTowerIds,
                   onChange: (keys) => {
@@ -1964,7 +1964,7 @@ export default function AdminFlAnalysisPage() {
               <Table<FlAnalysisTowerResultSummary>
                 rowKey="tower_id"
                 size="small"
-                pagination={{ pageSize: 8, showSizeChanger: false }}
+                pagination={{ pageSize: 8, showSizeChanger: false, hideOnSinglePage: false }}
                 rowSelection={{
                   selectedRowKeys: selectedScenarioTowerIds,
                   onChange: (keys) => {
@@ -2046,7 +2046,7 @@ export default function AdminFlAnalysisPage() {
               <Table<FlAnalysisTowerResultSummary>
                 rowKey="tower_id"
                 size="small"
-                pagination={{ pageSize: 8, showSizeChanger: false }}
+                pagination={{ pageSize: 8, showSizeChanger: false, hideOnSinglePage: false }}
                 rowSelection={{
                   selectedRowKeys: selectedReportTowerIds,
                   onChange: (keys) => {

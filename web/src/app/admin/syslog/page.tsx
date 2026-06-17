@@ -310,6 +310,7 @@ export default function AdminSyslogPage() {
               showSizeChanger: false,
               showQuickJumper: false,
               showTotal: (value) => `共 ${value} 条`,
+              hideOnSinglePage: false,
               style: { marginBottom: 0 },
             }}
             locale={{
