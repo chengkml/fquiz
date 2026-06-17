@@ -56,9 +56,15 @@ def create_role_endpoint(
     current_user: CurrentUser = Depends(require_permission("role.manage")),
     db: Session = Depends(get_db),
 ) -> RolePublic:
+    from sqlalchemy import text
+    # Check if role code already exists
+    existing = db.scalar(text("SELECT id FROM user_role WHERE id = :id"), {"id": payload.code.strip()})
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="角色编码已存在，请使用其他编码")
+
     created = create_role(db, payload, actor_user_id=current_user.user.id)
     if not created:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role payload or duplicate role code")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="创建角色失败，请检查菜单权限配置是否正确")
     return created
 
 
