@@ -87,7 +87,7 @@ export default function AdminRolesPage() {
     return new Map(menus.map((menu) => [menu.id, `${menu.name} (${menu.code})`]));
   }, [menus]);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (keyword?: string) => {
     if (!canRead) {
       setLoading(false);
       return;
@@ -96,9 +96,9 @@ export default function AdminRolesPage() {
     setLoading(true);
     setError("");
     try {
-      const keyword = searchKeyword.trim();
-      const url = keyword
-        ? `/api/v1/admin/roles-with-menus?keyword=${encodeURIComponent(keyword)}`
+      const searchTerm = (keyword ?? "").trim();
+      const url = searchTerm
+        ? `/api/v1/admin/roles-with-menus?keyword=${encodeURIComponent(searchTerm)}`
         : "/api/v1/admin/roles-with-menus";
 
       const response = await fetchWithAuth(url);
@@ -116,7 +116,7 @@ export default function AdminRolesPage() {
     } finally {
       setLoading(false);
     }
-  }, [canRead, fetchWithAuth, searchKeyword]);
+  }, [canRead, fetchWithAuth]);
 
   useEffect(() => {
     if (!user || !canRead) {
@@ -430,11 +430,11 @@ export default function AdminRolesPage() {
               placeholder="搜索角色编码、名称或菜单"
               value={searchKeyword}
               onChange={(event) => setSearchKeyword(event.currentTarget.value)}
-              onPressEnter={() => void loadData()}
+              onPressEnter={() => void loadData(searchKeyword)}
             />
           </Form.Item>
           <Form.Item>
-            <Button type="primary" onClick={() => void loadData()}>搜索</Button>
+            <Button type="primary" onClick={() => void loadData(searchKeyword)}>搜索</Button>
           </Form.Item>
         </Form>
         <div
