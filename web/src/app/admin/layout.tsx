@@ -9,7 +9,6 @@ import Icon, {
   BellOutlined,
   CalendarOutlined,
   ConsoleSqlOutlined,
-  CompressOutlined,
   DatabaseOutlined,
   DeploymentUnitOutlined,
   ExperimentOutlined,
@@ -223,8 +222,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const {
     themePrimaryMode,
     setThemePrimaryMode,
-    compactMode,
-    setCompactMode,
   } = useThemeAppearance();
   const [menuTree, setMenuTree] = useState<MenuTreeItem[]>([]);
   const [loadingMenus, setLoadingMenus] = useState(true);
@@ -309,15 +306,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         label: "暗黑主题",
         extra: themePrimaryMode === "dark" ? themeBadge : null,
       },
-      { type: "divider" },
-      {
-        key: "compact",
-        icon: <CompressOutlined />,
-        label: "紧凑主题",
-        extra: compactMode ? themeBadge : null,
-      },
     ],
-    [compactMode, themeBadge, themePrimaryMode],
+    [themeBadge, themePrimaryMode],
   );
 
   const accountMenuItems = useMemo<NonNullable<MenuProps["items"]>>(
@@ -350,12 +340,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         setThemePrimaryMode(key);
         return;
       }
-      if (key === "compact") {
-        setCompactMode(!compactMode);
-        return;
-      }
     },
-    [compactMode, setCompactMode, setThemePrimaryMode],
+    [setThemePrimaryMode],
   );
 
   const onAccountMenuClick = useCallback(

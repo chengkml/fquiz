@@ -171,7 +171,6 @@ export const THEME_MODE_OPTIONS = [
   { value: "auto", label: "跟随系统" },
   { value: "light", label: "浅色主题" },
   { value: "dark", label: "暗黑主题" },
-  { value: "compact", label: "紧凑主题" },
 ] as const;
 
 type ThemeAppearanceContextValue = {
