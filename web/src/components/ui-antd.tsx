@@ -263,7 +263,7 @@ function buildThemeVisualTokens(isDark: boolean) {
   return {
     colorBgLayout: isDark ? "#0f1419" : "#f5f5f5",
     shellBg: isDark ? "#111a2c" : "#ffffff",
-    tableHeaderBg: isDark ? "#1f1f1f" : "#fafafa",
+    tableHeaderBg: isDark ? "#1f1f1f" : "#f0ebff",
   };
 }
 

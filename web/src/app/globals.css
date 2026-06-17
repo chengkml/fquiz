@@ -7,27 +7,27 @@
   --ant-color-text-secondary: rgba(0, 0, 0, 0.65);
   --ant-color-bg-layout: #faf8ff;
   --ant-color-bg-container: #ffffff;
-  --ant-color-fill-alter: #f5f3ff;
-  --ant-color-border-secondary: #e0d4ff;
+  --ant-color-fill-alter: #f0ebff;
+  --ant-color-border-secondary: #d4c5ff;
   --ant-border-radius: 6px;
   --ant-border-radius-lg: 8px;
   --ant-padding: 16px;
   --ant-padding-lg: 24px;
   --ant-margin-lg: 24px;
-  --ant-box-shadow-tertiary: 0 1px 2px 0 rgba(139, 92, 246, 0.05);
+  --ant-box-shadow-tertiary: 0 1px 2px 0 rgba(139, 92, 246, 0.12);
 
   /* Legacy semantic vars (overridden by Theme token bridge at runtime) */
   --color-panel-solid: #ffffff;
-  --border: #e0d4ff;
+  --border: #d4c5ff;
 
   --gray-1: #ffffff;
-  --gray-2: #f5f3ff;
-  --gray-6: #e0d4ff;
+  --gray-2: #f0ebff;
+  --gray-6: #d4c5ff;
   --gray-10: rgba(0, 0, 0, 0.45);
   --gray-11: rgba(0, 0, 0, 0.65);
   --gray-12: rgba(0, 0, 0, 0.88);
-  --gray-a2: rgba(139, 92, 246, 0.04);
-  --gray-a3: rgba(139, 92, 246, 0.08);
+  --gray-a2: rgba(139, 92, 246, 0.08);
+  --gray-a3: rgba(139, 92, 246, 0.14);
 
   --accent-6: #c4b5fd;
   --accent-7: #a78bfa;
@@ -84,16 +84,16 @@
   --fquiz-theme-shell-header-bg: var(--fquiz-theme-bg-elevated);
   --fquiz-theme-shell-sider-bg: var(--fquiz-theme-bg-elevated);
 
-  --fquiz-theme-shadow-card: 0 10px 24px color-mix(in srgb, var(--accent-9) 15%, transparent);
-  --fquiz-theme-shadow-soft: 0 2px 8px color-mix(in srgb, var(--accent-9) 8%, transparent);
+  --fquiz-theme-shadow-card: 0 10px 24px color-mix(in srgb, var(--accent-9) 22%, transparent);
+  --fquiz-theme-shadow-soft: 0 2px 8px color-mix(in srgb, var(--accent-9) 12%, transparent);
 }
 
 :root[data-fquiz-theme="dark"] {
   --fquiz-theme-bg-elevated: color-mix(in srgb, var(--ant-color-bg-container) 80%, black);
-  --fquiz-theme-table-header-bg: color-mix(in srgb, var(--ant-color-bg-container) 88%, black);
+  --fquiz-theme-table-header-bg: color-mix(in srgb, var(--ant-color-bg-container) 85%, black);
   --fquiz-theme-shell-header-bg: color-mix(in srgb, var(--ant-color-bg-container) 82%, black);
   --fquiz-theme-shell-sider-bg: color-mix(in srgb, var(--ant-color-bg-container) 82%, black);
-  --fquiz-theme-shadow-card: 0 10px 24px color-mix(in srgb, black 45%, transparent);
+  --fquiz-theme-shadow-card: 0 10px 24px color-mix(in srgb, black 50%, transparent);
 }
 
 body {
@@ -191,9 +191,9 @@ body {
 
 .ant-message .ant-message-notice-content {
   max-width: min(420px, calc(100vw - 32px));
-  border: 1px solid color-mix(in srgb, var(--ant-color-border-secondary) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ant-color-border-secondary) 80%, transparent);
   border-radius: 14px;
-  box-shadow: 0 18px 40px color-mix(in srgb, var(--gray-12) 18%, transparent);
+  box-shadow: 0 18px 40px color-mix(in srgb, var(--gray-12) 22%, transparent);
   font-size: 15px;
   font-weight: 600;
   line-height: 1.6;
