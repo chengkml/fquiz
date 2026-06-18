@@ -25,6 +25,7 @@ import type { CSSProperties, ComponentType } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
+import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { readApiError } from "@/lib/api";
 import type { MenuItem, RoleItem, RoleListResponse } from "@/types/auth";
 
@@ -58,6 +59,7 @@ const ROLE_TABLE_FALLBACK_RESERVE = 220;
 export default function AdminRolesPage() {
   const { message, modal } = App.useApp();
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
+  const isMobile = useMobileDetection();
   const [form] = Form.useForm<RoleFormValues>();
   const [roles, setRoles] = useState<RoleItem[]>([]);
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -69,9 +71,14 @@ export default function AdminRolesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [tableScrollY, setTableScrollY] = useState(ROLE_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const [viewMode, setViewMode] = useState<"table" | "card">(isMobile ? "card" : "table");
 
   const canRead = hasPermission("role.read") || hasPermission("role.manage");
   const canManage = hasPermission("role.manage");
+
+  useEffect(() => {
+    setViewMode(isMobile ? "card" : "table");
+  }, [isMobile]);
 
   useToastFeedback({
     errorMessage: error,
@@ -304,6 +311,61 @@ export default function AdminRolesPage() {
     return base;
   }, [canManage, menuNameById, removeRole, startEdit]);
 
+  const renderRoleCard = (role: RoleItem) => {
+    const menuLabels = role.menu_ids.length > 0
+      ? role.menu_ids.map((menuId) => menuNameById.get(menuId) ?? String(menuId))
+      : [];
+    const fullText = menuLabels.length > 0 ? menuLabels.join("、") : "未绑定菜单";
+
+    return (
+      <AntCard
+        key={role.id}
+        size="small"
+        style={{ marginBottom: 12 }}
+        title={
+          <Space direction="vertical" size={0}>
+            <Typography.Text strong>{role.name}</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: '12px' }}>
+              {role.code}
+            </Typography.Text>
+          </Space>
+        }
+        extra={
+          canManage ? (
+            <Space size="small">
+              <Button size="small" onClick={() => startEdit(role)}>
+                编辑
+              </Button>
+              <Button danger size="small" onClick={() => removeRole(role)}>
+                删除
+              </Button>
+            </Space>
+          ) : null
+        }
+      >
+        <Space direction="vertical" size={4} style={{ width: "100%" }}>
+          <div>
+            <Typography.Text type="secondary">菜单：</Typography.Text>
+            <Typography.Text
+              title={fullText}
+              style={{
+                display: "inline-block",
+                maxWidth: "100%",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {menuLabels.length > 2
+                ? `${menuLabels.slice(0, 2).join("、")}等${menuLabels.length}个...`
+                : fullText}
+            </Typography.Text>
+          </div>
+        </Space>
+      </AntCard>
+    );
+  };
+
   const updateTableScrollY = useCallback(() => {
     if (typeof window === "undefined") {
       return;
@@ -434,31 +496,55 @@ export default function AdminRolesPage() {
             <Button type="primary" onClick={() => void loadData(searchKeyword)}>搜索</Button>
           </Form.Item>
         </Form>
-        <div
-          ref={tableScrollAnchorRef}
-          className="admin-roles-table-anchor mt-4"
-          style={{ "--admin-roles-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
-        >
-          <Table<RoleItem>
-            rowKey="id"
-            columns={columns}
-            dataSource={roles}
-            loading={loading}
-            scroll={{ y: tableScrollY }}
-            pagination={{
-              pageSize: 20,
-              total: Math.max(roles.length, 1),
-              showSizeChanger: true,
-              pageSizeOptions: [10, 20, 50, 100],
-              showTotal: (total) => `共 ${total} 条`,
-              hideOnSinglePage: false,
-              style: { marginBottom: 0 },
-            }}
-            locale={{
-              emptyText: <Empty description="未找到匹配角色，请调整搜索条件。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
-            }}
-          />
-        </div>
+
+        {viewMode === "table" ? (
+          <div
+            ref={tableScrollAnchorRef}
+            className="admin-roles-table-anchor mt-4"
+            style={{ "--admin-roles-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+          >
+            <Table<RoleItem>
+              rowKey="id"
+              columns={columns}
+              dataSource={roles}
+              loading={loading}
+              scroll={{ y: tableScrollY }}
+              pagination={{
+                pageSize: 20,
+                total: Math.max(roles.length, 1),
+                showSizeChanger: true,
+                pageSizeOptions: [10, 20, 50, 100],
+                showTotal: (total) => `共 ${total} 条`,
+                hideOnSinglePage: false,
+                style: { marginBottom: 0 },
+              }}
+              locale={{
+                emptyText: <Empty description="未找到匹配角色，请调整搜索条件。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
+              }}
+            />
+          </div>
+        ) : (
+          <div className="mt-4">
+            {loading ? (
+              <div className="flex min-h-[240px] items-center justify-center">
+                <Spin tip="加载中..." />
+              </div>
+            ) : roles.length === 0 ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="未找到匹配角色，请调整搜索条件。"
+              />
+            ) : (
+              <Row gutter={[12, 12]}>
+                {roles.map((role) => (
+                  <Col key={role.id} xs={24} sm={24} md={12} lg={8} xl={6}>
+                    {renderRoleCard(role)}
+                  </Col>
+                ))}
+              </Row>
+            )}
+          </div>
+        )}
       </AntCard>
 
       {canManage && (
