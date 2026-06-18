@@ -8,6 +8,7 @@ import {
   Card,
   Checkbox,
   Col,
+  Dropdown,
   Empty,
   Form,
   Input,
@@ -19,14 +20,18 @@ import {
   Spin,
   Table,
   Tag,
+  Typography,
   type CardProps,
+  type MenuProps,
   type TableColumnsType,
 } from "antd";
+import { MoreOutlined } from "@ant-design/icons";
 import type { CSSProperties, ComponentType } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
+import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { readApiError } from "@/lib/api";
 import { normalizeAppRoutePath } from "@/lib/app-route-path";
 import type { MenuItem, MenuListResponse } from "@/types/auth";
@@ -86,6 +91,7 @@ function normalizeMenuItemPath(menu: MenuItem): MenuItem {
 export default function AdminMenusPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const { message: messageApi, modal } = App.useApp();
+  const isMobile = useMobileDetection();
   const [menus, setMenus] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -98,11 +104,16 @@ export default function AdminMenusPage() {
   const [activeKeyword, setActiveKeyword] = useState("");
   const [activeStatusFilter, setActiveStatusFilter] = useState<FilterStatus>("all");
   const [tableScrollY, setTableScrollY] = useState(MENU_TABLE_MIN_SCROLL_Y);
+  const [viewMode, setViewMode] = useState<"table" | "card">(isMobile ? "card" : "table");
   const [form] = Form.useForm<MenuFormValues>();
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const canRead = hasPermission("menu.read") || hasPermission("menu.manage");
   const canManage = hasPermission("menu.manage");
+
+  useEffect(() => {
+    setViewMode(isMobile ? "card" : "table");
+  }, [isMobile]);
 
   useToastFeedback({
     errorMessage: error,
@@ -386,6 +397,91 @@ export default function AdminMenusPage() {
     return base;
   }, [canManage, deletingMenuId, menuNameById, requestDeleteMenu, startEdit]);
 
+  const renderMenuCard = (menuItem: MenuItem) => {
+    const menuBusy = deletingMenuId === menuItem.id;
+
+    const moreMenuItems: MenuProps["items"] = [
+      {
+        key: "edit",
+        label: "编辑",
+        disabled: menuBusy || !canManage,
+        onClick: () => startEdit(menuItem),
+      },
+      {
+        key: "delete",
+        label: "删除",
+        disabled: menuBusy || !canManage,
+        onClick: () => requestDeleteMenu(menuItem),
+      },
+    ];
+
+    return (
+      <AntCard
+        key={menuItem.id}
+        size="small"
+        style={{ marginBottom: 12 }}
+        title={
+          <Space>
+            <Typography.Text strong>{menuItem.name}</Typography.Text>
+            <Tag color={menuItem.status === "enabled" ? "success" : "default"}>
+              {menuItem.status === "enabled" ? "已启用" : "已禁用"}
+            </Tag>
+          </Space>
+        }
+        extra={
+          canManage ? (
+            <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+              <Button size="small" disabled={menuBusy} icon={<MoreOutlined />} />
+            </Dropdown>
+          ) : null
+        }
+      >
+        <Space direction="vertical" size={4} style={{ width: "100%" }}>
+          <div>
+            <Typography.Text type="secondary">菜单编码：</Typography.Text>
+            <Typography.Text className="font-mono text-xs">{menuItem.code}</Typography.Text>
+          </div>
+          <div>
+            <Typography.Text type="secondary">路径：</Typography.Text>
+            <Typography.Text>{menuItem.path || "-"}</Typography.Text>
+          </div>
+          <div>
+            <Typography.Text type="secondary">父菜单：</Typography.Text>
+            <Typography.Text>
+              {menuItem.parent_id ? menuNameById.get(menuItem.parent_id) ?? menuItem.parent_id : "-"}
+            </Typography.Text>
+          </div>
+          <div>
+            <Typography.Text type="secondary">排序：</Typography.Text>
+            <Typography.Text>{menuItem.sort_order}</Typography.Text>
+          </div>
+          {canManage && (
+            <div style={{ marginTop: 8 }}>
+              <Space wrap>
+                <Button
+                  size="small"
+                  disabled={menuBusy}
+                  onClick={() => startEdit(menuItem)}
+                >
+                  编辑
+                </Button>
+                <Button
+                  danger
+                  size="small"
+                  loading={deletingMenuId === menuItem.id}
+                  disabled={menuBusy}
+                  onClick={() => requestDeleteMenu(menuItem)}
+                >
+                  删除
+                </Button>
+              </Space>
+            </div>
+          )}
+        </Space>
+      </AntCard>
+    );
+  };
+
   const updateTableScrollY = useCallback(() => {
     if (typeof window === "undefined") {
       return;
@@ -532,43 +628,66 @@ export default function AdminMenusPage() {
             </Button>
           </Form.Item>
         </Form>
-        <div
-          ref={tableScrollAnchorRef}
-          className="admin-menus-table-anchor mt-4"
-          style={{ "--admin-menus-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
-        >
-          <Table<MenuItem>
-            rowKey="id"
-            dataSource={filteredMenus}
-            columns={columns}
-            loading={loading}
-            scroll={{ x: 1200, y: tableScrollY }}
-            pagination={
-              filteredMenus.length === 0
-                ? {
-                    pageSize: 20,
-                    showSizeChanger: true,
-                    pageSizeOptions: [10, 20, 50, 100],
-                    showTotal: (total) => `共 ${total} 条`,
-                    hideOnSinglePage: false,
-                    style: { marginBottom: 0 },
-                    total: 0,
-                    current: 1,
-                  }
-                : {
-                    pageSize: 20,
-                    showSizeChanger: true,
-                    pageSizeOptions: [10, 20, 50, 100],
-                    showTotal: (total) => `共 ${total} 条`,
-                    hideOnSinglePage: false,
-                    style: { marginBottom: 0 },
-                  }
-            }
-            locale={{
-              emptyText: <Empty description="未找到符合筛选条件的菜单项。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
-            }}
-          />
-        </div>
+        {viewMode === "table" ? (
+          <div
+            ref={tableScrollAnchorRef}
+            className="admin-menus-table-anchor mt-4"
+            style={{ "--admin-menus-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+          >
+            <Table<MenuItem>
+              rowKey="id"
+              dataSource={filteredMenus}
+              columns={columns}
+              loading={loading}
+              scroll={{ x: 1200, y: tableScrollY }}
+              pagination={
+                filteredMenus.length === 0
+                  ? {
+                      pageSize: 20,
+                      showSizeChanger: true,
+                      pageSizeOptions: [10, 20, 50, 100],
+                      showTotal: (total) => `共 ${total} 条`,
+                      hideOnSinglePage: false,
+                      style: { marginBottom: 0 },
+                      total: 0,
+                      current: 1,
+                    }
+                  : {
+                      pageSize: 20,
+                      showSizeChanger: true,
+                      pageSizeOptions: [10, 20, 50, 100],
+                      showTotal: (total) => `共 ${total} 条`,
+                      hideOnSinglePage: false,
+                      style: { marginBottom: 0 },
+                    }
+              }
+              locale={{
+                emptyText: <Empty description="未找到符合筛选条件的菜单项。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
+              }}
+            />
+          </div>
+        ) : (
+          <div className="mt-4">
+            {loading ? (
+              <div className="flex min-h-[240px] items-center justify-center">
+                <Spin tip="加载中..." />
+              </div>
+            ) : filteredMenus.length === 0 ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="未找到符合筛选条件的菜单项。"
+              />
+            ) : (
+              <Row gutter={[12, 12]}>
+                {filteredMenus.map((menuItem) => (
+                  <Col key={menuItem.id} xs={24} sm={24} md={12} lg={8} xl={6}>
+                    {renderMenuCard(menuItem)}
+                  </Col>
+                ))}
+              </Row>
+            )}
+          </div>
+        )}
       </AntCard>
 
       <Modal
