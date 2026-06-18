@@ -293,11 +293,9 @@ export default function AdminRolesPage() {
             <Button size="small" onClick={() => startEdit(role)}>
               编辑
             </Button>
-            {!['admin', 'user'].includes(role.code) && (
-              <Button danger size="small" onClick={() => removeRole(role)}>
-                删除
-              </Button>
-            )}
+            <Button danger size="small" onClick={() => removeRole(role)}>
+              删除
+            </Button>
           </Space>
         ),
       });
