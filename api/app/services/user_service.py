@@ -504,7 +504,7 @@ def _to_storage_user_status(raw_status: str) -> str:
 
 def _role_ids_exist(db: Session, role_ids: list[str]) -> bool:
     stmt = text(
-        "SELECT id FROM user_role WHERE id IN :role_ids"
+        "SELECT code FROM roles WHERE code IN :role_ids"
     ).bindparams(bindparam("role_ids", expanding=True))
     try:
         existing = {str(row[0]) for row in db.execute(stmt, {"role_ids": role_ids}).all()}
@@ -513,20 +513,29 @@ def _role_ids_exist(db: Session, role_ids: list[str]) -> bool:
     return set(role_ids).issubset(existing)
 
 
-def _replace_legacy_user_roles(db: Session, user_id: str, role_ids: list[str]) -> bool:
+def _replace_legacy_user_roles(db: Session, user_id: str, role_codes: list[str]) -> bool:
     try:
-        db.execute(text("DELETE FROM user_role_rela WHERE user_id = :user_id"), {"user_id": user_id})
+        db.execute(text("DELETE FROM user_roles WHERE user_id = :user_id"), {"user_id": user_id})
+
+        # Get role IDs from role codes
+        role_id_stmt = text(
+            "SELECT id FROM roles WHERE code IN :role_codes"
+        ).bindparams(bindparam("role_codes", expanding=True))
+        role_ids = [row[0] for row in db.execute(role_id_stmt, {"role_codes": role_codes}).all()]
+
+        if not role_ids:
+            return False
+
         insert_stmt = text(
             """
-            INSERT INTO user_role_rela (rela_id, user_id, role_id)
-            VALUES (:rela_id, :user_id, :role_id)
+            INSERT INTO user_roles (user_id, role_id)
+            VALUES (:user_id, :role_id)
             """
         )
         for role_id in role_ids:
             db.execute(
                 insert_stmt,
                 {
-                    "rela_id": uuid4().hex,
                     "user_id": user_id,
                     "role_id": role_id,
                 },
@@ -542,7 +551,7 @@ def _assign_legacy_roles(db: Session, user_id: str, role_ids: list[str]) -> None
     # Keep create-user path backward compatible: if no explicit role given, try legacy "user".
     if not normalized:
         try:
-            exists = db.scalar(text("SELECT id FROM user_role WHERE id = 'user' LIMIT 1"))
+            exists = db.scalar(text("SELECT code FROM roles WHERE code = 'user' LIMIT 1"))
             if exists:
                 normalized = ["user"]
         except SQLAlchemyError:
