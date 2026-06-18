@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from ...core.database import get_db
 from ...core.dependencies import CurrentUser, get_current_user, require_any_permission, require_permission
+from ...exceptions.menu_exceptions import MenuValidationError
 from ...schemas.admin import (
     AuditLogListResponse,
     MenuCreateRequest,
@@ -175,10 +176,14 @@ def create_menu_endpoint(
     current_user: CurrentUser = Depends(require_permission("menu.manage")),
     db: Session = Depends(get_db),
 ) -> MenuPublic:
-    created = create_menu(db, payload, actor_user_id=current_user.user.id)
-    if not created:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid menu payload or duplicate menu code")
-    return created
+    try:
+        return create_menu(db, payload, actor_user_id=current_user.user.id)
+    except MenuValidationError as e:
+        # Return detailed error with field information if available
+        detail = e.message
+        if hasattr(e, 'field') and e.field:
+            detail = f"{e.message} (字段: {e.field})"
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 
 @router.patch("/menus/{menu_id}", response_model=MenuPublic)

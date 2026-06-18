@@ -8,6 +8,15 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from ..exceptions.menu_exceptions import (
+    DuplicateMenuCodeError,
+    EmptyMenuCodeError,
+    EmptyMenuNameError,
+    MenuValidationError,
+    ParentNotFoundError,
+    RemovedMenuCodeError,
+    SelfParentError,
+)
 from ..models.menu import Menu
 from ..schemas.admin import (
     MenuCreateRequest,
@@ -521,24 +530,24 @@ def get_menu_by_id(db: Session, menu_id: str) -> MenuPublic | None:
     return serialize_menu_row(row)
 
 
-def create_menu(db: Session, payload: MenuCreateRequest, *, actor_user_id: str | None) -> MenuPublic | None:
+def create_menu(db: Session, payload: MenuCreateRequest, *, actor_user_id: str | None) -> MenuPublic:
     menu_code = payload.code.strip()
     if not menu_code:
-        return None
+        raise EmptyMenuCodeError()
     if menu_code in REMOVED_MENU_CODES:
-        return None
+        raise RemovedMenuCodeError(menu_code)
     menu_name = payload.name.strip()
     if not menu_name:
-        return None
+        raise EmptyMenuNameError()
     exists = db.scalar(text("SELECT id FROM menus WHERE code = :menu_name"), {"menu_name": menu_code})
     if exists:
-        return None
+        raise DuplicateMenuCodeError(menu_code)
 
     parent_id = payload.parent_id.strip() if payload.parent_id else None
     if parent_id and parent_id == menu_code:
-        return None
+        raise SelfParentError()
     if parent_id and not db.scalar(text("SELECT id FROM menus WHERE id::text = :menu_id OR code = :menu_id"), {"menu_id": parent_id}):
-        return None
+        raise ParentNotFoundError(parent_id)
 
     menu_id = menu_code if len(menu_code) <= 32 else uuid4().hex
     try:
@@ -581,9 +590,10 @@ def create_menu(db: Session, payload: MenuCreateRequest, *, actor_user_id: str |
             ),
         )
         db.commit()
-    except SQLAlchemyError:
+    except SQLAlchemyError as e:
         db.rollback()
-        return None
+        # Re-raise with more context for database errors
+        raise MenuValidationError(f"数据库错误：{str(e)}") from e
 
     _fire_and_forget(
         publish_topic(
@@ -594,7 +604,10 @@ def create_menu(db: Session, payload: MenuCreateRequest, *, actor_user_id: str |
             dedupe_key=f"menus:created:{menu_id}",
         )
     )
-    return get_menu_by_id(db, menu_id)
+    created_menu = get_menu_by_id(db, menu_id)
+    if not created_menu:
+        raise MenuValidationError(f"创建成功但无法获取菜单 {menu_id}")
+    return created_menu
 
 
 def update_menu(db: Session, menu_id: str, payload: MenuUpdateRequest, *, actor_user_id: str | None) -> MenuPublic | None:
