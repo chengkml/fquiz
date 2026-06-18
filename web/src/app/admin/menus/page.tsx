@@ -95,6 +95,8 @@ export default function AdminMenusPage() {
   const [editingMenuId, setEditingMenuId] = useState<string | null>(null);
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
+  const [activeKeyword, setActiveKeyword] = useState("");
+  const [activeStatusFilter, setActiveStatusFilter] = useState<FilterStatus>("all");
   const [tableScrollY, setTableScrollY] = useState(MENU_TABLE_MIN_SCROLL_Y);
   const [form] = Form.useForm<MenuFormValues>();
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -143,11 +145,11 @@ export default function AdminMenusPage() {
     setError("");
 
     const params = new URLSearchParams();
-    if (keyword.trim()) {
-      params.append("keyword", keyword.trim());
+    if (activeKeyword.trim()) {
+      params.append("keyword", activeKeyword.trim());
     }
-    if (statusFilter !== "all") {
-      params.append("status", statusFilter);
+    if (activeStatusFilter !== "all") {
+      params.append("status", activeStatusFilter);
     }
 
     const url = `/api/v1/admin/menus${params.toString() ? `?${params.toString()}` : ""}`;
@@ -161,7 +163,7 @@ export default function AdminMenusPage() {
     const payload = (await response.json()) as MenuListResponse;
     setMenus(payload.items.map(normalizeMenuItemPath));
     setLoading(false);
-  }, [canRead, fetchWithAuth, keyword, statusFilter]);
+  }, [canRead, fetchWithAuth, activeKeyword, activeStatusFilter]);
 
   useEffect(() => {
     if (!user || !canRead) {
@@ -181,6 +183,11 @@ export default function AdminMenusPage() {
       }
     }, [canRead, loadMenus, user]),
   );
+
+  const handleSearch = useCallback(() => {
+    setActiveKeyword(keyword);
+    setActiveStatusFilter(statusFilter);
+  }, [keyword, statusFilter]);
 
   const closeDialog = useCallback(() => {
     setDialogOpen(false);
@@ -499,6 +506,7 @@ export default function AdminMenusPage() {
               allowClear
               value={keyword}
               onChange={(event) => setKeyword(event.currentTarget.value)}
+              onPressEnter={handleSearch}
               placeholder="按编码/名称/路径筛选"
             />
           </Form.Item>
@@ -518,7 +526,7 @@ export default function AdminMenusPage() {
           <Form.Item>
             <Button
               type="primary"
-              onClick={() => void loadMenus()}
+              onClick={handleSearch}
             >
               搜索
             </Button>
