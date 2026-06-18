@@ -510,7 +510,7 @@ export default function AdminMenusPage() {
   return (
     <div className="flex flex-1 flex-col space-y-6">
       <AntCard
-        title="菜单列表"
+        title="菜单管理"
         style={{ height: '100%' }}
         extra={
           canManage ? (
