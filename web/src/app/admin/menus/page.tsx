@@ -543,14 +543,27 @@ export default function AdminMenusPage() {
             columns={columns}
             loading={loading}
             scroll={{ x: 1200, y: tableScrollY }}
-            pagination={{
-              pageSize: 20,
-              showSizeChanger: true,
-              pageSizeOptions: [10, 20, 50, 100],
-              showTotal: (total) => `共 ${total} 条`,
-              hideOnSinglePage: false,
-              style: { marginBottom: 0 },
-            }}
+            pagination={
+              filteredMenus.length === 0
+                ? {
+                    pageSize: 20,
+                    showSizeChanger: true,
+                    pageSizeOptions: [10, 20, 50, 100],
+                    showTotal: (total) => `共 ${total} 条`,
+                    hideOnSinglePage: false,
+                    style: { marginBottom: 0 },
+                    total: 0,
+                    current: 1,
+                  }
+                : {
+                    pageSize: 20,
+                    showSizeChanger: true,
+                    pageSizeOptions: [10, 20, 50, 100],
+                    showTotal: (total) => `共 ${total} 条`,
+                    hideOnSinglePage: false,
+                    style: { marginBottom: 0 },
+                  }
+            }
             locale={{
               emptyText: <Empty description="未找到符合筛选条件的菜单项。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
             }}
