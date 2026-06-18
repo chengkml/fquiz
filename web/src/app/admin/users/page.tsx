@@ -794,29 +794,9 @@ export default function AdminUsersPage() {
         title="用户管理"
         style={{ height: '100%' }}
         extra={(
-          <Space>
-            {!isMobile && (
-              <Button.Group>
-                <Button
-                  icon={<TableOutlined />}
-                  type={viewMode === "table" ? "primary" : "default"}
-                  onClick={() => setViewMode("table")}
-                >
-                  表格
-                </Button>
-                <Button
-                  icon={<AppstoreOutlined />}
-                  type={viewMode === "card" ? "primary" : "default"}
-                  onClick={() => setViewMode("card")}
-                >
-                  卡片
-                </Button>
-              </Button.Group>
-            )}
-            <Button type="primary" onClick={openCreateUserModal}>
-              新增用户
-            </Button>
-          </Space>
+          <Button type="primary" onClick={openCreateUserModal}>
+            新增用户
+          </Button>
         )}
       >
         <Form layout="inline" style={{ rowGap: 12 }}>
@@ -851,6 +831,23 @@ export default function AdminUsersPage() {
               搜索
             </Button>
           </Form.Item>
+
+          {!isMobile && (
+            <Form.Item style={{ marginLeft: 'auto' }}>
+              <Button.Group>
+                <Button
+                  icon={<TableOutlined />}
+                  type={viewMode === "table" ? "primary" : "default"}
+                  onClick={() => setViewMode("table")}
+                />
+                <Button
+                  icon={<AppstoreOutlined />}
+                  type={viewMode === "card" ? "primary" : "default"}
+                  onClick={() => setViewMode("card")}
+                />
+              </Button.Group>
+            </Form.Item>
+          )}
         </Form>
 
         {viewMode === "table" ? (
