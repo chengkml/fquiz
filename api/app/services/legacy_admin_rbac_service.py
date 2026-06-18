@@ -555,10 +555,12 @@ def create_menu(db: Session, payload: MenuCreateRequest, *, actor_user_id: str |
             text(
                 """
                 INSERT INTO menus (
-                    code, name, type, parent_id, path, icon, sort_order, status, permission_code
+                    code, name, type, parent_id, path, icon, sort_order, status, permission_code,
+                    visible, cacheable, component
                 )
                 VALUES (
-                    :code, :name, :type, :parent_id, :path, :icon, :sort_order, :status, :permission_code
+                    :code, :name, :type, :parent_id, :path, :icon, :sort_order, :status, :permission_code,
+                    :visible, :cacheable, :component
                 )
                 RETURNING id::text AS menu_id
                 """
@@ -573,6 +575,9 @@ def create_menu(db: Session, payload: MenuCreateRequest, *, actor_user_id: str |
                 "sort_order": payload.sort_order,
                 "status": payload.status,
                 "permission_code": payload.permission_code or payload.component,
+                "visible": payload.visible,
+                "cacheable": payload.cacheable,
+                "component": payload.component,
             },
         )
         row = result.mappings().first()
