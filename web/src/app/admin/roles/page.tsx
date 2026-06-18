@@ -244,12 +244,12 @@ export default function AdminRolesPage() {
       {
         title: "角色编码",
         dataIndex: "code",
-        width: 180,
+        width: 140,
       },
       {
         title: "角色名称",
         dataIndex: "name",
-        width: 180,
+        width: 140,
       },
       {
         title: "菜单",
@@ -268,7 +268,7 @@ export default function AdminRolesPage() {
               title={fullText}
               style={{
                 display: "inline-block",
-                maxWidth: 420,
+                maxWidth: 300,
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
@@ -287,7 +287,7 @@ export default function AdminRolesPage() {
         title: "操作",
         key: "actions",
         fixed: "right",
-        width: 160,
+        width: 140,
         render: (_, role) => (
           <Space size="small">
             <Button size="small" onClick={() => startEdit(role)}>
@@ -446,7 +446,7 @@ export default function AdminRolesPage() {
             columns={columns}
             dataSource={roles}
             loading={loading}
-            scroll={{ x: 1400, y: tableScrollY }}
+            scroll={{ y: tableScrollY }}
             pagination={{
               pageSize: 20,
               total: Math.max(roles.length, 1),
