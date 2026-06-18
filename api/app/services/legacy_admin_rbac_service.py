@@ -198,32 +198,55 @@ def create_role(db: Session, payload: RoleCreateRequest, *, actor_user_id: str |
     role_name = payload.name.strip()
     if not role_name:
         return None
-    existing = db.scalar(text("SELECT id FROM user_role WHERE id = :id"), {"id": role_id})
+
+    role_source = "legacy" if _legacy_role_table_exists(db) else "modern"
+
+    # Check if role code already exists
+    if role_source == "legacy":
+        existing = db.scalar(text("SELECT id FROM user_role WHERE id = :id"), {"id": role_id})
+    else:
+        existing = db.scalar(text("SELECT id FROM roles WHERE code = :code"), {"code": role_id})
+
     if existing:
         return None
 
     menu_ids = sorted(set(menu_id.strip() for menu_id in payload.menu_ids if menu_id.strip()))
-    if not _menu_ids_exist(db, menu_ids):
+    if not _menu_ids_exist(db, menu_ids, role_source=role_source):
         return None
 
     now = datetime.now()
     try:
-        db.execute(
-            text(
-                """
-                INSERT INTO user_role (id, name, descr, state, create_date, update_date)
-                VALUES (:id, :name, :descr, 'ENABLED', :create_date, :update_date)
-                """
-            ),
-            {
-                "id": role_id,
-                "name": role_name,
-                "descr": role_name,
-                "create_date": now,
-                "update_date": now,
-            },
-        )
-        _replace_role_menus_internal(db, role_id, menu_ids)
+        if role_source == "legacy":
+            db.execute(
+                text(
+                    """
+                    INSERT INTO user_role (id, name, descr, state, create_date, update_date)
+                    VALUES (:id, :name, :descr, 'ENABLED', :create_date, :update_date)
+                    """
+                ),
+                {
+                    "id": role_id,
+                    "name": role_name,
+                    "descr": role_name,
+                    "create_date": now,
+                    "update_date": now,
+                },
+            )
+        else:
+            db.execute(
+                text(
+                    """
+                    INSERT INTO roles (code, name)
+                    VALUES (:code, :name)
+                    """
+                ),
+                {
+                    "code": role_id,
+                    "name": role_name,
+                },
+            )
+
+        _replace_role_menus_internal(db, role_id, menu_ids, role_source=role_source)
         write_audit_log(
             db,
             action="role.create",
