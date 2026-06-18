@@ -468,7 +468,6 @@ export default function AdminRolesPage() {
           title={editingRoleId ? "编辑角色" : "新建角色"}
           open={dialogOpen}
           destroyOnClose
-          width={760}
           okText={saving ? "提交中..." : editingRoleId ? "保存修改" : "创建角色"}
           cancelText="取消"
           confirmLoading={saving}
