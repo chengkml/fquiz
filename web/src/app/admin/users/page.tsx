@@ -584,7 +584,6 @@ export default function AdminUsersPage() {
     {
       title: "操作",
       key: "actions",
-      fixed: "right",
       width: 120,
       render: (_value, row) => {
         const updatingLoading = updatingStatusUserId === row.id;
