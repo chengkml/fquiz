@@ -33,7 +33,6 @@ import type { MenuItem, MenuListResponse } from "@/types/auth";
 
 const AntCard = Card as unknown as ComponentType<CardProps>;
 
-type SortKey = "sort_order" | "id" | "name";
 type FilterStatus = "all" | "enabled" | "disabled";
 
 type MenuFormValues = {
@@ -49,12 +48,6 @@ type MenuFormValues = {
   cacheable: boolean;
   component?: string;
 };
-
-const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
-  { value: "sort_order", label: "按排序值" },
-  { value: "id", label: "按 ID" },
-  { value: "name", label: "按名称" },
-];
 
 const DEFAULT_FORM_VALUES: MenuFormValues = {
   code: "",
@@ -102,7 +95,6 @@ export default function AdminMenusPage() {
   const [editingMenuId, setEditingMenuId] = useState<string | null>(null);
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
-  const [sortKey, setSortKey] = useState<SortKey>("sort_order");
   const [tableScrollY, setTableScrollY] = useState(MENU_TABLE_MIN_SCROLL_Y);
   const [form] = Form.useForm<MenuFormValues>();
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -134,18 +126,12 @@ export default function AdminMenusPage() {
 
   const filteredMenus = useMemo(() => {
     return menus.sort((a, b) => {
-      if (sortKey === "name") {
-        return a.name.localeCompare(b.name, "zh-CN");
-      }
-      if (sortKey === "id") {
-        return compareMenuIds(a.id, b.id);
-      }
       if (a.sort_order !== b.sort_order) {
         return a.sort_order - b.sort_order;
       }
       return compareMenuIds(a.id, b.id);
     });
-  }, [menus, sortKey]);
+  }, [menus]);
 
   const loadMenus = useCallback(async () => {
     if (!canRead) {
@@ -186,19 +172,6 @@ export default function AdminMenusPage() {
     });
   }, [canRead, loadMenus, user]);
 
-  useEffect(() => {
-    if (!user || !canRead) {
-      return;
-    }
-
-    const timeoutId = setTimeout(() => {
-      void loadMenus();
-    }, 300);
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [keyword, statusFilter, canRead, loadMenus, user]);
 
   useTopicSubscription(
     "admin.menus",
@@ -542,23 +515,12 @@ export default function AdminMenusPage() {
             />
           </Form.Item>
 
-          <Form.Item label="排序方式" className="min-w-[180px]">
-            <Select<SortKey>
-              value={sortKey}
-              onChange={(value) => setSortKey(value)}
-              options={SORT_OPTIONS}
-            />
-          </Form.Item>
-
           <Form.Item>
             <Button
-              onClick={() => {
-                setKeyword("");
-                setStatusFilter("all");
-                setSortKey("sort_order");
-              }}
+              type="primary"
+              onClick={() => void loadMenus()}
             >
-              重置筛选
+              搜索
             </Button>
           </Form.Item>
         </Form>
