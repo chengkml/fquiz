@@ -22,7 +22,7 @@ import {
   type CardProps,
   type MenuProps,
 } from "antd";
-import { AppstoreOutlined, MoreOutlined, TableOutlined } from "@ant-design/icons";
+import { MoreOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
@@ -831,23 +831,6 @@ export default function AdminUsersPage() {
               搜索
             </Button>
           </Form.Item>
-
-          {!isMobile && (
-            <Form.Item style={{ marginLeft: 'auto' }}>
-              <Button.Group>
-                <Button
-                  icon={<TableOutlined />}
-                  type={viewMode === "table" ? "primary" : "default"}
-                  onClick={() => setViewMode("table")}
-                />
-                <Button
-                  icon={<AppstoreOutlined />}
-                  type={viewMode === "card" ? "primary" : "default"}
-                  onClick={() => setViewMode("card")}
-                />
-              </Button.Group>
-            </Form.Item>
-          )}
         </Form>
 
         {viewMode === "table" ? (
