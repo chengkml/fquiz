@@ -5,12 +5,14 @@ import {
   Button,
   Card,
   Checkbox,
+  Col,
   Dropdown,
   Empty,
   Form,
   Input,
   Modal,
   Popconfirm,
+  Row,
   Select,
   Space,
   Spin,
@@ -20,7 +22,7 @@ import {
   type CardProps,
   type MenuProps,
 } from "antd";
-import { MoreOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, MoreOutlined, TableOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
@@ -28,6 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
+import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { readApiError } from "@/lib/api";
 import type { RoleItem, RoleListResponse, UserListResponse, UserPublic } from "@/types/auth";
 
@@ -68,6 +71,7 @@ const USERS_TABLE_FALLBACK_RESERVE = 220;
 export default function AdminUsersPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
+  const isMobile = useMobileDetection();
 
   const [createForm] = Form.useForm<CreateUserValues>();
   const [editUserForm] = Form.useForm<EditUserValues>();
@@ -88,9 +92,14 @@ export default function AdminUsersPage() {
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [tableScrollY, setTableScrollY] = useState(USERS_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const [viewMode, setViewMode] = useState<"table" | "card">(isMobile ? "card" : "table");
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  useEffect(() => {
+    setViewMode(isMobile ? "card" : "table");
+  }, [isMobile]);
 
   const canManage = hasPermission("user.manage");
   const canReadRoles = hasPermission("role.read") || hasPermission("role.manage");
@@ -652,6 +661,97 @@ export default function AdminUsersPage() {
     },
   ];
 
+  const renderUserCard = (userItem: UserPublic) => {
+    const updatingLoading = updatingStatusUserId === userItem.id;
+    const resetLoading = resettingUserId === userItem.id;
+    const deleteLoading = deletingUserId === userItem.id;
+    const savingLoading = savingUserId === userItem.id;
+    const rowBusy = updatingLoading || resetLoading || deleteLoading || savingLoading;
+
+    const moreMenuItems: MenuProps["items"] = [
+      {
+        key: "assign-roles",
+        label: "分配角色",
+        disabled: rowBusy,
+        onClick: () => openAssignRolesModal(userItem),
+      },
+      {
+        key: "toggle-status",
+        label: userItem.status === "active" ? "禁用" : "启用",
+        disabled: rowBusy || userItem.id === user?.id,
+        onClick: () => {
+          if (userItem.id === user?.id) {
+            setError("不能修改当前登录账号的状态");
+            return;
+          }
+          const nextStatus: "active" | "disabled" = userItem.status === "active" ? "disabled" : "active";
+          updateUserProfileMutation.mutate({ userId: userItem.id, payload: { status: nextStatus } });
+        },
+      },
+      {
+        key: "reset-password",
+        label: "重置密码",
+        disabled: rowBusy,
+        onClick: () => openResetPasswordModal(userItem),
+      },
+    ];
+
+    return (
+      <AntCard
+        key={userItem.id}
+        size="small"
+        style={{ marginBottom: 12 }}
+        title={
+          <Space>
+            <Typography.Text strong>{userItem.username}</Typography.Text>
+            <Tag color={userItem.status === "active" ? "green" : "default"}>
+              {statusLabel(userItem.status)}
+            </Tag>
+          </Space>
+        }
+        extra={
+          <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+            <Button size="small" disabled={rowBusy} icon={<MoreOutlined />} />
+          </Dropdown>
+        }
+      >
+        <Space direction="vertical" size={4} style={{ width: "100%" }}>
+          <div>
+            <Typography.Text type="secondary">用户 ID：</Typography.Text>
+            <Typography.Text>{userItem.id}</Typography.Text>
+          </div>
+          <div>
+            <Typography.Text type="secondary">邮箱：</Typography.Text>
+            <Typography.Text>{userItem.email || "-"}</Typography.Text>
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <Space wrap>
+              <Button
+                size="small"
+                disabled={rowBusy}
+                onClick={() => openEditUserModal(userItem)}
+              >
+                编辑
+              </Button>
+              <Popconfirm
+                title={`确认删除用户 ${userItem.username}（${userItem.id}）？`}
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true, loading: deleteLoading }}
+                onConfirm={() => deleteUserMutation.mutate(userItem.id)}
+                disabled={rowBusy}
+              >
+                <Button danger size="small" loading={deleteLoading} disabled={rowBusy}>
+                  删除
+                </Button>
+              </Popconfirm>
+            </Space>
+          </div>
+        </Space>
+      </AntCard>
+    );
+  };
+
   if (initializing) {
     return (
       <div className="flex min-h-[240px] items-center justify-center">
@@ -694,9 +794,29 @@ export default function AdminUsersPage() {
         title="用户管理"
         style={{ height: '100%' }}
         extra={(
-          <Button type="primary" onClick={openCreateUserModal}>
-            新增用户
-          </Button>
+          <Space>
+            {!isMobile && (
+              <Button.Group>
+                <Button
+                  icon={<TableOutlined />}
+                  type={viewMode === "table" ? "primary" : "default"}
+                  onClick={() => setViewMode("table")}
+                >
+                  表格
+                </Button>
+                <Button
+                  icon={<AppstoreOutlined />}
+                  type={viewMode === "card" ? "primary" : "default"}
+                  onClick={() => setViewMode("card")}
+                >
+                  卡片
+                </Button>
+              </Button.Group>
+            )}
+            <Button type="primary" onClick={openCreateUserModal}>
+              新增用户
+            </Button>
+          </Space>
         )}
       >
         <Form layout="inline" style={{ rowGap: 12 }}>
@@ -733,41 +853,90 @@ export default function AdminUsersPage() {
           </Form.Item>
         </Form>
 
-        <div
-          ref={tableScrollAnchorRef}
-          className="admin-users-table-anchor mt-4"
-          style={{ "--admin-users-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
-        >
-          <Table<UserPublic>
-            rowKey="id"
-            dataSource={users}
-            columns={columns}
-            loading={usersQuery.isLoading || rolesQuery.isLoading}
-            tableLayout="fixed"
-            pagination={{
-              current: pagination.current,
-              pageSize: pagination.pageSize,
-              total: Math.max(usersQuery.data?.total ?? 0, 1),
-              showSizeChanger: true,
-              pageSizeOptions: [10, 20, 50, 100],
-              showTotal: (total) => `共 ${usersQuery.data?.total ?? 0} 条`,
-              hideOnSinglePage: false,
-              style: { marginBottom: 0 },
-              onChange: (page, pageSize) => {
-                setPagination({ current: page, pageSize });
-              },
-            }}
-            scroll={{ y: tableScrollY }}
-            locale={{
-              emptyText: (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="未找到符合筛选条件的用户。"
-                />
-              ),
-            }}
-          />
-        </div>
+        {viewMode === "table" ? (
+          <div
+            ref={tableScrollAnchorRef}
+            className="admin-users-table-anchor mt-4"
+            style={{ "--admin-users-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+          >
+            <Table<UserPublic>
+              rowKey="id"
+              dataSource={users}
+              columns={columns}
+              loading={usersQuery.isLoading || rolesQuery.isLoading}
+              tableLayout="fixed"
+              pagination={{
+                current: pagination.current,
+                pageSize: pagination.pageSize,
+                total: Math.max(usersQuery.data?.total ?? 0, 1),
+                showSizeChanger: true,
+                pageSizeOptions: [10, 20, 50, 100],
+                showTotal: (total) => `共 ${usersQuery.data?.total ?? 0} 条`,
+                hideOnSinglePage: false,
+                style: { marginBottom: 0 },
+                onChange: (page, pageSize) => {
+                  setPagination({ current: page, pageSize });
+                },
+              }}
+              scroll={{ y: tableScrollY }}
+              locale={{
+                emptyText: (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="未找到符合筛选条件的用户。"
+                  />
+                ),
+              }}
+            />
+          </div>
+        ) : (
+          <div className="mt-4">
+            {usersQuery.isLoading || rolesQuery.isLoading ? (
+              <div className="flex min-h-[240px] items-center justify-center">
+                <Spin tip="加载中..." />
+              </div>
+            ) : users.length === 0 ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="未找到符合筛选条件的用户。"
+              />
+            ) : (
+              <>
+                <Row gutter={[12, 12]}>
+                  {users.map((userItem) => (
+                    <Col key={userItem.id} xs={24} sm={24} md={12} lg={8} xl={6}>
+                      {renderUserCard(userItem)}
+                    </Col>
+                  ))}
+                </Row>
+                <div style={{ marginTop: 16, textAlign: "center" }}>
+                  <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                    <Typography.Text type="secondary">
+                      共 {usersQuery.data?.total ?? 0} 条
+                    </Typography.Text>
+                    <Space wrap>
+                      <Button
+                        disabled={pagination.current === 1}
+                        onClick={() => setPagination((prev) => ({ ...prev, current: prev.current - 1 }))}
+                      >
+                        上一页
+                      </Button>
+                      <Typography.Text>
+                        第 {pagination.current} 页 / 共 {Math.ceil((usersQuery.data?.total ?? 0) / pagination.pageSize)} 页
+                      </Typography.Text>
+                      <Button
+                        disabled={pagination.current >= Math.ceil((usersQuery.data?.total ?? 0) / pagination.pageSize)}
+                        onClick={() => setPagination((prev) => ({ ...prev, current: prev.current + 1 }))}
+                      >
+                        下一页
+                      </Button>
+                    </Space>
+                  </Space>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </AntCard>
 
       <Modal
