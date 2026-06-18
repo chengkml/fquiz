@@ -36,9 +36,29 @@ export function getApiBaseUrl(): string {
 
 export const API_BASE_URL = getApiBaseUrl();
 
+/**
+ * API 错误响应结构
+ *
+ * 后端在异常时返回的完整错误响应包含：
+ * - detail: 错误描述信息（面向用户，应展示此字段）
+ * - type: 异常类型名称（供开发参考）
+ * - stacktrace: 调用栈信息（仅在debug模式下返回，仅供开发人员调试，不应展示给用户）
+ */
+interface ApiErrorResponse {
+  detail?: string;
+  type?: string;
+  stacktrace?: string; // 仅供开发调试，不展示给用户
+}
+
+/**
+ * 从 API 错误响应中提取用户友好的错误信息
+ *
+ * 注意：此函数仅提取 detail 字段展示给用户，
+ * stacktrace 字段（如果存在）不会暴露到用户界面
+ */
 export async function readApiError(response: Response): Promise<string> {
   try {
-    const data = (await response.json()) as { detail?: string };
+    const data = (await response.json()) as ApiErrorResponse;
     return data.detail ?? `HTTP ${response.status}`;
   } catch {
     return `HTTP ${response.status}`;
