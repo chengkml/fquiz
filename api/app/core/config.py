@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     initial_admin_username: str = "管理员"
     initial_admin_password: str | None = None
 
+    debug_mode: bool = True
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

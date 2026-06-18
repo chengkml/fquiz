@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.router import api_router
 from .core.config import get_settings
 from .core.database import SessionLocal, init_db
+from .core.exception_handlers import global_exception_handler
 from .services.scheduled_task_service import seed_default_scheduled_tasks
 
 settings = get_settings()
@@ -46,5 +47,7 @@ def health() -> dict[str, str]:
         "service": settings.api_name,
         "version": settings.api_version,
     }
+
+app.add_exception_handler(Exception, global_exception_handler)
 
 app.include_router(api_router)
