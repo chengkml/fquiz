@@ -114,20 +114,24 @@ def create_user(
         status="ENABLED",
     )
 
-    db.add(user)
-    db.flush()
-    _assign_legacy_roles(db, user_id, [])
-    write_audit_log(
-        db,
-        action="user.create",
-        actor_user_id=actor_user_id,
-        detail=compose_audit_detail(
-            f"target_user_id={user.id}",
-            f"target_username={user.username}",
-            f"target_status={user.status}",
-        ),
-    )
-    db.commit()
+    try:
+        db.add(user)
+        db.flush()
+        _assign_legacy_roles(db, user_id, [])
+        write_audit_log(
+            db,
+            action="user.create",
+            actor_user_id=actor_user_id,
+            detail=compose_audit_detail(
+                f"target_user_id={user.id}",
+                f"target_username={user.username}",
+                f"target_status={user.status}",
+            ),
+        )
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return None
 
     created = get_user_by_id(db, user_id)
     if created:
@@ -150,18 +154,22 @@ def delete_user(db: Session, user_id: str, *, actor_user_id: str | None) -> bool
         return False
 
     target_username = user.username
-    revoke_active_sessions_for_user(db, user_id)
-    write_audit_log(
-        db,
-        action="user.delete",
-        actor_user_id=actor_user_id,
-        detail=compose_audit_detail(
-            f"target_user_id={user_id}",
-            f"target_username={target_username}",
-        ),
-    )
-    db.delete(user)
-    db.commit()
+    try:
+        revoke_active_sessions_for_user(db, user_id)
+        write_audit_log(
+            db,
+            action="user.delete",
+            actor_user_id=actor_user_id,
+            detail=compose_audit_detail(
+                f"target_user_id={user_id}",
+                f"target_username={target_username}",
+            ),
+        )
+        db.delete(user)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return False
 
     _fire_and_forget(
         publish_topic(
@@ -186,20 +194,24 @@ def reset_user_password(
     if not user:
         return None
 
-    user.password_hash = hash_password(payload.new_password)
-    revoke_active_sessions_for_user(db, user_id)
-    write_audit_log(
-        db,
-        action="user.password.reset",
-        actor_user_id=actor_user_id,
-        detail=compose_audit_detail(
-            f"target_user_id={user.id}",
-            f"target_username={user.username}",
-            "password_updated=true",
-            "sessions_revoked=true",
-        ),
-    )
-    db.commit()
+    try:
+        user.password_hash = hash_password(payload.new_password)
+        revoke_active_sessions_for_user(db, user_id)
+        write_audit_log(
+            db,
+            action="user.password.reset",
+            actor_user_id=actor_user_id,
+            detail=compose_audit_detail(
+                f"target_user_id={user.id}",
+                f"target_username={user.username}",
+                "password_updated=true",
+                "sessions_revoked=true",
+            ),
+        )
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return None
 
     updated = get_user_by_id(db, user_id)
     if updated:
@@ -276,22 +288,27 @@ def update_user(
     if not changed_fields:
         return serialize_user(user)
 
-    write_audit_log(
-        db,
-        action="user.update",
-        actor_user_id=actor_user_id,
-        detail=compose_audit_detail(
-            f"target_user_id={user.id}",
-            f"target_username={user.username}",
-            describe_changed_fields(changed_fields),
-            (
-                f"status_transition={previous_status}->{user.status}"
-                if status_changed
-                else None
+    try:
+        write_audit_log(
+            db,
+            action="user.update",
+            actor_user_id=actor_user_id,
+            detail=compose_audit_detail(
+                f"target_user_id={user.id}",
+                f"target_username={user.username}",
+                describe_changed_fields(changed_fields),
+                (
+                    f"status_transition={previous_status}->{user.status}"
+                    if status_changed
+                    else None
+                ),
             ),
-        ),
-    )
-    db.commit()
+        )
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return None
+
     updated = get_user_by_id(db, user_id)
     if updated:
         queue_user_auth_refresh(updated, status_changed=status_changed)
@@ -339,17 +356,21 @@ def set_user_roles(
     updated = get_user_by_id(db, user_id)
     if updated:
         authz = get_user_authorization(db, updated.id)
-        write_audit_log(
-            db,
-            action="user.roles.replace",
-            actor_user_id=actor_user_id,
-            detail=compose_audit_detail(
-                f"target_user_id={updated.id}",
-                f"target_username={updated.username}",
-                f"role_codes={summarize_values(sorted(authz.role_codes))}",
-            ),
-        )
-        db.commit()
+        try:
+            write_audit_log(
+                db,
+                action="user.roles.replace",
+                actor_user_id=actor_user_id,
+                detail=compose_audit_detail(
+                    f"target_user_id={updated.id}",
+                    f"target_username={updated.username}",
+                    f"role_codes={summarize_values(sorted(authz.role_codes))}",
+                ),
+            )
+            db.commit()
+        except SQLAlchemyError:
+            db.rollback()
+            return None
         queue_user_auth_refresh(updated)
         _fire_and_forget(
             publish_topic(
