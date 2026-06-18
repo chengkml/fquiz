@@ -87,12 +87,24 @@ def get_user_by_username(db: Session, username: str) -> User | None:
     return db.execute(stmt).unique().scalar_one_or_none()
 
 
+class UserCreateError(Exception):
+    pass
+
+
+class UserDuplicateError(UserCreateError):
+    pass
+
+
+class UserRoleAssignmentError(UserCreateError):
+    pass
+
+
 def create_user(
     db: Session,
     payload: UserCreateRequest,
     *,
     actor_user_id: str | None,
-) -> UserPublic | None:
+) -> UserPublic:
     user_id = payload.user_id.strip()
 
     # Build conditions for duplicate check
@@ -104,7 +116,7 @@ def create_user(
         select(User.id).where(or_(*conditions))
     )
     if duplicate:
-        return None
+        raise UserDuplicateError("User id/email/username already exists")
 
     user = User(
         id=user_id,
@@ -129,9 +141,12 @@ def create_user(
             ),
         )
         db.commit()
-    except SQLAlchemyError:
+    except SQLAlchemyError as e:
         db.rollback()
-        return None
+        error_msg = str(e).lower()
+        if "role" in error_msg or "default" in error_msg:
+            raise UserRoleAssignmentError("Default role not configured or role assignment failed")
+        raise UserCreateError("User creation failed")
 
     created = get_user_by_id(db, user_id)
     if created:
@@ -145,7 +160,7 @@ def create_user(
                 dedupe_key=f"users:created:{created.id}",
             )
         )
-    return serialize_user(created) if created else None
+    return serialize_user(created)
 
 
 def delete_user(db: Session, user_id: str, *, actor_user_id: str | None) -> bool:

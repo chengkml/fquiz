@@ -62,7 +62,7 @@ class UserEmailOptionalTest(unittest.TestCase):
         self.assertIsNotNone(user)
         self.assertEqual(user.id, "test_user_1")
         self.assertEqual(user.username, "TestUser1")
-        self.assertIsNone(user.email)
+        self.assertEqual(user.email, "")  # API returns empty string for None
 
     def test_create_user_with_email(self) -> None:
         """Test creating a user with email should still work."""

@@ -13,6 +13,9 @@ from ...schemas.user import (
     UserUpdateRequest,
 )
 from ...services.user_service import (
+    UserCreateError,
+    UserDuplicateError,
+    UserRoleAssignmentError,
     create_user,
     delete_user,
     get_user_by_id,
@@ -32,13 +35,24 @@ def create_user_account(
     current_user: CurrentUser = Depends(require_permission("user.manage")),
     db: Session = Depends(get_db),
 ) -> UserPublic:
-    created = create_user(db, payload, actor_user_id=current_user.user.id)
-    if not created:
+    try:
+        created = create_user(db, payload, actor_user_id=current_user.user.id)
+        return created
+    except UserDuplicateError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="User id/email/username already exists or default role missing",
+            detail=str(e),
         )
-    return created
+    except UserRoleAssignmentError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+    except UserCreateError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
 
 
 @router.get("", response_model=UserListResponse)
