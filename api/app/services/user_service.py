@@ -115,7 +115,7 @@ def create_user(
     )
 
     db.add(user)
-    db.commit()
+    db.flush()
     _assign_legacy_roles(db, user_id, [])
     write_audit_log(
         db,
@@ -495,8 +495,8 @@ def _replace_legacy_user_roles(db: Session, user_id: str, role_ids: list[str]) -
                     "role_id": role_id,
                 },
             )
+        db.flush()
     except SQLAlchemyError:
-        db.rollback()
         return False
     return True
 
