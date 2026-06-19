@@ -92,6 +92,10 @@ export default function AdminUsersPage() {
   const [tableScrollY, setTableScrollY] = useState(USERS_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const viewMode: "table" | "card" = isMobile ? "card" : "table";
+  const [cardViewPage, setCardViewPage] = useState(1);
+  const [allLoadedUsers, setAllLoadedUsers] = useState<UserPublic[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const cardViewScrollRef = useRef<HTMLDivElement | null>(null);
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -583,6 +587,8 @@ export default function AdminUsersPage() {
   const handleSearch = () => {
     setSearchKeyword(keywordInput);
     setPagination((prev) => ({ ...prev, current: 1 }));
+    setCardViewPage(1);
+    setAllLoadedUsers([]);
   };
 
   const queryError =
@@ -596,6 +602,56 @@ export default function AdminUsersPage() {
     clearError: () => setError(""),
     clearSuccess: () => setSuccess(""),
   });
+
+  // Update allLoadedUsers when users data changes in card view
+  useEffect(() => {
+    if (viewMode === "card" && users.length > 0 && !usersQuery.isLoading) {
+      setAllLoadedUsers((prev) => {
+        if (cardViewPage === 1) {
+          return users;
+        }
+        const existingIds = new Set(prev.map(u => u.id));
+        const newUsers = users.filter(u => !existingIds.has(u.id));
+        return [...prev, ...newUsers];
+      });
+      setIsLoadingMore(false);
+    }
+  }, [users, usersQuery.isLoading, viewMode, cardViewPage]);
+
+  // Handle infinite scroll for card view
+  useEffect(() => {
+    if (viewMode !== "card") return;
+
+    const handleScroll = () => {
+      if (isLoadingMore || usersQuery.isLoading) return;
+
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const scrollHeight = document.documentElement.scrollHeight;
+      const clientHeight = document.documentElement.clientHeight;
+
+      if (scrollTop + clientHeight >= scrollHeight - 100) {
+        const total = usersQuery.data?.total ?? 0;
+        const loadedCount = allLoadedUsers.length;
+
+        if (loadedCount < total) {
+          setIsLoadingMore(true);
+          setCardViewPage((prev) => prev + 1);
+          setPagination((prev) => ({ ...prev, current: prev.current + 1 }));
+        }
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [viewMode, isLoadingMore, usersQuery.isLoading, usersQuery.data?.total, allLoadedUsers.length]);
+
+  // Reset card view state when switching modes or filters change
+  useEffect(() => {
+    if (viewMode === "card") {
+      setCardViewPage(1);
+      setAllLoadedUsers([]);
+    }
+  }, [viewMode, statusFilter, trimmedKeyword]);
 
   const updateTableScrollY = useCallback(() => {
     if (typeof window === "undefined") {
@@ -1016,11 +1072,11 @@ export default function AdminUsersPage() {
           </div>
         ) : (
           <div className="admin-users-card-view mt-4">
-            {usersQuery.isLoading || rolesQuery.isLoading ? (
+            {usersQuery.isLoading && allLoadedUsers.length === 0 ? (
               <div className="admin-users-card-view-state">
                 <Spin tip="加载中..." />
               </div>
-            ) : users.length === 0 ? (
+            ) : allLoadedUsers.length === 0 ? (
               <div className="admin-users-card-view-state">
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -1030,47 +1086,24 @@ export default function AdminUsersPage() {
             ) : (
               <div className="admin-users-card-view-content">
                 <Row gutter={[12, 12]}>
-                  {users.map((userItem) => (
+                  {allLoadedUsers.map((userItem) => (
                     <Col key={userItem.id} xs={24} sm={24} md={12} lg={8} xl={6}>
                       {renderUserCard(userItem)}
                     </Col>
                   ))}
                 </Row>
-                <div
-                  style={{
-                    position: "fixed",
-                    bottom: 20,
-                    right: 20,
-                    background: "var(--gray-2)",
-                    padding: "8px 16px",
-                    borderRadius: 8,
-                    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
-                    zIndex: 1000,
-                  }}
-                >
-                  <Space size={16}>
+                {isLoadingMore && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Spin tip="加载更多..." />
+                  </div>
+                )}
+                {allLoadedUsers.length >= (usersQuery.data?.total ?? 0) && allLoadedUsers.length > 0 && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
                     <Typography.Text type="secondary">
-                      共 {usersQuery.data?.total ?? 0} 条
+                      已加载全部 {allLoadedUsers.length} 条数据
                     </Typography.Text>
-                    <Space size={8}>
-                      <Button
-                        type="text"
-                        icon={<LeftOutlined />}
-                        disabled={pagination.current === 1}
-                        onClick={() => setPagination((prev) => ({ ...prev, current: prev.current - 1 }))}
-                      />
-                      <Typography.Text>
-                        第 {pagination.current} / {Math.ceil((usersQuery.data?.total ?? 0) / pagination.pageSize)} 页
-                      </Typography.Text>
-                      <Button
-                        type="text"
-                        icon={<RightOutlined />}
-                        disabled={pagination.current >= Math.ceil((usersQuery.data?.total ?? 0) / pagination.pageSize)}
-                        onClick={() => setPagination((prev) => ({ ...prev, current: prev.current + 1 }))}
-                      />
-                    </Space>
-                  </Space>
-                </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
