@@ -97,19 +97,23 @@
 }
 
 :root[data-fquiz-theme="dark"] .admin-users-user-card {
-  border-color: color-mix(in srgb, var(--fquiz-theme-primary) 35%, var(--ant-color-border-secondary));
+  border-color: color-mix(in srgb, var(--fquiz-theme-primary) 35%, var(--ant-color-border-secondary)) !important;
   background:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--fquiz-theme-bg-container) 92%, var(--fquiz-theme-primary) 8%) 0%,
-      var(--fquiz-theme-bg-container) 100%
-    );
-  box-shadow: 0 8px 18px color-mix(in srgb, black 40%, transparent);
+      color-mix(in srgb, var(--ant-color-bg-container) 92%, var(--fquiz-theme-primary) 8%) 0%,
+      var(--ant-color-bg-container) 100%
+    ) !important;
+  box-shadow: 0 8px 18px color-mix(in srgb, black 40%, transparent) !important;
 }
 
 :root[data-fquiz-theme="dark"] .admin-users-user-card > .ant-card-head {
-  border-bottom-color: color-mix(in srgb, var(--fquiz-theme-primary) 25%, var(--ant-color-border-secondary));
-  background: color-mix(in srgb, var(--fquiz-theme-primary) 10%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--fquiz-theme-primary) 25%, var(--ant-color-border-secondary)) !important;
+  background: color-mix(in srgb, var(--fquiz-theme-primary) 10%, transparent) !important;
+}
+
+:root[data-fquiz-theme="dark"] .admin-users-user-card > .ant-card-body {
+  background: var(--ant-color-bg-container) !important;
 }
 
 body {
