@@ -1085,7 +1085,7 @@ export default function AdminUsersPage() {
             />
           </div>
         ) : (
-          <div className="admin-users-card-view mt-4">
+          <div className="admin-users-card-view">
             {usersQuery.isLoading && allLoadedUsers.length === 0 ? (
               <div className="admin-users-card-view-state">
                 <Spin tip="加载中..." />
