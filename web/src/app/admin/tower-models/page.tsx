@@ -6,26 +6,24 @@ import {
   App,
   Button,
   Card,
+  Col,
   Dropdown,
   Empty,
   Form,
   Input,
   InputNumber,
   Modal,
-  Pagination,
-  Popconfirm,
-  Segmented,
+  Row,
   Select,
   Space,
   Spin,
-  Switch,
   Table,
   Tag,
   Typography,
   type CardProps,
   type MenuProps,
 } from "antd";
-import { MoreOutlined } from "@ant-design/icons";
+import { EditOutlined, MoreOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
 
@@ -52,8 +50,6 @@ type TowerModelFormValues = {
   sort_order: number;
 };
 
-type TowerModelViewMode = "card" | "list";
-
 const EMPTY_FORM: TowerModelFormValues = {
   code: "",
   name: "",
@@ -63,11 +59,10 @@ const EMPTY_FORM: TowerModelFormValues = {
 };
 
 const TOWER_MODEL_TABLE_MIN_SCROLL_Y = 220;
-const TOWER_MODEL_CARD_MIN_SCROLL_Y = 280;
 const TOWER_MODEL_VIEWPORT_GAP = 40;
 const TOWER_MODEL_FALLBACK_RESERVE = 220;
-const TOWER_MODEL_PAGE_SIZE_OPTIONS = [6, 9, 12, 18, 24];
-const TOWER_MODEL_DEFAULT_PAGE_SIZE = 12;
+const TOWER_MODEL_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+const TOWER_MODEL_DEFAULT_PAGE_SIZE = 20;
 
 function toEditValues(item: TowerModelSummary): TowerModelFormValues {
   return {
@@ -93,14 +88,12 @@ type TowerModelImageCellProps = {
   model: TowerModelSummary;
   fetchWithAuth: ReturnType<typeof useAuth>["fetchWithAuth"];
   onPreviewError: (message: string) => void;
-  mode?: "compact" | "hero";
 };
 
 function TowerModelImageCell({
   model,
   fetchWithAuth,
   onPreviewError,
-  mode = "compact",
 }: TowerModelImageCellProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -175,98 +168,6 @@ function TowerModelImageCell({
     }
   }, [fetchWithAuth, model.id, onPreviewError]);
 
-  if (mode === "hero") {
-    return (
-      <div
-        style={{
-          position: "relative",
-          borderRadius: 10,
-          overflow: "hidden",
-          border: "1px solid var(--gray-6, #d9d9d9)",
-          background: "#f5f5f5",
-          minHeight: 260,
-          height: 280,
-        }}
-      >
-        {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt={model.name}
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              display: "block",
-            }}
-          />
-        ) : (
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "#f0f0f0",
-            }}
-          >
-            <Typography.Text type="secondary">{loading ? "图片加载中..." : "未上传模型图片"}</Typography.Text>
-          </div>
-        )}
-
-        <Tag
-          color={model.is_enabled ? "success" : "default"}
-          style={{ position: "absolute", right: 10, top: 10, marginInlineEnd: 0 }}
-        >
-          {model.is_enabled ? "启用" : "禁用"}
-        </Tag>
-
-        <div
-          style={{
-            position: "absolute",
-            inset: "auto 0 0 0",
-            padding: "10px 12px",
-            display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "space-between",
-            gap: 8,
-            background: "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.72) 100%)",
-          }}
-        >
-          <div style={{ minWidth: 0 }}>
-            <div
-              style={{
-                color: "#fff",
-                fontWeight: 600,
-                lineHeight: 1.25,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {model.name}
-            </div>
-            <div
-              style={{
-                color: "rgba(255,255,255,0.86)",
-                fontSize: 12,
-                lineHeight: 1.25,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {model.code} · {model.tower_type || "-"}
-            </div>
-          </div>
-          <Button size="small" type="primary" ghost onClick={() => void openPreview()} loading={previewing}>
-            预览
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <Space size={8}>
       {imageUrl ? (
@@ -311,19 +212,17 @@ export default function AdminTowerModelsPage() {
   const [keywordInput, setKeywordInput] = useState("");
   const [keyword, setKeyword] = useState("");
   const [enabledFilter, setEnabledFilter] = useState<"all" | "enabled" | "disabled">("all");
+  const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [error, setError] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<TowerModelSummary | null>(null);
   const [uploadModel, setUploadModel] = useState<TowerModelSummary | null>(null);
-  const [viewMode, setViewMode] = useState<TowerModelViewMode>(isMobile ? "card" : "list");
   const [pagination, setPagination] = useState({ current: 1, pageSize: TOWER_MODEL_DEFAULT_PAGE_SIZE });
   const [cardViewPage, setCardViewPage] = useState(1);
-  const [allLoadedModels, setAllLoadedModels] = useState<TowerModelSummary[]>([]);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [tableScrollY, setTableScrollY] = useState(TOWER_MODEL_CARD_MIN_SCROLL_Y);
-  const viewScrollAnchorRef = useRef<HTMLDivElement | null>(null);
-  const paginationRef = useRef<HTMLDivElement | null>(null);
+  const [tableScrollY, setTableScrollY] = useState(TOWER_MODEL_TABLE_MIN_SCROLL_Y);
+  const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const pageCardRef = useRef<HTMLDivElement | null>(null);
+  const viewMode: "table" | "card" = isMobile ? "card" : "table";
 
   const handleImagePreviewError = useCallback((message: string) => {
     setError(message);
@@ -377,12 +276,13 @@ export default function AdminTowerModelsPage() {
   const listData = towerModelsQuery.data;
   const listItems = useMemo(() => listData?.items ?? [], [listData?.items]);
   const totalItems = listData?.total ?? listItems.length;
-  const currentPage = pagination.current;
-  const pageSize = pagination.pageSize;
-  const pagedItems = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return listItems.slice(start, start + pageSize);
-  }, [currentPage, listItems, pageSize]);
+  const { current: paginationCurrent, pageSize: paginationPageSize } = pagination;
+  const paginationMaxPage = Math.max(1, Math.ceil(totalItems / paginationPageSize));
+  const tableCurrentPage = Math.min(paginationCurrent, paginationMaxPage);
+  const visibleCardModels = useMemo(
+    () => listItems.slice(0, cardViewPage * paginationPageSize),
+    [cardViewPage, listItems, paginationPageSize],
+  );
 
   const refreshList = useCallback(async () => {
     await queryClient.invalidateQueries({
@@ -397,32 +297,6 @@ export default function AdminTowerModelsPage() {
     void refreshList();
   }, [refreshList]));
 
-  useEffect(() => {
-    const maxPage = Math.max(1, Math.ceil(totalItems / pageSize));
-    if (currentPage > maxPage) {
-      setPagination((previous) => ({ ...previous, current: maxPage }));
-    }
-  }, [currentPage, pageSize, totalItems]);
-
-  // Update allLoadedModels when tower models data changes in card view
-  useEffect(() => {
-    if (viewMode === "card" && !towerModelsQuery.isLoading) {
-      if (cardViewPage === 1) {
-        setAllLoadedModels(listItems);
-      } else {
-        setAllLoadedModels((prev) => {
-          if (listItems.length === 0) {
-            return prev;
-          }
-          const existingIds = new Set(prev.map(m => m.id));
-          const newModels = listItems.filter(m => !existingIds.has(m.id));
-          return [...prev, ...newModels];
-        });
-      }
-      setIsLoadingMore(false);
-    }
-  }, [listItems, towerModelsQuery.isLoading, viewMode, cardViewPage]);
-
   // Handle infinite scroll for card view
   useEffect(() => {
     if (viewMode !== "card") return;
@@ -434,7 +308,7 @@ export default function AdminTowerModelsPage() {
     if (!cardBody) return;
 
     const handleScroll = () => {
-      if (isLoadingMore || towerModelsQuery.isLoading) return;
+      if (towerModelsQuery.isLoading) return;
 
       const scrollTop = cardBody.scrollTop;
       const scrollHeight = cardBody.scrollHeight;
@@ -442,25 +316,17 @@ export default function AdminTowerModelsPage() {
 
       if (scrollTop + clientHeight >= scrollHeight - 100) {
         const total = totalItems;
-        const loadedCount = allLoadedModels.length;
+        const loadedCount = visibleCardModels.length;
 
         if (loadedCount < total) {
-          setIsLoadingMore(true);
           setCardViewPage((prev) => prev + 1);
-          setPagination((prev) => ({ ...prev, current: prev.current + 1 }));
         }
       }
     };
 
     cardBody.addEventListener("scroll", handleScroll);
     return () => cardBody.removeEventListener("scroll", handleScroll);
-  }, [viewMode, isLoadingMore, towerModelsQuery.isLoading, totalItems, allLoadedModels.length]);
-
-  // Reset card view state when switching modes or filters change
-  useEffect(() => {
-    setCardViewPage(1);
-    setAllLoadedModels([]);
-  }, [keyword, enabledFilter]);
+  }, [viewMode, towerModelsQuery.isLoading, totalItems, visibleCardModels.length]);
 
   const saveMutation = useMutation({
     mutationFn: async (values: TowerModelFormValues) => {
@@ -554,16 +420,18 @@ export default function AdminTowerModelsPage() {
     setDialogOpen(true);
   }, [form]);
 
-  const handleSearch = () => {
-    setKeyword(keywordInput);
-    setPagination((previous) => ({ ...previous, current: 1 }));
-  };
+  const handleKeywordChange = (value: string) => {
+    setKeywordInput(value);
 
-  const handleResetFilters = () => {
-    setKeywordInput("");
-    setKeyword("");
-    setEnabledFilter("all");
-    setPagination((previous) => ({ ...previous, current: 1 }));
+    if (keywordDebounceTimeoutRef.current) {
+      clearTimeout(keywordDebounceTimeoutRef.current);
+    }
+
+    keywordDebounceTimeoutRef.current = setTimeout(() => {
+      setKeyword(value);
+      setPagination((previous) => ({ ...previous, current: 1 }));
+      setCardViewPage(1);
+    }, 500);
   };
 
   const tableColumns = useMemo<ColumnsType<TowerModelSummary>>(
@@ -675,11 +543,108 @@ export default function AdminTowerModelsPage() {
     [canManage, deleteMutation, fetchWithAuth, handleImagePreviewError, openEdit],
   );
 
+  const renderDefaultSummary = (row: TowerModelSummary) => (
+    <Space size={[4, 4]} wrap>
+      <Tag bordered={false}>接地 {row.default_ground_resistance_ohm ?? "-"}Ω</Tag>
+      <Tag bordered={false}>地闪 {row.default_lightning_density ?? "-"}</Tag>
+      <Tag bordered={false}>档距 {row.default_span_small_m ?? "-"} / {row.default_span_large_m ?? "-"}</Tag>
+    </Space>
+  );
+
+  const renderTowerModelCard = (row: TowerModelSummary) => {
+    const rowBusy = deleteMutation.isPending;
+    const moreMenuItems: MenuProps["items"] = [
+      {
+        key: "upload-image",
+        label: "上传图片",
+        disabled: rowBusy,
+        onClick: () => setUploadModel(row),
+      },
+      {
+        key: "delete",
+        label: "删除",
+        danger: true,
+        disabled: rowBusy,
+        onClick: () => {
+          Modal.confirm({
+            title: "删除杆塔模型",
+            content: `确认删除模型 ${row.code} 吗？`,
+            okText: "删除",
+            cancelText: "取消",
+            okButtonProps: { danger: true },
+            onOk: async () => {
+              await deleteMutation.mutateAsync(row.id);
+            },
+          });
+        },
+      },
+    ];
+
+    return (
+      <AntCard
+        key={row.id}
+        className="admin-tower-models-model-card"
+        size="small"
+        title={
+          <Space className="min-w-0" size={8}>
+            <Typography.Text strong ellipsis={{ tooltip: row.name }}>
+              {row.name}
+            </Typography.Text>
+            <Tag color={row.is_enabled ? "success" : "default"}>{row.is_enabled ? "启用" : "禁用"}</Tag>
+          </Space>
+        }
+        extra={canManage ? (
+          <Space size={4}>
+            <Button
+              type="text"
+              size="small"
+              disabled={rowBusy}
+              icon={<EditOutlined />}
+              onClick={() => openEdit(row)}
+            />
+            <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+              <Button type="text" size="small" disabled={rowBusy} icon={<MoreOutlined />} />
+            </Dropdown>
+          </Space>
+        ) : null}
+      >
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <div className="admin-tower-models-model-card-field">
+            <Typography.Text type="secondary">模型编码</Typography.Text>
+            <Typography.Text code ellipsis={{ tooltip: row.code }}>
+              {row.code}
+            </Typography.Text>
+          </div>
+          <div className="admin-tower-models-model-card-field">
+            <Typography.Text type="secondary">塔型</Typography.Text>
+            <Typography.Text>{row.tower_type || "-"}</Typography.Text>
+          </div>
+          <div className="admin-tower-models-model-card-field">
+            <Typography.Text type="secondary">排序</Typography.Text>
+            <Typography.Text>{row.sort_order}</Typography.Text>
+          </div>
+          <div className="admin-tower-models-model-card-field">
+            <Typography.Text type="secondary">默认参数</Typography.Text>
+            {renderDefaultSummary(row)}
+          </div>
+          <div className="admin-tower-models-model-card-field">
+            <Typography.Text type="secondary">模型图片</Typography.Text>
+            {row.image_path ? (
+              <TowerModelImageCell model={row} fetchWithAuth={fetchWithAuth} onPreviewError={handleImagePreviewError} />
+            ) : (
+              <Typography.Text type="secondary">未上传</Typography.Text>
+            )}
+          </div>
+        </Space>
+      </AntCard>
+    );
+  };
+
   const updateTableScrollY = useCallback(() => {
     if (typeof window === "undefined") {
       return;
     }
-    const anchor = viewScrollAnchorRef.current;
+    const anchor = tableScrollAnchorRef.current;
     if (!anchor) {
       return;
     }
@@ -688,26 +653,33 @@ export default function AdminTowerModelsPage() {
     const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
     const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
 
-    const minHeight = viewMode === "card" ? TOWER_MODEL_CARD_MIN_SCROLL_Y : TOWER_MODEL_TABLE_MIN_SCROLL_Y;
     let nextHeight = Math.floor(window.innerHeight - anchorTop - TOWER_MODEL_FALLBACK_RESERVE);
     if (tableWrapper) {
       const wrapperRect = tableWrapper.getBoundingClientRect();
-      const bodyHeight = tableBody?.getBoundingClientRect().height ?? minHeight;
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? TOWER_MODEL_TABLE_MIN_SCROLL_Y;
       const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
       const topGap = Math.max(0, wrapperRect.top - anchorTop);
       nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - TOWER_MODEL_VIEWPORT_GAP);
     }
 
-    const clampedHeight = Math.max(minHeight, nextHeight);
+    const clampedHeight = Math.max(TOWER_MODEL_TABLE_MIN_SCROLL_Y, nextHeight);
     setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
-  }, [viewMode]);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
     window.requestAnimationFrame(updateTableScrollY);
-  }, [currentPage, error, listError, pageSize, totalItems, towerModelsQuery.isFetching, updateTableScrollY]);
+  }, [error, listError, listItems.length, paginationCurrent, paginationPageSize, towerModelsQuery.isFetching, updateTableScrollY]);
+
+  useEffect(() => {
+    return () => {
+      if (keywordDebounceTimeoutRef.current) {
+        clearTimeout(keywordDebounceTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -729,9 +701,8 @@ export default function AdminTowerModelsPage() {
       return;
     }
 
-    const anchor = viewScrollAnchorRef.current;
-    const paginationEl = paginationRef.current;
-    if (!anchor || !paginationEl) {
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
       return;
     }
 
@@ -739,7 +710,6 @@ export default function AdminTowerModelsPage() {
       window.requestAnimationFrame(updateTableScrollY);
     });
     resizeObserver.observe(anchor);
-    resizeObserver.observe(paginationEl);
 
     return () => {
       resizeObserver.disconnect();
@@ -794,18 +764,28 @@ export default function AdminTowerModelsPage() {
           <Button onClick={openCreate} type="primary">新建模型</Button>
         ) : null}
       >
-        <Space direction="vertical" size={12} className="w-full">
-          <Form layout="inline" style={{ rowGap: 12 }}>
-            <Form.Item label="关键词" className="min-w-[260px]">
+        {viewMode === "card" ? (
+          <Form layout="vertical" style={{ marginBottom: 16 }}>
+            <Form.Item style={{ marginBottom: 0 }}>
               <Input
                 value={keywordInput}
                 allowClear
-                onChange={(event) => setKeywordInput(event.target.value)}
-                onPressEnter={handleSearch}
+                onChange={(event) => handleKeywordChange(event.target.value)}
                 placeholder="按模型编码/名称/塔型搜索"
               />
             </Form.Item>
-            <Form.Item label="状态" className="min-w-[170px]">
+          </Form>
+        ) : (
+          <Form layout="inline" style={{ rowGap: 12 }}>
+            <Form.Item label="关键词" style={{ width: 260 }}>
+              <Input
+                value={keywordInput}
+                allowClear
+                onChange={(event) => handleKeywordChange(event.target.value)}
+                placeholder="按模型编码/名称/塔型搜索"
+              />
+            </Form.Item>
+            <Form.Item label="状态" style={{ width: 170 }}>
               <Select<"all" | "enabled" | "disabled">
                 value={enabledFilter}
                 options={[
@@ -816,136 +796,87 @@ export default function AdminTowerModelsPage() {
                 onChange={(value) => {
                   setEnabledFilter(value);
                   setPagination((previous) => ({ ...previous, current: 1 }));
+                  setCardViewPage(1);
                 }}
               />
             </Form.Item>
-            <Form.Item>
-              <Button type="primary" onClick={handleSearch}>
-                搜索
-              </Button>
-            </Form.Item>
-            <Form.Item>
-              <Button onClick={handleResetFilters}>重置筛选</Button>
-            </Form.Item>
           </Form>
-          {!isMobile && (
-            <Space size={8} align="center" wrap>
-              <Typography.Text type="secondary">展示方式</Typography.Text>
-              <Segmented
-                options={[
-                  { label: "卡片", value: "card" },
-                  { label: "列表", value: "list" },
-                ]}
-                value={viewMode}
-                onChange={(value) => setViewMode(value === "list" ? "list" : "card")}
-              />
-            </Space>
-          )}
-          {totalItems === 0 ? (
-            <Empty description="未找到符合筛选条件的杆塔模型。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-          ) : (
-            <>
-              <div ref={viewScrollAnchorRef} className="mt-4">
-                {viewMode === "card" ? (
-                  <div
-                    className="admin-tower-models-card-anchor"
-                    style={{ "--admin-tower-models-card-body-height": `${tableScrollY}px` } as CSSProperties}
-                  >
-                    {towerModelsQuery.isLoading && allLoadedModels.length === 0 ? (
-                      <div style={{ textAlign: "center", padding: "40px 0" }}>
-                        <Spin tip="加载中..." />
-                      </div>
-                    ) : allLoadedModels.length === 0 ? (
-                      <Empty description="未找到符合筛选条件的杆塔模型。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                    ) : (
-                      <>
-                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                          {allLoadedModels.map((row) => (
-                            <AntCard key={row.id} size="small">
-                              <Space direction="vertical" size={10} className="w-full">
-                                <TowerModelImageCell
-                                  model={row}
-                                  fetchWithAuth={fetchWithAuth}
-                                  onPreviewError={handleImagePreviewError}
-                                  mode="hero"
-                                />
-                                {canManage && (
-                                  <Space size={8} wrap>
-                                    <Button size="small" onClick={() => openEdit(row)}>
-                                      编辑
-                                    </Button>
-                                    <Button size="small" onClick={() => setUploadModel(row)}>
-                                      上传图片
-                                    </Button>
-                                    <Popconfirm
-                                      title="删除杆塔模型"
-                                      description={`确认删除模型 ${row.code} 吗？`}
-                                      okText="删除"
-                                      cancelText="取消"
-                                      okButtonProps={{ danger: true }}
-                                      onConfirm={async () => {
-                                        await deleteMutation.mutateAsync(row.id);
-                                      }}
-                                    >
-                                      <Button size="small" danger loading={deleteMutation.isPending}>
-                                        删除
-                                      </Button>
-                                    </Popconfirm>
-                                  </Space>
-                                )}
-                              </Space>
-                            </AntCard>
-                          ))}
-                        </div>
-                        {isLoadingMore && (
-                          <div style={{ textAlign: "center", padding: "20px 0" }}>
-                            <Spin tip="加载更多..." />
-                          </div>
-                        )}
-                        {allLoadedModels.length >= totalItems && allLoadedModels.length > 0 && (
-                          <div style={{ textAlign: "center", padding: "20px 0" }}>
-                            <Typography.Text type="secondary">
-                              已加载全部 {allLoadedModels.length} 条数据
-                            </Typography.Text>
-                          </div>
-                        )}
-                      </>
-                    )}
+        )}
+
+        {viewMode === "table" ? (
+          <div
+            ref={tableScrollAnchorRef}
+            className="admin-tower-models-table-anchor mt-4"
+            style={{ "--admin-tower-models-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+          >
+            <Table<TowerModelSummary>
+              rowKey={(row) => row.id}
+              columns={tableColumns}
+              dataSource={listItems}
+              loading={towerModelsQuery.isLoading}
+              pagination={{
+                current: tableCurrentPage,
+                pageSize: pagination.pageSize,
+                total: Math.max(totalItems, 1),
+                showSizeChanger: true,
+                pageSizeOptions: TOWER_MODEL_PAGE_SIZE_OPTIONS,
+                showTotal: () => `共 ${totalItems} 条`,
+                hideOnSinglePage: false,
+                style: { marginBottom: 0 },
+                onChange: (page, pageSize) => {
+                  setPagination({ current: page, pageSize });
+                },
+              }}
+              scroll={{ x: 1450, y: tableScrollY }}
+              tableLayout="fixed"
+              locale={{
+                emptyText: (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="未找到符合筛选条件的杆塔模型。"
+                  />
+                ),
+              }}
+            />
+          </div>
+        ) : (
+          <div className="admin-tower-models-card-view">
+            {towerModelsQuery.isLoading && visibleCardModels.length === 0 ? (
+              <div className="admin-tower-models-card-view-state">
+                <Spin tip="加载中..." />
+              </div>
+            ) : visibleCardModels.length === 0 ? (
+              <div className="admin-tower-models-card-view-state">
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="未找到符合筛选条件的杆塔模型。"
+                />
+              </div>
+            ) : (
+              <div className="admin-tower-models-card-view-content">
+                <Row gutter={[12, 12]}>
+                  {visibleCardModels.map((row) => (
+                    <Col key={row.id} xs={24} sm={24} md={12} lg={8} xl={6}>
+                      {renderTowerModelCard(row)}
+                    </Col>
+                  ))}
+                </Row>
+                {towerModelsQuery.isFetching && visibleCardModels.length < totalItems && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Spin tip="加载更多..." />
                   </div>
-                ) : (
-                  <div
-                    className="admin-tower-models-table-anchor"
-                    style={{ "--admin-tower-models-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
-                  >
-                    <Table<TowerModelSummary>
-                      rowKey={(row) => row.id}
-                      columns={tableColumns}
-                      dataSource={pagedItems}
-                      pagination={false}
-                      scroll={{ x: 1450, y: tableScrollY }}
-                      tableLayout="fixed"
-                    />
+                )}
+                {visibleCardModels.length >= totalItems && visibleCardModels.length > 0 && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Typography.Text type="secondary">
+                      已加载全部 {visibleCardModels.length} 条数据
+                    </Typography.Text>
                   </div>
                 )}
               </div>
-              {viewMode === "list" && (
-                <div ref={paginationRef} className="mt-4 flex justify-end">
-                  <Pagination
-                    current={pagination.current}
-                    pageSize={pagination.pageSize}
-                    total={totalItems}
-                    showSizeChanger
-                    pageSizeOptions={TOWER_MODEL_PAGE_SIZE_OPTIONS.map((value) => String(value))}
-                    showTotal={(total) => `共 ${total} 条`}
-                    onChange={(page, pageSize) => {
-                      setPagination({ current: page, pageSize });
-                    }}
-                  />
-                </div>
-              )}
-            </>
-          )}
-        </Space>
+            )}
+          </div>
+        )}
       </AntCard>
 
       <Modal
