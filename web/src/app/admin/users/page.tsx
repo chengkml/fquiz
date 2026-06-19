@@ -200,9 +200,9 @@ export default function AdminUsersPage() {
   );
 
   const refreshData = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["admin.users"] });
+    await queryClient.refetchQueries({ queryKey: ["admin.users"] });
     if (canReadRoles) {
-      await queryClient.invalidateQueries({ queryKey: [rolesPath] });
+      await queryClient.refetchQueries({ queryKey: [rolesPath] });
     }
   };
 
