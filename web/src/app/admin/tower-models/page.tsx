@@ -692,23 +692,29 @@ export default function AdminTowerModelsPage() {
 
   if (!user) {
     return (
-      <Card>
-        <Space direction="vertical" size={12}>
-          <Typography.Text type="secondary">请先登录后再访问杆塔模型管理页面。</Typography.Text>
-          <Button><Link href="/">返回首页</Link></Button>
-        </Space>
-      </Card>
+      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
+        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问杆塔模型管理页面。</p>
+        <Link
+          href="/"
+          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
+        >
+          返回首页
+        </Link>
+      </main>
     );
   }
 
   if (!canRead) {
     return (
-      <Card>
-        <Space direction="vertical" size={12}>
-          <Typography.Text type="secondary">你没有访问该页面的权限（需要 `tower_model.read`）。</Typography.Text>
-          <Button><Link href="/">返回首页</Link></Button>
-        </Space>
-      </Card>
+      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
+        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `tower_model.read`）。</p>
+        <Link
+          href="/"
+          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
+        >
+          返回首页
+        </Link>
+      </main>
     );
   }
 
