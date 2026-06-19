@@ -104,6 +104,7 @@ export default function AdminMenusPage() {
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
   const [activeKeyword, setActiveKeyword] = useState("");
   const [activeStatusFilter, setActiveStatusFilter] = useState<FilterStatus>("all");
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [tableScrollY, setTableScrollY] = useState(MENU_TABLE_MIN_SCROLL_Y);
   const viewMode: "table" | "card" = isMobile ? "card" : "table";
   const [cardViewPage, setCardViewPage] = useState(1);
@@ -148,7 +149,7 @@ export default function AdminMenusPage() {
     });
   }, [menus]);
 
-  const loadMenus = useCallback(async (page = 1, pageSize = 20) => {
+  const loadMenus = useCallback(async (page = pagination.current, pageSize = pagination.pageSize) => {
     if (!canRead) {
       setLoading(false);
       return;
@@ -179,7 +180,7 @@ export default function AdminMenusPage() {
     setMenus(payload.items.map(normalizeMenuItemPath));
     setLoading(false);
     return payload;
-  }, [canRead, fetchWithAuth, activeKeyword, activeStatusFilter]);
+  }, [canRead, fetchWithAuth, activeKeyword, activeStatusFilter, pagination.current, pagination.pageSize]);
 
   useEffect(() => {
     if (!user || !canRead) {
@@ -259,6 +260,7 @@ export default function AdminMenusPage() {
   const handleSearch = useCallback(() => {
     setActiveKeyword(keyword);
     setActiveStatusFilter(statusFilter);
+    setPagination((prev) => ({ ...prev, current: 1 }));
   }, [keyword, statusFilter]);
 
   const handleKeywordChange = (value: string) => {
@@ -823,27 +825,19 @@ export default function AdminMenusPage() {
               columns={columns}
               loading={loading}
               scroll={{ x: 1200, y: tableScrollY }}
-              pagination={
-                filteredMenus.length === 0
-                  ? {
-                      pageSize: 20,
-                      showSizeChanger: true,
-                      pageSizeOptions: [10, 20, 50, 100],
-                      showTotal: (total) => `共 ${total} 条`,
-                      hideOnSinglePage: false,
-                      style: { marginBottom: 0 },
-                      total: 0,
-                      current: 1,
-                    }
-                  : {
-                      pageSize: 20,
-                      showSizeChanger: true,
-                      pageSizeOptions: [10, 20, 50, 100],
-                      showTotal: (total) => `共 ${total} 条`,
-                      hideOnSinglePage: false,
-                      style: { marginBottom: 0 },
-                    }
-              }
+              pagination={{
+                current: pagination.current,
+                pageSize: pagination.pageSize,
+                total: filteredMenus.length,
+                showSizeChanger: true,
+                pageSizeOptions: [10, 20, 50, 100],
+                showTotal: (total) => `共 ${total} 条`,
+                hideOnSinglePage: false,
+                style: { marginBottom: 0 },
+                onChange: (page, pageSize) => {
+                  setPagination({ current: page, pageSize });
+                },
+              }}
               locale={{
                 emptyText: <Empty description="未找到符合筛选条件的菜单项。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
               }}
