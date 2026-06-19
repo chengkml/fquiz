@@ -1,9 +1,9 @@
 "use client";
 
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  App,
   Button,
   Card,
   Col,
@@ -60,34 +60,156 @@ const ROLE_TABLE_VIEWPORT_GAP = 40;
 const ROLE_TABLE_FALLBACK_RESERVE = 220;
 
 export default function AdminRolesPage() {
-  const { message, modal } = App.useApp();
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
+  const queryClient = useQueryClient();
   const isMobile = useMobileDetection();
   const [form] = Form.useForm<RoleFormValues>();
-  const [roles, setRoles] = useState<RoleItem[]>([]);
+
+  const [keywordInput, setKeywordInput] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
-  const [menus, setMenus] = useState<MenuItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const [error, setError] = useState("");
-  const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
+  const [success, setSuccess] = useState("");
+  const [editingRole, setEditingRole] = useState<RoleItem | null>(null);
   const [deletingRoleId, setDeletingRoleId] = useState<string | null>(null);
   const [savingRoleId, setSavingRoleId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [tableScrollY, setTableScrollY] = useState(ROLE_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
-  const [viewMode, setViewMode] = useState<"table" | "card">(isMobile ? "card" : "table");
+  const viewMode: "table" | "card" = isMobile ? "card" : "table";
+  const [cardViewPage, setCardViewPage] = useState(1);
+  const [allLoadedRoles, setAllLoadedRoles] = useState<RoleItem[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const pageCardRef = useRef<HTMLDivElement | null>(null);
 
   const canRead = hasPermission("role.read") || hasPermission("role.manage");
   const canManage = hasPermission("role.manage");
 
-  useEffect(() => {
-    setViewMode(isMobile ? "card" : "table");
-  }, [isMobile]);
+  const trimmedKeyword = searchKeyword.trim();
+  const rolesQueryUrl = useMemo(() => {
+    const url = trimmedKeyword
+      ? `/api/v1/admin/roles-with-menus?keyword=${encodeURIComponent(trimmedKeyword)}`
+      : "/api/v1/admin/roles-with-menus";
+    return url;
+  }, [trimmedKeyword]);
 
-  useToastFeedback({
-    errorMessage: error,
-    clearError: () => setError(""),
+  const loadRolesWithMenus = useCallback(async () => {
+    const response = await fetchWithAuth(rolesQueryUrl);
+    if (!response.ok) throw new Error(await readApiError(response));
+    return (await response.json()) as RolesWithMenusResponse;
+  }, [fetchWithAuth, rolesQueryUrl]);
+
+  const rolesQuery = useQuery({
+    queryKey: ["admin.roles", rolesQueryUrl],
+    queryFn: loadRolesWithMenus,
+    enabled: !!user && canRead,
+  });
+
+  useTopicSubscription(
+    "admin.roles",
+    useCallback(() => {
+      if (!user || !canRead) return;
+      void queryClient.invalidateQueries({ queryKey: ["admin.roles"] });
+    }, [canRead, queryClient, user]),
+  );
+
+  useTopicSubscription(
+    "admin.menus",
+    useCallback(() => {
+      if (!user || !canRead) return;
+      void queryClient.invalidateQueries({ queryKey: ["admin.roles"] });
+    }, [canRead, queryClient, user]),
+  );
+
+  const roles = useMemo(() => rolesQuery.data?.roles ?? [], [rolesQuery.data?.roles]);
+  const menus = useMemo(() => rolesQuery.data?.menus ?? [], [rolesQuery.data?.menus]);
+
+  const refreshData = async () => {
+    await queryClient.refetchQueries({ queryKey: ["admin.roles"] });
+  };
+
+  const createRoleMutation = useMutation({
+    mutationFn: async (values: RoleFormValues) => {
+      const response = await fetchWithAuth("/api/v1/admin/roles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      if (!response.ok) throw new Error(await readApiError(response));
+      return response.json() as Promise<RoleItem>;
+    },
+    onSuccess: async () => {
+      setSuccess("角色已创建");
+      setError("");
+      form.resetFields();
+      setDialogOpen(false);
+      setEditingRole(null);
+      await refreshData();
+    },
+    onError: (candidate) => {
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "创建角色失败");
+    },
+  });
+
+  const updateRoleMutation = useMutation({
+    mutationFn: async ({ roleId, payload }: {
+      roleId: string;
+      payload: { name: string; menu_ids: string[] };
+    }) => {
+      const response = await fetchWithAuth(`/api/v1/admin/roles/${roleId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error(await readApiError(response));
+      return response.json() as Promise<RoleItem>;
+    },
+    onMutate: ({ roleId }) => {
+      setSavingRoleId(roleId);
+      setError("");
+      setSuccess("");
+    },
+    onSuccess: async () => {
+      setSuccess("角色已更新");
+      setDialogOpen(false);
+      setEditingRole(null);
+      form.resetFields();
+      await refreshData();
+    },
+    onError: (candidate) => {
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "更新角色失败");
+    },
+    onSettled: () => setSavingRoleId(null),
+  });
+
+  const deleteRoleMutation = useMutation({
+    mutationFn: async (roleId: string) => {
+      const response = await fetchWithAuth(`/api/v1/admin/roles/${roleId}`, { method: "DELETE" });
+      if (!response.ok) throw new Error(await readApiError(response));
+      return response.json() as Promise<{ message: string }>;
+    },
+    onMutate: (roleId) => {
+      setDeletingRoleId(roleId);
+      setError("");
+      setSuccess("");
+    },
+    onSuccess: async () => {
+      setSuccess("角色已删除");
+      if (editingRole && deletingRoleId === editingRole.id) {
+        setDialogOpen(false);
+        setEditingRole(null);
+        form.resetFields();
+      }
+      await refreshData();
+    },
+    onError: (candidate) => {
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "删除角色失败");
+    },
+    onSettled: () => setDeletingRoleId(null),
   });
 
   const menuOptions = useMemo(
@@ -99,72 +221,24 @@ export default function AdminRolesPage() {
     return new Map(menus.map((menu) => [menu.id, `${menu.name} (${menu.code})`]));
   }, [menus]);
 
-  const loadData = useCallback(async (keyword?: string) => {
-    if (!canRead) {
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-    try {
-      const searchTerm = (keyword ?? "").trim();
-      const url = searchTerm
-        ? `/api/v1/admin/roles-with-menus?keyword=${encodeURIComponent(searchTerm)}`
-        : "/api/v1/admin/roles-with-menus";
-
-      const response = await fetchWithAuth(url);
-
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-
-      const payload = (await response.json()) as RolesWithMenusResponse;
-
-      setRoles(payload.roles);
-      setMenus(payload.menus);
-    } catch (candidate) {
-      setError(candidate instanceof Error ? candidate.message : "角色数据加载失败");
-    } finally {
-      setLoading(false);
-    }
-  }, [canRead, fetchWithAuth]);
-
-  useEffect(() => {
-    if (!user || !canRead) {
-      return;
-    }
-    queueMicrotask(() => {
-      void loadData();
-    });
-  }, [canRead, loadData, user]);
-
-  useTopicSubscription("admin.roles", useCallback(() => {
-    if (user && canRead) {
-      void loadData();
-    }
-  }, [canRead, loadData, user]));
-
-  useTopicSubscription("admin.menus", useCallback(() => {
-    if (user && canRead) {
-      void loadData();
-    }
-  }, [canRead, loadData, user]));
-
   const closeDialog = useCallback(() => {
-    setEditingRoleId(null);
+    setEditingRole(null);
     setDialogOpen(false);
     form.resetFields();
   }, [form]);
 
   const startCreate = useCallback(() => {
-    setEditingRoleId(null);
+    setError("");
+    setSuccess("");
+    setEditingRole(null);
     form.setFieldsValue(EMPTY_FORM);
     setDialogOpen(true);
   }, [form]);
 
   const startEdit = useCallback((role: RoleItem) => {
-    setEditingRoleId(role.id);
+    setError("");
+    setSuccess("");
+    setEditingRole(role);
     form.setFieldsValue({
       code: role.code,
       name: role.name,
@@ -174,8 +248,8 @@ export default function AdminRolesPage() {
   }, [form]);
 
   const submit = useCallback(async () => {
-    setSaving(true);
     setError("");
+    setSuccess("");
 
     try {
       const values = await form.validateFields();
@@ -185,28 +259,17 @@ export default function AdminRolesPage() {
         menu_ids: values.menu_ids ?? [],
       };
 
-      const response = editingRoleId
-        ? await fetchWithAuth(`/api/v1/admin/roles/${editingRoleId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              name: payload.name,
-              menu_ids: payload.menu_ids,
-            }),
-          })
-        : await fetchWithAuth("/api/v1/admin/roles", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
-
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
+      if (editingRole) {
+        updateRoleMutation.mutate({
+          roleId: editingRole.id,
+          payload: {
+            name: payload.name,
+            menu_ids: payload.menu_ids,
+          },
+        });
+      } else {
+        createRoleMutation.mutate(payload);
       }
-
-      message.success(editingRoleId ? "角色已更新" : "角色已创建");
-      closeDialog();
-      await loadData();
     } catch (candidate) {
       if (
         candidate
@@ -219,39 +282,89 @@ export default function AdminRolesPage() {
 
       const nextError = candidate instanceof Error ? candidate.message : "提交失败，请稍后重试";
       setError(nextError);
-      message.error(nextError);
-    } finally {
-      setSaving(false);
     }
-  }, [closeDialog, editingRoleId, fetchWithAuth, form, loadData, message]);
+  }, [createRoleMutation, editingRole, form, updateRoleMutation]);
 
-  const removeRole = useCallback(async (roleId: string) => {
-    setDeletingRoleId(roleId);
-    setError("");
+  const handleKeywordChange = (value: string) => {
+    setKeywordInput(value);
 
-    try {
-      const response = await fetchWithAuth(`/api/v1/admin/roles/${roleId}`, {
-        method: "DELETE",
-      });
-
-      if (!response.ok) {
-        const nextError = await readApiError(response);
-        setError(nextError);
-        throw new Error(nextError);
-      }
-
-      message.success("角色已删除");
-      if (editingRoleId === roleId) {
-        closeDialog();
-      }
-      await loadData();
-    } catch (candidate) {
-      const errorMsg = candidate instanceof Error ? candidate.message : "删除失败";
-      setError(errorMsg);
-    } finally {
-      setDeletingRoleId(null);
+    if (keywordDebounceTimeoutRef.current) {
+      clearTimeout(keywordDebounceTimeoutRef.current);
     }
-  }, [closeDialog, editingRoleId, fetchWithAuth, loadData, message]);
+
+    keywordDebounceTimeoutRef.current = setTimeout(() => {
+      setSearchKeyword(value);
+      setCardViewPage(1);
+      setAllLoadedRoles([]);
+    }, 500);
+  };
+
+  const queryError = rolesQuery.error instanceof Error ? rolesQuery.error.message : "";
+  const anyError = error || queryError;
+
+  useToastFeedback({
+    errorMessage: anyError,
+    successMessage: success,
+    clearError: () => setError(""),
+    clearSuccess: () => setSuccess(""),
+  });
+
+  // Update allLoadedRoles when roles data changes in card view
+  useEffect(() => {
+    if (viewMode === "card" && !rolesQuery.isLoading) {
+      if (cardViewPage === 1) {
+        setAllLoadedRoles(roles);
+      } else {
+        setAllLoadedRoles((prev) => {
+          if (roles.length === 0) {
+            return prev;
+          }
+          const existingIds = new Set(prev.map(r => r.id));
+          const newRoles = roles.filter(r => !existingIds.has(r.id));
+          return [...prev, ...newRoles];
+        });
+      }
+      setIsLoadingMore(false);
+    }
+  }, [roles, rolesQuery.isLoading, viewMode, cardViewPage]);
+
+  // Handle infinite scroll for card view
+  useEffect(() => {
+    if (viewMode !== "card") return;
+
+    const pageCard = pageCardRef.current;
+    if (!pageCard) return;
+
+    const cardBody = pageCard.querySelector<HTMLElement>(".ant-card-body");
+    if (!cardBody) return;
+
+    const handleScroll = () => {
+      if (isLoadingMore || rolesQuery.isLoading) return;
+
+      const scrollTop = cardBody.scrollTop;
+      const scrollHeight = cardBody.scrollHeight;
+      const clientHeight = cardBody.clientHeight;
+
+      if (scrollTop + clientHeight >= scrollHeight - 100) {
+        const total = rolesQuery.data?.roles_total ?? 0;
+        const loadedCount = allLoadedRoles.length;
+
+        if (loadedCount < total) {
+          setIsLoadingMore(true);
+          setCardViewPage((prev) => prev + 1);
+        }
+      }
+    };
+
+    cardBody.addEventListener("scroll", handleScroll);
+    return () => cardBody.removeEventListener("scroll", handleScroll);
+  }, [viewMode, isLoadingMore, rolesQuery.isLoading, rolesQuery.data?.roles_total, allLoadedRoles.length]);
+
+  // Reset card view state when filters change
+  useEffect(() => {
+    setCardViewPage(1);
+    setAllLoadedRoles([]);
+  }, [trimmedKeyword]);
 
   const columns = useMemo<ColumnsType<RoleItem>>(() => {
     const base: ColumnsType<RoleItem> = [
@@ -305,7 +418,7 @@ export default function AdminRolesPage() {
         render: (_, role) => {
           const isDeleting = deletingRoleId === role.id;
           const isSaving = savingRoleId === role.id;
-          const rowBusy = isDeleting || isSaving || saving;
+          const rowBusy = isDeleting || isSaving || createRoleMutation.isPending || updateRoleMutation.isPending;
 
           return (
             <Space size="small">
@@ -322,7 +435,7 @@ export default function AdminRolesPage() {
                 okText="删除"
                 cancelText="取消"
                 okButtonProps={{ danger: true, loading: isDeleting }}
-                onConfirm={() => removeRole(role.id)}
+                onConfirm={() => deleteRoleMutation.mutate(role.id)}
                 disabled={rowBusy}
               >
                 <Button
@@ -341,12 +454,12 @@ export default function AdminRolesPage() {
     }
 
     return base;
-  }, [canManage, deletingRoleId, menuNameById, removeRole, saving, savingRoleId, startEdit]);
+  }, [canManage, createRoleMutation.isPending, deletingRoleId, deleteRoleMutation, menuNameById, savingRoleId, startEdit, updateRoleMutation.isPending]);
 
   const renderRoleCard = (role: RoleItem) => {
     const isDeleting = deletingRoleId === role.id;
     const isSaving = savingRoleId === role.id;
-    const rowBusy = isDeleting || isSaving || saving;
+    const rowBusy = isDeleting || isSaving || createRoleMutation.isPending || updateRoleMutation.isPending;
 
     const menuLabels = role.menu_ids.length > 0
       ? role.menu_ids.map((menuId) => menuNameById.get(menuId) ?? String(menuId))
@@ -356,8 +469,8 @@ export default function AdminRolesPage() {
     return (
       <AntCard
         key={role.id}
+        className="admin-roles-role-card"
         size="small"
-        style={{ marginBottom: 12 }}
         title={
           <Space direction="vertical" size={0}>
             <Typography.Text strong>{role.name}</Typography.Text>
@@ -382,7 +495,7 @@ export default function AdminRolesPage() {
                 okText="删除"
                 cancelText="取消"
                 okButtonProps={{ danger: true, loading: isDeleting }}
-                onConfirm={() => removeRole(role.id)}
+                onConfirm={() => deleteRoleMutation.mutate(role.id)}
                 disabled={rowBusy}
               >
                 <Button
@@ -398,18 +511,12 @@ export default function AdminRolesPage() {
           ) : null
         }
       >
-        <Space direction="vertical" size={4} style={{ width: "100%" }}>
-          <div>
-            <Typography.Text type="secondary">菜单：</Typography.Text>
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <div className="admin-roles-role-card-field">
+            <Typography.Text type="secondary">菜单</Typography.Text>
             <Typography.Text
               title={fullText}
-              style={{
-                display: "inline-block",
-                maxWidth: "100%",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
+              ellipsis={{ tooltip: fullText }}
             >
               {menuLabels.length > 2
                 ? `${menuLabels.slice(0, 2).join("、")}等${menuLabels.length}个...`
@@ -450,8 +557,11 @@ export default function AdminRolesPage() {
   }, []);
 
   useEffect(() => {
-    updateTableScrollY();
-  }, [error, roles.length, loading, updateTableScrollY]);
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.requestAnimationFrame(updateTableScrollY);
+  }, [anyError, roles.length, rolesQuery.isFetching, updateTableScrollY]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -488,10 +598,18 @@ export default function AdminRolesPage() {
     };
   }, [updateTableScrollY]);
 
+  useEffect(() => {
+    return () => {
+      if (keywordDebounceTimeoutRef.current) {
+        clearTimeout(keywordDebounceTimeoutRef.current);
+      }
+    };
+  }, []);
+
   if (initializing) {
     return (
       <div className="flex min-h-[240px] items-center justify-center">
-        <Spin tip="角色数据加载中..." />
+        <Spin tip="初始化中..." />
       </div>
     );
   }
@@ -525,10 +643,11 @@ export default function AdminRolesPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col space-y-6">
+    <div className="flex min-h-0 flex-1 flex-col">
       <AntCard
+        ref={pageCardRef}
+        className="admin-roles-page-card"
         title="角色管理"
-        style={{ height: '100%' }}
         extra={
           canManage ? (
             <Button type="primary" onClick={startCreate}>
@@ -537,20 +656,29 @@ export default function AdminRolesPage() {
           ) : null
         }
       >
-        <Form layout="inline" style={{ rowGap: 12 }}>
-          <Form.Item label="关键词" className="min-w-[260px]">
-            <Input
-              allowClear
-              placeholder="搜索角色编码、名称或菜单"
-              value={searchKeyword}
-              onChange={(event) => setSearchKeyword(event.currentTarget.value)}
-              onPressEnter={() => void loadData(searchKeyword)}
-            />
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" onClick={() => void loadData(searchKeyword)}>搜索</Button>
-          </Form.Item>
-        </Form>
+        {viewMode === "card" ? (
+          <Form layout="vertical" style={{ marginBottom: 16 }}>
+            <Form.Item style={{ marginBottom: 0 }}>
+              <Input
+                allowClear
+                placeholder="搜索角色编码、名称或菜单"
+                value={keywordInput}
+                onChange={(event) => handleKeywordChange(event.target.value)}
+              />
+            </Form.Item>
+          </Form>
+        ) : (
+          <Form layout="inline" style={{ rowGap: 12 }}>
+            <Form.Item label="关键词" style={{ width: 260 }}>
+              <Input
+                allowClear
+                placeholder="搜索角色编码、名称或菜单"
+                value={keywordInput}
+                onChange={(event) => handleKeywordChange(event.target.value)}
+              />
+            </Form.Item>
+          </Form>
+        )}
 
         {viewMode === "table" ? (
           <div
@@ -562,7 +690,7 @@ export default function AdminRolesPage() {
               rowKey="id"
               columns={columns}
               dataSource={roles}
-              loading={loading}
+              loading={rolesQuery.isLoading}
               scroll={{ y: tableScrollY }}
               pagination={{
                 pageSize: 20,
@@ -574,29 +702,50 @@ export default function AdminRolesPage() {
                 style: { marginBottom: 0 },
               }}
               locale={{
-                emptyText: <Empty description="未找到匹配角色，请调整搜索条件。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
+                emptyText: (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="未找到符合筛选条件的角色。"
+                  />
+                ),
               }}
             />
           </div>
         ) : (
-          <div className="mt-4">
-            {loading ? (
-              <div className="flex min-h-[240px] items-center justify-center">
+          <div className="admin-roles-card-view">
+            {rolesQuery.isLoading && allLoadedRoles.length === 0 ? (
+              <div className="admin-roles-card-view-state">
                 <Spin tip="加载中..." />
               </div>
-            ) : roles.length === 0 ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="未找到匹配角色，请调整搜索条件。"
-              />
+            ) : allLoadedRoles.length === 0 ? (
+              <div className="admin-roles-card-view-state">
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="未找到符合筛选条件的角色。"
+                />
+              </div>
             ) : (
-              <Row gutter={[12, 12]}>
-                {roles.map((role) => (
-                  <Col key={role.id} xs={24} sm={24} md={12} lg={8} xl={6}>
-                    {renderRoleCard(role)}
-                  </Col>
-                ))}
-              </Row>
+              <div className="admin-roles-card-view-content">
+                <Row gutter={[12, 12]}>
+                  {allLoadedRoles.map((role) => (
+                    <Col key={role.id} xs={24} sm={24} md={12} lg={8} xl={6}>
+                      {renderRoleCard(role)}
+                    </Col>
+                  ))}
+                </Row>
+                {isLoadingMore && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Spin tip="加载更多..." />
+                  </div>
+                )}
+                {allLoadedRoles.length >= (rolesQuery.data?.roles_total ?? 0) && allLoadedRoles.length > 0 && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Typography.Text type="secondary">
+                      已加载全部 {allLoadedRoles.length} 条数据
+                    </Typography.Text>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -604,12 +753,12 @@ export default function AdminRolesPage() {
 
       {canManage && (
         <Modal
-          title={editingRoleId ? "编辑角色" : "新建角色"}
+          title={editingRole ? `编辑角色：${editingRole.name}（${editingRole.code}）` : "新建角色"}
           open={dialogOpen}
           destroyOnClose
-          okText={saving ? "提交中..." : editingRoleId ? "保存修改" : "创建角色"}
+          okText={editingRole ? "保存修改" : "创建角色"}
           cancelText="取消"
-          confirmLoading={saving}
+          confirmLoading={createRoleMutation.isPending || updateRoleMutation.isPending}
           onCancel={closeDialog}
           onOk={() => void submit()}
         >
@@ -629,7 +778,7 @@ export default function AdminRolesPage() {
                     { max: 80, message: "角色编码不能超过 80 位" },
                   ]}
                 >
-                  <Input disabled={editingRoleId !== null} placeholder="admin.operator" />
+                  <Input disabled={editingRole !== null} placeholder="admin.operator" />
                 </Form.Item>
               </Col>
               <Col xs={24}>
