@@ -6,13 +6,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ComponentType } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Alert,
   Button,
   Card,
+  Col,
   Drawer,
   Empty,
   Form,
   Input,
+  Row,
   Select,
   Space,
   Spin,
@@ -23,11 +24,21 @@ import {
   type CardProps,
   type TableColumnsType,
 } from "antd";
+import { EyeOutlined } from "@ant-design/icons";
 
 import { useAuth } from "@/components/auth-provider";
 import { AdminPageLoading } from "@/components/admin-page-loading";
+import { useMobileDetection } from "@/hooks/use-mobile-detection";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { readApiError } from "@/lib/api";
 import { getTaskDisplayName } from "@/lib/celery-task-display";
+import {
+  formatTaskMonitorDuration,
+  formatTaskMonitorErrorMessage,
+  getQueueDisplayName,
+  getTaskSourceDisplay,
+  getTaskStateDisplay,
+} from "@/lib/task-monitor-display";
 
 const { Text } = Typography;
 const AntCard = Card as unknown as ComponentType<CardProps>;
@@ -106,28 +117,31 @@ function formatDateTime(value: string | null | undefined): string {
 }
 
 function renderTaskStateTag(state: string) {
-  const normalized = (state || "").toUpperCase();
-  const color =
-    normalized === "STARTED"
-      ? "processing"
-      : normalized === "RECEIVED"
-        ? "blue"
-        : normalized === "SCHEDULED"
-          ? "purple"
-          : normalized === "RETRY"
-            ? "orange"
-            : normalized === "SUCCESS"
-              ? "green"
-              : normalized === "FAILURE"
-                ? "red"
-                : normalized === "REVOKED"
-                  ? "default"
-                  : "geekblue";
-  return <Tag color={color}>{normalized || "UNKNOWN"}</Tag>;
+  const display = getTaskStateDisplay(state);
+  return <Tag color={display.color}>{display.label}</Tag>;
+}
+
+function renderTaskSourceTag(source: string) {
+  const display = getTaskSourceDisplay(source);
+  return <Tag color={display.color}>{display.label}</Tag>;
 }
 
 function renderWorkerStatusTag(status: string) {
   return (status || "").toUpperCase() === "ONLINE" ? <Tag color="green">在线</Tag> : <Tag color="default">离线</Tag>;
+}
+
+function renderQueueTags(queueNames: string[]) {
+  return queueNames.length > 0 ? (
+    <Space wrap size={[4, 4]}>
+      {queueNames.map((queueName) => (
+        <Tag key={queueName} color="blue" bordered={false}>
+          {getQueueDisplayName(queueName)}
+        </Tag>
+      ))}
+    </Space>
+  ) : (
+    <Typography.Text type="secondary">-</Typography.Text>
+  );
 }
 
 function containsText(source: string | null | undefined, keyword: string): boolean {
@@ -146,6 +160,7 @@ function parseStatusFilter(value: string | undefined): "all" | "online" | "offli
 
 export default function AdminWorkersPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
+  const isMobile = useMobileDetection();
   const canRead = hasPermission("celery.read") || hasPermission("celery.manage");
 
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -155,6 +170,7 @@ export default function AdminWorkersPage() {
   const [selectedWorker, setSelectedWorker] = useState<string | null>(null);
   const [tableScrollY, setTableScrollY] = useState(WORKERS_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const viewMode: "table" | "card" = isMobile ? "card" : "table";
 
   const overviewQuery = useQuery({
     queryKey: ["worker-monitor-overview"],
@@ -201,47 +217,62 @@ export default function AdminWorkersPage() {
   const workerColumns = useMemo<TableColumnsType<WorkerMonitorWorkerItem>>(
     () => [
       {
-        title: "Worker",
+        title: "执行节点",
         dataIndex: "worker",
         key: "worker",
-        width: 280,
+        width: 220,
+        render: (value: string) => (
+          <Typography.Text ellipsis={{ tooltip: value || "-" }}>
+            {value || "-"}
+          </Typography.Text>
+        ),
       },
       {
         title: "状态",
         dataIndex: "status",
         key: "status",
         width: 90,
+        align: "center",
         render: (value: string) => renderWorkerStatusTag(value),
       },
       {
         title: "队列",
         dataIndex: "queue_names",
         key: "queue_names",
-        render: (value: string[]) => (value.length > 0 ? value.join(", ") : "-"),
+        width: 180,
+        render: (value: string[]) => renderQueueTags(value),
       },
       {
         title: "并发",
         dataIndex: "concurrency",
         key: "concurrency",
-        width: 80,
+        width: 70,
+        align: "center",
       },
       {
-        title: "Prefetch",
+        title: "预取",
         dataIndex: "prefetch_count",
         key: "prefetch_count",
-        width: 90,
+        width: 70,
+        align: "center",
       },
       {
-        title: "已注册任务",
-        dataIndex: "registered_count",
-        key: "registered_count",
-        width: 110,
+        title: "任务统计",
+        key: "runtime_counts",
+        width: 130,
+        render: (_: unknown, record) => `${record.active_count}/${record.reserved_count}/${record.scheduled_count}`,
       },
       {
         title: "累计处理",
         dataIndex: "processed_count",
         key: "processed_count",
-        width: 110,
+        width: 100,
+      },
+      {
+        title: "注册任务",
+        dataIndex: "registered_count",
+        key: "registered_count",
+        width: 100,
       },
       {
         title: "最近心跳",
@@ -251,19 +282,12 @@ export default function AdminWorkersPage() {
         render: (value: string | null) => formatDateTime(value),
       },
       {
-        title: "Active/Reserved/Scheduled",
-        key: "runtime_counts",
-        width: 190,
-        render: (_: unknown, record) => `${record.active_count}/${record.reserved_count}/${record.scheduled_count}`,
-      },
-      {
         title: "操作",
         key: "action",
-        width: 120,
-        fixed: "right",
+        width: 110,
         render: (_: unknown, record) => (
-          <Button size="small" onClick={() => setSelectedWorker(record.worker)}>
-            查看任务
+          <Button size="small" icon={<EyeOutlined />} onClick={() => setSelectedWorker(record.worker)}>
+            任务
           </Button>
         ),
       },
@@ -274,14 +298,14 @@ export default function AdminWorkersPage() {
   const taskColumns = useMemo<TableColumnsType<WorkerMonitorTaskItem>>(
     () => [
       {
-        title: "Task ID",
+        title: "任务 ID",
         dataIndex: "task_id",
         key: "task_id",
         width: 260,
         render: (value: string) => <Text copyable>{value}</Text>,
       },
       {
-        title: "任务名",
+        title: "任务名称",
         dataIndex: "name",
         key: "name",
         width: 220,
@@ -295,21 +319,21 @@ export default function AdminWorkersPage() {
         render: (value: string) => renderTaskStateTag(value),
       },
       {
-        title: "来源",
+        title: "监控分组",
         dataIndex: "source",
         key: "source",
-        width: 90,
-        render: (value: string) => value || "-",
+        width: 120,
+        render: (value: string) => renderTaskSourceTag(value),
       },
       {
         title: "队列",
         dataIndex: "queue_name",
         key: "queue_name",
         width: 120,
-        render: (value: string | null) => value || "-",
+        render: (value: string | null) => getQueueDisplayName(value),
       },
       {
-        title: "Worker",
+        title: "执行节点",
         dataIndex: "worker",
         key: "worker",
         width: 220,
@@ -323,21 +347,21 @@ export default function AdminWorkersPage() {
         render: (value: string | null) => formatDateTime(value),
       },
       {
-        title: "接收",
+        title: "接收时间",
         dataIndex: "received_at",
         key: "received_at",
         width: 170,
         render: (value: string | null) => formatDateTime(value),
       },
       {
-        title: "开始",
+        title: "开始时间",
         dataIndex: "started_at",
         key: "started_at",
         width: 170,
         render: (value: string | null) => formatDateTime(value),
       },
       {
-        title: "完成",
+        title: "完成时间",
         dataIndex: "finished_at",
         key: "finished_at",
         width: 170,
@@ -348,24 +372,24 @@ export default function AdminWorkersPage() {
         dataIndex: "runtime_seconds",
         key: "runtime_seconds",
         width: 110,
-        render: (value: number | null) => (value === null ? "-" : `${value.toFixed(3)}s`),
+        render: (value: number | null) => formatTaskMonitorDuration(value),
       },
       {
-        title: "Args",
+        title: "位置参数",
         dataIndex: "args_text",
         key: "args_text",
         width: 220,
         render: (value: string | null) => (value ? <Text ellipsis={{ tooltip: value }}>{value}</Text> : "-"),
       },
       {
-        title: "Kwargs",
+        title: "关键字参数",
         dataIndex: "kwargs_text",
         key: "kwargs_text",
         width: 220,
         render: (value: string | null) => (value ? <Text ellipsis={{ tooltip: value }}>{value}</Text> : "-"),
       },
       {
-        title: "Result",
+        title: "执行结果",
         dataIndex: "result_text",
         key: "result_text",
         width: 220,
@@ -379,7 +403,7 @@ export default function AdminWorkersPage() {
           ),
       },
       {
-        title: "Exception",
+        title: "异常信息",
         dataIndex: "exception_text",
         key: "exception_text",
         width: 220,
@@ -419,6 +443,17 @@ export default function AdminWorkersPage() {
     });
   }, [overviewQuery.data?.workers, queueKeyword, statusFilter, workerKeyword]);
 
+  const overviewErrorMessage = overviewQuery.error instanceof Error
+    ? formatTaskMonitorErrorMessage(overviewQuery.error.message, "Worker监控数据加载失败，请稍后重试。")
+    : "";
+  const taskErrorMessage = workerTasksQuery.error instanceof Error
+    ? formatTaskMonitorErrorMessage(workerTasksQuery.error.message, "Worker任务数据加载失败，请稍后重试。")
+    : "";
+
+  useToastFeedback({
+    errorMessage: overviewErrorMessage || taskErrorMessage,
+  });
+
   const updateTableScrollY = useCallback(() => {
     if (typeof window === "undefined") {
       return;
@@ -450,7 +485,7 @@ export default function AdminWorkersPage() {
       return;
     }
     window.requestAnimationFrame(updateTableScrollY);
-  }, [filteredWorkers.length, overviewQuery.isFetching, updateTableScrollY]);
+  }, [filteredWorkers.length, overviewErrorMessage, overviewQuery.isFetching, updateTableScrollY, viewMode]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -522,47 +557,87 @@ export default function AdminWorkersPage() {
   const overview = overviewQuery.data;
   const taskOverview = workerTasksQuery.data;
 
-  return (
-    <div className="flex flex-1 flex-col space-y-6">
-      {overviewQuery.error && (
-        <Alert
-          type="error"
-          showIcon
-          message={overviewQuery.error instanceof Error ? overviewQuery.error.message : "Worker监控数据加载失败"}
+  const renderWorkerCard = (workerItem: WorkerMonitorWorkerItem) => (
+    <AntCard
+      key={workerItem.worker}
+      className="admin-workers-worker-card"
+      size="small"
+      title={
+        <Space className="min-w-0" size={8}>
+          <Typography.Text strong ellipsis={{ tooltip: workerItem.worker }}>
+            {workerItem.worker}
+          </Typography.Text>
+          {renderWorkerStatusTag(workerItem.status)}
+        </Space>
+      }
+      extra={
+        <Button
+          type="text"
+          size="small"
+          icon={<EyeOutlined />}
+          onClick={() => setSelectedWorker(workerItem.worker)}
         />
-      )}
+      }
+    >
+      <Space direction="vertical" size={10} style={{ width: "100%" }}>
+        <div className="admin-workers-worker-card-field">
+          <Typography.Text type="secondary">队列</Typography.Text>
+          {renderQueueTags(workerItem.queue_names)}
+        </div>
+        <div className="admin-workers-worker-card-field">
+          <Typography.Text type="secondary">并发/预取</Typography.Text>
+          <Typography.Text>{workerItem.concurrency}/{workerItem.prefetch_count}</Typography.Text>
+        </div>
+        <div className="admin-workers-worker-card-field">
+          <Typography.Text type="secondary">任务</Typography.Text>
+          <Typography.Text>{workerItem.active_count}/{workerItem.reserved_count}/{workerItem.scheduled_count}</Typography.Text>
+        </div>
+        <div className="admin-workers-worker-card-field">
+          <Typography.Text type="secondary">累计处理</Typography.Text>
+          <Typography.Text>{workerItem.processed_count}</Typography.Text>
+        </div>
+        <div className="admin-workers-worker-card-field">
+          <Typography.Text type="secondary">注册任务</Typography.Text>
+          <Typography.Text>{workerItem.registered_count}</Typography.Text>
+        </div>
+        <div className="admin-workers-worker-card-field">
+          <Typography.Text type="secondary">最近心跳</Typography.Text>
+          <Typography.Text>{formatDateTime(workerItem.last_heartbeat_at)}</Typography.Text>
+        </div>
+      </Space>
+    </AntCard>
+  );
 
-      {!overview && !overviewQuery.isFetching && (
-        <AntCard>
-          <Empty description="暂无Worker监控数据" />
-        </AntCard>
-      )}
-
-      {overview && (
-        <AntCard
-          title="Worker监控"
-          style={{ height: '100%' }}
-          extra={
-            <Space>
-              {overviewQuery.isFetching && <Spin size="small" />}
-              <Text type="secondary">生成时间：{formatDateTime(overview.generated_at)}</Text>
-              <Button onClick={() => void overviewQuery.refetch()} loading={overviewQuery.isFetching}>
-                刷新Worker
-              </Button>
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <AntCard
+        className="admin-workers-page-card"
+        title="Worker监控"
+        extra={(
+          <Space size={8} wrap>
+            {overviewQuery.isFetching && <Spin size="small" />}
+            <Space size={8}>
+              <Text type="secondary">自动刷新</Text>
+              <Switch size="small" checked={autoRefresh} onChange={setAutoRefresh} />
             </Space>
-          }
-        >
-          <Form layout="inline" style={{ rowGap: 12 }}>
-            <Form.Item label="Worker" className="min-w-[240px]">
+            <Button onClick={() => void overviewQuery.refetch()} loading={overviewQuery.isFetching}>
+              刷新
+            </Button>
+          </Space>
+        )}
+      >
+        {viewMode === "card" ? (
+          <Form layout="vertical" style={{ marginBottom: 16 }}>
+            <Form.Item style={{ marginBottom: 12 }}>
               <Input
                 allowClear
-                placeholder="按 Worker 名称筛选"
+                placeholder="按执行节点名称筛选"
                 value={workerKeyword}
                 onChange={(event) => setWorkerKeyword(event.target.value)}
               />
             </Form.Item>
 
-            <Form.Item label="队列" className="min-w-[240px]">
+            <Form.Item style={{ marginBottom: 12 }}>
               <Input
                 allowClear
                 placeholder="按队列名称筛选"
@@ -571,7 +646,7 @@ export default function AdminWorkersPage() {
               />
             </Form.Item>
 
-            <Form.Item label="状态" className="min-w-[170px]">
+            <Form.Item style={{ marginBottom: 0 }}>
               <Select
                 value={statusFilter}
                 onChange={(value) => setStatusFilter(parseStatusFilter(value))}
@@ -582,12 +657,49 @@ export default function AdminWorkersPage() {
                 ]}
               />
             </Form.Item>
+          </Form>
+        ) : (
+          <Form layout="inline" style={{ rowGap: 12 }}>
+            <Form.Item label="执行节点" style={{ width: 260 }}>
+              <Input
+                allowClear
+                placeholder="按执行节点名称筛选"
+                value={workerKeyword}
+                onChange={(event) => setWorkerKeyword(event.target.value)}
+              />
+            </Form.Item>
 
-            <Form.Item label="自动刷新">
-              <Switch checked={autoRefresh} onChange={setAutoRefresh} />
+            <Form.Item label="队列" style={{ width: 240 }}>
+              <Input
+                allowClear
+                placeholder="按队列名称筛选"
+                value={queueKeyword}
+                onChange={(event) => setQueueKeyword(event.target.value)}
+              />
+            </Form.Item>
+
+            <Form.Item label="状态" style={{ width: 170 }}>
+              <Select
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(parseStatusFilter(value))}
+                options={[
+                  { label: "全部状态", value: "all" },
+                  { label: "在线", value: "online" },
+                  { label: "离线", value: "offline" },
+                ]}
+              />
             </Form.Item>
           </Form>
+        )}
 
+        <Space className="mt-4" size={[16, 8]} wrap>
+          <Text type="secondary">生成时间：{formatDateTime(overview?.generated_at)}</Text>
+          <Text type="secondary">执行节点：{filteredWorkers.length}/{overview?.summary.total ?? 0}</Text>
+          <Text type="secondary">在线：{overview?.summary.online ?? 0}</Text>
+          <Text type="secondary">离线：{overview?.summary.offline ?? 0}</Text>
+        </Space>
+
+        {viewMode === "table" ? (
           <div
             ref={tableScrollAnchorRef}
             className="admin-workers-table-anchor mt-4"
@@ -597,16 +709,57 @@ export default function AdminWorkersPage() {
               rowKey={(record) => record.worker}
               columns={workerColumns}
               dataSource={filteredWorkers}
-              pagination={{ pageSize: 10, showSizeChanger: true, hideOnSinglePage: false, style: { marginBottom: 0 } }}
-              locale={{ emptyText: "暂无Worker数据" }}
-              scroll={{ x: 1600, y: tableScrollY }}
+              loading={overviewQuery.isLoading}
+              tableLayout="fixed"
+              pagination={{
+                pageSize: 10,
+                showSizeChanger: true,
+                pageSizeOptions: [10, 20, 50, 100],
+                showTotal: (total) => `共 ${total} 条`,
+                hideOnSinglePage: false,
+                style: { marginBottom: 0 },
+              }}
+              locale={{
+                emptyText: (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="未找到符合筛选条件的执行节点。"
+                  />
+                ),
+              }}
+              scroll={{ y: tableScrollY }}
             />
           </div>
-        </AntCard>
-      )}
+        ) : (
+          <div className="admin-workers-card-view">
+            {overviewQuery.isLoading && filteredWorkers.length === 0 ? (
+              <div className="admin-workers-card-view-state">
+                <Spin tip="加载中..." />
+              </div>
+            ) : filteredWorkers.length === 0 ? (
+              <div className="admin-workers-card-view-state">
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="未找到符合筛选条件的执行节点。"
+                />
+              </div>
+            ) : (
+              <div className="admin-workers-card-view-content">
+                <Row gutter={[12, 12]}>
+                  {filteredWorkers.map((workerItem) => (
+                    <Col key={workerItem.worker} xs={24} sm={24} md={12} lg={8} xl={6}>
+                      {renderWorkerCard(workerItem)}
+                    </Col>
+                  ))}
+                </Row>
+              </div>
+            )}
+          </div>
+        )}
+      </AntCard>
 
       <Drawer
-        title={`Worker任务明细 - ${selectedWorker || "-"}`}
+        title={`执行节点任务明细 - ${selectedWorker || "-"}`}
         open={Boolean(selectedWorker)}
         width={1260}
         onClose={() => setSelectedWorker(null)}
@@ -620,21 +773,19 @@ export default function AdminWorkersPage() {
         }
       >
         {workerTasksQuery.isLoading && !taskOverview ? <Spin tip="任务数据加载中..." /> : null}
-        {workerTasksQuery.error ? (
-          <Alert
-            type="error"
-            showIcon
-            message={workerTasksQuery.error instanceof Error ? workerTasksQuery.error.message : "任务数据加载失败"}
+        {!workerTasksQuery.isLoading && !taskOverview ? (
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={taskErrorMessage || "暂无任务数据"}
           />
         ) : null}
-        {!workerTasksQuery.isLoading && !taskOverview ? <Empty description="暂无任务数据" /> : null}
         {taskOverview ? (
           <Space direction="vertical" size={16} style={{ width: "100%" }}>
             <Space size={8} wrap>
               <Tag color="processing">运行中: {taskOverview.summary.active}</Tag>
-              <Tag color="blue">保留中: {taskOverview.summary.reserved}</Tag>
+              <Tag color="gold">预留中: {taskOverview.summary.reserved}</Tag>
               <Tag color="purple">已调度: {taskOverview.summary.scheduled}</Tag>
-              <Tag color="geekblue">最近任务: {taskOverview.summary.recent}</Tag>
+              <Tag color="default">最近记录: {taskOverview.summary.recent}</Tag>
             </Space>
 
             <AntCard title="运行中任务">
