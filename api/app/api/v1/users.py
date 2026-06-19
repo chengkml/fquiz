@@ -42,10 +42,10 @@ def check_user_id_availability(
 
     if existing_user:
         if exclude_user_id and existing_user.id.lower() == exclude_user_id.lower():
-            return UserIdCheckResponse(available=True, message="Current user ID")
-        return UserIdCheckResponse(available=False, message="User ID already exists")
+            return UserIdCheckResponse(available=True, message="当前用户ID")
+        return UserIdCheckResponse(available=False, message="用户 ID 已存在，请更换后重试")
 
-    return UserIdCheckResponse(available=True, message="User ID is available")
+    return UserIdCheckResponse(available=True, message="用户 ID 可用")
 
 
 @router.post("", response_model=UserPublic)
