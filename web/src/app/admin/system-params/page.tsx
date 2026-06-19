@@ -515,18 +515,14 @@ export default function AdminSystemParamsPage() {
           title={editingId === null ? "新建系统参数" : "编辑系统参数"}
           open={editorOpen}
           onCancel={closeEditor}
+          onOk={() => formApi.submit()}
+          okText={editingId === null ? "创建" : "保存"}
+          cancelText="取消"
+          confirmLoading={saveMutation.isPending}
           width={760}
           destroyOnClose
-          footer={(
-            <Space>
-              <Button type="primary" loading={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
-                {saveMutation.isPending ? "提交中..." : editingId === null ? "创建" : "保存"}
-              </Button>
-              <Button onClick={resetForm}>重置</Button>
-            </Space>
-          )}
         >
-          <Form<FormState> form={formApi} layout="vertical" initialValues={EMPTY_FORM}>
+          <Form<FormState> form={formApi} layout="vertical" initialValues={EMPTY_FORM} onFinish={() => saveMutation.mutate()}>
             <div className="grid gap-4 md:grid-cols-2">
               <Form.Item<FormState>
                 label="参数键"
