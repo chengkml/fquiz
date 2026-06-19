@@ -852,6 +852,21 @@ export default function AdminUsersPage() {
 
     const moreMenuItems: MenuProps["items"] = [
       {
+        key: "delete",
+        label: "删除",
+        danger: true,
+        disabled: rowBusy,
+        onClick: () => {
+          Modal.confirm({
+            title: `确认删除用户 ${userItem.username}（${userItem.id}）？`,
+            okText: "删除",
+            cancelText: "取消",
+            okButtonProps: { danger: true },
+            onOk: () => deleteUserMutation.mutate(userItem.id),
+          });
+        },
+      },
+      {
         key: "assign-roles",
         label: "分配角色",
         disabled: rowBusy,
@@ -900,23 +915,6 @@ export default function AdminUsersPage() {
               icon={<EditOutlined />}
               onClick={() => openEditUserModal(userItem)}
             />
-            <Popconfirm
-              title={`确认删除用户 ${userItem.username}（${userItem.id}）？`}
-              okText="删除"
-              cancelText="取消"
-              okButtonProps={{ danger: true, loading: deleteLoading }}
-              onConfirm={() => deleteUserMutation.mutate(userItem.id)}
-              disabled={rowBusy}
-            >
-              <Button
-                type="text"
-                danger
-                size="small"
-                icon={<DeleteOutlined />}
-                loading={deleteLoading}
-                disabled={rowBusy}
-              />
-            </Popconfirm>
             <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
               <Button type="text" size="small" disabled={rowBusy} icon={<MoreOutlined />} />
             </Dropdown>
