@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   Card,
-  Checkbox,
   Col,
   Dropdown,
   Empty,
@@ -92,23 +91,20 @@ export default function AdminUsersPage() {
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [tableScrollY, setTableScrollY] = useState(USERS_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
-  const [viewMode, setViewMode] = useState<"table" | "card">(isMobile ? "card" : "table");
+  const viewMode: "table" | "card" = isMobile ? "card" : "table";
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  useEffect(() => {
-    setViewMode(isMobile ? "card" : "table");
-  }, [isMobile]);
-
   const canManage = hasPermission("user.manage");
   const canReadRoles = hasPermission("role.read") || hasPermission("role.manage");
+  const { current: paginationCurrent, pageSize: paginationPageSize } = pagination;
 
   const trimmedKeyword = searchKeyword.trim();
   const usersQueryParams = useMemo(() => {
     const params = new URLSearchParams();
-    params.set("limit", String(pagination.pageSize));
-    params.set("offset", String((pagination.current - 1) * pagination.pageSize));
+    params.set("limit", String(paginationPageSize));
+    params.set("offset", String((paginationCurrent - 1) * paginationPageSize));
     if (trimmedKeyword) {
       params.set("keyword", trimmedKeyword);
     }
@@ -116,7 +112,7 @@ export default function AdminUsersPage() {
       params.set("status", statusFilter);
     }
     return params.toString();
-  }, [pagination.current, pagination.pageSize, statusFilter, trimmedKeyword]);
+  }, [paginationCurrent, paginationPageSize, statusFilter, trimmedKeyword]);
   const usersPath = `/api/v1/users?${usersQueryParams}`;
   const rolesPath = "/api/v1/admin/roles";
 
@@ -478,13 +474,6 @@ export default function AdminUsersPage() {
     setPagination((prev) => ({ ...prev, current: 1 }));
   };
 
-  const handleResetSearch = () => {
-    setKeywordInput("");
-    setSearchKeyword("");
-    setStatusFilter(undefined);
-    setPagination((prev) => ({ ...prev, current: 1 }));
-  };
-
   const queryError =
     (usersQuery.error instanceof Error ? usersQuery.error.message : "")
     || (rolesQuery.error instanceof Error ? rolesQuery.error.message : "");
@@ -528,7 +517,7 @@ export default function AdminUsersPage() {
       return;
     }
     window.requestAnimationFrame(updateTableScrollY);
-  }, [anyError, pagination.current, pagination.pageSize, users.length, usersQuery.isFetching, updateTableScrollY]);
+  }, [anyError, paginationCurrent, paginationPageSize, users.length, usersQuery.isFetching, updateTableScrollY]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -699,10 +688,10 @@ export default function AdminUsersPage() {
     return (
       <AntCard
         key={userItem.id}
+        className="admin-users-user-card"
         size="small"
-        style={{ marginBottom: 12 }}
         title={
-          <Space>
+          <Space className="min-w-0" size={8}>
             <Typography.Text strong>{userItem.username}</Typography.Text>
             <Tag color={userItem.status === "active" ? "green" : "default"}>
               {statusLabel(userItem.status)}
@@ -715,16 +704,18 @@ export default function AdminUsersPage() {
           </Dropdown>
         }
       >
-        <Space direction="vertical" size={4} style={{ width: "100%" }}>
-          <div>
-            <Typography.Text type="secondary">用户 ID：</Typography.Text>
-            <Typography.Text>{userItem.id}</Typography.Text>
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <div className="admin-users-user-card-field">
+            <Typography.Text type="secondary">用户 ID</Typography.Text>
+            <Typography.Text copyable>{userItem.id}</Typography.Text>
           </div>
-          <div>
-            <Typography.Text type="secondary">邮箱：</Typography.Text>
-            <Typography.Text>{userItem.email || "-"}</Typography.Text>
+          <div className="admin-users-user-card-field">
+            <Typography.Text type="secondary">邮箱</Typography.Text>
+            <Typography.Text ellipsis={{ tooltip: userItem.email || "-" }}>
+              {userItem.email || "-"}
+            </Typography.Text>
           </div>
-          <div style={{ marginTop: 8 }}>
+          <div className="admin-users-user-card-actions">
             <Space wrap>
               <Button
                 size="small"
@@ -789,10 +780,10 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col space-y-6">
+    <div className="flex min-h-0 flex-1 flex-col">
       <AntCard
+        className="admin-users-page-card"
         title="用户管理"
-        style={{ height: '100%' }}
         extra={(
           <Button type="primary" onClick={openCreateUserModal}>
             新增用户
@@ -851,7 +842,7 @@ export default function AdminUsersPage() {
                 total: Math.max(usersQuery.data?.total ?? 0, 1),
                 showSizeChanger: true,
                 pageSizeOptions: [10, 20, 50, 100],
-                showTotal: (total) => `共 ${usersQuery.data?.total ?? 0} 条`,
+                showTotal: () => `共 ${usersQuery.data?.total ?? 0} 条`,
                 hideOnSinglePage: false,
                 style: { marginBottom: 0 },
                 onChange: (page, pageSize) => {
@@ -870,18 +861,20 @@ export default function AdminUsersPage() {
             />
           </div>
         ) : (
-          <div className="mt-4">
+          <div className="admin-users-card-view mt-4">
             {usersQuery.isLoading || rolesQuery.isLoading ? (
-              <div className="flex min-h-[240px] items-center justify-center">
+              <div className="admin-users-card-view-state">
                 <Spin tip="加载中..." />
               </div>
             ) : users.length === 0 ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="未找到符合筛选条件的用户。"
-              />
+              <div className="admin-users-card-view-state">
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="未找到符合筛选条件的用户。"
+                />
+              </div>
             ) : (
-              <>
+              <div className="admin-users-card-view-content">
                 <Row gutter={[12, 12]}>
                   {users.map((userItem) => (
                     <Col key={userItem.id} xs={24} sm={24} md={12} lg={8} xl={6}>
@@ -913,7 +906,7 @@ export default function AdminUsersPage() {
                     </Space>
                   </Space>
                 </div>
-              </>
+              </div>
             )}
           </div>
         )}
