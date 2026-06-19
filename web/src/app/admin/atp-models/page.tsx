@@ -452,10 +452,10 @@ export default function AtpModelsPage() {
   };
 
   return (
-    <div className="flex flex-1 flex-col space-y-6">
+    <>
       <AntCard
+        className="admin-atp-models-page-card"
         title="ATP 模型管理"
-        style={{ height: '100%' }}
         extra={(
           <Space>
             {assetsQuery.isFetching && <Spin size="small" />}
@@ -564,6 +564,6 @@ export default function AtpModelsPage() {
           </Row>
         </Form>
       </Modal>
-    </div>
+    </>
   );
 }
