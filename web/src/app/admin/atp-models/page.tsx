@@ -474,7 +474,7 @@ export default function AtpModelsPage() {
         )}
       >
         <Form layout="inline" style={{ rowGap: 12 }}>
-          <Form.Item label="关键词" className="min-w-[240px]">
+          <Form.Item label="关键词" style={{ width: 260 }}>
             <Input
               allowClear
               value={keywordInput}
