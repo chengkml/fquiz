@@ -74,6 +74,7 @@ export default function AdminSystemParamsPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [tableScrollY, setTableScrollY] = useState(PARAM_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
@@ -82,6 +83,8 @@ export default function AdminSystemParamsPage() {
 
   const listPath = useMemo(() => {
     const params = new URLSearchParams();
+    params.set("limit", String(pagination.pageSize));
+    params.set("offset", String((pagination.current - 1) * pagination.pageSize));
     if (keyword.trim()) {
       params.set("keyword", keyword.trim());
     }
@@ -90,7 +93,7 @@ export default function AdminSystemParamsPage() {
     }
     const qs = params.toString();
     return `/api/v1/admin/system-params${qs ? `?${qs}` : ""}`;
-  }, [keyword, statusFilter]);
+  }, [keyword, statusFilter, pagination.current, pagination.pageSize]);
 
   const listQuery = useQuery({
     queryKey: [listPath],
@@ -488,12 +491,17 @@ export default function AdminSystemParamsPage() {
             columns={columns}
             scroll={{ x: 1120, y: tableScrollY }}
             pagination={{
-              pageSize: 20,
+              current: pagination.current,
+              pageSize: pagination.pageSize,
+              total: listQuery.data?.total ?? 0,
               showSizeChanger: true,
               pageSizeOptions: [10, 20, 50, 100],
               showTotal: (total) => `共 ${total} 条`,
               hideOnSinglePage: false,
               style: { marginBottom: 0 },
+              onChange: (page, pageSize) => {
+                setPagination({ current: page, pageSize });
+              },
             }}
             locale={{
               emptyText: <Empty description="未找到符合筛选条件的系统参数。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
