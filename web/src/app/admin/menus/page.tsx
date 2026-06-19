@@ -108,6 +108,7 @@ export default function AdminMenusPage() {
   const viewMode: "table" | "card" = isMobile ? "card" : "table";
   const [form] = Form.useForm<MenuFormValues>();
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pageCardRef = useRef<HTMLDivElement | null>(null);
 
   const canRead = hasPermission("menu.read") || hasPermission("menu.manage");
@@ -197,6 +198,18 @@ export default function AdminMenusPage() {
     setActiveKeyword(keyword);
     setActiveStatusFilter(statusFilter);
   }, [keyword, statusFilter]);
+
+  const handleKeywordChange = (value: string) => {
+    setKeyword(value);
+
+    if (keywordDebounceTimeoutRef.current) {
+      clearTimeout(keywordDebounceTimeoutRef.current);
+    }
+
+    keywordDebounceTimeoutRef.current = setTimeout(() => {
+      setActiveKeyword(value);
+    }, 500);
+  };
 
   const closeDialog = useCallback(() => {
     setDialogOpen(false);
@@ -684,35 +697,13 @@ export default function AdminMenusPage() {
       >
         {viewMode === "card" ? (
           <Form layout="vertical" style={{ marginBottom: 16 }}>
-            <Form.Item style={{ marginBottom: 8 }}>
+            <Form.Item style={{ marginBottom: 0 }}>
               <Input
                 allowClear
                 value={keyword}
-                onChange={(event) => setKeyword(event.currentTarget.value)}
-                onPressEnter={handleSearch}
+                onChange={(event) => handleKeywordChange(event.currentTarget.value)}
                 placeholder="按编码/名称/路径筛选"
               />
-            </Form.Item>
-            <Form.Item style={{ marginBottom: 8 }}>
-              <Select<FilterStatus>
-                value={statusFilter}
-                onChange={(value) => setStatusFilter(value)}
-                options={[
-                  { value: "all", label: "全部" },
-                  { value: "enabled", label: "已启用" },
-                  { value: "disabled", label: "已禁用" },
-                ]}
-                style={{ width: "100%" }}
-              />
-            </Form.Item>
-            <Form.Item style={{ marginBottom: 0 }}>
-              <Button
-                type="primary"
-                onClick={handleSearch}
-                block
-              >
-                搜索
-              </Button>
             </Form.Item>
           </Form>
         ) : (
