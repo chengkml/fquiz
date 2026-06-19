@@ -21,7 +21,7 @@ import {
   type CardProps,
   type MenuProps,
 } from "antd";
-import { MoreOutlined } from "@ant-design/icons";
+import { MoreOutlined, LeftOutlined, RightOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
@@ -881,7 +881,7 @@ export default function AdminUsersPage() {
         )}
       >
         <Form layout="inline" style={{ rowGap: 12 }}>
-          <Form.Item label="关键词" className="min-w-[240px]">
+          <Form.Item label="关键词" style={{ width: 260 }}>
             <Input
               allowClear
               placeholder="按用户 ID/邮箱/用户名搜索"
@@ -891,7 +891,7 @@ export default function AdminUsersPage() {
             />
           </Form.Item>
 
-          <Form.Item label="状态" className="min-w-[170px]">
+          <Form.Item label="状态" style={{ width: 170 }}>
             <Select<"active" | "disabled">
               value={statusFilter}
               allowClear
@@ -972,27 +972,25 @@ export default function AdminUsersPage() {
                     </Col>
                   ))}
                 </Row>
-                <div style={{ marginTop: 16, textAlign: "center" }}>
-                  <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                <div style={{ marginTop: 16, display: "flex", justifyContent: "center" }}>
+                  <Space direction="vertical" size={12} style={{ width: "100%", alignItems: "center" }}>
                     <Typography.Text type="secondary">
                       共 {usersQuery.data?.total ?? 0} 条
                     </Typography.Text>
                     <Space wrap>
                       <Button
+                        icon={<LeftOutlined />}
                         disabled={pagination.current === 1}
                         onClick={() => setPagination((prev) => ({ ...prev, current: prev.current - 1 }))}
-                      >
-                        上一页
-                      </Button>
+                      />
                       <Typography.Text>
                         第 {pagination.current} 页 / 共 {Math.ceil((usersQuery.data?.total ?? 0) / pagination.pageSize)} 页
                       </Typography.Text>
                       <Button
+                        icon={<RightOutlined />}
                         disabled={pagination.current >= Math.ceil((usersQuery.data?.total ?? 0) / pagination.pageSize)}
                         onClick={() => setPagination((prev) => ({ ...prev, current: prev.current + 1 }))}
-                      >
-                        下一页
-                      </Button>
+                      />
                     </Space>
                   </Space>
                 </div>
