@@ -47,19 +47,23 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 @router.get("/roles", response_model=RoleListResponse)
 def get_roles(
     keyword: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     _: CurrentUser = Depends(require_any_permission("role.read", "role.manage")),
     db: Session = Depends(get_db),
 ) -> RoleListResponse:
-    return list_roles(db, keyword=keyword)
+    return list_roles(db, keyword=keyword, limit=limit, offset=offset)
 
 
 @router.get("/roles-with-menus", response_model=RolesWithMenusResponse)
 def get_roles_with_menus(
     keyword: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     _: CurrentUser = Depends(require_any_permission("role.read", "role.manage")),
     db: Session = Depends(get_db),
 ) -> RolesWithMenusResponse:
-    return list_roles_with_menus(db, keyword=keyword)
+    return list_roles_with_menus(db, keyword=keyword, limit=limit, offset=offset)
 
 
 @router.post("/roles", response_model=RolePublic)

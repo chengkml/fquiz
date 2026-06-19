@@ -111,9 +111,21 @@ PROTECTED_MENU_CODES = {
 }
 
 
-def list_roles(db: Session, keyword: str | None = None) -> RoleListResponse:
+def list_roles(
+    db: Session,
+    keyword: str | None = None,
+    *,
+    limit: int | None = None,
+    offset: int = 0,
+) -> RoleListResponse:
     role_source = "legacy" if _legacy_role_table_exists(db) else "modern"
-    rows = _load_role_rows(db, role_source=role_source, keyword=keyword)
+    rows, total = _load_role_page(
+        db,
+        role_source=role_source,
+        keyword=keyword,
+        limit=limit,
+        offset=offset,
+    )
     role_ids = [str(row["id"]) for row in rows]
     role_menu_ids = _load_role_menu_ids_map(db, role_ids, role_source=role_source)
     menu_rows = _load_menus_map(
@@ -131,20 +143,6 @@ def list_roles(db: Session, keyword: str | None = None) -> RoleListResponse:
         permission_codes = set(role_permission_codes.get(role_id, []))
         permission_codes.update(_permission_codes_from_menu_rows(menu_rows, menu_ids))
 
-        # Apply keyword filter on menu names if keyword provided
-        if keyword:
-            normalized_keyword = keyword.strip().lower()
-            # Collect menu names for this role
-            menu_names = " ".join(
-                str(menu_rows.get(menu_id, {}).get("menu_name", ""))
-                for menu_id in menu_ids
-            )
-            # Build search haystack
-            haystack = f"{role_code} {row.get('name', '')} {menu_names}".lower()
-            # Skip if keyword not found
-            if normalized_keyword not in haystack:
-                continue
-
         items.append(
             RolePublic(
                 id=role_id,
@@ -154,7 +152,7 @@ def list_roles(db: Session, keyword: str | None = None) -> RoleListResponse:
                 menu_ids=menu_ids,
             )
         )
-    return RoleListResponse(items=items, total=len(items))
+    return RoleListResponse(items=items, total=total)
 
 
 def get_role_by_id(db: Session, role_id: str) -> RolePublic | None:
@@ -495,9 +493,15 @@ def list_menus(db: Session, keyword: str | None = None, status: str | None = Non
     return MenuListResponse(items=items, total=len(items))
 
 
-def list_roles_with_menus(db: Session, keyword: str | None = None) -> RolesWithMenusResponse:
+def list_roles_with_menus(
+    db: Session,
+    keyword: str | None = None,
+    *,
+    limit: int | None = None,
+    offset: int = 0,
+) -> RolesWithMenusResponse:
     """Get roles and menus in a single request to reduce network calls."""
-    roles_response = list_roles(db, keyword=keyword)
+    roles_response = list_roles(db, keyword=keyword, limit=limit, offset=offset)
     menus_response = list_menus(db)
     return RolesWithMenusResponse(
         roles=roles_response.items,
@@ -992,42 +996,87 @@ def _load_menus_map(db: Session, menu_ids: list[str], *, role_source: str = "leg
     }
 
 
-def _load_role_rows(db: Session, *, role_source: str, keyword: str | None = None) -> list[dict[str, object]]:
-    where_clause = ""
-    params = {}
-
-    if keyword:
-        normalized_keyword = f"%{keyword.strip().lower()}%"
-        where_clause = "WHERE LOWER(id) LIKE :keyword OR LOWER(name) LIKE :keyword"
-        params["keyword"] = normalized_keyword
+def _load_role_page(
+    db: Session,
+    *,
+    role_source: str,
+    keyword: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> tuple[list[dict[str, object]], int]:
+    normalized_offset = max(offset, 0)
+    normalized_limit = max(limit, 0) if limit is not None else None
+    params: dict[str, object] = {"offset": normalized_offset}
+    limit_clause = ""
+    if normalized_limit is not None:
+        limit_clause = "LIMIT :limit"
+        params["limit"] = normalized_limit
 
     if role_source == "legacy":
-        rows = db.execute(
-            text(
-                f"""
-                SELECT id, name
-                FROM user_role
-                {where_clause}
-                ORDER BY create_date DESC NULLS LAST, id ASC
-                """
-            ),
-            params
-        ).mappings().all()
+        from_clause = """
+            FROM user_role r
+            WHERE (
+                :keyword IS NULL
+                OR LOWER(r.id) LIKE :keyword
+                OR LOWER(r.name) LIKE :keyword
+                OR EXISTS (
+                    SELECT 1
+                    FROM role_menu_rela rmr
+                    JOIN menus m ON m.id::text = rmr.menu_id OR m.code = rmr.menu_id
+                    WHERE rmr.role_id = r.id
+                      AND m.code NOT IN :removed_menu_codes
+                      AND (
+                          LOWER(m.code) LIKE :keyword
+                          OR LOWER(m.name) LIKE :keyword
+                      )
+                )
+            )
+        """
+        select_clause = "SELECT r.id, r.name"
+        order_clause = "ORDER BY r.create_date DESC NULLS LAST, r.id ASC"
     else:
-        if keyword:
-            where_clause = "WHERE LOWER(code) LIKE :keyword OR LOWER(name) LIKE :keyword"
-        rows = db.execute(
-            text(
-                f"""
-                SELECT id::text AS id, code, name
-                FROM roles
-                {where_clause}
-                ORDER BY id ASC
-                """
-            ),
-            params
-        ).mappings().all()
-    return [dict(row) for row in rows]
+        from_clause = """
+            FROM roles r
+            WHERE (
+                :keyword IS NULL
+                OR LOWER(r.code) LIKE :keyword
+                OR LOWER(r.name) LIKE :keyword
+                OR EXISTS (
+                    SELECT 1
+                    FROM role_menus rm
+                    JOIN menus m ON m.id = rm.menu_id
+                    WHERE rm.role_id = r.id
+                      AND m.code NOT IN :removed_menu_codes
+                      AND (
+                          LOWER(m.code) LIKE :keyword
+                          OR LOWER(m.name) LIKE :keyword
+                      )
+                )
+            )
+        """
+        select_clause = "SELECT r.id::text AS id, r.code, r.name"
+        order_clause = "ORDER BY r.id ASC"
+
+    trimmed_keyword = keyword.strip() if keyword else ""
+    params["keyword"] = f"%{trimmed_keyword.lower()}%" if trimmed_keyword else None
+
+    total = db.scalar(
+        text(f"SELECT COUNT(*) {from_clause}").bindparams(bindparam("removed_menu_codes", expanding=True)),
+        {**params, "removed_menu_codes": tuple(REMOVED_MENU_CODES)},
+    ) or 0
+    rows = db.execute(
+        text(
+            f"""
+            {select_clause}
+            {from_clause}
+            {order_clause}
+            {limit_clause}
+            OFFSET :offset
+            """
+        ).bindparams(bindparam("removed_menu_codes", expanding=True)),
+        {**params, "removed_menu_codes": tuple(REMOVED_MENU_CODES)},
+    ).mappings().all()
+    return [dict(row) for row in rows], int(total)
 
 
 def _load_role_permission_codes_map(

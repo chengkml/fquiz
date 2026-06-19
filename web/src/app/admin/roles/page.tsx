@@ -7,6 +7,7 @@ import {
   Button,
   Card,
   Col,
+  Dropdown,
   Empty,
   Form,
   Input,
@@ -21,7 +22,7 @@ import {
   type CardProps,
   type MenuProps,
 } from "antd";
-import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { EditOutlined, MoreOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import type { CSSProperties, ComponentType } from "react";
 
@@ -30,11 +31,9 @@ import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { readApiError } from "@/lib/api";
-import type { MenuItem, RoleItem, RoleListResponse } from "@/types/auth";
+import type { MenuItem, RoleItem } from "@/types/auth";
 
 const AntCard = Card as unknown as ComponentType<CardProps>;
-
-type MenuListResponse = { items: MenuItem[]; total: number };
 
 type RolesWithMenusResponse = {
   roles: RoleItem[];
@@ -68,6 +67,7 @@ export default function AdminRolesPage() {
   const [keywordInput, setKeywordInput] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
   const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -85,14 +85,19 @@ export default function AdminRolesPage() {
 
   const canRead = hasPermission("role.read") || hasPermission("role.manage");
   const canManage = hasPermission("role.manage");
+  const { current: paginationCurrent, pageSize: paginationPageSize } = pagination;
 
   const trimmedKeyword = searchKeyword.trim();
-  const rolesQueryUrl = useMemo(() => {
-    const url = trimmedKeyword
-      ? `/api/v1/admin/roles-with-menus?keyword=${encodeURIComponent(trimmedKeyword)}`
-      : "/api/v1/admin/roles-with-menus";
-    return url;
-  }, [trimmedKeyword]);
+  const rolesQueryParams = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("limit", String(paginationPageSize));
+    params.set("offset", String((paginationCurrent - 1) * paginationPageSize));
+    if (trimmedKeyword) {
+      params.set("keyword", trimmedKeyword);
+    }
+    return params.toString();
+  }, [paginationCurrent, paginationPageSize, trimmedKeyword]);
+  const rolesQueryUrl = `/api/v1/admin/roles-with-menus?${rolesQueryParams}`;
 
   const loadRolesWithMenus = useCallback(async () => {
     const response = await fetchWithAuth(rolesQueryUrl);
@@ -101,7 +106,7 @@ export default function AdminRolesPage() {
   }, [fetchWithAuth, rolesQueryUrl]);
 
   const rolesQuery = useQuery({
-    queryKey: ["admin.roles", rolesQueryUrl],
+    queryKey: ["admin.roles", rolesQueryParams],
     queryFn: loadRolesWithMenus,
     enabled: !!user && canRead,
   });
@@ -294,6 +299,7 @@ export default function AdminRolesPage() {
 
     keywordDebounceTimeoutRef.current = setTimeout(() => {
       setSearchKeyword(value);
+      setPagination((prev) => ({ ...prev, current: 1 }));
       setCardViewPage(1);
       setAllLoadedRoles([]);
     }, 500);
@@ -311,7 +317,11 @@ export default function AdminRolesPage() {
 
   // Update allLoadedRoles when roles data changes in card view
   useEffect(() => {
-    if (viewMode === "card" && !rolesQuery.isLoading) {
+    if (viewMode !== "card" || rolesQuery.isLoading) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
       if (cardViewPage === 1) {
         setAllLoadedRoles(roles);
       } else {
@@ -325,7 +335,11 @@ export default function AdminRolesPage() {
         });
       }
       setIsLoadingMore(false);
-    }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
   }, [roles, rolesQuery.isLoading, viewMode, cardViewPage]);
 
   // Handle infinite scroll for card view
@@ -352,6 +366,7 @@ export default function AdminRolesPage() {
         if (loadedCount < total) {
           setIsLoadingMore(true);
           setCardViewPage((prev) => prev + 1);
+          setPagination((prev) => ({ ...prev, current: prev.current + 1 }));
         }
       }
     };
@@ -359,12 +374,6 @@ export default function AdminRolesPage() {
     cardBody.addEventListener("scroll", handleScroll);
     return () => cardBody.removeEventListener("scroll", handleScroll);
   }, [viewMode, isLoadingMore, rolesQuery.isLoading, rolesQuery.data?.roles_total, allLoadedRoles.length]);
-
-  // Reset card view state when filters change
-  useEffect(() => {
-    setCardViewPage(1);
-    setAllLoadedRoles([]);
-  }, [trimmedKeyword]);
 
   const columns = useMemo<ColumnsType<RoleItem>>(() => {
     const base: ColumnsType<RoleItem> = [
@@ -460,6 +469,24 @@ export default function AdminRolesPage() {
     const isDeleting = deletingRoleId === role.id;
     const isSaving = savingRoleId === role.id;
     const rowBusy = isDeleting || isSaving || createRoleMutation.isPending || updateRoleMutation.isPending;
+    const moreMenuItems: MenuProps["items"] = [
+      {
+        key: "delete",
+        label: "删除",
+        danger: true,
+        disabled: rowBusy,
+        onClick: () => {
+          Modal.confirm({
+            title: `确认删除角色 ${role.code} 吗？`,
+            content: "删除后无法恢复，请谨慎操作。",
+            okText: "删除",
+            cancelText: "取消",
+            okButtonProps: { danger: true, loading: isDeleting },
+            onOk: () => deleteRoleMutation.mutate(role.id),
+          });
+        },
+      },
+    ];
 
     const menuLabels = role.menu_ids.length > 0
       ? role.menu_ids.map((menuId) => menuNameById.get(menuId) ?? String(menuId))
@@ -489,24 +516,14 @@ export default function AdminRolesPage() {
                 disabled={rowBusy}
                 onClick={() => startEdit(role)}
               />
-              <Popconfirm
-                title={`确认删除角色 ${role.code} 吗？`}
-                description="删除后无法恢复，请谨慎操作。"
-                okText="删除"
-                cancelText="取消"
-                okButtonProps={{ danger: true, loading: isDeleting }}
-                onConfirm={() => deleteRoleMutation.mutate(role.id)}
-                disabled={rowBusy}
-              >
+              <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
                 <Button
                   type="text"
                   size="small"
-                  danger
-                  icon={<DeleteOutlined />}
-                  loading={isDeleting}
+                  icon={<MoreOutlined />}
                   disabled={rowBusy}
                 />
-              </Popconfirm>
+              </Dropdown>
             </Space>
           ) : null
         }
@@ -561,7 +578,7 @@ export default function AdminRolesPage() {
       return;
     }
     window.requestAnimationFrame(updateTableScrollY);
-  }, [anyError, roles.length, rolesQuery.isFetching, updateTableScrollY]);
+  }, [anyError, paginationCurrent, paginationPageSize, roles.length, rolesQuery.isFetching, updateTableScrollY]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -691,15 +708,22 @@ export default function AdminRolesPage() {
               columns={columns}
               dataSource={roles}
               loading={rolesQuery.isLoading}
+              tableLayout="fixed"
               scroll={{ y: tableScrollY }}
               pagination={{
-                pageSize: 20,
-                total: Math.max(roles.length, 1),
+                current: paginationCurrent,
+                pageSize: paginationPageSize,
+                total: rolesQuery.data?.roles_total ?? 0,
                 showSizeChanger: true,
                 pageSizeOptions: [10, 20, 50, 100],
                 showTotal: (total) => `共 ${total} 条`,
                 hideOnSinglePage: false,
                 style: { marginBottom: 0 },
+                onChange: (page, pageSize) => {
+                  setPagination({ current: page, pageSize });
+                  setCardViewPage(page);
+                  setAllLoadedRoles([]);
+                },
               }}
               locale={{
                 emptyText: (

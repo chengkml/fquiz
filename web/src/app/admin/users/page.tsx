@@ -21,7 +21,7 @@ import {
   type CardProps,
   type MenuProps,
 } from "antd";
-import { MoreOutlined, LeftOutlined, RightOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { MoreOutlined, EditOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
@@ -102,7 +102,6 @@ export default function AdminUsersPage() {
   const [success, setSuccess] = useState("");
   const [userIdValidationError, setUserIdValidationError] = useState("");
   const [editUserIdValidationError, setEditUserIdValidationError] = useState("");
-  const [checkingUserId, setCheckingUserId] = useState(false);
   const userIdCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const canManage = hasPermission("user.manage");
@@ -123,7 +122,7 @@ export default function AdminUsersPage() {
     return params.toString();
   }, [paginationCurrent, paginationPageSize, statusFilter, trimmedKeyword]);
   const usersPath = `/api/v1/users?${usersQueryParams}`;
-  const rolesPath = "/api/v1/admin/roles";
+  const rolesPath = "/api/v1/admin/roles?limit=200&offset=0";
 
   const loadUsers = useCallback(async () => {
     const response = await fetchWithAuth(usersPath);
@@ -186,10 +185,6 @@ export default function AdminUsersPage() {
     return roleCodeToName.get(code) || code;
   }, [roleCodeToName]);
 
-  const existingUserIds = useMemo(
-    () => new Set(users.map((item) => item.id.trim().toLowerCase())),
-    [users],
-  );
   const existingEmails = useMemo(
     () => new Set(users.map((item) => item.email.trim().toLowerCase())),
     [users],
@@ -397,15 +392,11 @@ export default function AdminUsersPage() {
       return;
     }
 
-    setCheckingUserId(true);
-
     userIdCheckTimeoutRef.current = setTimeout(async () => {
       const result = await checkUserIdAvailability(
         trimmedValue,
         isEdit && editingUser ? editingUser.id : undefined
       );
-
-      setCheckingUserId(false);
 
       if (isEdit) {
         setEditUserIdValidationError(result.available ? "" : result.message);
@@ -495,7 +486,7 @@ export default function AdminUsersPage() {
           },
         },
       );
-    } catch (validationError) {
+    } catch {
       // Validation errors are already shown in the form
     }
   };
@@ -614,7 +605,11 @@ export default function AdminUsersPage() {
 
   // Update allLoadedUsers when users data changes in card view
   useEffect(() => {
-    if (viewMode === "card" && !usersQuery.isLoading) {
+    if (viewMode !== "card" || usersQuery.isLoading) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
       if (cardViewPage === 1) {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- Mobile card view intentionally mirrors paged query results into an accumulated list.
         setAllLoadedUsers(() => users);
@@ -629,7 +624,11 @@ export default function AdminUsersPage() {
         });
       }
       setIsLoadingMore(false);
-    }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
   }, [users, usersQuery.isLoading, viewMode, cardViewPage]);
 
   // Handle infinite scroll for card view
