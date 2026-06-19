@@ -20,8 +20,8 @@ import {
   type TableColumnsType,
 } from "antd";
 import Link from "next/link";
-import type { ComponentType, ReactNode } from "react";
-import { useCallback, useMemo, useState } from "react";
+import type { ComponentType, CSSProperties, ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
@@ -285,6 +285,10 @@ function formatDateTime(value: string | null): string {
   return date.toLocaleString("zh-CN");
 }
 
+const MESSAGES_TABLE_MIN_SCROLL_Y = 180;
+const MESSAGES_TABLE_VIEWPORT_GAP = 40;
+const MESSAGES_TABLE_FALLBACK_RESERVE = 220;
+
 export default function AdminSystemMessagesPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
@@ -297,6 +301,8 @@ export default function AdminSystemMessagesPage() {
   const [detailMessage, setDetailMessage] = useState<SystemMessageSummary | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [tableScrollY, setTableScrollY] = useState(MESSAGES_TABLE_MIN_SCROLL_Y);
+  const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const canManage = hasPermission("admin.system_message");
 
@@ -435,6 +441,74 @@ export default function AdminSystemMessagesPage() {
     () => messages.filter((item) => !item.is_read).map((item) => item.id),
     [messages],
   );
+
+  const updateTableScrollY = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - MESSAGES_TABLE_FALLBACK_RESERVE);
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? MESSAGES_TABLE_MIN_SCROLL_Y;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - MESSAGES_TABLE_VIEWPORT_GAP);
+    }
+
+    const clampedHeight = Math.max(MESSAGES_TABLE_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.requestAnimationFrame(updateTableScrollY);
+  }, [messages.length, listQuery.isFetching, messageTypeFilter, unreadOnly, updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updateTableScrollY);
+    };
+
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateTableScrollY);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTableScrollY]);
 
   const openCreateMessageModal = () => {
     setError("");
@@ -637,16 +711,21 @@ export default function AdminSystemMessagesPage() {
           </Form.Item>
         </Form>
 
-        <Table<SystemMessageSummary>
-          rowKey="id"
-          className="mt-4"
-          columns={columns}
-          dataSource={messages}
-          loading={listQuery.isFetching}
-          locale={{ emptyText: <Empty description="暂无系统消息" /> }}
-          pagination={{ pageSize: 20, showSizeChanger: true, hideOnSinglePage: false, showTotal: (total) => `共 ${total} 条` }}
-          scroll={{ x: 1100 }}
-        />
+        <div
+          ref={tableScrollAnchorRef}
+          className="admin-system-messages-table-anchor mt-4"
+          style={{ "--admin-system-messages-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+        >
+          <Table<SystemMessageSummary>
+            rowKey="id"
+            columns={columns}
+            dataSource={messages}
+            loading={listQuery.isFetching}
+            locale={{ emptyText: <Empty description="暂无系统消息" /> }}
+            pagination={{ pageSize: 20, showSizeChanger: true, hideOnSinglePage: false, showTotal: (total) => `共 ${total} 条` }}
+            scroll={{ x: 1100, y: tableScrollY }}
+          />
+        </div>
       </AntCard>
 
       <Modal
