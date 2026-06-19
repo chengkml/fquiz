@@ -546,9 +546,16 @@ export default function AdminMenusPage() {
                 <Button
                   danger
                   size="small"
-                  loading={deletingMenuId === menuItem.id}
                   disabled={menuBusy}
-                  onClick={() => requestDeleteMenu(menuItem)}
+                  onClick={() => {
+                    Modal.confirm({
+                      title: `确认删除菜单 ${menuItem.name}（${menuItem.code}）？`,
+                      okText: "删除",
+                      cancelText: "取消",
+                      okButtonProps: { danger: true },
+                      onOk: () => removeMenu(menuItem),
+                    });
+                  }}
                 >
                   删除
                 </Button>
