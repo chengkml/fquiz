@@ -14,6 +14,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Progress,
   Select,
   Space,
@@ -24,6 +25,7 @@ import {
   Upload,
   message,
 } from "antd";
+import { MoreOutlined } from "@ant-design/icons";
 import type { UploadFile } from "antd/es/upload/interface";
 import type { ColumnsType } from "antd/es/table";
 
@@ -757,109 +759,119 @@ export default function AdminElevationPage() {
         key: "actions",
         fixed: "right",
         width: 240,
-        render: (_, row) => (
-          <Space size="small" wrap>
-            <Typography.Link
-              onClick={() => {
-                setPreviewDataset(row);
-                setPreviewData(null);
-                setPreviewModalOpen(true);
-                setPreviewLoading(true);
-                void fetchWithAuth(`/api/v1/elevation/datasets/${row.id}/preview?max_points=1500`)
-                  .then(async (response) => {
-                    if (!response.ok) {
-                      throw new Error(await readApiError(response));
-                    }
-                    return (await response.json()) as ElevationDatasetPreviewResponse;
-                  })
-                  .then((payload) => {
-                    setPreviewData(payload);
-                    setError("");
-                  })
-                  .catch((candidate) => {
-                    const nextError = candidate instanceof Error ? candidate.message : "加载预览失败";
-                    setError(nextError);
-                    messageApi.error(nextError);
-                  })
-                  .finally(() => {
-                    setPreviewLoading(false);
-                  });
-              }}
-            >
-              预览
-            </Typography.Link>
-            <Typography.Link
-              disabled={!canManage || datasetDataImportMutation.isPending}
-              onClick={() => {
-                if (!canManage || datasetDataImportMutation.isPending) return;
-                setImportDataset(row);
-                setImportFileList([]);
-                setImportModalOpen(true);
-              }}
-            >
-              导入数据
-            </Typography.Link>
-            <Dropdown
-              menu={{
-                items: [
-                  {
-                    key: "files",
-                    label: "文件明细",
-                    onClick: () => {
-                      setDatasetFilesDataset(row);
-                      setDatasetFiles([]);
-                      setDatasetFilesModalOpen(true);
-                      setDatasetFilesLoading(true);
-                      datasetFilesMutation.mutate(row.id);
-                    },
-                  },
-                  {
-                    key: "terrain",
-                    label: terrainBuildActionLabel(row.terrain_status),
-                    disabled:
-                      !canManage
-                      || terrainBuildMutation.isPending
-                      || row.terrain_status === "not_supported"
-                      || row.status !== "active",
-                    onClick: () => {
-                      if (
-                        !canManage
-                        || terrainBuildMutation.isPending
-                        || row.terrain_status === "not_supported"
-                        || row.status !== "active"
-                      ) {
-                        return;
+        render: (_, row) => {
+          const importLoading = datasetDataImportMutation.isPending;
+          const deleteLoading = datasetDeleteMutation.isPending;
+          const terrainLoading = terrainBuildMutation.isPending;
+          const filesLoading = datasetFilesMutation.isPending;
+          const rowBusy = importLoading || deleteLoading || terrainLoading || filesLoading;
+
+          const moreMenuItems = [
+            {
+              key: "files",
+              label: "文件明细",
+              disabled: rowBusy,
+              onClick: () => {
+                setDatasetFilesDataset(row);
+                setDatasetFiles([]);
+                setDatasetFilesModalOpen(true);
+                setDatasetFilesLoading(true);
+                datasetFilesMutation.mutate(row.id);
+              },
+            },
+            {
+              key: "terrain",
+              label: terrainBuildActionLabel(row.terrain_status),
+              disabled:
+                !canManage
+                || terrainBuildMutation.isPending
+                || row.terrain_status === "not_supported"
+                || row.status !== "active",
+              onClick: () => {
+                if (
+                  !canManage
+                  || terrainBuildMutation.isPending
+                  || row.terrain_status === "not_supported"
+                  || row.status !== "active"
+                ) {
+                  return;
+                }
+                setTerrainDataset(row);
+                setTerrainModalOpen(true);
+                terrainBuildMutation.mutate(row.id);
+              },
+            },
+          ];
+
+          return (
+            <Space wrap>
+              <Button
+                size="small"
+                disabled={rowBusy}
+                onClick={() => {
+                  setPreviewDataset(row);
+                  setPreviewData(null);
+                  setPreviewModalOpen(true);
+                  setPreviewLoading(true);
+                  void fetchWithAuth(`/api/v1/elevation/datasets/${row.id}/preview?max_points=1500`)
+                    .then(async (response) => {
+                      if (!response.ok) {
+                        throw new Error(await readApiError(response));
                       }
-                      setTerrainDataset(row);
-                      setTerrainModalOpen(true);
-                      terrainBuildMutation.mutate(row.id);
-                    },
-                  },
-                ],
-              }}
-            >
-              <Typography.Link>更多</Typography.Link>
-            </Dropdown>
-            <Typography.Link
-              disabled={!canManage || datasetDeleteMutation.isPending}
-              onClick={() => {
-                if (!canManage || datasetDeleteMutation.isPending) return;
-                modal.confirm({
-                  title: "删除高程数据集",
-                  content: `确认删除数据集「${row.code} - ${row.name}」？该操作会同时删除关联的回填任务记录，且不可恢复。`,
-                  okText: "确认删除",
-                  okButtonProps: { danger: true, loading: datasetDeleteMutation.isPending },
-                  cancelText: "取消",
-                  onOk: async () => {
-                    await datasetDeleteMutation.mutateAsync(row.id);
-                  },
-                });
-              }}
-            >
-              删除
-            </Typography.Link>
-          </Space>
-        ),
+                      return (await response.json()) as ElevationDatasetPreviewResponse;
+                    })
+                    .then((payload) => {
+                      setPreviewData(payload);
+                      setError("");
+                    })
+                    .catch((candidate) => {
+                      const nextError = candidate instanceof Error ? candidate.message : "加载预览失败";
+                      setError(nextError);
+                      messageApi.error(nextError);
+                    })
+                    .finally(() => {
+                      setPreviewLoading(false);
+                    });
+                }}
+              >
+                预览
+              </Button>
+
+              <Button
+                size="small"
+                disabled={!canManage || datasetDataImportMutation.isPending}
+                onClick={() => {
+                  if (!canManage || datasetDataImportMutation.isPending) return;
+                  setImportDataset(row);
+                  setImportFileList([]);
+                  setImportModalOpen(true);
+                }}
+              >
+                导入数据
+              </Button>
+
+              <Popconfirm
+                title="删除高程数据集"
+                description={`确认删除数据集「${row.code} - ${row.name}」？该操作会同时删除关联的回填任务记录，且不可恢复。`}
+                okText="确认删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true, loading: datasetDeleteMutation.isPending }}
+                onConfirm={async () => {
+                  await datasetDeleteMutation.mutateAsync(row.id);
+                }}
+                disabled={!canManage || datasetDeleteMutation.isPending}
+              >
+                <Button danger size="small" loading={deleteLoading} disabled={!canManage || datasetDeleteMutation.isPending}>
+                  删除
+                </Button>
+              </Popconfirm>
+
+              <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+                <Button size="small" disabled={rowBusy} icon={<MoreOutlined />} />
+              </Dropdown>
+            </Space>
+          );
+        },
       },
     ],
     [
