@@ -21,7 +21,7 @@ import {
   type CardProps,
   type MenuProps,
 } from "antd";
-import { MoreOutlined, LeftOutlined, RightOutlined } from "@ant-design/icons";
+import { MoreOutlined, LeftOutlined, RightOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
@@ -828,22 +828,13 @@ export default function AdminUsersPage() {
         className="admin-users-user-card"
         size="small"
         title={
-          <Space className="min-w-0" size={8} onClick={(e) => e.stopPropagation()}>
+          <Space className="min-w-0" size={8}>
             <Typography.Text strong>{userItem.username}</Typography.Text>
             <Tag color={userItem.status === "active" ? "green" : "default"}>
               {statusLabel(userItem.status)}
             </Tag>
           </Space>
         }
-        extra={
-          <div onClick={(e) => e.stopPropagation()}>
-            <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
-              <Button size="small" disabled={rowBusy} icon={<MoreOutlined />} />
-            </Dropdown>
-          </div>
-        }
-        onClick={() => !rowBusy && openEditUserModal(userItem)}
-        style={{ cursor: rowBusy ? "default" : "pointer" }}
       >
         <Space direction="vertical" size={10} style={{ width: "100%" }}>
           <div className="admin-users-user-card-field">
@@ -869,6 +860,37 @@ export default function AdminUsersPage() {
             <Typography.Text ellipsis={{ tooltip: userItem.email || "-" }}>
               {userItem.email || "-"}
             </Typography.Text>
+          </div>
+          <div className="admin-users-user-card-actions" style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Space size={4}>
+              <Button
+                type="text"
+                size="small"
+                disabled={rowBusy}
+                icon={<EditOutlined />}
+                onClick={() => openEditUserModal(userItem)}
+              />
+              <Popconfirm
+                title={`确认删除用户 ${userItem.username}（${userItem.id}）？`}
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true, loading: deleteLoading }}
+                onConfirm={() => deleteUserMutation.mutate(userItem.id)}
+                disabled={rowBusy}
+              >
+                <Button
+                  type="text"
+                  danger
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  loading={deleteLoading}
+                  disabled={rowBusy}
+                />
+              </Popconfirm>
+              <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+                <Button type="text" size="small" disabled={rowBusy} icon={<MoreOutlined />} />
+              </Dropdown>
+            </Space>
           </div>
         </Space>
       </AntCard>
