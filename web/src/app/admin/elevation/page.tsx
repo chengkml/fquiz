@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   App,
   Alert,
   Button,
+  Card,
   Descriptions,
   Dropdown,
   Empty,
@@ -24,6 +25,7 @@ import {
   Typography,
   Upload,
   message,
+  type CardProps,
 } from "antd";
 import { MoreOutlined } from "@ant-design/icons";
 import type { UploadFile } from "antd/es/upload/interface";
@@ -31,11 +33,12 @@ import type { ColumnsType } from "antd/es/table";
 
 import { useAuth } from "@/components/auth-provider";
 import { ElevationPreviewCesiumMap } from "@/components/elevation-preview-cesium-map";
-import { Card } from "@/components/ui-antd";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import { readLinePreparation } from "@/lib/line-preparation";
+
+const AntCard = Card as unknown as ComponentType<CardProps>;
 import type {
   ElevationApplyJobCreateResponse,
   ElevationApplyJobListResponse,
@@ -1120,7 +1123,7 @@ export default function AdminElevationPage() {
     <div className="flex min-h-0 flex-1 flex-col">
       {messageContextHolder}
 
-      <Card
+      <AntCard
         ref={pageCardRef}
         className="admin-elevation-page-card"
         title="高程数据集"
@@ -1219,7 +1222,7 @@ export default function AdminElevationPage() {
             }}
           />
         </div>
-      </Card>
+      </AntCard>
 
       <Modal
         title="高程回填任务"
@@ -1311,7 +1314,7 @@ export default function AdminElevationPage() {
               />
             )}
             {previewData?.diagnostics && (
-              <Card size="2" title="诊断信息">
+              <AntCard size="small" title="诊断信息">
                 <Descriptions bordered size="small" column={1} styles={{ label: { width: 230 } }}>
                   <Descriptions.Item label="源数据 CRS">{previewData.diagnostics.source_crs || "-"}</Descriptions.Item>
                   <Descriptions.Item label="源范围 (minX,maxX,minY,maxY)">
@@ -1370,7 +1373,7 @@ export default function AdminElevationPage() {
                     {previewData.diagnostics.skip_cell_out_of_range}
                   </Descriptions.Item>
                 </Descriptions>
-              </Card>
+              </AntCard>
             )}
             <ElevationPreviewCesiumMap
               dataset={currentPreviewDataset}
