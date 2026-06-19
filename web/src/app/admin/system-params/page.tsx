@@ -64,8 +64,8 @@ const PARAM_TABLE_VIEWPORT_GAP = 40;
 const PARAM_TABLE_FALLBACK_RESERVE = 220;
 
 function paramStatusLabel(status: SystemParamSummary["status"]): string {
-  if (status === "enabled") return "已启用";
-  if (status === "disabled") return "已禁用";
+  if (status === "enabled") return "启用";
+  if (status === "disabled") return "禁用";
   return status || "-";
 }
 
@@ -92,6 +92,8 @@ export default function AdminSystemParamsPage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const pageCardRef = useRef<HTMLDivElement | null>(null);
   const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const paramKeyCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [paramKeyValidationError, setParamKeyValidationError] = useState("");
 
   const canRead = hasPermission("system_param.read") || hasPermission("system_param.manage");
   const canManage = hasPermission("system_param.manage");
@@ -133,18 +135,24 @@ export default function AdminSystemParamsPage() {
     });
   }, [queryClient]);
 
-  useTopicSubscription("admin.system-params", useCallback(() => {
-    void refreshList();
-  }, [refreshList]));
+  useTopicSubscription(
+    "admin.system-params",
+    useCallback(() => {
+      if (!user || !canRead) return;
+      void refreshList();
+    }, [canRead, refreshList, user]),
+  );
 
   const resetForm = useCallback(() => {
     setEditingId(null);
+    setParamKeyValidationError("");
     formApi.setFieldsValue(EMPTY_FORM);
   }, [formApi]);
 
   const startCreate = useCallback(() => {
     setError("");
     setSuccess("");
+    setParamKeyValidationError("");
     resetForm();
     setEditorOpen(true);
   }, [resetForm]);
@@ -152,6 +160,7 @@ export default function AdminSystemParamsPage() {
   const startEdit = useCallback((item: SystemParamSummary) => {
     setError("");
     setSuccess("");
+    setParamKeyValidationError("");
     setEditingId(item.id);
     formApi.setFieldsValue({
       param_key: item.param_key,
@@ -162,6 +171,60 @@ export default function AdminSystemParamsPage() {
     });
     setEditorOpen(true);
   }, [formApi]);
+
+  const validateParamKeyFormat = (paramKey: string): string | null => {
+    const trimmedKey = paramKey.trim();
+    if (!trimmedKey) return null;
+    if (trimmedKey.length < 2) return "参数键至少 2 位";
+    if (trimmedKey.length > 128) return "参数键不能超过 128 位";
+    return null;
+  };
+
+  const checkParamKeyAvailability = async (paramKey: string) => {
+    try {
+      const params = new URLSearchParams({
+        keyword: paramKey,
+        limit: "200",
+        offset: "0",
+      });
+      const response = await fetchWithAuth(`/api/v1/admin/system-params?${params.toString()}`);
+      if (!response.ok) {
+        return { available: false, message: "检查失败" };
+      }
+      const payload = (await response.json()) as SystemParamListResponse;
+      const normalizedKey = paramKey.trim().toLowerCase();
+      const exists = payload.items.some((item) => item.param_key.trim().toLowerCase() === normalizedKey);
+      return {
+        available: !exists,
+        message: exists ? "参数键已存在，请更换后重试" : "参数键可用",
+      };
+    } catch {
+      return { available: false, message: "检查失败" };
+    }
+  };
+
+  const handleParamKeyChange = (value: string) => {
+    if (paramKeyCheckTimeoutRef.current) {
+      clearTimeout(paramKeyCheckTimeoutRef.current);
+    }
+
+    const formatError = validateParamKeyFormat(value);
+    if (formatError) {
+      setParamKeyValidationError(formatError);
+      return;
+    }
+
+    const trimmedValue = value.trim();
+    if (!trimmedValue || editingId !== null) {
+      setParamKeyValidationError("");
+      return;
+    }
+
+    paramKeyCheckTimeoutRef.current = setTimeout(async () => {
+      const result = await checkParamKeyAvailability(trimmedValue);
+      setParamKeyValidationError(result.available ? "" : result.message);
+    }, 500);
+  };
 
   const closeEditor = useCallback(() => {
     setEditorOpen(false);
@@ -179,12 +242,25 @@ export default function AdminSystemParamsPage() {
         throw new Error("参数键和参数名称不能为空");
       }
 
+      const paramKey = values.param_key.trim();
+      const paramKeyFormatError = validateParamKeyFormat(paramKey);
+      if (paramKeyFormatError) {
+        setParamKeyValidationError(paramKeyFormatError);
+        throw new Error(paramKeyFormatError);
+      }
+
       if (editingId === null) {
+        const availabilityCheck = await checkParamKeyAvailability(paramKey);
+        if (!availabilityCheck.available) {
+          setParamKeyValidationError(availabilityCheck.message);
+          throw new Error(availabilityCheck.message);
+        }
+
         const response = await fetchWithAuth("/api/v1/admin/system-params", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            param_key: values.param_key.trim(),
+            param_key: paramKey,
             param_name: values.param_name.trim(),
             param_value: values.param_value,
             description: values.description,
@@ -211,6 +287,10 @@ export default function AdminSystemParamsPage() {
         throw new Error(await readApiError(response));
       }
       return "updated" as const;
+    },
+    onMutate: () => {
+      setError("");
+      setSuccess("");
     },
     onSuccess: async (mode) => {
       setError("");
@@ -274,7 +354,15 @@ export default function AdminSystemParamsPage() {
     }, 500);
   };
 
-  const items = useMemo(() => listQuery.data?.items ?? [], [listQuery.data?.items]);
+  const rawItems = useMemo(() => listQuery.data?.items ?? [], [listQuery.data?.items]);
+  const items = useMemo(() => {
+    const total = listQuery.data?.total ?? 0;
+    if (rawItems.length > paginationPageSize && rawItems.length === total) {
+      const start = (paginationCurrent - 1) * paginationPageSize;
+      return rawItems.slice(start, start + paginationPageSize);
+    }
+    return rawItems;
+  }, [listQuery.data?.total, paginationCurrent, paginationPageSize, rawItems]);
   const listError = listQuery.error instanceof Error ? listQuery.error.message : "";
 
   useToastFeedback({
@@ -284,9 +372,12 @@ export default function AdminSystemParamsPage() {
     clearSuccess: () => setSuccess(""),
   });
 
-  // Accumulate loaded params for card view
   useEffect(() => {
-    if (viewMode === "card" && !listQuery.isLoading) {
+    if (viewMode !== "card" || listQuery.isLoading) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
       if (cardViewPage === 1) {
         setAllLoadedParams(() => items);
       } else {
@@ -300,7 +391,11 @@ export default function AdminSystemParamsPage() {
         });
       }
       setIsLoadingMore(() => false);
-    }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
   }, [items, listQuery.isLoading, viewMode, cardViewPage]);
 
   // Handle infinite scroll for card view
@@ -336,16 +431,13 @@ export default function AdminSystemParamsPage() {
     return () => cardBody.removeEventListener("scroll", handleScroll);
   }, [viewMode, isLoadingMore, listQuery.isLoading, listQuery.data?.total, allLoadedParams.length]);
 
-  // Reset card view state when filters change
-  useEffect(() => {
-    setCardViewPage(() => 1);
-    setAllLoadedParams(() => []);
-  }, [statusFilter, trimmedKeyword]);
-
   useEffect(() => {
     return () => {
       if (keywordDebounceTimeoutRef.current) {
         clearTimeout(keywordDebounceTimeoutRef.current);
+      }
+      if (paramKeyCheckTimeoutRef.current) {
+        clearTimeout(paramKeyCheckTimeoutRef.current);
       }
     };
   }, []);
@@ -389,7 +481,7 @@ export default function AdminSystemParamsPage() {
         title={
           <Space className="min-w-0" size={8}>
             <Typography.Text strong>{param.param_name}</Typography.Text>
-            <Tag color={param.status === "enabled" ? "success" : "default"} bordered={false}>
+            <Tag color={param.status === "enabled" ? "green" : "default"}>
               {paramStatusLabel(param.status)}
             </Tag>
           </Space>
@@ -449,20 +541,20 @@ export default function AdminSystemParamsPage() {
         title: "ID",
         dataIndex: "id",
         key: "id",
-        width: 110,
+        width: 80,
       },
       {
         title: "参数键",
         dataIndex: "param_key",
         key: "param_key",
-        width: 240,
+        width: 180,
         render: (value: string) => <span className="font-mono text-xs">{value}</span>,
       },
       {
         title: "参数名称",
         dataIndex: "param_name",
         key: "param_name",
-        width: 200,
+        width: 160,
       },
       {
         title: "参数值",
@@ -478,7 +570,7 @@ export default function AdminSystemParamsPage() {
         key: "status",
         width: 120,
         render: (value: SystemParamSummary["status"]) => (
-          <Tag color={value === "enabled" ? "success" : "default"}>
+          <Tag color={value === "enabled" ? "green" : "default"}>
             {paramStatusLabel(value)}
           </Tag>
         ),
@@ -496,7 +588,6 @@ export default function AdminSystemParamsPage() {
       baseColumns.push({
         title: "操作",
         key: "actions",
-        fixed: "right",
         width: 180,
         render: (_, record) => {
           const deleteLoading = deletingId === record.id;
@@ -648,14 +739,14 @@ export default function AdminSystemParamsPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <AntCard
-        ref={viewMode === "card" ? pageCardRef : undefined}
+        ref={pageCardRef}
         className="admin-system-params-page-card"
         title="系统参数管理"
-        extra={(
+        extra={canManage ? (
           <Button type="primary" onClick={startCreate}>
             新建参数
           </Button>
-        )}
+        ) : null}
       >
         {viewMode === "card" ? (
           <Form layout="vertical" style={{ marginBottom: 16 }}>
@@ -706,14 +797,14 @@ export default function AdminSystemParamsPage() {
           >
             <Table<SystemParamSummary>
               rowKey="id"
-              loading={listQuery.isFetching}
               dataSource={items}
               columns={columns}
-              scroll={{ x: 1120, y: tableScrollY }}
+              loading={listQuery.isLoading}
+              tableLayout="fixed"
               pagination={{
                 current: pagination.current,
                 pageSize: pagination.pageSize,
-                total: listQuery.data?.total ?? 0,
+                total: Math.max(listQuery.data?.total ?? 0, 1),
                 showSizeChanger: true,
                 pageSizeOptions: [10, 20, 50, 100],
                 showTotal: () => `共 ${listQuery.data?.total ?? 0} 条`,
@@ -723,8 +814,14 @@ export default function AdminSystemParamsPage() {
                   setPagination({ current: page, pageSize });
                 },
               }}
+              scroll={{ y: tableScrollY }}
               locale={{
-                emptyText: <Empty description="未找到符合筛选条件的系统参数。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
+                emptyText: (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="未找到符合筛选条件的系统参数。"
+                  />
+                ),
               }}
             />
           </div>
@@ -736,7 +833,10 @@ export default function AdminSystemParamsPage() {
               </div>
             ) : allLoadedParams.length === 0 ? (
               <div className="admin-system-params-card-view-state">
-                <Empty description="未找到符合筛选条件的系统参数。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="未找到符合筛选条件的系统参数。"
+                />
               </div>
             ) : (
               <div className="admin-system-params-card-view-content">
@@ -767,7 +867,7 @@ export default function AdminSystemParamsPage() {
 
       {canManage && (
         <Modal
-          title={editingId === null ? "新建系统参数" : `编辑系统参数：${formApi.getFieldValue('param_name')}（ID: ${editingId}）`}
+          title={editingId === null ? "新建系统参数" : `编辑系统参数：${formApi.getFieldValue("param_name")}（ID: ${editingId}）`}
           open={editorOpen}
           onCancel={closeEditor}
           onOk={() => formApi.submit()}
@@ -776,29 +876,59 @@ export default function AdminSystemParamsPage() {
           confirmLoading={saveMutation.isPending}
           destroyOnClose
         >
-          <Form<FormState> form={formApi} layout="vertical" initialValues={EMPTY_FORM} onFinish={() => saveMutation.mutate()}>
+          <Form<FormState>
+            form={formApi}
+            layout="vertical"
+            initialValues={EMPTY_FORM}
+            onFinish={() => saveMutation.mutate()}
+            autoComplete="off"
+          >
             <div className="grid gap-4 md:grid-cols-2">
               <Form.Item<FormState>
                 label="参数键"
                 name="param_key"
-                rules={[{ required: true, message: "请输入参数键" }]}
+                validateStatus={paramKeyValidationError ? "error" : ""}
+                help={paramKeyValidationError}
+                rules={[
+                  { required: true, message: "请输入参数键" },
+                  { min: 2, message: "参数键至少 2 位" },
+                  { max: 128, message: "参数键不能超过 128 位" },
+                ]}
               >
-                <Input disabled={editingId !== null} placeholder="请输入参数键" />
+                <Input
+                  disabled={editingId !== null}
+                  placeholder="请输入参数键"
+                  onChange={(event) => handleParamKeyChange(event.target.value)}
+                />
               </Form.Item>
 
               <Form.Item<FormState>
                 label="参数名称"
                 name="param_name"
-                rules={[{ required: true, message: "请输入参数名称" }]}
+                rules={[
+                  { required: true, message: "请输入参数名称" },
+                  { min: 2, message: "参数名称至少 2 位" },
+                  { max: 128, message: "参数名称不能超过 128 位" },
+                ]}
               >
                 <Input placeholder="请输入参数名称" />
               </Form.Item>
 
-              <Form.Item<FormState> className="md:col-span-2" label="参数值" name="param_value">
+              <Form.Item<FormState>
+                className="md:col-span-2"
+                label="参数值"
+                name="param_value"
+                rules={[{ max: 20000, message: "参数值不能超过 20000 位" }]}
+              >
                 <Input.TextArea rows={4} />
               </Form.Item>
 
-              <Form.Item<FormState> className="md:col-span-2" label="说明" name="description">
+              <Form.Item<FormState>
+                className="md:col-span-2"
+                label="说明"
+                name="description"
+                rules={[{ max: 20000, message: "说明不能超过 20000 位" }]}
+              >
                 <Input.TextArea rows={3} />
               </Form.Item>
 

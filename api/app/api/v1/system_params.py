@@ -23,12 +23,14 @@ router = APIRouter(prefix="/admin/system-params", tags=["admin-system-params"])
 
 @router.get("", response_model=SystemParamListResponse)
 def get_system_params(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     keyword: str | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
     _: CurrentUser = Depends(require_any_permission("system_param.read", "system_param.manage")),
     db: Session = Depends(get_db),
 ) -> SystemParamListResponse:
-    return list_system_params(db, keyword=keyword, status_filter=status_filter)
+    return list_system_params(db, limit=limit, offset=offset, keyword=keyword, status_filter=status_filter)
 
 
 @router.post("", response_model=SystemParamSummary)

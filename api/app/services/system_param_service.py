@@ -46,6 +46,8 @@ def serialize_system_param(item: SystemParam) -> SystemParamSummary:
 def list_system_params(
     db: Session,
     *,
+    limit: int,
+    offset: int,
     keyword: str | None,
     status_filter: str | None,
 ) -> SystemParamListResponse:
@@ -82,7 +84,15 @@ def list_system_params(
         total_stmt = total_stmt.where(SystemParam.status == status_filter)
 
     total = db.scalar(total_stmt) or 0
-    items = db.execute(stmt.order_by(SystemParam.updated_at.desc(), SystemParam.id.desc())).scalars().all()
+    items = (
+        db.execute(
+            stmt.order_by(SystemParam.updated_at.desc(), SystemParam.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        .scalars()
+        .all()
+    )
     return SystemParamListResponse(items=[serialize_system_param(item) for item in items], total=total)
 
 
