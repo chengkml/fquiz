@@ -615,7 +615,6 @@ export default function AdminSystemParamsPage() {
       <AntCard
         ref={viewMode === "card" ? pageCardRef : undefined}
         title="参数列表"
-        style={{ height: viewMode === "card" ? '100%' : undefined }}
         extra={(
           <Space>
             {listQuery.isFetching && <Spin size="small" />}
