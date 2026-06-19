@@ -11,6 +11,7 @@ from ...schemas.user import (
     UserPublic,
     UserRoleUpdateRequest,
     UserUpdateRequest,
+    UserIdCheckResponse,
 )
 from ...services.user_service import (
     UserCreateError,
@@ -27,6 +28,24 @@ from ...services.user_service import (
 )
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+@router.get("/check-id/{user_id}", response_model=UserIdCheckResponse)
+def check_user_id_availability(
+    user_id: str,
+    exclude_user_id: str | None = Query(default=None),
+    _: CurrentUser = Depends(require_permission("user.manage")),
+    db: Session = Depends(get_db),
+) -> UserIdCheckResponse:
+    """Check if a user ID is available. Use exclude_user_id when editing an existing user."""
+    existing_user = get_user_by_id(db, user_id)
+
+    if existing_user:
+        if exclude_user_id and existing_user.id.lower() == exclude_user_id.lower():
+            return UserIdCheckResponse(available=True, message="Current user ID")
+        return UserIdCheckResponse(available=False, message="User ID already exists")
+
+    return UserIdCheckResponse(available=True, message="User ID is available")
 
 
 @router.post("", response_model=UserPublic)

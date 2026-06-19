@@ -20,6 +20,11 @@ class UserListResponse(BaseModel):
     total: int
 
 
+class UserIdCheckResponse(BaseModel):
+    available: bool
+    message: str
+
+
 class UserUpdateRequest(BaseModel):
     email: str | None = None
     username: str | None = Field(default=None, min_length=3, max_length=64)

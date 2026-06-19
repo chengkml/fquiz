@@ -50,6 +50,7 @@ type EditUserValues = {
   user_id: string;
   username: string;
   email: string;
+  status: "active" | "disabled";
 };
 
 type ResetPasswordValues = {
@@ -96,6 +97,8 @@ export default function AdminUsersPage() {
   const [success, setSuccess] = useState("");
   const [userIdValidationError, setUserIdValidationError] = useState("");
   const [editUserIdValidationError, setEditUserIdValidationError] = useState("");
+  const [checkingUserId, setCheckingUserId] = useState(false);
+  const userIdCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const canManage = hasPermission("user.manage");
   const canReadRoles = hasPermission("role.read") || hasPermission("role.manage");
@@ -347,7 +350,27 @@ export default function AdminUsersPage() {
     return null;
   };
 
-  const handleUserIdChange = (value: string, isEdit: boolean = false) => {
+  const checkUserIdAvailability = async (userId: string, excludeUserId?: string) => {
+    try {
+      const params = new URLSearchParams({ user_id: userId });
+      if (excludeUserId) {
+        params.set("exclude_user_id", excludeUserId);
+      }
+      const response = await fetchWithAuth(`/api/v1/users/check-id/${encodeURIComponent(userId)}?${excludeUserId ? `exclude_user_id=${encodeURIComponent(excludeUserId)}` : ""}`);
+      if (!response.ok) {
+        return { available: false, message: "检查失败" };
+      }
+      return (await response.json()) as { available: boolean; message: string };
+    } catch {
+      return { available: false, message: "检查失败" };
+    }
+  };
+
+  const handleUserIdChange = async (value: string, isEdit: boolean = false) => {
+    if (userIdCheckTimeoutRef.current) {
+      clearTimeout(userIdCheckTimeoutRef.current);
+    }
+
     const formatError = validateUserIdFormat(value);
 
     if (formatError) {
@@ -359,7 +382,7 @@ export default function AdminUsersPage() {
       return;
     }
 
-    const trimmedValue = value.trim().toLowerCase();
+    const trimmedValue = value.trim();
     if (!trimmedValue) {
       if (isEdit) {
         setEditUserIdValidationError("");
@@ -369,22 +392,25 @@ export default function AdminUsersPage() {
       return;
     }
 
-    if (isEdit && editingUser) {
-      if (trimmedValue !== editingUser.id.toLowerCase() && existingUserIds.has(trimmedValue)) {
-        setEditUserIdValidationError("用户 ID 已存在，请更换后重试");
+    setCheckingUserId(true);
+
+    userIdCheckTimeoutRef.current = setTimeout(async () => {
+      const result = await checkUserIdAvailability(
+        trimmedValue,
+        isEdit && editingUser ? editingUser.id : undefined
+      );
+
+      setCheckingUserId(false);
+
+      if (isEdit) {
+        setEditUserIdValidationError(result.available ? "" : result.message);
       } else {
-        setEditUserIdValidationError("");
+        setUserIdValidationError(result.available ? "" : result.message);
       }
-    } else {
-      if (existingUserIds.has(trimmedValue)) {
-        setUserIdValidationError("用户 ID 已存在，请更换后重试");
-      } else {
-        setUserIdValidationError("");
-      }
-    }
+    }, 500);
   };
 
-  const handleCreateUser = (values: CreateUserValues) => {
+  const handleCreateUser = async (values: CreateUserValues) => {
     setError("");
     setSuccess("");
 
@@ -404,14 +430,15 @@ export default function AdminUsersPage() {
       return;
     }
 
-    const candidateUserId = payload.user_id.toLowerCase();
+    const availabilityCheck = await checkUserIdAvailability(payload.user_id);
+    if (!availabilityCheck.available) {
+      setError(availabilityCheck.message);
+      return;
+    }
+
     const candidateEmail = payload.email?.toLowerCase();
     const candidateUsername = payload.username.toLowerCase();
 
-    if (existingUserIds.has(candidateUserId)) {
-      setError("用户 ID 已存在，请更换后重试");
-      return;
-    }
     if (candidateEmail && existingEmails.has(candidateEmail)) {
       setError("邮箱已存在，请更换后重试");
       return;
@@ -477,6 +504,7 @@ export default function AdminUsersPage() {
       user_id: target.id,
       username: target.username,
       email: target.email,
+      status: target.status === "disabled" ? "disabled" : "active",
     });
   };
 
@@ -487,11 +515,12 @@ export default function AdminUsersPage() {
     editUserForm.resetFields();
   };
 
-  const handleSubmitEditUser = (values: EditUserValues) => {
+  const handleSubmitEditUser = async (values: EditUserValues) => {
     if (!editingUser) return;
     const nextUserId = values.user_id.trim();
     const nextUsername = values.username.trim();
     const nextEmail = values.email ? values.email.trim().toLowerCase() : "";
+    const nextStatus = values.status;
 
     const formatError = validateUserIdFormat(nextUserId);
     if (formatError) {
@@ -502,9 +531,9 @@ export default function AdminUsersPage() {
     const payload: { new_user_id?: string; username?: string; email?: string; status?: "active" | "disabled" } = {};
 
     if (nextUserId !== editingUser.id) {
-      const lowerUserId = nextUserId.toLowerCase();
-      if (existingUserIds.has(lowerUserId) && lowerUserId !== editingUser.id.toLowerCase()) {
-        setError("用户 ID 已存在，请更换后重试");
+      const availabilityCheck = await checkUserIdAvailability(nextUserId, editingUser.id);
+      if (!availabilityCheck.available) {
+        setError(availabilityCheck.message);
         return;
       }
       payload.new_user_id = nextUserId;
@@ -514,6 +543,9 @@ export default function AdminUsersPage() {
     }
     if (nextEmail && nextEmail !== editingUser.email.toLowerCase()) {
       payload.email = nextEmail;
+    }
+    if (nextStatus !== editingUser.status) {
+      payload.status = nextStatus;
     }
 
     if (Object.keys(payload).length === 0) {
@@ -597,6 +629,14 @@ export default function AdminUsersPage() {
     }
     window.requestAnimationFrame(updateTableScrollY);
   }, [anyError, paginationCurrent, paginationPageSize, users.length, usersQuery.isFetching, updateTableScrollY]);
+
+  useEffect(() => {
+    return () => {
+      if (userIdCheckTimeoutRef.current) {
+        clearTimeout(userIdCheckTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
