@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { AdminPageLoading } from "@/components/admin-page-loading";
 import { useAuth } from "@/components/auth-provider";
 import { CreatableSingleSelect } from "@/components/creatable-single-select";
+import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { readApiError } from "@/lib/api";
 import { getAtpAssetStatusDisplay } from "@/lib/atp-asset-display";
 import type { AtpAssetListResponse, AtpAssetSummary } from "@/types/auth";
@@ -171,6 +172,7 @@ export default function AtpModelsPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const [form] = Form.useForm<AssetFormValues>();
+  const isMobile = useMobileDetection();
 
   const [keywordInput, setKeywordInput] = useState("");
   const [keyword, setKeyword] = useState("");
@@ -178,6 +180,7 @@ export default function AtpModelsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [tableScrollY, setTableScrollY] = useState(ATP_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const viewMode: "table" | "card" = isMobile ? "card" : "table";
 
   const canRead = hasPermission("atp.read") || hasPermission("atp.run") || hasPermission("atp.manage");
   const canManage = hasPermission("atp.manage");
@@ -414,6 +417,90 @@ export default function AtpModelsPage() {
     [canManage, deleteMutation, form],
   );
 
+  const renderAtpModelCard = (item: AtpAssetSummary) => {
+    const deleteLoading = deleteMutation.isPending;
+
+    return (
+      <AntCard
+        key={item.id}
+        className="admin-atp-models-model-card"
+        size="small"
+        title={
+          <Space className="min-w-0" size={8} direction="vertical">
+            <Typography.Text strong>{item.name}</Typography.Text>
+            <Typography.Text type="secondary" code style={{ fontSize: "12px" }}>
+              {item.code}
+            </Typography.Text>
+          </Space>
+        }
+      >
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: "12px", display: "block", marginBottom: "4px" }}>
+              业务维度
+            </Typography.Text>
+            <Space size={[4, 4]} wrap>
+              <Tag>{item.voltage_level || "未设置电压等级"}</Tag>
+              <Tag>{item.tower_type || "未设置塔型"}</Tag>
+              <Tag>{item.scene_type || "未设置场景"}</Tag>
+              <Tag>{item.arrester_config || "未设置避雷器"}</Tag>
+            </Space>
+          </div>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: "12px", display: "block", marginBottom: "4px" }}>
+              版本信息
+            </Typography.Text>
+            <Space direction="vertical" size={0}>
+              <Typography.Text>{item.active_release_tag || (item.active_release_no ? `r${item.active_release_no}` : "-")}</Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: "12px" }}>
+                {item.release_count} 个版本 / {item.run_count} 次运行
+              </Typography.Text>
+            </Space>
+          </div>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: "12px", display: "block", marginBottom: "4px" }}>
+              更新时间
+            </Typography.Text>
+            <Typography.Text style={{ fontSize: "13px" }}>{formatDateTime(item.update_date)}</Typography.Text>
+          </div>
+          <div style={{ borderTop: "1px solid var(--ant-color-border-secondary)", marginTop: "4px", paddingTop: "12px" }}>
+            <Space wrap>
+              <Link href={`/admin/atp-models/${item.id}`}>
+                <Button size="small" type="primary">
+                  详情
+                </Button>
+              </Link>
+              <Button
+                size="small"
+                disabled={!canManage}
+                onClick={() => {
+                  setEditingAsset(item);
+                  form.setFieldsValue(toFormValues(item));
+                  setModalOpen(true);
+                }}
+              >
+                编辑
+              </Button>
+              <Popconfirm
+                title="删除模型"
+                description="这会同时删除其版本与运行记录。"
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true, loading: deleteLoading }}
+                onConfirm={() => deleteMutation.mutate(item.id)}
+                disabled={!canManage}
+              >
+                <Button danger size="small" loading={deleteLoading} disabled={!canManage}>
+                  删除
+                </Button>
+              </Popconfirm>
+            </Space>
+          </div>
+        </Space>
+      </AntCard>
+    );
+  };
+
   if (initializing) {
     return <AdminPageLoading tip="加载 ATP 模型中..." minHeightClassName="min-h-[280px]" />;
   }
@@ -485,21 +572,43 @@ export default function AtpModelsPage() {
           <Alert type="error" showIcon message="ATP 模型加载失败" description={assetsQuery.error.message} className="mt-4" />
         ) : null}
 
-        <div
-          ref={tableScrollAnchorRef}
-          className="admin-atp-models-table-anchor mt-4"
-          style={{ "--admin-atp-models-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
-        >
-          <Table<AtpAssetSummary>
-            rowKey="id"
-            loading={assetsQuery.isLoading}
-            columns={columns}
-            dataSource={assetItems}
-            locale={{ emptyText: "暂无 ATP 模型" }}
-            pagination={false}
-            scroll={{ x: 1080, y: tableScrollY }}
-          />
-        </div>
+        {viewMode === "table" ? (
+          <div
+            ref={tableScrollAnchorRef}
+            className="admin-atp-models-table-anchor mt-4"
+            style={{ "--admin-atp-models-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+          >
+            <Table<AtpAssetSummary>
+              rowKey="id"
+              loading={assetsQuery.isLoading}
+              columns={columns}
+              dataSource={assetItems}
+              locale={{ emptyText: "暂无 ATP 模型" }}
+              pagination={false}
+              scroll={{ x: 1080, y: tableScrollY }}
+            />
+          </div>
+        ) : (
+          <div className="admin-atp-models-card-view mt-4">
+            {assetsQuery.isLoading ? (
+              <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "240px" }}>
+                <Spin tip="加载中..." />
+              </div>
+            ) : assetItems.length === 0 ? (
+              <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "240px" }}>
+                <Typography.Text type="secondary">暂无 ATP 模型</Typography.Text>
+              </div>
+            ) : (
+              <Row gutter={[12, 12]}>
+                {assetItems.map((item) => (
+                  <Col key={item.id} xs={24} sm={24} md={12} lg={8} xl={6}>
+                    {renderAtpModelCard(item)}
+                  </Col>
+                ))}
+              </Row>
+            )}
+          </div>
+        )}
       </AntCard>
 
       <Modal
