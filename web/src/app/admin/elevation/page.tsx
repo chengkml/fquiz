@@ -1117,7 +1117,7 @@ export default function AdminElevationPage() {
   const datasetTableScrollX = 1940;
 
   return (
-    <div className="flex flex-1 flex-col space-y-6">
+    <div className="flex min-h-0 flex-1 flex-col">
       {messageContextHolder}
 
       <Card
