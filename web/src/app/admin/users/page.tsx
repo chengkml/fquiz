@@ -88,6 +88,7 @@ export default function AdminUsersPage() {
   const [keywordInput, setKeywordInput] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<"active" | "disabled" | undefined>(undefined);
+  const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [tableScrollY, setTableScrollY] = useState(USERS_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -584,11 +585,19 @@ export default function AdminUsersPage() {
     createForm.resetFields();
   };
 
-  const handleSearch = () => {
-    setSearchKeyword(keywordInput);
-    setPagination((prev) => ({ ...prev, current: 1 }));
-    setCardViewPage(1);
-    setAllLoadedUsers([]);
+  const handleKeywordChange = (value: string) => {
+    setKeywordInput(value);
+
+    if (keywordDebounceTimeoutRef.current) {
+      clearTimeout(keywordDebounceTimeoutRef.current);
+    }
+
+    keywordDebounceTimeoutRef.current = setTimeout(() => {
+      setSearchKeyword(value);
+      setPagination((prev) => ({ ...prev, current: 1 }));
+      setCardViewPage(1);
+      setAllLoadedUsers([]);
+    }, 500);
   };
 
   const queryError =
@@ -690,6 +699,9 @@ export default function AdminUsersPage() {
     return () => {
       if (userIdCheckTimeoutRef.current) {
         clearTimeout(userIdCheckTimeoutRef.current);
+      }
+      if (keywordDebounceTimeoutRef.current) {
+        clearTimeout(keywordDebounceTimeoutRef.current);
       }
     };
   }, []);
@@ -1004,8 +1016,7 @@ export default function AdminUsersPage() {
               allowClear
               placeholder="按用户 ID/邮箱/用户名搜索"
               value={keywordInput}
-              onChange={(event) => setKeywordInput(event.target.value)}
-              onPressEnter={handleSearch}
+              onChange={(event) => handleKeywordChange(event.target.value)}
             />
           </Form.Item>
 
@@ -1023,12 +1034,6 @@ export default function AdminUsersPage() {
                 setPagination((prev) => ({ ...prev, current: 1 }));
               }}
             />
-          </Form.Item>
-
-          <Form.Item>
-            <Button type="primary" onClick={handleSearch}>
-              搜索
-            </Button>
           </Form.Item>
         </Form>
 
