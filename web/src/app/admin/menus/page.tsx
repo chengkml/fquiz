@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
@@ -54,6 +55,20 @@ type MenuFormValues = {
   component?: string;
 };
 
+type MenuMutationPayload = {
+  code: string;
+  name: string;
+  path: string | null;
+  icon: string | null;
+  parent_id: string | null;
+  type: MenuFormValues["type"];
+  sort_order: number;
+  status: MenuFormValues["status"];
+  visible: boolean;
+  cacheable: boolean;
+  component: string | null;
+};
+
 const DEFAULT_FORM_VALUES: MenuFormValues = {
   code: "",
   name: "",
@@ -90,11 +105,8 @@ function normalizeMenuItemPath(menu: MenuItem): MenuItem {
 
 export default function AdminMenusPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
+  const queryClient = useQueryClient();
   const isMobile = useMobileDetection();
-  const [menus, setMenus] = useState<MenuItem[]>([]);
-  const [menuTotal, setMenuTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [deletingMenuId, setDeletingMenuId] = useState<string | null>(null);
   const [updatingStatusMenuId, setUpdatingStatusMenuId] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -103,7 +115,7 @@ export default function AdminMenusPage() {
   const [editingMenuId, setEditingMenuId] = useState<string | null>(null);
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
-  const [activeKeyword, setActiveKeyword] = useState("");
+  const [searchKeyword, setSearchKeyword] = useState("");
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [tableScrollY, setTableScrollY] = useState(MENU_TABLE_MIN_SCROLL_Y);
   const viewMode: "table" | "card" = isMobile ? "card" : "table";
@@ -120,8 +132,44 @@ export default function AdminMenusPage() {
   const canRead = hasPermission("menu.read") || hasPermission("menu.manage");
   const canManage = hasPermission("menu.manage");
 
+  const trimmedKeyword = searchKeyword.trim();
+  const menusQueryParams = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("limit", String(paginationPageSize));
+    params.set("offset", String((paginationCurrent - 1) * paginationPageSize));
+    if (trimmedKeyword) {
+      params.set("keyword", trimmedKeyword);
+    }
+    if (statusFilter !== "all") {
+      params.set("status", statusFilter);
+    }
+    return params.toString();
+  }, [paginationCurrent, paginationPageSize, statusFilter, trimmedKeyword]);
+  const menusPath = `/api/v1/admin/menus?${menusQueryParams}`;
+
+  const loadMenus = useCallback(async () => {
+    const response = await fetchWithAuth(menusPath);
+    if (!response.ok) throw new Error(await readApiError(response));
+    const payload = (await response.json()) as MenuListResponse;
+    return {
+      ...payload,
+      items: payload.items.map(normalizeMenuItemPath),
+    } satisfies MenuListResponse;
+  }, [fetchWithAuth, menusPath]);
+
+  const menusQuery = useQuery({
+    queryKey: ["admin.menus", menusQueryParams],
+    queryFn: loadMenus,
+    enabled: !!user && canRead,
+  });
+
+  const menus = useMemo(() => menusQuery.data?.items ?? [], [menusQuery.data?.items]);
+  const menuTotal = menusQuery.data?.total ?? 0;
+  const queryError = menusQuery.error instanceof Error ? menusQuery.error.message : "";
+  const anyError = error || queryError;
+
   useToastFeedback({
-    errorMessage: error,
+    errorMessage: anyError,
     successMessage: success,
     clearError: () => setError(""),
     clearSuccess: () => setSuccess(""),
@@ -153,64 +201,28 @@ export default function AdminMenusPage() {
     });
   }, [menus]);
 
-  const loadMenus = useCallback(async (page: number, pageSize: number) => {
-    if (!canRead) {
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-
-    const params = new URLSearchParams();
-    params.append("limit", String(pageSize));
-    params.append("offset", String((page - 1) * pageSize));
-    if (activeKeyword.trim()) {
-      params.append("keyword", activeKeyword.trim());
-    }
-    if (statusFilter !== "all") {
-      params.append("status", statusFilter);
-    }
-
-    const url = `/api/v1/admin/menus${params.toString() ? `?${params.toString()}` : ""}`;
-    const response = await fetchWithAuth(url);
-    if (!response.ok) {
-      setError(await readApiError(response));
-      setLoading(false);
-      return;
-    }
-
-    const payload = (await response.json()) as MenuListResponse;
-    setMenus(payload.items.map(normalizeMenuItemPath));
-    setMenuTotal(payload.total);
-    setLoading(false);
-    return payload;
-  }, [activeKeyword, canRead, fetchWithAuth, statusFilter]);
-
-  useEffect(() => {
-    if (!user || !canRead) {
-      return;
-    }
-    queueMicrotask(() => {
-      void loadMenus(paginationCurrent, paginationPageSize);
-    });
-  }, [canRead, loadMenus, paginationCurrent, paginationPageSize, user]);
-
-
   useTopicSubscription(
     "admin.menus",
     useCallback(() => {
       if (user && canRead) {
-        void loadMenus(paginationCurrent, paginationPageSize);
+        void queryClient.invalidateQueries({ queryKey: ["admin.menus"] });
       }
-    }, [canRead, loadMenus, paginationCurrent, paginationPageSize, user]),
+    }, [canRead, queryClient, user]),
   );
+
+  const refreshData = async () => {
+    await queryClient.refetchQueries({ queryKey: ["admin.menus"] });
+  };
 
   // Update allLoadedMenus when menus data changes in card view
   useEffect(() => {
-    if (viewMode === "card" && !loading) {
+    if (viewMode !== "card" || menusQuery.isLoading) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
       if (cardViewPage === 1) {
-        setAllLoadedMenus(menus);
+        setAllLoadedMenus(() => menus);
       } else {
         setAllLoadedMenus((prev) => {
           if (menus.length === 0) {
@@ -222,8 +234,12 @@ export default function AdminMenusPage() {
         });
       }
       setIsLoadingMore(false);
-    }
-  }, [menus, loading, viewMode, cardViewPage]);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [menus, menusQuery.isLoading, viewMode, cardViewPage]);
 
   // Handle infinite scroll for card view
   useEffect(() => {
@@ -236,7 +252,7 @@ export default function AdminMenusPage() {
     if (!cardBody) return;
 
     const handleScroll = () => {
-      if (isLoadingMore || loading) return;
+      if (isLoadingMore || menusQuery.isLoading) return;
 
       const scrollTop = cardBody.scrollTop;
       const scrollHeight = cardBody.scrollHeight;
@@ -255,13 +271,7 @@ export default function AdminMenusPage() {
 
     cardBody.addEventListener("scroll", handleScroll);
     return () => cardBody.removeEventListener("scroll", handleScroll);
-  }, [allLoadedMenus.length, loading, isLoadingMore, menuTotal, viewMode]);
-
-  // Reset card view state when search conditions change
-  useEffect(() => {
-    setCardViewPage(1);
-    setAllLoadedMenus([]);
-  }, [activeKeyword, statusFilter]);
+  }, [allLoadedMenus.length, menusQuery.isLoading, isLoadingMore, menuTotal, viewMode]);
 
   const handleKeywordChange = (value: string) => {
     setKeyword(value);
@@ -271,7 +281,7 @@ export default function AdminMenusPage() {
     }
 
     keywordDebounceTimeoutRef.current = setTimeout(() => {
-      setActiveKeyword(value);
+      setSearchKeyword(value);
       setPagination((prev) => ({ ...prev, current: 1 }));
       setCardViewPage(1);
       setAllLoadedMenus([]);
@@ -315,14 +325,114 @@ export default function AdminMenusPage() {
     setDialogOpen(true);
   }, [form]);
 
-  const submit = useCallback(async () => {
-    try {
-      setSaving(true);
+  const createMenuMutation = useMutation({
+    mutationFn: async (payload: MenuMutationPayload) => {
+      const response = await fetchWithAuth("/api/v1/admin/menus", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error(await readApiError(response));
+      return response.json() as Promise<MenuItem>;
+    },
+    onMutate: () => {
       setError("");
       setSuccess("");
+    },
+    onSuccess: async () => {
+      setSuccess("菜单已创建");
+      closeDialog();
+      await refreshData();
+    },
+    onError: (candidate) => {
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "创建菜单失败");
+    },
+  });
 
+  const updateMenuMutation = useMutation({
+    mutationFn: async ({ menuId, payload }: { menuId: string; payload: MenuMutationPayload }) => {
+      const response = await fetchWithAuth(`/api/v1/admin/menus/${menuId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error(await readApiError(response));
+      return response.json() as Promise<MenuItem>;
+    },
+    onMutate: () => {
+      setError("");
+      setSuccess("");
+    },
+    onSuccess: async () => {
+      setSuccess("菜单已更新");
+      closeDialog();
+      await refreshData();
+    },
+    onError: (candidate) => {
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "更新菜单失败");
+    },
+  });
+
+  const deleteMenuMutation = useMutation({
+    mutationFn: async (menuId: string) => {
+      const response = await fetchWithAuth(`/api/v1/admin/menus/${menuId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error(await readApiError(response));
+      return response.json() as Promise<{ message: string }>;
+    },
+    onMutate: (menuId) => {
+      setDeletingMenuId(menuId);
+      setError("");
+      setSuccess("");
+    },
+    onSuccess: async (_, menuId) => {
+      setSuccess("菜单已删除");
+      if (editingMenuId === menuId) {
+        closeDialog();
+      }
+      setAllLoadedMenus((previous) => previous.filter((item) => item.id !== menuId));
+      await refreshData();
+    },
+    onError: (candidate) => {
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "菜单删除失败");
+    },
+    onSettled: () => setDeletingMenuId(null),
+  });
+
+  const updateMenuStatusMutation = useMutation({
+    mutationFn: async ({ menuId, status }: { menuId: string; status: "enabled" | "disabled" }) => {
+      const response = await fetchWithAuth(`/api/v1/admin/menus/${menuId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) throw new Error(await readApiError(response));
+      return response.json() as Promise<MenuItem>;
+    },
+    onMutate: ({ menuId }) => {
+      setUpdatingStatusMenuId(menuId);
+      setError("");
+      setSuccess("");
+    },
+    onSuccess: async (_, variables) => {
+      setSuccess(variables.status === "enabled" ? "菜单已启用" : "菜单已禁用");
+      await refreshData();
+    },
+    onError: (candidate) => {
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "菜单状态更新失败");
+    },
+    onSettled: () => setUpdatingStatusMenuId(null),
+  });
+
+  const submit = useCallback(async () => {
+    try {
       const values = await form.validateFields();
-      const payload = {
+      const payload: MenuMutationPayload = {
         code: values.code.trim(),
         name: values.name.trim(),
         path: normalizeAppRoutePath(values.path?.trim() ? values.path.trim() : null),
@@ -336,27 +446,11 @@ export default function AdminMenusPage() {
         component: values.component?.trim() ? values.component.trim() : null,
       };
 
-      const response = editingMenuId
-        ? await fetchWithAuth(`/api/v1/admin/menus/${editingMenuId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          })
-        : await fetchWithAuth("/api/v1/admin/menus", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
-
-      if (!response.ok) {
-        const msg = await readApiError(response);
-        setError(msg);
-        return;
+      if (editingMenuId) {
+        updateMenuMutation.mutate({ menuId: editingMenuId, payload });
+      } else {
+        createMenuMutation.mutate(payload);
       }
-
-      setSuccess(editingMenuId ? "菜单已更新" : "菜单已创建");
-      closeDialog();
-      await loadMenus(paginationCurrent, paginationPageSize);
     } catch (candidate) {
       // Form 校验失败时不额外提示。
       if (
@@ -370,39 +464,8 @@ export default function AdminMenusPage() {
 
       const msg = candidate instanceof Error ? candidate.message : "提交失败，请稍后重试";
       setError(msg);
-    } finally {
-      setSaving(false);
     }
-  }, [closeDialog, editingMenuId, fetchWithAuth, form, loadMenus, paginationCurrent, paginationPageSize]);
-
-  const removeMenu = useCallback(async (menu: MenuItem) => {
-    setDeletingMenuId(menu.id);
-    setError("");
-    setSuccess("");
-
-    try {
-      const response = await fetchWithAuth(`/api/v1/admin/menus/${menu.id}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) {
-        const msg = await readApiError(response);
-        setError(msg);
-        return;
-      }
-
-      setSuccess("菜单已删除");
-      if (editingMenuId === menu.id) {
-        closeDialog();
-      }
-      setMenuTotal((previous) => Math.max(0, previous - 1));
-      setAllLoadedMenus((previous) => previous.filter((item) => item.id !== menu.id));
-      await loadMenus(paginationCurrent, paginationPageSize);
-    } catch (candidate) {
-      setError(candidate instanceof Error ? candidate.message : "菜单删除失败");
-    } finally {
-      setDeletingMenuId(null);
-    }
-  }, [closeDialog, editingMenuId, fetchWithAuth, loadMenus, paginationCurrent, paginationPageSize]);
+  }, [createMenuMutation, editingMenuId, form, updateMenuMutation]);
 
   const confirmRemoveMenu = useCallback((menu: MenuItem) => {
     Modal.confirm({
@@ -410,37 +473,14 @@ export default function AdminMenusPage() {
       okText: "删除",
       cancelText: "取消",
       okButtonProps: { danger: true },
-      onOk: () => removeMenu(menu),
+      onOk: () => deleteMenuMutation.mutate(menu.id),
     });
-  }, [removeMenu]);
+  }, [deleteMenuMutation]);
 
   const updateMenuStatus = useCallback(async (menu: MenuItem) => {
     const nextStatus: "enabled" | "disabled" = menu.status === "enabled" ? "disabled" : "enabled";
-
-    setUpdatingStatusMenuId(menu.id);
-    setError("");
-    setSuccess("");
-
-    try {
-      const response = await fetchWithAuth(`/api/v1/admin/menus/${menu.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: nextStatus }),
-      });
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-
-      const payload = await loadMenus(paginationCurrent, paginationPageSize);
-      if (payload) {
-        setSuccess(nextStatus === "enabled" ? "菜单已启用" : "菜单已禁用");
-      }
-    } catch (candidate) {
-      setError(candidate instanceof Error ? candidate.message : "菜单状态更新失败");
-    } finally {
-      setUpdatingStatusMenuId(null);
-    }
-  }, [fetchWithAuth, loadMenus, paginationCurrent, paginationPageSize]);
+    updateMenuStatusMutation.mutate({ menuId: menu.id, status: nextStatus });
+  }, [updateMenuStatusMutation]);
 
   const columns = useMemo<TableColumnsType<MenuItem>>(() => {
     const base: TableColumnsType<MenuItem> = [
@@ -516,7 +556,7 @@ export default function AdminMenusPage() {
               okText="删除"
               cancelText="取消"
               okButtonProps={{ danger: true, loading: deleteLoading }}
-              onConfirm={() => removeMenu(record)}
+              onConfirm={() => deleteMenuMutation.mutate(record.id)}
               disabled={menuBusy}
             >
               <Button danger size="small" loading={deleteLoading} disabled={menuBusy}>
@@ -533,7 +573,7 @@ export default function AdminMenusPage() {
     });
 
     return base;
-  }, [canManage, deletingMenuId, menuNameById, removeMenu, startEdit, updateMenuStatus, updatingStatusMenuId]);
+  }, [canManage, deleteMenuMutation, deletingMenuId, menuNameById, startEdit, updateMenuStatus, updatingStatusMenuId]);
 
   const renderMenuCard = (menuItem: MenuItem) => {
     const updatingLoading = updatingStatusMenuId === menuItem.id;
@@ -637,8 +677,11 @@ export default function AdminMenusPage() {
   }, []);
 
   useEffect(() => {
-    updateTableScrollY();
-  }, [error, filteredMenus.length, loading, updateTableScrollY]);
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.requestAnimationFrame(updateTableScrollY);
+  }, [anyError, filteredMenus.length, menusQuery.isFetching, paginationCurrent, paginationPageSize, updateTableScrollY]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -780,7 +823,7 @@ export default function AdminMenusPage() {
               rowKey="id"
               dataSource={filteredMenus}
               columns={columns}
-              loading={loading}
+              loading={menusQuery.isLoading}
               tableLayout="fixed"
               scroll={{ y: tableScrollY }}
               pagination={{
@@ -808,7 +851,7 @@ export default function AdminMenusPage() {
           </div>
         ) : (
           <div className="admin-menus-card-view mt-4">
-            {loading && allLoadedMenus.length === 0 ? (
+            {menusQuery.isLoading && allLoadedMenus.length === 0 ? (
               <div className="admin-menus-card-view-state">
                 <Spin tip="加载中..." />
               </div>
@@ -833,7 +876,7 @@ export default function AdminMenusPage() {
                     <Spin tip="加载更多..." />
                   </div>
                 )}
-                {!loading && !isLoadingMore && allLoadedMenus.length >= menuTotal && allLoadedMenus.length > 0 && (
+                {!menusQuery.isLoading && !isLoadingMore && allLoadedMenus.length >= menuTotal && allLoadedMenus.length > 0 && (
                   <div style={{ textAlign: "center", padding: "20px 0" }}>
                     <Typography.Text type="secondary">
                       已加载全部 {allLoadedMenus.length} 条数据
@@ -851,8 +894,8 @@ export default function AdminMenusPage() {
         open={dialogOpen}
         onCancel={closeDialog}
         onOk={() => void submit()}
-        confirmLoading={saving}
-        okText={saving ? "提交中..." : editingMenuId ? "保存修改" : "创建菜单"}
+        confirmLoading={createMenuMutation.isPending || updateMenuMutation.isPending}
+        okText={createMenuMutation.isPending || updateMenuMutation.isPending ? "提交中..." : editingMenuId ? "保存修改" : "创建菜单"}
         cancelText="取消"
         destroyOnClose
         width={760}
