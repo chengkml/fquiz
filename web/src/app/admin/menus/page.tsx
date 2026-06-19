@@ -108,6 +108,7 @@ export default function AdminMenusPage() {
   const [viewMode, setViewMode] = useState<"table" | "card">(isMobile ? "card" : "table");
   const [form] = Form.useForm<MenuFormValues>();
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const pageCardRef = useRef<HTMLDivElement | null>(null);
 
   const canRead = hasPermission("menu.read") || hasPermission("menu.manage");
   const canManage = hasPermission("menu.manage");
@@ -667,10 +668,11 @@ export default function AdminMenusPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col space-y-6">
+    <div className="flex min-h-0 flex-1 flex-col">
       <AntCard
+        ref={pageCardRef}
+        className="admin-menus-page-card"
         title="菜单管理"
-        style={{ height: '100%' }}
         extra={
           canManage ? (
             <Button type="primary" onClick={startCreate}>
