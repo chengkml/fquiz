@@ -94,6 +94,8 @@ export default function AdminUsersPage() {
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [userIdValidationError, setUserIdValidationError] = useState("");
+  const [editUserIdValidationError, setEditUserIdValidationError] = useState("");
 
   const canManage = hasPermission("user.manage");
   const canReadRoles = hasPermission("role.read") || hasPermission("role.manage");
@@ -321,6 +323,55 @@ export default function AdminUsersPage() {
     onSettled: () => setDeletingUserId(null),
   });
 
+  const validateUserIdFormat = (userId: string): string | null => {
+    const trimmedId = userId.trim();
+    if (!trimmedId) return null;
+
+    const validPattern = /^[a-zA-Z0-9_]+$/;
+    if (!validPattern.test(trimmedId)) {
+      return "用户 ID 只能包含英文字母、数字和下划线";
+    }
+
+    return null;
+  };
+
+  const handleUserIdChange = (value: string, isEdit: boolean = false) => {
+    const formatError = validateUserIdFormat(value);
+
+    if (formatError) {
+      if (isEdit) {
+        setEditUserIdValidationError(formatError);
+      } else {
+        setUserIdValidationError(formatError);
+      }
+      return;
+    }
+
+    const trimmedValue = value.trim().toLowerCase();
+    if (!trimmedValue) {
+      if (isEdit) {
+        setEditUserIdValidationError("");
+      } else {
+        setUserIdValidationError("");
+      }
+      return;
+    }
+
+    if (isEdit && editingUser) {
+      if (trimmedValue !== editingUser.id.toLowerCase() && existingUserIds.has(trimmedValue)) {
+        setEditUserIdValidationError("用户 ID 已存在，请更换后重试");
+      } else {
+        setEditUserIdValidationError("");
+      }
+    } else {
+      if (existingUserIds.has(trimmedValue)) {
+        setUserIdValidationError("用户 ID 已存在，请更换后重试");
+      } else {
+        setUserIdValidationError("");
+      }
+    }
+  };
+
   const handleCreateUser = (values: CreateUserValues) => {
     setError("");
     setSuccess("");
@@ -333,6 +384,12 @@ export default function AdminUsersPage() {
 
     if (values.email && values.email.trim()) {
       payload.email = values.email.trim();
+    }
+
+    const formatError = validateUserIdFormat(payload.user_id);
+    if (formatError) {
+      setError(formatError);
+      return;
     }
 
     const candidateUserId = payload.user_id.toLowerCase();
@@ -402,6 +459,7 @@ export default function AdminUsersPage() {
   const openEditUserModal = (target: UserPublic) => {
     setError("");
     setSuccess("");
+    setEditUserIdValidationError("");
     setEditingUser(target);
     editUserForm.setFieldsValue({
       user_id: target.id,
@@ -413,6 +471,7 @@ export default function AdminUsersPage() {
   const closeEditUserModal = () => {
     if (updateUserProfileMutation.isPending) return;
     setEditingUser(null);
+    setEditUserIdValidationError("");
     editUserForm.resetFields();
   };
 
@@ -421,6 +480,12 @@ export default function AdminUsersPage() {
     const nextUserId = values.user_id.trim();
     const nextUsername = values.username.trim();
     const nextEmail = values.email ? values.email.trim().toLowerCase() : "";
+
+    const formatError = validateUserIdFormat(nextUserId);
+    if (formatError) {
+      setError(formatError);
+      return;
+    }
 
     const payload: { new_user_id?: string; username?: string; email?: string; status?: "active" | "disabled" } = {};
 
@@ -459,6 +524,7 @@ export default function AdminUsersPage() {
   const openCreateUserModal = () => {
     setError("");
     setSuccess("");
+    setUserIdValidationError("");
     createForm.resetFields();
     setCreateUserModalOpen(true);
   };
@@ -466,6 +532,7 @@ export default function AdminUsersPage() {
   const closeCreateUserModal = () => {
     if (createUserMutation.isPending) return;
     setCreateUserModalOpen(false);
+    setUserIdValidationError("");
     createForm.resetFields();
   };
 
@@ -931,13 +998,18 @@ export default function AdminUsersPage() {
           <Form.Item
             label="用户 ID"
             name="user_id"
+            validateStatus={userIdValidationError ? "error" : ""}
+            help={userIdValidationError}
             rules={[
               { required: true, message: "请输入用户 ID" },
               { min: 3, message: "用户 ID 至少 3 位" },
               { max: 64, message: "用户 ID 不能超过 64 位" },
             ]}
           >
-            <Input placeholder="例如 ck001" />
+            <Input
+              placeholder="例如 ck001"
+              onChange={(e) => handleUserIdChange(e.target.value, false)}
+            />
           </Form.Item>
 
           <Form.Item
@@ -995,13 +1067,18 @@ export default function AdminUsersPage() {
           <Form.Item
             label="用户 ID"
             name="user_id"
+            validateStatus={editUserIdValidationError ? "error" : ""}
+            help={editUserIdValidationError}
             rules={[
               { required: true, message: "请输入用户 ID" },
               { min: 3, message: "用户 ID 至少 3 位" },
               { max: 64, message: "用户 ID 不能超过 64 位" },
             ]}
           >
-            <Input placeholder="请输入用户 ID" />
+            <Input
+              placeholder="请输入用户 ID"
+              onChange={(e) => handleUserIdChange(e.target.value, true)}
+            />
           </Form.Item>
           <Form.Item
             label="用户名"
