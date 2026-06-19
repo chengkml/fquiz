@@ -17,6 +17,7 @@ import {
   Segmented,
   Select,
   Space,
+  Spin,
   Switch,
   Table,
   Tag,
@@ -317,9 +318,13 @@ export default function AdminTowerModelsPage() {
   const [uploadModel, setUploadModel] = useState<TowerModelSummary | null>(null);
   const [viewMode, setViewMode] = useState<TowerModelViewMode>(isMobile ? "card" : "list");
   const [pagination, setPagination] = useState({ current: 1, pageSize: TOWER_MODEL_DEFAULT_PAGE_SIZE });
+  const [cardViewPage, setCardViewPage] = useState(1);
+  const [allLoadedModels, setAllLoadedModels] = useState<TowerModelSummary[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [tableScrollY, setTableScrollY] = useState(TOWER_MODEL_CARD_MIN_SCROLL_Y);
   const viewScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const paginationRef = useRef<HTMLDivElement | null>(null);
+  const pageCardRef = useRef<HTMLDivElement | null>(null);
 
   const handleImagePreviewError = useCallback((message: string) => {
     setError(message);
@@ -399,6 +404,64 @@ export default function AdminTowerModelsPage() {
       setPagination((previous) => ({ ...previous, current: maxPage }));
     }
   }, [currentPage, pageSize, totalItems]);
+
+  // Update allLoadedModels when tower models data changes in card view
+  useEffect(() => {
+    if (viewMode === "card" && !towerModelsQuery.isLoading) {
+      if (cardViewPage === 1) {
+        setAllLoadedModels(listItems);
+      } else {
+        setAllLoadedModels((prev) => {
+          if (listItems.length === 0) {
+            return prev;
+          }
+          const existingIds = new Set(prev.map(m => m.id));
+          const newModels = listItems.filter(m => !existingIds.has(m.id));
+          return [...prev, ...newModels];
+        });
+      }
+      setIsLoadingMore(false);
+    }
+  }, [listItems, towerModelsQuery.isLoading, viewMode, cardViewPage]);
+
+  // Handle infinite scroll for card view
+  useEffect(() => {
+    if (viewMode !== "card") return;
+
+    const pageCard = pageCardRef.current;
+    if (!pageCard) return;
+
+    const cardBody = pageCard.querySelector<HTMLElement>(".ant-card-body");
+    if (!cardBody) return;
+
+    const handleScroll = () => {
+      if (isLoadingMore || towerModelsQuery.isLoading) return;
+
+      const scrollTop = cardBody.scrollTop;
+      const scrollHeight = cardBody.scrollHeight;
+      const clientHeight = cardBody.clientHeight;
+
+      if (scrollTop + clientHeight >= scrollHeight - 100) {
+        const total = totalItems;
+        const loadedCount = allLoadedModels.length;
+
+        if (loadedCount < total) {
+          setIsLoadingMore(true);
+          setCardViewPage((prev) => prev + 1);
+          setPagination((prev) => ({ ...prev, current: prev.current + 1 }));
+        }
+      }
+    };
+
+    cardBody.addEventListener("scroll", handleScroll);
+    return () => cardBody.removeEventListener("scroll", handleScroll);
+  }, [viewMode, isLoadingMore, towerModelsQuery.isLoading, totalItems, allLoadedModels.length]);
+
+  // Reset card view state when switching modes or filters change
+  useEffect(() => {
+    setCardViewPage(1);
+    setAllLoadedModels([]);
+  }, [keyword, enabledFilter]);
 
   const saveMutation = useMutation({
     mutationFn: async (values: TowerModelFormValues) => {
@@ -721,6 +784,7 @@ export default function AdminTowerModelsPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <AntCard
+        ref={pageCardRef}
         className="admin-tower-models-page-card"
         title="杆塔模型管理"
         extra={canManage ? (
@@ -784,44 +848,66 @@ export default function AdminTowerModelsPage() {
                     className="admin-tower-models-card-anchor"
                     style={{ "--admin-tower-models-card-body-height": `${tableScrollY}px` } as CSSProperties}
                   >
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                      {pagedItems.map((row) => (
-                        <Card key={row.id} size="2">
-                          <Space direction="vertical" size={10} className="w-full">
-                            <TowerModelImageCell
-                              model={row}
-                              fetchWithAuth={fetchWithAuth}
-                              onPreviewError={handleImagePreviewError}
-                              mode="hero"
-                            />
-                            {canManage && (
-                              <Space size={8} wrap>
-                                <Button size="small" onClick={() => openEdit(row)}>
-                                  编辑
-                                </Button>
-                                <Button size="small" onClick={() => setUploadModel(row)}>
-                                  上传图片
-                                </Button>
-                                <Popconfirm
-                                  title="删除杆塔模型"
-                                  description={`确认删除模型 ${row.code} 吗？`}
-                                  okText="删除"
-                                  cancelText="取消"
-                                  okButtonProps={{ danger: true }}
-                                  onConfirm={async () => {
-                                    await deleteMutation.mutateAsync(row.id);
-                                  }}
-                                >
-                                  <Button size="small" danger loading={deleteMutation.isPending}>
-                                    删除
-                                  </Button>
-                                </Popconfirm>
+                    {towerModelsQuery.isLoading && allLoadedModels.length === 0 ? (
+                      <div style={{ textAlign: "center", padding: "40px 0" }}>
+                        <Spin tip="加载中..." />
+                      </div>
+                    ) : allLoadedModels.length === 0 ? (
+                      <Empty description="未找到符合筛选条件的杆塔模型。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                    ) : (
+                      <>
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                          {allLoadedModels.map((row) => (
+                            <Card key={row.id} size="2">
+                              <Space direction="vertical" size={10} className="w-full">
+                                <TowerModelImageCell
+                                  model={row}
+                                  fetchWithAuth={fetchWithAuth}
+                                  onPreviewError={handleImagePreviewError}
+                                  mode="hero"
+                                />
+                                {canManage && (
+                                  <Space size={8} wrap>
+                                    <Button size="small" onClick={() => openEdit(row)}>
+                                      编辑
+                                    </Button>
+                                    <Button size="small" onClick={() => setUploadModel(row)}>
+                                      上传图片
+                                    </Button>
+                                    <Popconfirm
+                                      title="删除杆塔模型"
+                                      description={`确认删除模型 ${row.code} 吗？`}
+                                      okText="删除"
+                                      cancelText="取消"
+                                      okButtonProps={{ danger: true }}
+                                      onConfirm={async () => {
+                                        await deleteMutation.mutateAsync(row.id);
+                                      }}
+                                    >
+                                      <Button size="small" danger loading={deleteMutation.isPending}>
+                                        删除
+                                      </Button>
+                                    </Popconfirm>
+                                  </Space>
+                                )}
                               </Space>
-                            )}
-                          </Space>
-                        </Card>
-                      ))}
-                    </div>
+                            </Card>
+                          ))}
+                        </div>
+                        {isLoadingMore && (
+                          <div style={{ textAlign: "center", padding: "20px 0" }}>
+                            <Spin tip="加载更多..." />
+                          </div>
+                        )}
+                        {allLoadedModels.length >= totalItems && allLoadedModels.length > 0 && (
+                          <div style={{ textAlign: "center", padding: "20px 0" }}>
+                            <Typography.Text type="secondary">
+                              已加载全部 {allLoadedModels.length} 条数据
+                            </Typography.Text>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 ) : (
                   <div
@@ -839,19 +925,21 @@ export default function AdminTowerModelsPage() {
                   </div>
                 )}
               </div>
-              <div ref={paginationRef} className="mt-4 flex justify-end">
-                <Pagination
-                  current={pagination.current}
-                  pageSize={pagination.pageSize}
-                  total={totalItems}
-                  showSizeChanger
-                  pageSizeOptions={TOWER_MODEL_PAGE_SIZE_OPTIONS.map((value) => String(value))}
-                  showTotal={(total) => `共 ${total} 条`}
-                  onChange={(page, pageSize) => {
-                    setPagination({ current: page, pageSize });
-                  }}
-                />
-              </div>
+              {viewMode === "list" && (
+                <div ref={paginationRef} className="mt-4 flex justify-end">
+                  <Pagination
+                    current={pagination.current}
+                    pageSize={pagination.pageSize}
+                    total={totalItems}
+                    showSizeChanger
+                    pageSizeOptions={TOWER_MODEL_PAGE_SIZE_OPTIONS.map((value) => String(value))}
+                    showTotal={(total) => `共 ${total} 条`}
+                    onChange={(page, pageSize) => {
+                      setPagination({ current: page, pageSize });
+                    }}
+                  />
+                </div>
+              )}
             </>
           )}
         </Space>
