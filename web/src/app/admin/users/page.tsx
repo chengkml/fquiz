@@ -800,6 +800,8 @@ export default function AdminUsersPage() {
             <Button size="small" disabled={rowBusy} icon={<MoreOutlined />} />
           </Dropdown>
         }
+        onClick={() => !rowBusy && openEditUserModal(userItem)}
+        style={{ cursor: rowBusy ? "default" : "pointer" }}
       >
         <Space direction="vertical" size={10} style={{ width: "100%" }}>
           <div className="admin-users-user-card-field">
@@ -825,29 +827,6 @@ export default function AdminUsersPage() {
             <Typography.Text ellipsis={{ tooltip: userItem.email || "-" }}>
               {userItem.email || "-"}
             </Typography.Text>
-          </div>
-          <div className="admin-users-user-card-actions">
-            <Space wrap>
-              <Button
-                size="small"
-                disabled={rowBusy}
-                onClick={() => openEditUserModal(userItem)}
-              >
-                编辑
-              </Button>
-              <Popconfirm
-                title={`确认删除用户 ${userItem.username}（${userItem.id}）？`}
-                okText="删除"
-                cancelText="取消"
-                okButtonProps={{ danger: true, loading: deleteLoading }}
-                onConfirm={() => deleteUserMutation.mutate(userItem.id)}
-                disabled={rowBusy}
-              >
-                <Button danger size="small" loading={deleteLoading} disabled={rowBusy}>
-                  删除
-                </Button>
-              </Popconfirm>
-            </Space>
           </div>
         </Space>
       </AntCard>
