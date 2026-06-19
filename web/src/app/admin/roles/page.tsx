@@ -71,10 +71,12 @@ export default function AdminRolesPage() {
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [roleCodeValidationError, setRoleCodeValidationError] = useState("");
   const [editingRole, setEditingRole] = useState<RoleItem | null>(null);
   const [deletingRoleId, setDeletingRoleId] = useState<string | null>(null);
   const [savingRoleId, setSavingRoleId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const roleCodeCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [tableScrollY, setTableScrollY] = useState(ROLE_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const viewMode: "table" | "card" = isMobile ? "card" : "table";
@@ -226,15 +228,77 @@ export default function AdminRolesPage() {
     return new Map(menus.map((menu) => [menu.id, `${menu.name} (${menu.code})`]));
   }, [menus]);
 
+  const validateRoleCodeFormat = useCallback((roleCode: string): string | null => {
+    const trimmedCode = roleCode.trim();
+    if (!trimmedCode) return null;
+
+    const validPattern = /^[a-zA-Z0-9_.-]+$/;
+    if (!validPattern.test(trimmedCode)) {
+      return "角色编码只能包含英文字母、数字、下划线、点和短横线";
+    }
+
+    return null;
+  }, []);
+
+  const checkRoleCodeAvailability = useCallback(async (roleCode: string) => {
+    try {
+      const params = new URLSearchParams({
+        limit: "20",
+        offset: "0",
+        keyword: roleCode,
+      });
+      const response = await fetchWithAuth(`/api/v1/admin/roles?${params.toString()}`);
+      if (!response.ok) {
+        return { available: true, message: "" };
+      }
+      const data = (await response.json()) as { items?: RoleItem[] };
+      const existingRole = data.items?.some(
+        (role) => role.code.trim().toLowerCase() === roleCode.trim().toLowerCase(),
+      );
+      return {
+        available: !existingRole,
+        message: existingRole ? "角色编码已存在，请更换后重试" : "",
+      };
+    } catch {
+      return { available: true, message: "" };
+    }
+  }, [fetchWithAuth]);
+
+  const handleRoleCodeChange = useCallback((value: string) => {
+    if (roleCodeCheckTimeoutRef.current) {
+      clearTimeout(roleCodeCheckTimeoutRef.current);
+    }
+
+    const formatError = validateRoleCodeFormat(value);
+    if (formatError) {
+      setRoleCodeValidationError(formatError);
+      return;
+    }
+
+    const trimmedValue = value.trim();
+    if (!trimmedValue) {
+      setRoleCodeValidationError("");
+      return;
+    }
+
+    roleCodeCheckTimeoutRef.current = setTimeout(async () => {
+      const result = await checkRoleCodeAvailability(trimmedValue);
+      setRoleCodeValidationError(result.available ? "" : result.message);
+    }, 500);
+  }, [checkRoleCodeAvailability, validateRoleCodeFormat]);
+
   const closeDialog = useCallback(() => {
+    if (createRoleMutation.isPending || updateRoleMutation.isPending) return;
     setEditingRole(null);
     setDialogOpen(false);
+    setRoleCodeValidationError("");
     form.resetFields();
-  }, [form]);
+  }, [createRoleMutation.isPending, form, updateRoleMutation.isPending]);
 
   const startCreate = useCallback(() => {
     setError("");
     setSuccess("");
+    setRoleCodeValidationError("");
     setEditingRole(null);
     form.setFieldsValue(EMPTY_FORM);
     setDialogOpen(true);
@@ -243,6 +307,7 @@ export default function AdminRolesPage() {
   const startEdit = useCallback((role: RoleItem) => {
     setError("");
     setSuccess("");
+    setRoleCodeValidationError("");
     setEditingRole(role);
     form.setFieldsValue({
       code: role.code,
@@ -263,6 +328,11 @@ export default function AdminRolesPage() {
         name: values.name.trim(),
         menu_ids: values.menu_ids ?? [],
       };
+      const formatError = validateRoleCodeFormat(payload.code);
+      if (formatError) {
+        setRoleCodeValidationError(formatError);
+        return;
+      }
 
       if (editingRole) {
         updateRoleMutation.mutate({
@@ -273,6 +343,11 @@ export default function AdminRolesPage() {
           },
         });
       } else {
+        const availabilityCheck = await checkRoleCodeAvailability(payload.code);
+        if (!availabilityCheck.available) {
+          setRoleCodeValidationError(availabilityCheck.message);
+          return;
+        }
         createRoleMutation.mutate(payload);
       }
     } catch (candidate) {
@@ -288,7 +363,7 @@ export default function AdminRolesPage() {
       const nextError = candidate instanceof Error ? candidate.message : "提交失败，请稍后重试";
       setError(nextError);
     }
-  }, [createRoleMutation, editingRole, form, updateRoleMutation]);
+  }, [checkRoleCodeAvailability, createRoleMutation, editingRole, form, updateRoleMutation, validateRoleCodeFormat]);
 
   const handleKeywordChange = (value: string) => {
     setKeywordInput(value);
@@ -469,7 +544,33 @@ export default function AdminRolesPage() {
     const isDeleting = deletingRoleId === role.id;
     const isSaving = savingRoleId === role.id;
     const rowBusy = isDeleting || isSaving || createRoleMutation.isPending || updateRoleMutation.isPending;
+    const menuLabels = role.menu_ids.length > 0
+      ? role.menu_ids.map((menuId) => menuNameById.get(menuId) ?? String(menuId))
+      : [];
+    const fullText = menuLabels.length > 0 ? menuLabels.join("、") : "未绑定菜单";
     const moreMenuItems: MenuProps["items"] = [
+      {
+        key: "view-menus",
+        label: "查看菜单",
+        disabled: menuLabels.length === 0,
+        onClick: () => {
+          Modal.info({
+            title: `角色菜单：${role.name}（${role.code}）`,
+            content: (
+              <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                {menuLabels.length > 0 ? (
+                  menuLabels.map((label) => (
+                    <Typography.Text key={label}>{label}</Typography.Text>
+                  ))
+                ) : (
+                  <Typography.Text type="secondary">未绑定菜单</Typography.Text>
+                )}
+              </Space>
+            ),
+            okText: "知道了",
+          });
+        },
+      },
       {
         key: "delete",
         label: "删除",
@@ -487,11 +588,6 @@ export default function AdminRolesPage() {
         },
       },
     ];
-
-    const menuLabels = role.menu_ids.length > 0
-      ? role.menu_ids.map((menuId) => menuNameById.get(menuId) ?? String(menuId))
-      : [];
-    const fullText = menuLabels.length > 0 ? menuLabels.join("、") : "未绑定菜单";
 
     return (
       <AntCard
@@ -634,6 +730,9 @@ export default function AdminRolesPage() {
       if (keywordDebounceTimeoutRef.current) {
         clearTimeout(keywordDebounceTimeoutRef.current);
       }
+      if (roleCodeCheckTimeoutRef.current) {
+        clearTimeout(roleCodeCheckTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -692,7 +791,7 @@ export default function AdminRolesPage() {
             <Form.Item style={{ marginBottom: 0 }}>
               <Input
                 allowClear
-                placeholder="搜索角色编码、名称或菜单"
+                placeholder="按角色编码/名称/菜单搜索"
                 value={keywordInput}
                 onChange={(event) => handleKeywordChange(event.target.value)}
               />
@@ -703,7 +802,7 @@ export default function AdminRolesPage() {
             <Form.Item label="关键词" style={{ width: 260 }}>
               <Input
                 allowClear
-                placeholder="搜索角色编码、名称或菜单"
+                placeholder="按角色编码/名称/菜单搜索"
                 value={keywordInput}
                 onChange={(event) => handleKeywordChange(event.target.value)}
               />
@@ -812,12 +911,19 @@ export default function AdminRolesPage() {
                 <Form.Item
                   label="角色编码"
                   name="code"
+                  validateStatus={roleCodeValidationError ? "error" : ""}
+                  help={roleCodeValidationError}
                   rules={[
                     { required: true, message: "请输入角色编码" },
-                    { max: 80, message: "角色编码不能超过 80 位" },
+                    { min: 2, message: "角色编码至少 2 位" },
+                    { max: 64, message: "角色编码不能超过 64 位" },
                   ]}
                 >
-                  <Input disabled={editingRole !== null} placeholder="admin.operator" />
+                  <Input
+                    disabled={editingRole !== null}
+                    placeholder="admin.operator"
+                    onChange={(event) => handleRoleCodeChange(event.target.value)}
+                  />
                 </Form.Item>
               </Col>
               <Col xs={24}>
