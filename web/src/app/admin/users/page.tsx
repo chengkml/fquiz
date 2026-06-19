@@ -166,6 +166,18 @@ export default function AdminUsersPage() {
 
   const roleOptions = useMemo(() => roles.map((item) => item.code), [roles]);
 
+  const roleCodeToName = useMemo(() => {
+    const map = new Map<string, string>();
+    roles.forEach((role) => {
+      map.set(role.code, role.name);
+    });
+    return map;
+  }, [roles]);
+
+  const getRoleName = useCallback((code: string): string => {
+    return roleCodeToName.get(code) || code;
+  }, [roleCodeToName]);
+
   const existingUserIds = useMemo(
     () => new Set(users.map((item) => item.id.trim().toLowerCase())),
     [users],
@@ -641,7 +653,7 @@ export default function AdminUsersPage() {
           {roleCodes && roleCodes.length > 0 ? (
             roleCodes.map((code) => (
               <Tag key={code} color="blue">
-                {code}
+                {getRoleName(code)}
               </Tag>
             ))
           ) : (
@@ -806,7 +818,7 @@ export default function AdminUsersPage() {
               {userItem.role_codes && userItem.role_codes.length > 0 ? (
                 userItem.role_codes.map((code) => (
                   <Tag key={code} color="blue">
-                    {code}
+                    {getRoleName(code)}
                   </Tag>
                 ))
               ) : (
@@ -1203,7 +1215,7 @@ export default function AdminUsersPage() {
             <Select
               mode="multiple"
               placeholder="请选择角色"
-              options={roleOptions.map((code) => ({ label: code, value: code }))}
+              options={roleOptions.map((code) => ({ label: getRoleName(code), value: code }))}
               allowClear
             />
           </Form.Item>
