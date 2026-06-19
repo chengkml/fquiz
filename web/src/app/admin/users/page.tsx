@@ -891,6 +891,37 @@ export default function AdminUsersPage() {
             </Tag>
           </Space>
         }
+        extra={
+          <Space size={4}>
+            <Button
+              type="text"
+              size="small"
+              disabled={rowBusy}
+              icon={<EditOutlined />}
+              onClick={() => openEditUserModal(userItem)}
+            />
+            <Popconfirm
+              title={`确认删除用户 ${userItem.username}（${userItem.id}）？`}
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true, loading: deleteLoading }}
+              onConfirm={() => deleteUserMutation.mutate(userItem.id)}
+              disabled={rowBusy}
+            >
+              <Button
+                type="text"
+                danger
+                size="small"
+                icon={<DeleteOutlined />}
+                loading={deleteLoading}
+                disabled={rowBusy}
+              />
+            </Popconfirm>
+            <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+              <Button type="text" size="small" disabled={rowBusy} icon={<MoreOutlined />} />
+            </Dropdown>
+          </Space>
+        }
       >
         <Space direction="vertical" size={10} style={{ width: "100%" }}>
           <div className="admin-users-user-card-field">
@@ -916,37 +947,6 @@ export default function AdminUsersPage() {
             <Typography.Text ellipsis={{ tooltip: userItem.email || "-" }}>
               {userItem.email || "-"}
             </Typography.Text>
-          </div>
-          <div className="admin-users-user-card-actions" style={{ display: "flex", justifyContent: "flex-end" }}>
-            <Space size={4}>
-              <Button
-                type="text"
-                size="small"
-                disabled={rowBusy}
-                icon={<EditOutlined />}
-                onClick={() => openEditUserModal(userItem)}
-              />
-              <Popconfirm
-                title={`确认删除用户 ${userItem.username}（${userItem.id}）？`}
-                okText="删除"
-                cancelText="取消"
-                okButtonProps={{ danger: true, loading: deleteLoading }}
-                onConfirm={() => deleteUserMutation.mutate(userItem.id)}
-                disabled={rowBusy}
-              >
-                <Button
-                  type="text"
-                  danger
-                  size="small"
-                  icon={<DeleteOutlined />}
-                  loading={deleteLoading}
-                  disabled={rowBusy}
-                />
-              </Popconfirm>
-              <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
-                <Button type="text" size="small" disabled={rowBusy} icon={<MoreOutlined />} />
-              </Dropdown>
-            </Space>
           </div>
         </Space>
       </AntCard>
