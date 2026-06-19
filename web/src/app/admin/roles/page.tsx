@@ -7,6 +7,7 @@ import {
   Button,
   Card,
   Col,
+  Dropdown,
   Empty,
   Form,
   Input,
@@ -18,7 +19,9 @@ import {
   Table,
   Typography,
   type CardProps,
+  type MenuProps,
 } from "antd";
+import { EditOutlined, MoreOutlined, DeleteOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import type { CSSProperties, ComponentType } from "react";
 
@@ -332,13 +335,29 @@ export default function AdminRolesPage() {
         }
         extra={
           canManage ? (
-            <Space size="small">
-              <Button size="small" onClick={() => startEdit(role)}>
-                编辑
-              </Button>
-              <Button danger size="small" onClick={() => removeRole(role)}>
-                删除
-              </Button>
+            <Space size={4}>
+              <Button
+                type="text"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={() => startEdit(role)}
+              />
+              <Dropdown
+                menu={{
+                  items: [
+                    {
+                      key: "delete",
+                      label: "删除",
+                      danger: true,
+                      icon: <DeleteOutlined />,
+                      onClick: () => removeRole(role),
+                    },
+                  ],
+                }}
+                trigger={["click"]}
+              >
+                <Button type="text" size="small" icon={<MoreOutlined />} />
+              </Dropdown>
             </Space>
           ) : null
         }
