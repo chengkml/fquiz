@@ -615,17 +615,18 @@ export default function AdminUsersPage() {
   // Update allLoadedUsers when users data changes in card view
   useEffect(() => {
     if (viewMode === "card" && !usersQuery.isLoading) {
-      setAllLoadedUsers((prev) => {
-        if (cardViewPage === 1) {
-          return users;
-        }
-        if (users.length === 0) {
-          return prev;
-        }
-        const existingIds = new Set(prev.map(u => u.id));
-        const newUsers = users.filter(u => !existingIds.has(u.id));
-        return [...prev, ...newUsers];
-      });
+      if (cardViewPage === 1) {
+        setAllLoadedUsers(users);
+      } else {
+        setAllLoadedUsers((prev) => {
+          if (users.length === 0) {
+            return prev;
+          }
+          const existingIds = new Set(prev.map(u => u.id));
+          const newUsers = users.filter(u => !existingIds.has(u.id));
+          return [...prev, ...newUsers];
+        });
+      }
       setIsLoadingMore(false);
     }
   }, [users, usersQuery.isLoading, viewMode, cardViewPage]);
