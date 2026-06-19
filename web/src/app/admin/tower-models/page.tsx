@@ -821,6 +821,7 @@ export default function AdminTowerModelsPage() {
                       dataSource={pagedItems}
                       pagination={false}
                       scroll={{ x: 1450, y: tableScrollY }}
+                      tableLayout="fixed"
                     />
                   </div>
                 )}
