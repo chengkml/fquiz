@@ -382,16 +382,22 @@ export default function AdminUsersPage() {
     roleForm.resetFields();
   };
 
-  const handleSubmitAssignRoles = (values: { role_codes: string[] }) => {
+  const handleSubmitAssignRoles = async () => {
     if (!assigningRolesUser) return;
-    updateRolesMutation.mutate(
-      { userId: assigningRolesUser.id, roleCodes: values.role_codes },
-      {
-        onSuccess: () => {
-          closeAssignRolesModal();
+
+    try {
+      const values = await roleForm.validateFields();
+      updateRolesMutation.mutate(
+        { userId: assigningRolesUser.id, roleCodes: values.role_codes },
+        {
+          onSuccess: () => {
+            closeAssignRolesModal();
+          },
         },
-      },
-    );
+      );
+    } catch (validationError) {
+      // Validation errors are already shown in the form
+    }
   };
 
   const openEditUserModal = (target: UserPublic) => {
@@ -1076,7 +1082,7 @@ export default function AdminUsersPage() {
         open={!!assigningRolesUser}
         destroyOnClose
         onCancel={closeAssignRolesModal}
-        onOk={() => roleForm.submit()}
+        onOk={handleSubmitAssignRoles}
         okText="保存"
         cancelText="取消"
         confirmLoading={updateRolesMutation.isPending && savingUserId === assigningRolesUser?.id}
@@ -1084,13 +1090,23 @@ export default function AdminUsersPage() {
         <Form<{ role_codes: string[] }>
           form={roleForm}
           layout="vertical"
-          onFinish={handleSubmitAssignRoles}
+          onFinish={(values) => {
+            if (!assigningRolesUser) return;
+            updateRolesMutation.mutate(
+              { userId: assigningRolesUser.id, roleCodes: values.role_codes },
+              {
+                onSuccess: () => {
+                  closeAssignRolesModal();
+                },
+              },
+            );
+          }}
           autoComplete="off"
         >
           <Form.Item
             label="角色"
             name="role_codes"
-            rules={[{ required: false }]}
+            rules={[{ required: true, message: "请至少选择一个角色" }]}
           >
             <Select
               mode="multiple"
