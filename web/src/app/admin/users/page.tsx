@@ -616,7 +616,8 @@ export default function AdminUsersPage() {
   useEffect(() => {
     if (viewMode === "card" && !usersQuery.isLoading) {
       if (cardViewPage === 1) {
-        setAllLoadedUsers(users);
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- Mobile card view intentionally mirrors paged query results into an accumulated list.
+        setAllLoadedUsers(() => users);
       } else {
         setAllLoadedUsers((prev) => {
           if (users.length === 0) {
@@ -663,12 +664,6 @@ export default function AdminUsersPage() {
     cardBody.addEventListener("scroll", handleScroll);
     return () => cardBody.removeEventListener("scroll", handleScroll);
   }, [viewMode, isLoadingMore, usersQuery.isLoading, usersQuery.data?.total, allLoadedUsers.length]);
-
-  // Reset card view state when switching modes or filters change
-  useEffect(() => {
-    setCardViewPage(1);
-    setAllLoadedUsers([]);
-  }, [statusFilter, trimmedKeyword]);
 
   const updateTableScrollY = useCallback(() => {
     if (typeof window === "undefined") {
@@ -1053,6 +1048,8 @@ export default function AdminUsersPage() {
                 onChange={(value) => {
                   setStatusFilter(value);
                   setPagination((prev) => ({ ...prev, current: 1 }));
+                  setCardViewPage(1);
+                  setAllLoadedUsers([]);
                 }}
               />
             </Form.Item>

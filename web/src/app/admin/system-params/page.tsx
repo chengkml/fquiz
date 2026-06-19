@@ -63,13 +63,20 @@ const PARAM_TABLE_MIN_SCROLL_Y = 180;
 const PARAM_TABLE_VIEWPORT_GAP = 40;
 const PARAM_TABLE_FALLBACK_RESERVE = 220;
 
+function paramStatusLabel(status: SystemParamSummary["status"]): string {
+  if (status === "enabled") return "已启用";
+  if (status === "disabled") return "已禁用";
+  return status || "-";
+}
+
 export default function AdminSystemParamsPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const isMobile = useMobileDetection();
   const [formApi] = Form.useForm<FormState>();
 
-  const [keyword, setKeyword] = useState("");
+  const [keywordInput, setKeywordInput] = useState("");
+  const [searchKeyword, setSearchKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(undefined);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -84,23 +91,26 @@ export default function AdminSystemParamsPage() {
   const [allLoadedParams, setAllLoadedParams] = useState<SystemParamSummary[]>([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const pageCardRef = useRef<HTMLDivElement | null>(null);
+  const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const canRead = hasPermission("system_param.read") || hasPermission("system_param.manage");
   const canManage = hasPermission("system_param.manage");
+  const { current: paginationCurrent, pageSize: paginationPageSize } = pagination;
+  const trimmedKeyword = searchKeyword.trim();
 
   const listPath = useMemo(() => {
     const params = new URLSearchParams();
-    params.set("limit", String(pagination.pageSize));
-    params.set("offset", String((pagination.current - 1) * pagination.pageSize));
-    if (keyword.trim()) {
-      params.set("keyword", keyword.trim());
+    params.set("limit", String(paginationPageSize));
+    params.set("offset", String((paginationCurrent - 1) * paginationPageSize));
+    if (trimmedKeyword) {
+      params.set("keyword", trimmedKeyword);
     }
     if (statusFilter) {
       params.set("status", statusFilter);
     }
     const qs = params.toString();
     return `/api/v1/admin/system-params${qs ? `?${qs}` : ""}`;
-  }, [keyword, statusFilter, pagination.current, pagination.pageSize]);
+  }, [paginationCurrent, paginationPageSize, statusFilter, trimmedKeyword]);
 
   const listQuery = useQuery({
     queryKey: [listPath],
@@ -249,7 +259,22 @@ export default function AdminSystemParamsPage() {
     }
   }, [deleteMutation]);
 
-  const items = listQuery.data?.items ?? [];
+  const handleKeywordChange = (value: string) => {
+    setKeywordInput(value);
+
+    if (keywordDebounceTimeoutRef.current) {
+      clearTimeout(keywordDebounceTimeoutRef.current);
+    }
+
+    keywordDebounceTimeoutRef.current = setTimeout(() => {
+      setSearchKeyword(value);
+      setPagination((prev) => ({ ...prev, current: 1 }));
+      setCardViewPage(() => 1);
+      setAllLoadedParams(() => []);
+    }, 500);
+  };
+
+  const items = useMemo(() => listQuery.data?.items ?? [], [listQuery.data?.items]);
   const listError = listQuery.error instanceof Error ? listQuery.error.message : "";
 
   useToastFeedback({
@@ -261,15 +286,22 @@ export default function AdminSystemParamsPage() {
 
   // Accumulate loaded params for card view
   useEffect(() => {
-    if (viewMode === "card" && items.length > 0 && !listQuery.isLoading) {
-      setAllLoadedParams((prev) => {
-        const existingIds = new Set(prev.map((p) => p.id));
-        const newParams = items.filter((p) => !existingIds.has(p.id));
-        return [...prev, ...newParams];
-      });
-      setIsLoadingMore(false);
+    if (viewMode === "card" && !listQuery.isLoading) {
+      if (cardViewPage === 1) {
+        setAllLoadedParams(() => items);
+      } else {
+        setAllLoadedParams((prev) => {
+          if (items.length === 0) {
+            return prev;
+          }
+          const existingIds = new Set(prev.map((p) => p.id));
+          const newParams = items.filter((p) => !existingIds.has(p.id));
+          return [...prev, ...newParams];
+        });
+      }
+      setIsLoadingMore(() => false);
     }
-  }, [items, listQuery.isLoading, viewMode]);
+  }, [items, listQuery.isLoading, viewMode, cardViewPage]);
 
   // Handle infinite scroll for card view
   useEffect(() => {
@@ -295,6 +327,7 @@ export default function AdminSystemParamsPage() {
         if (loadedCount < total) {
           setIsLoadingMore(true);
           setCardViewPage((prev) => prev + 1);
+          setPagination((prev) => ({ ...prev, current: prev.current + 1 }));
         }
       }
     };
@@ -305,9 +338,17 @@ export default function AdminSystemParamsPage() {
 
   // Reset card view state when filters change
   useEffect(() => {
-    setCardViewPage(1);
-    setAllLoadedParams([]);
-  }, [statusFilter, keyword]);
+    setCardViewPage(() => 1);
+    setAllLoadedParams(() => []);
+  }, [statusFilter, trimmedKeyword]);
+
+  useEffect(() => {
+    return () => {
+      if (keywordDebounceTimeoutRef.current) {
+        clearTimeout(keywordDebounceTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const renderParamCard = (param: SystemParamSummary) => {
     const deleteLoading = deletingId === param.id;
@@ -349,7 +390,7 @@ export default function AdminSystemParamsPage() {
           <Space className="min-w-0" size={8}>
             <Typography.Text strong>{param.param_name}</Typography.Text>
             <Tag color={param.status === "enabled" ? "success" : "default"} bordered={false}>
-              {param.status === "enabled" ? "已启用" : "已禁用"}
+              {paramStatusLabel(param.status)}
             </Tag>
           </Space>
         }
@@ -438,7 +479,7 @@ export default function AdminSystemParamsPage() {
         width: 120,
         render: (value: SystemParamSummary["status"]) => (
           <Tag color={value === "enabled" ? "success" : "default"}>
-            {value === "enabled" ? "已启用" : "已禁用"}
+            {paramStatusLabel(value)}
           </Tag>
         ),
       },
@@ -622,8 +663,8 @@ export default function AdminSystemParamsPage() {
               <Input
                 allowClear
                 placeholder="按参数键/名称/值搜索"
-                value={keyword}
-                onChange={(event) => setKeyword(event.target.value)}
+                value={keywordInput}
+                onChange={(event) => handleKeywordChange(event.target.value)}
               />
             </Form.Item>
           </Form>
@@ -633,8 +674,8 @@ export default function AdminSystemParamsPage() {
               <Input
                 allowClear
                 placeholder="按参数键/名称/值搜索"
-                value={keyword}
-                onChange={(event) => setKeyword(event.target.value)}
+                value={keywordInput}
+                onChange={(event) => handleKeywordChange(event.target.value)}
               />
             </Form.Item>
             <Form.Item label="状态" style={{ width: 170 }}>
@@ -649,6 +690,8 @@ export default function AdminSystemParamsPage() {
                 onChange={(value) => {
                   setStatusFilter(value);
                   setPagination((prev) => ({ ...prev, current: 1 }));
+                  setCardViewPage(() => 1);
+                  setAllLoadedParams(() => []);
                 }}
               />
             </Form.Item>
