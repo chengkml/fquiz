@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Button, Card, Col, Empty, Form, Input, Row, Space, Spin, Table, Tag, Typography, type CardProps } from "antd";
+import { Button, Card, Col, Empty, Form, Input, Row, Space, Spin, Table, Tag, Typography, type CardProps } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { CSSProperties, ComponentType } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useMobileDetection } from "@/hooks/use-mobile-detection";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { AuditLogItem, AuditLogListResponse } from "@/types/auth";
@@ -45,6 +46,8 @@ export default function AdminSyslogPage() {
   const [offset, setOffset] = useState(0);
   const [draftFilters, setDraftFilters] = useState<Filters>(EMPTY_FILTERS);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [tableScrollY, setTableScrollY] = useState(SYSLOG_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const viewMode: "table" | "card" = isMobile ? "card" : "table";
@@ -132,16 +135,28 @@ export default function AdminSyslogPage() {
     }, [logsPath, queryClient]),
   );
 
-  const logs = logsQuery.data?.items ?? [];
+  const logs = useMemo(() => logsQuery.data?.items ?? [], [logsQuery.data?.items]);
   const total = logsQuery.data?.total ?? 0;
-  const error = logsQuery.error instanceof Error ? logsQuery.error.message : "";
+  const queryError = logsQuery.error instanceof Error ? logsQuery.error.message : "";
+  const anyError = error || queryError;
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+
+  useToastFeedback({
+    errorMessage: anyError,
+    successMessage: success,
+    clearError: () => setError(""),
+    clearSuccess: () => setSuccess(""),
+  });
 
   // Update allLoadedLogs when logs data changes in card view
   useEffect(() => {
-    if (viewMode === "card" && !logsQuery.isLoading) {
+    if (viewMode !== "card" || logsQuery.isLoading) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
       if (cardViewPage === 1) {
-        setAllLoadedLogs(logs);
+        setAllLoadedLogs(() => logs);
       } else {
         setAllLoadedLogs((prev) => {
           if (logs.length === 0) {
@@ -153,7 +168,11 @@ export default function AdminSyslogPage() {
         });
       }
       setIsLoadingMore(false);
-    }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
   }, [logs, logsQuery.isLoading, viewMode, cardViewPage]);
 
   // Handle infinite scroll for card view
@@ -190,8 +209,14 @@ export default function AdminSyslogPage() {
 
   // Reset card view state when filters change
   useEffect(() => {
-    setCardViewPage(1);
-    setAllLoadedLogs([]);
+    const frameId = window.requestAnimationFrame(() => {
+      setCardViewPage(1);
+      setAllLoadedLogs([]);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
   }, [filters.action, filters.user_id]);
 
   const columns = useMemo<ColumnsType<AuditLogItem>>(
@@ -266,8 +291,11 @@ export default function AdminSyslogPage() {
   }, []);
 
   useEffect(() => {
-    updateTableScrollY();
-  }, [error, logs.length, logsQuery.isFetching, total, updateTableScrollY]);
+    const frameId = window.requestAnimationFrame(updateTableScrollY);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [logs.length, logsQuery.isFetching, total, updateTableScrollY]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -378,8 +406,6 @@ export default function AdminSyslogPage() {
 
   return (
     <div className="flex flex-1 flex-col space-y-6">
-      {error ? <Alert type="error" showIcon message="日志加载失败" description={error} /> : null}
-
       <AntCard ref={pageCardRef} title="系统日志" style={{ height: '100%' }}>
         {viewMode === "card" ? (
           <Form layout="vertical" style={{ marginBottom: 16 }}>
