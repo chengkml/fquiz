@@ -91,9 +91,10 @@ function normalizeMenuItemPath(menu: MenuItem): MenuItem {
 
 export default function AdminMenusPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
-  const { message: messageApi } = App.useApp();
+  const { message: messageApi, modal } = App.useApp();
   const isMobile = useMobileDetection();
   const [menus, setMenus] = useState<MenuItem[]>([]);
+  const [menuTotal, setMenuTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingMenuId, setDeletingMenuId] = useState<string | null>(null);
@@ -105,7 +106,6 @@ export default function AdminMenusPage() {
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
   const [activeKeyword, setActiveKeyword] = useState("");
-  const [activeStatusFilter, setActiveStatusFilter] = useState<FilterStatus>("all");
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [tableScrollY, setTableScrollY] = useState(MENU_TABLE_MIN_SCROLL_Y);
   const viewMode: "table" | "card" = isMobile ? "card" : "table";
@@ -116,6 +116,8 @@ export default function AdminMenusPage() {
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pageCardRef = useRef<HTMLDivElement | null>(null);
+  const paginationCurrent = pagination.current;
+  const paginationPageSize = pagination.pageSize;
 
   const canRead = hasPermission("menu.read") || hasPermission("menu.manage");
   const canManage = hasPermission("menu.manage");
@@ -145,7 +147,7 @@ export default function AdminMenusPage() {
   }, [menus]);
 
   const filteredMenus = useMemo(() => {
-    return menus.sort((a, b) => {
+    return [...menus].sort((a, b) => {
       if (a.sort_order !== b.sort_order) {
         return a.sort_order - b.sort_order;
       }
@@ -153,7 +155,7 @@ export default function AdminMenusPage() {
     });
   }, [menus]);
 
-  const loadMenus = useCallback(async (page = pagination.current, pageSize = pagination.pageSize) => {
+  const loadMenus = useCallback(async (page: number, pageSize: number) => {
     if (!canRead) {
       setLoading(false);
       return;
@@ -168,8 +170,8 @@ export default function AdminMenusPage() {
     if (activeKeyword.trim()) {
       params.append("keyword", activeKeyword.trim());
     }
-    if (activeStatusFilter !== "all") {
-      params.append("status", activeStatusFilter);
+    if (statusFilter !== "all") {
+      params.append("status", statusFilter);
     }
 
     const url = `/api/v1/admin/menus${params.toString() ? `?${params.toString()}` : ""}`;
@@ -182,27 +184,28 @@ export default function AdminMenusPage() {
 
     const payload = (await response.json()) as MenuListResponse;
     setMenus(payload.items.map(normalizeMenuItemPath));
+    setMenuTotal(payload.total);
     setLoading(false);
     return payload;
-  }, [canRead, fetchWithAuth, activeKeyword, activeStatusFilter, pagination.current, pagination.pageSize]);
+  }, [activeKeyword, canRead, fetchWithAuth, statusFilter]);
 
   useEffect(() => {
     if (!user || !canRead) {
       return;
     }
     queueMicrotask(() => {
-      void loadMenus();
+      void loadMenus(paginationCurrent, paginationPageSize);
     });
-  }, [canRead, loadMenus, user]);
+  }, [canRead, loadMenus, paginationCurrent, paginationPageSize, user]);
 
 
   useTopicSubscription(
     "admin.menus",
     useCallback(() => {
       if (user && canRead) {
-        void loadMenus();
+        void loadMenus(paginationCurrent, paginationPageSize);
       }
-    }, [canRead, loadMenus, user]),
+    }, [canRead, loadMenus, paginationCurrent, paginationPageSize, user]),
   );
 
   // Update allLoadedMenus when menus data changes in card view
@@ -242,30 +245,25 @@ export default function AdminMenusPage() {
       const clientHeight = cardBody.clientHeight;
 
       if (scrollTop + clientHeight >= scrollHeight - 100) {
-        setIsLoadingMore(true);
-        setCardViewPage((prev) => {
-          const nextPage = prev + 1;
-          void loadMenus(nextPage, 20);
-          return nextPage;
-        });
+        const loadedCount = allLoadedMenus.length;
+
+        if (loadedCount < menuTotal) {
+          setIsLoadingMore(true);
+          setCardViewPage((prev) => prev + 1);
+          setPagination((prev) => ({ ...prev, current: prev.current + 1 }));
+        }
       }
     };
 
     cardBody.addEventListener("scroll", handleScroll);
     return () => cardBody.removeEventListener("scroll", handleScroll);
-  }, [viewMode, isLoadingMore, loading, loadMenus, allLoadedMenus.length]);
+  }, [allLoadedMenus.length, loading, isLoadingMore, menuTotal, viewMode]);
 
   // Reset card view state when search conditions change
   useEffect(() => {
     setCardViewPage(1);
     setAllLoadedMenus([]);
-  }, [activeStatusFilter, activeKeyword]);
-
-  const handleSearch = useCallback(() => {
-    setActiveKeyword(keyword);
-    setActiveStatusFilter(statusFilter);
-    setPagination((prev) => ({ ...prev, current: 1 }));
-  }, [keyword, statusFilter]);
+  }, [activeKeyword, statusFilter]);
 
   const handleKeywordChange = (value: string) => {
     setKeyword(value);
@@ -276,7 +274,17 @@ export default function AdminMenusPage() {
 
     keywordDebounceTimeoutRef.current = setTimeout(() => {
       setActiveKeyword(value);
+      setPagination((prev) => ({ ...prev, current: 1 }));
+      setCardViewPage(1);
+      setAllLoadedMenus([]);
     }, 500);
+  };
+
+  const handleStatusFilterChange = (value?: Exclude<FilterStatus, "all">) => {
+    setStatusFilter(value ?? "all");
+    setPagination((prev) => ({ ...prev, current: 1 }));
+    setCardViewPage(1);
+    setAllLoadedMenus([]);
   };
 
   const closeDialog = useCallback(() => {
@@ -350,7 +358,7 @@ export default function AdminMenusPage() {
 
       messageApi.success(editingMenuId ? "菜单已更新" : "菜单已创建");
       closeDialog();
-      await loadMenus();
+      await loadMenus(paginationCurrent, paginationPageSize);
     } catch (candidate) {
       // Form 校验失败时不额外提示。
       if (
@@ -368,7 +376,7 @@ export default function AdminMenusPage() {
     } finally {
       setSaving(false);
     }
-  }, [closeDialog, editingMenuId, fetchWithAuth, form, loadMenus, messageApi]);
+  }, [closeDialog, editingMenuId, fetchWithAuth, form, loadMenus, messageApi, paginationCurrent, paginationPageSize]);
 
   const removeMenu = useCallback(async (menu: MenuItem) => {
     setDeletingMenuId(menu.id);
@@ -390,11 +398,23 @@ export default function AdminMenusPage() {
       if (editingMenuId === menu.id) {
         closeDialog();
       }
-      await loadMenus();
+      setMenuTotal((previous) => Math.max(0, previous - 1));
+      setAllLoadedMenus((previous) => previous.filter((item) => item.id !== menu.id));
+      await loadMenus(paginationCurrent, paginationPageSize);
     } finally {
       setDeletingMenuId(null);
     }
-  }, [closeDialog, editingMenuId, fetchWithAuth, loadMenus, messageApi]);
+  }, [closeDialog, editingMenuId, fetchWithAuth, loadMenus, messageApi, paginationCurrent, paginationPageSize]);
+
+  const confirmRemoveMenu = useCallback((menu: MenuItem) => {
+    modal.confirm({
+      title: `确认删除菜单 ${menu.name}（${menu.code}）？`,
+      okText: "删除",
+      cancelText: "取消",
+      okButtonProps: { danger: true },
+      onOk: () => removeMenu(menu),
+    });
+  }, [modal, removeMenu]);
 
   const updateMenuStatus = useCallback(async (menu: MenuItem) => {
     const nextStatus: "enabled" | "disabled" = menu.status === "enabled" ? "disabled" : "enabled";
@@ -413,7 +433,7 @@ export default function AdminMenusPage() {
         throw new Error(await readApiError(response));
       }
 
-      const payload = await loadMenus();
+      const payload = await loadMenus(paginationCurrent, paginationPageSize);
       if (payload) {
         setSuccess(nextStatus === "enabled" ? "菜单已启用" : "菜单已禁用");
       }
@@ -422,7 +442,7 @@ export default function AdminMenusPage() {
     } finally {
       setUpdatingStatusMenuId(null);
     }
-  }, [fetchWithAuth, loadMenus]);
+  }, [fetchWithAuth, loadMenus, paginationCurrent, paginationPageSize]);
 
   const columns = useMemo<TableColumnsType<MenuItem>>(() => {
     const base: TableColumnsType<MenuItem> = [
@@ -480,22 +500,10 @@ export default function AdminMenusPage() {
 
         const moreMenuItems: MenuProps["items"] = [
           {
-            key: "edit",
-            label: "编辑",
-            disabled: menuBusy,
-            onClick: () => startEdit(record),
-          },
-          {
-            key: "delete",
-            label: "删除",
-            disabled: menuBusy,
-            onClick: () => removeMenu(record),
-          },
-          {
             key: "toggle-status",
             label: record.status === "enabled" ? "禁用" : "启用",
             disabled: menuBusy,
-            onClick: () => updateMenuStatus(record),
+            onClick: () => void updateMenuStatus(record),
           },
         ];
 
@@ -536,30 +544,27 @@ export default function AdminMenusPage() {
 
     const moreMenuItems: MenuProps["items"] = [
       {
-        key: "edit",
-        label: "编辑",
-        disabled: menuBusy || !canManage,
-        onClick: () => startEdit(menuItem),
-      },
-      {
         key: "delete",
         label: "删除",
+        danger: true,
         disabled: menuBusy || !canManage,
-        onClick: () => removeMenu(menuItem),
+        onClick: () => confirmRemoveMenu(menuItem),
       },
       {
         key: "toggle-status",
         label: menuItem.status === "enabled" ? "禁用" : "启用",
         disabled: menuBusy || !canManage,
-        onClick: () => updateMenuStatus(menuItem),
+        onClick: () => void updateMenuStatus(menuItem),
       },
     ];
 
     return (
       <AntCard
+        key={menuItem.id}
+        className="admin-menus-menu-card"
         size="small"
         title={
-          <Space>
+          <Space className="min-w-0" size={8}>
             <Typography.Text strong>{menuItem.name}</Typography.Text>
             <Tag color={menuItem.status === "enabled" ? "success" : "default"}>
               {menuItem.status === "enabled" ? "已启用" : "已禁用"}
@@ -583,54 +588,25 @@ export default function AdminMenusPage() {
           ) : null
         }
       >
-        <Space direction="vertical" size={4} style={{ width: "100%" }}>
-          <div>
-            <Typography.Text type="secondary">菜单编码：</Typography.Text>
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <div className="admin-menus-menu-card-field">
+            <Typography.Text type="secondary">菜单编码</Typography.Text>
             <Typography.Text className="font-mono text-xs">{menuItem.code}</Typography.Text>
           </div>
-          <div>
-            <Typography.Text type="secondary">路径：</Typography.Text>
-            <Typography.Text>{menuItem.path || "-"}</Typography.Text>
+          <div className="admin-menus-menu-card-field">
+            <Typography.Text type="secondary">路径</Typography.Text>
+            <Typography.Text ellipsis={{ tooltip: menuItem.path || "-" }}>{menuItem.path || "-"}</Typography.Text>
           </div>
-          <div>
-            <Typography.Text type="secondary">父菜单：</Typography.Text>
-            <Typography.Text>
+          <div className="admin-menus-menu-card-field">
+            <Typography.Text type="secondary">父菜单</Typography.Text>
+            <Typography.Text ellipsis>
               {menuItem.parent_id ? menuNameById.get(menuItem.parent_id) ?? menuItem.parent_id : "-"}
             </Typography.Text>
           </div>
-          <div>
-            <Typography.Text type="secondary">排序：</Typography.Text>
+          <div className="admin-menus-menu-card-field">
+            <Typography.Text type="secondary">排序</Typography.Text>
             <Typography.Text>{menuItem.sort_order}</Typography.Text>
           </div>
-          {canManage && (
-            <div style={{ marginTop: 8 }}>
-              <Space wrap>
-                <Button
-                  size="small"
-                  disabled={menuBusy}
-                  onClick={() => startEdit(menuItem)}
-                >
-                  编辑
-                </Button>
-                <Button
-                  danger
-                  size="small"
-                  disabled={menuBusy}
-                  onClick={() => {
-                    Modal.confirm({
-                      title: `确认删除菜单 ${menuItem.name}（${menuItem.code}）？`,
-                      okText: "删除",
-                      cancelText: "取消",
-                      okButtonProps: { danger: true },
-                      onOk: () => removeMenu(menuItem),
-                    });
-                  }}
-                >
-                  删除
-                </Button>
-              </Space>
-            </div>
-          )}
         </Space>
       </AntCard>
     );
@@ -776,31 +752,22 @@ export default function AdminMenusPage() {
               <Input
                 allowClear
                 value={keyword}
-                onChange={(event) => setKeyword(event.currentTarget.value)}
-                onPressEnter={handleSearch}
+                onChange={(event) => handleKeywordChange(event.currentTarget.value)}
                 placeholder="按编码/名称/路径筛选"
               />
             </Form.Item>
 
             <Form.Item label="状态" className="min-w-[170px]">
-              <Select<FilterStatus>
-                value={statusFilter}
-                onChange={(value) => setStatusFilter(value)}
+              <Select<Exclude<FilterStatus, "all">>
+                value={statusFilter === "all" ? undefined : statusFilter}
+                allowClear
+                placeholder="全部"
+                onChange={handleStatusFilterChange}
                 options={[
-                  { value: "all", label: "全部" },
                   { value: "enabled", label: "已启用" },
                   { value: "disabled", label: "已禁用" },
                 ]}
               />
-            </Form.Item>
-
-            <Form.Item>
-              <Button
-                type="primary"
-                onClick={handleSearch}
-              >
-                搜索
-              </Button>
             </Form.Item>
           </Form>
         )}
@@ -816,14 +783,15 @@ export default function AdminMenusPage() {
               dataSource={filteredMenus}
               columns={columns}
               loading={loading}
+              tableLayout="fixed"
               scroll={{ x: 1200, y: tableScrollY }}
               pagination={{
                 current: pagination.current,
                 pageSize: pagination.pageSize,
-                total: filteredMenus.length,
+                total: Math.max(menuTotal, 1),
                 showSizeChanger: true,
                 pageSizeOptions: [10, 20, 50, 100],
-                showTotal: (total) => `共 ${total} 条`,
+                showTotal: () => `共 ${menuTotal} 条`,
                 hideOnSinglePage: false,
                 style: { marginBottom: 0 },
                 onChange: (page, pageSize) => {
@@ -838,18 +806,18 @@ export default function AdminMenusPage() {
         ) : (
           <div className="admin-menus-card-view mt-4">
             {loading && allLoadedMenus.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "60px 0" }}>
+              <div className="admin-menus-card-view-state">
                 <Spin tip="加载中..." />
               </div>
             ) : allLoadedMenus.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "60px 0" }}>
+              <div className="admin-menus-card-view-state">
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                   description="未找到符合筛选条件的菜单项。"
                 />
               </div>
             ) : (
-              <>
+              <div className="admin-menus-card-view-content">
                 <Row gutter={[12, 12]}>
                   {allLoadedMenus.map((menuItem) => (
                     <Col key={menuItem.id} xs={24} sm={24} md={12} lg={8} xl={6}>
@@ -862,14 +830,14 @@ export default function AdminMenusPage() {
                     <Spin tip="加载更多..." />
                   </div>
                 )}
-                {!loading && !isLoadingMore && allLoadedMenus.length > 0 && (
+                {!loading && !isLoadingMore && allLoadedMenus.length >= menuTotal && allLoadedMenus.length > 0 && (
                   <div style={{ textAlign: "center", padding: "20px 0" }}>
                     <Typography.Text type="secondary">
                       已加载全部 {allLoadedMenus.length} 条数据
                     </Typography.Text>
                   </div>
                 )}
-              </>
+              </div>
             )}
           </div>
         )}
