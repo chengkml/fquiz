@@ -762,7 +762,7 @@ export default function AdminTowerModelsPage() {
             </Space>
           )}
           {totalItems === 0 ? (
-            <Empty description="暂无杆塔模型数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            <Empty description="未找到符合筛选条件的杆塔模型。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           ) : (
             <>
               <div ref={viewScrollAnchorRef} className="mt-4">
