@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  App,
   Button,
   Card,
   Checkbox,
@@ -91,7 +90,6 @@ function normalizeMenuItemPath(menu: MenuItem): MenuItem {
 
 export default function AdminMenusPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
-  const { message: messageApi, modal } = App.useApp();
   const isMobile = useMobileDetection();
   const [menus, setMenus] = useState<MenuItem[]>([]);
   const [menuTotal, setMenuTotal] = useState(0);
@@ -321,6 +319,7 @@ export default function AdminMenusPage() {
     try {
       setSaving(true);
       setError("");
+      setSuccess("");
 
       const values = await form.validateFields();
       const payload = {
@@ -352,11 +351,10 @@ export default function AdminMenusPage() {
       if (!response.ok) {
         const msg = await readApiError(response);
         setError(msg);
-        messageApi.error(msg);
         return;
       }
 
-      messageApi.success(editingMenuId ? "菜单已更新" : "菜单已创建");
+      setSuccess(editingMenuId ? "菜单已更新" : "菜单已创建");
       closeDialog();
       await loadMenus(paginationCurrent, paginationPageSize);
     } catch (candidate) {
@@ -372,11 +370,10 @@ export default function AdminMenusPage() {
 
       const msg = candidate instanceof Error ? candidate.message : "提交失败，请稍后重试";
       setError(msg);
-      messageApi.error(msg);
     } finally {
       setSaving(false);
     }
-  }, [closeDialog, editingMenuId, fetchWithAuth, form, loadMenus, messageApi, paginationCurrent, paginationPageSize]);
+  }, [closeDialog, editingMenuId, fetchWithAuth, form, loadMenus, paginationCurrent, paginationPageSize]);
 
   const removeMenu = useCallback(async (menu: MenuItem) => {
     setDeletingMenuId(menu.id);
@@ -390,31 +387,32 @@ export default function AdminMenusPage() {
       if (!response.ok) {
         const msg = await readApiError(response);
         setError(msg);
-        messageApi.error(msg);
         return;
       }
 
-      messageApi.success("菜单已删除");
+      setSuccess("菜单已删除");
       if (editingMenuId === menu.id) {
         closeDialog();
       }
       setMenuTotal((previous) => Math.max(0, previous - 1));
       setAllLoadedMenus((previous) => previous.filter((item) => item.id !== menu.id));
       await loadMenus(paginationCurrent, paginationPageSize);
+    } catch (candidate) {
+      setError(candidate instanceof Error ? candidate.message : "菜单删除失败");
     } finally {
       setDeletingMenuId(null);
     }
-  }, [closeDialog, editingMenuId, fetchWithAuth, loadMenus, messageApi, paginationCurrent, paginationPageSize]);
+  }, [closeDialog, editingMenuId, fetchWithAuth, loadMenus, paginationCurrent, paginationPageSize]);
 
   const confirmRemoveMenu = useCallback((menu: MenuItem) => {
-    modal.confirm({
+    Modal.confirm({
       title: `确认删除菜单 ${menu.name}（${menu.code}）？`,
       okText: "删除",
       cancelText: "取消",
       okButtonProps: { danger: true },
       onOk: () => removeMenu(menu),
     });
-  }, [modal, removeMenu]);
+  }, [removeMenu]);
 
   const updateMenuStatus = useCallback(async (menu: MenuItem) => {
     const nextStatus: "enabled" | "disabled" = menu.status === "enabled" ? "disabled" : "enabled";
@@ -748,7 +746,7 @@ export default function AdminMenusPage() {
           </Form>
         ) : (
           <Form layout="inline" style={{ rowGap: 12 }}>
-            <Form.Item label="关键词" className="min-w-[240px]">
+            <Form.Item label="关键词" style={{ width: 240 }}>
               <Input
                 allowClear
                 value={keyword}
@@ -757,7 +755,7 @@ export default function AdminMenusPage() {
               />
             </Form.Item>
 
-            <Form.Item label="状态" className="min-w-[170px]">
+            <Form.Item label="状态" style={{ width: 170 }}>
               <Select<Exclude<FilterStatus, "all">>
                 value={statusFilter === "all" ? undefined : statusFilter}
                 allowClear
@@ -784,7 +782,7 @@ export default function AdminMenusPage() {
               columns={columns}
               loading={loading}
               tableLayout="fixed"
-              scroll={{ x: 1200, y: tableScrollY }}
+              scroll={{ y: tableScrollY }}
               pagination={{
                 current: pagination.current,
                 pageSize: pagination.pageSize,
@@ -799,7 +797,12 @@ export default function AdminMenusPage() {
                 },
               }}
               locale={{
-                emptyText: <Empty description="未找到符合筛选条件的菜单项。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
+                emptyText: (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="未找到符合筛选条件的菜单项。"
+                  />
+                ),
               }}
             />
           </div>
