@@ -181,6 +181,7 @@ export default function AtpModelsPage() {
 
   const [keywordInput, setKeywordInput] = useState("");
   const [keyword, setKeyword] = useState("");
+  const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [editingAsset, setEditingAsset] = useState<AtpAssetSummary | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [tableScrollY, setTableScrollY] = useState(ATP_TABLE_MIN_SCROLL_Y);
@@ -253,6 +254,26 @@ export default function AtpModelsPage() {
       message.error(candidate instanceof Error ? candidate.message : "删除模型失败");
     },
   });
+
+  const handleKeywordChange = (value: string) => {
+    setKeywordInput(value);
+
+    if (keywordDebounceTimeoutRef.current) {
+      clearTimeout(keywordDebounceTimeoutRef.current);
+    }
+
+    keywordDebounceTimeoutRef.current = setTimeout(() => {
+      setKeyword(value);
+    }, 500);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (keywordDebounceTimeoutRef.current) {
+        clearTimeout(keywordDebounceTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const assetItems = assetsQuery.data?.items ?? [];
   const voltageLevelOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.voltage_level, DEFAULT_VOLTAGE_LEVELS), [assetItems]);
@@ -548,15 +569,6 @@ export default function AtpModelsPage() {
     );
   }
 
-  const handleSearch = () => {
-    setKeyword(keywordInput);
-  };
-
-  const handleResetSearch = () => {
-    setKeywordInput("");
-    setKeyword("");
-  };
-
   return (
     <>
       <AntCard
@@ -584,20 +596,9 @@ export default function AtpModelsPage() {
             <Input
               allowClear
               value={keywordInput}
-              onChange={(event) => setKeywordInput(event.target.value)}
-              onPressEnter={handleSearch}
+              onChange={(event) => handleKeywordChange(event.target.value)}
               placeholder="按编码 / 名称 / 描述搜索"
             />
-          </Form.Item>
-
-          <Form.Item>
-            <Button type="primary" onClick={handleSearch}>
-              搜索
-            </Button>
-          </Form.Item>
-
-          <Form.Item>
-            <Button onClick={handleResetSearch}>重置筛选</Button>
           </Form.Item>
         </Form>
 
