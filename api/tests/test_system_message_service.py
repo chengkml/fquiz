@@ -6,7 +6,11 @@ from sqlalchemy.orm import Session
 from app.core.database import Base
 from app.models.system_message import SystemMessage
 from app.schemas.system_message import SystemMessageCreateRequest
-from app.services.system_message_service import create_system_message, delete_system_message
+from app.services.system_message_service import (
+    create_system_message,
+    delete_system_message,
+    list_user_messages,
+)
 
 
 def test_delete_system_message_removes_existing_message() -> None:
@@ -37,3 +41,36 @@ def test_delete_system_message_returns_false_when_missing() -> None:
         deleted = delete_system_message(db, "missing-message-id")
 
         assert deleted is False
+
+
+def test_list_user_messages_filters_items_and_total_by_type() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(bind=engine, tables=[SystemMessage.__table__])
+
+    with Session(engine) as db:
+        info_message = create_system_message(
+            db,
+            SystemMessageCreateRequest(
+                title="通知",
+                content="测试内容",
+                message_type="info",
+            ),
+        )
+        create_system_message(
+            db,
+            SystemMessageCreateRequest(
+                title="警告",
+                content="测试内容",
+                message_type="warning",
+            ),
+        )
+
+        messages, total, unread_count = list_user_messages(
+            db,
+            user_id="user-1",
+            message_type="info",
+        )
+
+        assert [message.id for message in messages] == [info_message.id]
+        assert total == 1
+        assert unread_count == 2

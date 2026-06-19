@@ -5,7 +5,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from ..models.system_message import SystemMessage
-from ..schemas.system_message import SystemMessageCreateRequest
+from ..schemas.system_message import SystemMessageCreateRequest, SystemMessageType
 
 if TYPE_CHECKING:
     from ..schemas.system_message import SystemMessagePublic
@@ -34,20 +34,23 @@ def list_user_messages(
     limit: int = 50,
     offset: int = 0,
     unread_only: bool = False,
+    message_type: SystemMessageType | None = None,
 ) -> tuple[list[SystemMessage], int, int]:
     """获取用户的系统消息列表"""
-    # 构建查询条件：全员广播或者特定用户
-    query = select(SystemMessage).where(
-        (SystemMessage.target_user_id == user_id) | (SystemMessage.target_user_id.is_(None))
-    )
+    base_conditions = [
+        (SystemMessage.target_user_id == user_id) | (SystemMessage.target_user_id.is_(None)),
+    ]
 
     if unread_only:
-        query = query.where(SystemMessage.is_read == False)
+        base_conditions.append(SystemMessage.is_read == False)
+
+    if message_type:
+        base_conditions.append(SystemMessage.message_type == message_type)
+
+    query = select(SystemMessage).where(*base_conditions)
 
     # 获取总数
-    total_query = select(func.count()).select_from(SystemMessage).where(
-        (SystemMessage.target_user_id == user_id) | (SystemMessage.target_user_id.is_(None))
-    )
+    total_query = select(func.count()).select_from(SystemMessage).where(*base_conditions)
     total = db.scalar(total_query)
 
     # 获取未读数

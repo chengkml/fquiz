@@ -329,9 +329,12 @@ export default function AdminSystemMessagesPage() {
     if (unreadOnly) {
       params.set("unread_only", "true");
     }
+    if (messageTypeFilter !== "all") {
+      params.set("message_type", messageTypeFilter);
+    }
     const qs = params.toString();
     return `/api/v1/system-messages/me?${qs}`;
-  }, [unreadOnly, viewMode, cardViewPage]);
+  }, [unreadOnly, viewMode, cardViewPage, messageTypeFilter]);
 
   const listQuery = useQuery({
     queryKey: ["admin.system-messages", listPath],
@@ -446,13 +449,7 @@ export default function AdminSystemMessagesPage() {
     clearSuccess: () => setSuccess(""),
   });
 
-  const messages = useMemo(() => {
-    const items = listQuery.data?.items ?? [];
-    if (messageTypeFilter === "all") {
-      return items;
-    }
-    return items.filter((item) => item.message_type === messageTypeFilter);
-  }, [listQuery.data?.items, messageTypeFilter]);
+  const messages = useMemo(() => listQuery.data?.items ?? [], [listQuery.data?.items]);
 
   const unreadIds = useMemo(
     () => messages.filter((item) => !item.is_read).map((item) => item.id),
@@ -527,23 +524,37 @@ export default function AdminSystemMessagesPage() {
     };
   }, [updateTableScrollY]);
 
+  const resetCardViewState = () => {
+    setCardViewPage(1);
+    setAllLoadedMessages([]);
+    setIsLoadingMore(false);
+  };
+
   // Update allLoadedMessages when messages data changes in card view
   useEffect(() => {
-    if (viewMode === "card" && !listQuery.isLoading) {
+    if (viewMode !== "card" || listQuery.isLoading) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
       if (cardViewPage === 1) {
-        setAllLoadedMessages(messages);
+        setAllLoadedMessages(() => messages);
       } else {
         setAllLoadedMessages((prev) => {
           if (messages.length === 0) {
             return prev;
           }
-          const existingIds = new Set(prev.map(m => m.id));
-          const newMessages = messages.filter(m => !existingIds.has(m.id));
+          const existingIds = new Set(prev.map((message) => message.id));
+          const newMessages = messages.filter((message) => !existingIds.has(message.id));
           return [...prev, ...newMessages];
         });
       }
       setIsLoadingMore(false);
-    }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
   }, [messages, listQuery.isLoading, viewMode, cardViewPage]);
 
   // Handle infinite scroll for card view
@@ -577,12 +588,6 @@ export default function AdminSystemMessagesPage() {
     cardBody.addEventListener("scroll", handleScroll);
     return () => cardBody.removeEventListener("scroll", handleScroll);
   }, [viewMode, isLoadingMore, listQuery.isLoading, listQuery.data?.total, allLoadedMessages.length]);
-
-  // Reset card view state when filters change
-  useEffect(() => {
-    setCardViewPage(1);
-    setAllLoadedMessages([]);
-  }, [messageTypeFilter, unreadOnly]);
 
   const openCreateMessageModal = () => {
     setError("");
@@ -639,6 +644,7 @@ export default function AdminSystemMessagesPage() {
     return (
       <AntCard
         key={item.id}
+        className="admin-system-messages-message-card"
         size="small"
         title={
           <Space direction="vertical" size={2} style={{ width: "100%" }}>
@@ -662,33 +668,25 @@ export default function AdminSystemMessagesPage() {
         }
       >
         <Space direction="vertical" size={10} style={{ width: "100%" }}>
-          <div>
+          <div className="admin-system-messages-message-card-field">
             <Typography.Text type="secondary">类型</Typography.Text>
-            <div style={{ marginTop: 4 }}>
-              <Tag color={MESSAGE_TYPE_COLORS[item.message_type]}>
-                {MESSAGE_TYPE_LABELS[item.message_type]}
-              </Tag>
-            </div>
+            <Tag color={MESSAGE_TYPE_COLORS[item.message_type]}>
+              {MESSAGE_TYPE_LABELS[item.message_type]}
+            </Tag>
           </div>
-          <div>
+          <div className="admin-system-messages-message-card-field">
             <Typography.Text type="secondary">状态</Typography.Text>
-            <div style={{ marginTop: 4 }}>
-              <Tag color={item.is_read ? "default" : "processing"}>
-                {item.is_read ? "已读" : "未读"}
-              </Tag>
-            </div>
+            <Tag color={item.is_read ? "default" : "processing"}>
+              {item.is_read ? "已读" : "未读"}
+            </Tag>
           </div>
-          <div>
+          <div className="admin-system-messages-message-card-field">
             <Typography.Text type="secondary">内容</Typography.Text>
-            <div style={{ marginTop: 4 }}>
-              <MarkdownPreview compact content={item.content} />
-            </div>
+            <MarkdownPreview compact content={item.content} />
           </div>
-          <div>
+          <div className="admin-system-messages-message-card-field">
             <Typography.Text type="secondary">创建时间</Typography.Text>
-            <div style={{ marginTop: 4 }}>
-              <Typography.Text>{formatDateTime(item.created_at)}</Typography.Text>
-            </div>
+            <Typography.Text>{formatDateTime(item.created_at)}</Typography.Text>
           </div>
         </Space>
       </AntCard>
@@ -851,25 +849,31 @@ export default function AdminSystemMessagesPage() {
         )}
 
         <Form layout="inline" style={{ rowGap: 12 }}>
-          <Form.Item label="类型" className="min-w-[170px]">
+          <Form.Item label="类型" style={{ width: 170 }}>
             <Select<SystemMessageType | "all">
               value={messageTypeFilter}
               options={[
                 { label: "全部类型", value: "all" },
                 ...MESSAGE_TYPE_OPTIONS,
               ]}
-              onChange={setMessageTypeFilter}
+              onChange={(value) => {
+                setMessageTypeFilter(value);
+                resetCardViewState();
+              }}
             />
           </Form.Item>
 
-          <Form.Item label="状态" className="min-w-[170px]">
+          <Form.Item label="状态" style={{ width: 170 }}>
             <Select<"all" | "unread">
               value={unreadOnly ? "unread" : "all"}
               options={[
                 { label: "全部状态", value: "all" },
                 { label: "仅未读", value: "unread" },
               ]}
-              onChange={(value) => setUnreadOnly(value === "unread")}
+              onChange={(value) => {
+                setUnreadOnly(value === "unread");
+                resetCardViewState();
+              }}
             />
           </Form.Item>
 
@@ -889,23 +893,39 @@ export default function AdminSystemMessagesPage() {
               columns={columns}
               dataSource={messages}
               loading={listQuery.isFetching}
-              locale={{ emptyText: <Empty description="暂无系统消息" /> }}
-              pagination={{ pageSize: 20, showSizeChanger: true, hideOnSinglePage: false, showTotal: (total) => `共 ${total} 条` }}
+              locale={{
+                emptyText: (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="暂无系统消息"
+                  />
+                ),
+              }}
+              pagination={{
+                pageSize: 20,
+                showSizeChanger: true,
+                hideOnSinglePage: false,
+                showTotal: (total) => `共 ${total} 条`,
+                style: { marginBottom: 0 },
+              }}
               scroll={{ x: 1100, y: tableScrollY }}
             />
           </div>
         ) : (
-          <div className="mt-4">
+          <div className="admin-system-messages-card-view">
             {listQuery.isLoading && allLoadedMessages.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "40px 0" }}>
+              <div className="admin-system-messages-card-view-state">
                 <Spin tip="加载中..." />
               </div>
             ) : allLoadedMessages.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <Empty description="暂无系统消息" />
+              <div className="admin-system-messages-card-view-state">
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="暂无系统消息"
+                />
               </div>
             ) : (
-              <div>
+              <div className="admin-system-messages-card-view-content">
                 <Row gutter={[12, 12]}>
                   {allLoadedMessages.map((item) => (
                     <Col key={item.id} xs={24} sm={24} md={12} lg={8} xl={6}>

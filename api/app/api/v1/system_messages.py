@@ -9,6 +9,7 @@ from ...schemas.system_message import (
     SystemMessageListResponse,
     SystemMessageMarkReadRequest,
     SystemMessagePublic,
+    SystemMessageType,
 )
 from ...services.system_message_service import (
     create_system_message,
@@ -37,6 +38,7 @@ def get_my_messages(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     unread_only: bool = Query(default=False),
+    message_type: SystemMessageType | None = Query(default=None),
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SystemMessageListResponse:
@@ -47,6 +49,7 @@ def get_my_messages(
         limit=limit,
         offset=offset,
         unread_only=unread_only,
+        message_type=message_type,
     )
     return SystemMessageListResponse(
         items=[SystemMessagePublic.model_validate(m) for m in messages],

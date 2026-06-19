@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+SystemMessageType = Literal["info", "warning", "error", "success"]
+
 
 class SystemMessagePublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -10,7 +12,7 @@ class SystemMessagePublic(BaseModel):
     id: str
     title: str
     content: str
-    message_type: str
+    message_type: SystemMessageType
     target_user_id: str | None
     is_read: bool
     created_at: datetime
@@ -26,7 +28,7 @@ class SystemMessageListResponse(BaseModel):
 class SystemMessageCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     content: str = Field(min_length=1)
-    message_type: Literal["info", "warning", "error", "success"] = Field(default="info")
+    message_type: SystemMessageType = Field(default="info")
     target_user_id: str | None = Field(default=None, description="发送给特定用户，为空则全员广播")
 
 
