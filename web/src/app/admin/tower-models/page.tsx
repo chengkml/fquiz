@@ -30,7 +30,6 @@ import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { AdminPageLoading } from "@/components/admin-page-loading";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { useMobileDetection } from "@/hooks/use-mobile-detection";
@@ -750,7 +749,11 @@ export default function AdminTowerModelsPage() {
   const mounts = mountsQuery.data?.mounts ?? [];
 
   if (initializing) {
-    return <AdminPageLoading tip="初始化中..." minHeightClassName="min-h-[280px]" />;
+    return (
+      <div className="flex min-h-[240px] items-center justify-center">
+        <Spin tip="初始化中..." />
+      </div>
+    );
   }
 
   if (!user) {
