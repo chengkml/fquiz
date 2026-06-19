@@ -633,6 +633,24 @@ export default function AdminUsersPage() {
       width: 140,
     },
     {
+      title: "角色",
+      dataIndex: "role_codes",
+      width: 180,
+      render: (roleCodes: string[]) => (
+        <Space wrap size={[4, 4]}>
+          {roleCodes && roleCodes.length > 0 ? (
+            roleCodes.map((code) => (
+              <Tag key={code} color="blue">
+                {code}
+              </Tag>
+            ))
+          ) : (
+            <Typography.Text type="secondary">-</Typography.Text>
+          )}
+        </Space>
+      ),
+    },
+    {
       title: "邮箱",
       dataIndex: "email",
       width: 200,
@@ -781,6 +799,20 @@ export default function AdminUsersPage() {
             <Typography.Text ellipsis={{ tooltip: userItem.email || "-" }}>
               {userItem.email || "-"}
             </Typography.Text>
+          </div>
+          <div className="admin-users-user-card-field">
+            <Typography.Text type="secondary">角色</Typography.Text>
+            <Space wrap size={[4, 4]}>
+              {userItem.role_codes && userItem.role_codes.length > 0 ? (
+                userItem.role_codes.map((code) => (
+                  <Tag key={code} color="blue">
+                    {code}
+                  </Tag>
+                ))
+              ) : (
+                <Typography.Text type="secondary">-</Typography.Text>
+              )}
+            </Space>
           </div>
           <div className="admin-users-user-card-actions">
             <Space wrap>
