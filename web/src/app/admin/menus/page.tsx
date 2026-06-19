@@ -105,17 +105,13 @@ export default function AdminMenusPage() {
   const [activeKeyword, setActiveKeyword] = useState("");
   const [activeStatusFilter, setActiveStatusFilter] = useState<FilterStatus>("all");
   const [tableScrollY, setTableScrollY] = useState(MENU_TABLE_MIN_SCROLL_Y);
-  const [viewMode, setViewMode] = useState<"table" | "card">(isMobile ? "card" : "table");
+  const viewMode: "table" | "card" = isMobile ? "card" : "table";
   const [form] = Form.useForm<MenuFormValues>();
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const pageCardRef = useRef<HTMLDivElement | null>(null);
 
   const canRead = hasPermission("menu.read") || hasPermission("menu.manage");
   const canManage = hasPermission("menu.manage");
-
-  useEffect(() => {
-    setViewMode(isMobile ? "card" : "table");
-  }, [isMobile]);
 
   useToastFeedback({
     errorMessage: error,
@@ -492,9 +488,7 @@ export default function AdminMenusPage() {
 
     return (
       <AntCard
-        key={menuItem.id}
         size="small"
-        style={{ marginBottom: 12 }}
         title={
           <Space>
             <Typography.Text strong>{menuItem.name}</Typography.Text>
@@ -681,38 +675,74 @@ export default function AdminMenusPage() {
           ) : null
         }
       >
-        <Form layout="inline" style={{ rowGap: 12 }}>
-          <Form.Item label="关键词" className="min-w-[240px]">
-            <Input
-              allowClear
-              value={keyword}
-              onChange={(event) => setKeyword(event.currentTarget.value)}
-              onPressEnter={handleSearch}
-              placeholder="按编码/名称/路径筛选"
-            />
-          </Form.Item>
+        {viewMode === "card" ? (
+          <Form layout="vertical" style={{ marginBottom: 16 }}>
+            <Form.Item style={{ marginBottom: 8 }}>
+              <Input
+                allowClear
+                value={keyword}
+                onChange={(event) => setKeyword(event.currentTarget.value)}
+                onPressEnter={handleSearch}
+                placeholder="按编码/名称/路径筛选"
+              />
+            </Form.Item>
+            <Form.Item style={{ marginBottom: 8 }}>
+              <Select<FilterStatus>
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(value)}
+                options={[
+                  { value: "all", label: "全部" },
+                  { value: "enabled", label: "已启用" },
+                  { value: "disabled", label: "已禁用" },
+                ]}
+                style={{ width: "100%" }}
+              />
+            </Form.Item>
+            <Form.Item style={{ marginBottom: 0 }}>
+              <Button
+                type="primary"
+                onClick={handleSearch}
+                block
+              >
+                搜索
+              </Button>
+            </Form.Item>
+          </Form>
+        ) : (
+          <Form layout="inline" style={{ rowGap: 12 }}>
+            <Form.Item label="关键词" className="min-w-[240px]">
+              <Input
+                allowClear
+                value={keyword}
+                onChange={(event) => setKeyword(event.currentTarget.value)}
+                onPressEnter={handleSearch}
+                placeholder="按编码/名称/路径筛选"
+              />
+            </Form.Item>
 
-          <Form.Item label="状态" className="min-w-[170px]">
-            <Select<FilterStatus>
-              value={statusFilter}
-              onChange={(value) => setStatusFilter(value)}
-              options={[
-                { value: "all", label: "全部" },
-                { value: "enabled", label: "已启用" },
-                { value: "disabled", label: "已禁用" },
-              ]}
-            />
-          </Form.Item>
+            <Form.Item label="状态" className="min-w-[170px]">
+              <Select<FilterStatus>
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(value)}
+                options={[
+                  { value: "all", label: "全部" },
+                  { value: "enabled", label: "已启用" },
+                  { value: "disabled", label: "已禁用" },
+                ]}
+              />
+            </Form.Item>
 
-          <Form.Item>
-            <Button
-              type="primary"
-              onClick={handleSearch}
-            >
-              搜索
-            </Button>
-          </Form.Item>
-        </Form>
+            <Form.Item>
+              <Button
+                type="primary"
+                onClick={handleSearch}
+              >
+                搜索
+              </Button>
+            </Form.Item>
+          </Form>
+        )}
+
         {viewMode === "table" ? (
           <div
             ref={tableScrollAnchorRef}
@@ -752,16 +782,18 @@ export default function AdminMenusPage() {
             />
           </div>
         ) : (
-          <div className="mt-4">
-            {loading ? (
-              <div className="flex min-h-[240px] items-center justify-center">
+          <div className="admin-menus-card-view mt-4">
+            {loading && filteredMenus.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "60px 0" }}>
                 <Spin tip="加载中..." />
               </div>
             ) : filteredMenus.length === 0 ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="未找到符合筛选条件的菜单项。"
-              />
+              <div style={{ textAlign: "center", padding: "60px 0" }}>
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="未找到符合筛选条件的菜单项。"
+                />
+              </div>
             ) : (
               <Row gutter={[12, 12]}>
                 {filteredMenus.map((menuItem) => (
