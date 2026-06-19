@@ -861,7 +861,7 @@ export default function AdminTowerModelsPage() {
                       <>
                         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                           {allLoadedModels.map((row) => (
-                            <Card key={row.id} size="2">
+                            <AntCard key={row.id} size="small">
                               <Space direction="vertical" size={10} className="w-full">
                                 <TowerModelImageCell
                                   model={row}
@@ -894,7 +894,7 @@ export default function AdminTowerModelsPage() {
                                   </Space>
                                 )}
                               </Space>
-                            </Card>
+                            </AntCard>
                           ))}
                         </div>
                         {isLoadingMore && (

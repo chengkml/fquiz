@@ -614,23 +614,27 @@ export default function AdminSystemMessagesPage() {
         disabled: item.is_read || isDeleting || isMarkingRead,
         onClick: () => markReadMutation.mutate([item.id]),
       },
-      canManage && {
-        key: "delete",
-        label: "删除",
-        danger: true,
-        disabled: isDeleting,
-        onClick: () => {
-          Modal.confirm({
-            title: "删除系统消息",
-            content: `确认删除系统消息「${item.title}」吗？`,
-            okText: "删除",
-            cancelText: "取消",
-            okButtonProps: { danger: true },
-            onOk: () => deleteMutation.mutate(item.id),
-          });
-        },
-      },
-    ].filter(Boolean);
+      ...(canManage
+        ? [
+            {
+              key: "delete",
+              label: "删除",
+              danger: true,
+              disabled: isDeleting,
+              onClick: () => {
+                Modal.confirm({
+                  title: "删除系统消息",
+                  content: `确认删除系统消息「${item.title}」吗？`,
+                  okText: "删除",
+                  cancelText: "取消",
+                  okButtonProps: { danger: true },
+                  onOk: () => deleteMutation.mutate(item.id),
+                });
+              },
+            },
+          ]
+        : []),
+    ];
 
     return (
       <AntCard
