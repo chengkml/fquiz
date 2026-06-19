@@ -34,7 +34,7 @@ import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { readApiError } from "@/lib/api";
 import type { SystemParamListResponse, SystemParamSummary } from "@/types/auth";
 
-type StatusFilter = "all" | "enabled" | "disabled";
+type StatusFilter = "enabled" | "disabled" | undefined;
 
 type FormState = {
   param_key: string;
@@ -51,12 +51,6 @@ const EMPTY_FORM: FormState = {
   description: "",
   status: "enabled",
 };
-
-const STATUS_FILTER_OPTIONS = [
-  { label: "全部", value: "all" },
-  { label: "已启用", value: "enabled" },
-  { label: "已禁用", value: "disabled" },
-] as const satisfies ReadonlyArray<{ label: string; value: StatusFilter }>;
 
 const PARAM_STATUS_OPTIONS = [
   { label: "已启用", value: "enabled" },
@@ -76,7 +70,7 @@ export default function AdminSystemParamsPage() {
   const [formApi] = Form.useForm<FormState>();
 
   const [keyword, setKeyword] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(undefined);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [error, setError] = useState("");
@@ -101,7 +95,7 @@ export default function AdminSystemParamsPage() {
     if (keyword.trim()) {
       params.set("keyword", keyword.trim());
     }
-    if (statusFilter !== "all") {
+    if (statusFilter) {
       params.set("status", statusFilter);
     }
     const qs = params.toString();
@@ -354,7 +348,7 @@ export default function AdminSystemParamsPage() {
         title={
           <Space className="min-w-0" size={8}>
             <Typography.Text strong>{param.param_name}</Typography.Text>
-            <Tag color={param.status === "enabled" ? "success" : "default"}>
+            <Tag color={param.status === "enabled" ? "success" : "default"} bordered={false}>
               {param.status === "enabled" ? "已启用" : "已禁用"}
             </Tag>
           </Space>
@@ -480,7 +474,7 @@ export default function AdminSystemParamsPage() {
           ];
 
           return (
-            <Space size="small">
+            <Space wrap>
               <Button size="small" disabled={rowBusy} onClick={() => startEdit(record)}>
                 编辑
               </Button>
@@ -611,50 +605,55 @@ export default function AdminSystemParamsPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col space-y-6">
+    <div className="flex min-h-0 flex-1 flex-col">
       <AntCard
         ref={viewMode === "card" ? pageCardRef : undefined}
-        title="参数列表"
+        className="admin-system-params-page-card"
+        title="系统参数管理"
         extra={(
-          <Space>
-            {listQuery.isFetching && <Spin size="small" />}
-            {canManage ? (
-              <Button type="primary" onClick={startCreate}>
-                新建参数
-              </Button>
-            ) : null}
-          </Space>
+          <Button type="primary" onClick={startCreate}>
+            新建参数
+          </Button>
         )}
       >
-        <Form layout="inline" style={{ rowGap: 12 }}>
-          <Form.Item label="关键词" className="min-w-[240px]">
-            <Input
-              value={keyword}
-              allowClear
-              onChange={(event) => setKeyword(event.currentTarget.value)}
-              placeholder="按参数键/名称/值筛选"
-            />
-          </Form.Item>
-
-          <Form.Item label="状态" className="min-w-[170px]">
-            <Select<StatusFilter>
-              value={statusFilter}
-              options={[...STATUS_FILTER_OPTIONS]}
-              onChange={(value) => setStatusFilter(value)}
-            />
-          </Form.Item>
-
-          <Form.Item>
-            <Button
-              onClick={() => {
-                setKeyword("");
-                setStatusFilter("all");
-              }}
-            >
-              重置筛选
-            </Button>
-          </Form.Item>
-        </Form>
+        {viewMode === "card" ? (
+          <Form layout="vertical" style={{ marginBottom: 16 }}>
+            <Form.Item style={{ marginBottom: 0 }}>
+              <Input
+                allowClear
+                placeholder="按参数键/名称/值搜索"
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+              />
+            </Form.Item>
+          </Form>
+        ) : (
+          <Form layout="inline" style={{ rowGap: 12 }}>
+            <Form.Item label="关键词" style={{ width: 260 }}>
+              <Input
+                allowClear
+                placeholder="按参数键/名称/值搜索"
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+              />
+            </Form.Item>
+            <Form.Item label="状态" style={{ width: 170 }}>
+              <Select<StatusFilter>
+                value={statusFilter}
+                allowClear
+                placeholder="全部"
+                options={[
+                  { value: "enabled", label: "已启用" },
+                  { value: "disabled", label: "已禁用" },
+                ]}
+                onChange={(value) => {
+                  setStatusFilter(value);
+                  setPagination((prev) => ({ ...prev, current: 1 }));
+                }}
+              />
+            </Form.Item>
+          </Form>
+        )}
 
         {viewMode === "table" ? (
           <div
@@ -674,7 +673,7 @@ export default function AdminSystemParamsPage() {
                 total: listQuery.data?.total ?? 0,
                 showSizeChanger: true,
                 pageSizeOptions: [10, 20, 50, 100],
-                showTotal: (total) => `共 ${total} 条`,
+                showTotal: () => `共 ${listQuery.data?.total ?? 0} 条`,
                 hideOnSinglePage: false,
                 style: { marginBottom: 0 },
                 onChange: (page, pageSize) => {
@@ -687,13 +686,15 @@ export default function AdminSystemParamsPage() {
             />
           </div>
         ) : (
-          <div className="admin-system-params-card-view mt-4">
+          <div className="admin-system-params-card-view">
             {listQuery.isLoading && allLoadedParams.length === 0 ? (
-              <div className="flex min-h-[240px] items-center justify-center">
+              <div className="admin-system-params-card-view-state">
                 <Spin tip="加载中..." />
               </div>
             ) : allLoadedParams.length === 0 ? (
-              <Empty description="未找到符合筛选条件的系统参数。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <div className="admin-system-params-card-view-state">
+                <Empty description="未找到符合筛选条件的系统参数。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              </div>
             ) : (
               <div className="admin-system-params-card-view-content">
                 <Row gutter={[12, 12]}>
@@ -723,14 +724,13 @@ export default function AdminSystemParamsPage() {
 
       {canManage && (
         <Modal
-          title={editingId === null ? "新建系统参数" : "编辑系统参数"}
+          title={editingId === null ? "新建系统参数" : `编辑系统参数：${formApi.getFieldValue('param_name')}（ID: ${editingId}）`}
           open={editorOpen}
           onCancel={closeEditor}
           onOk={() => formApi.submit()}
           okText={editingId === null ? "创建" : "保存"}
           cancelText="取消"
           confirmLoading={saveMutation.isPending}
-          width={760}
           destroyOnClose
         >
           <Form<FormState> form={formApi} layout="vertical" initialValues={EMPTY_FORM} onFinish={() => saveMutation.mutate()}>
@@ -740,7 +740,7 @@ export default function AdminSystemParamsPage() {
                 name="param_key"
                 rules={[{ required: true, message: "请输入参数键" }]}
               >
-                <Input disabled={editingId !== null} placeholder="如 site.title" />
+                <Input disabled={editingId !== null} placeholder="请输入参数键" />
               </Form.Item>
 
               <Form.Item<FormState>
@@ -748,7 +748,7 @@ export default function AdminSystemParamsPage() {
                 name="param_name"
                 rules={[{ required: true, message: "请输入参数名称" }]}
               >
-                <Input placeholder="如 站点标题" />
+                <Input placeholder="请输入参数名称" />
               </Form.Item>
 
               <Form.Item<FormState> className="md:col-span-2" label="参数值" name="param_value">
