@@ -6,12 +6,13 @@ import type { ComponentType } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Alert,
   Button,
   Card,
+  Col,
   Empty,
   Form,
   Input,
+  Row,
   Select,
   Space,
   Spin,
@@ -24,6 +25,8 @@ import {
 } from "antd";
 
 import { useAuth } from "@/components/auth-provider";
+import { useMobileDetection } from "@/hooks/use-mobile-detection";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { readApiError } from "@/lib/api";
 import { getTaskDisplayName } from "@/lib/celery-task-display";
 import {
@@ -149,6 +152,7 @@ function parseStatusFilter(value: string | undefined): "all" | "online" | "offli
 
 export default function AdminTaskMonitorPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
+  const isMobile = useMobileDetection();
   const canRead = hasPermission("celery.read") || hasPermission("celery.manage");
 
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -158,6 +162,7 @@ export default function AdminTaskMonitorPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "online" | "offline">("all");
   const [tableScrollY, setTableScrollY] = useState(TASK_MONITOR_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const viewMode: "table" | "card" = isMobile ? "card" : "table";
 
   const workersOverviewQuery = useQuery({
     queryKey: ["flower-workers-overview"],
@@ -377,6 +382,18 @@ export default function AdminTaskMonitorPage() {
     setStatusFilter("all");
   };
 
+  const workersOverviewErrorMessage = workersOverviewQuery.error instanceof Error
+    ? formatTaskMonitorErrorMessage(workersOverviewQuery.error.message, "任务监控数据加载失败，请稍后重试。")
+    : "";
+  const allTasksErrorMessage = allTasksQuery.error instanceof Error
+    ? formatTaskMonitorErrorMessage(allTasksQuery.error.message, "任务列表数据加载失败，请稍后重试。")
+    : "";
+  const anyError = workersOverviewErrorMessage || allTasksErrorMessage;
+
+  useToastFeedback({
+    errorMessage: anyError,
+  });
+
   const updateTableScrollY = useCallback(() => {
     if (typeof window === "undefined") {
       return;
@@ -407,6 +424,9 @@ export default function AdminTaskMonitorPage() {
     if (typeof window === "undefined") {
       return;
     }
+    if (viewMode !== "table") {
+      return;
+    }
     window.requestAnimationFrame(updateTableScrollY);
   }, [
     allTasksQuery.isFetching,
@@ -414,6 +434,7 @@ export default function AdminTaskMonitorPage() {
     statusFilter,
     updateTableScrollY,
     workerKeyword,
+    viewMode,
     workersOverviewQuery.error,
     workersOverviewQuery.isFetching,
     workersOverview?.summary.total,
@@ -421,6 +442,9 @@ export default function AdminTaskMonitorPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") {
+      return;
+    }
+    if (viewMode !== "table") {
       return;
     }
 
@@ -432,10 +456,13 @@ export default function AdminTaskMonitorPage() {
     return () => {
       window.removeEventListener("resize", onViewportChange);
     };
-  }, [updateTableScrollY]);
+  }, [updateTableScrollY, viewMode]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    if (viewMode !== "table") {
       return;
     }
 
@@ -452,7 +479,63 @@ export default function AdminTaskMonitorPage() {
     return () => {
       resizeObserver.disconnect();
     };
-  }, [updateTableScrollY]);
+  }, [updateTableScrollY, viewMode]);
+
+  const renderTaskCard = (task: TaskTableRow) => (
+    <AntCard
+      key={task.key}
+      className="admin-task-monitor-task-card"
+      size="small"
+      title={
+        <Space className="min-w-0" size={8}>
+          <Typography.Text strong ellipsis={{ tooltip: getTaskDisplayName(task.name) }}>
+            {getTaskDisplayName(task.name)}
+          </Typography.Text>
+          {renderTaskStateTag(task.state)}
+        </Space>
+      }
+      extra={renderTaskSourceTag(task.source)}
+    >
+      <Space direction="vertical" size={10} style={{ width: "100%" }}>
+        <div className="admin-task-monitor-task-card-field">
+          <Typography.Text type="secondary">任务 ID</Typography.Text>
+          <Typography.Text copyable ellipsis={{ tooltip: task.task_id }}>
+            {task.task_id}
+          </Typography.Text>
+        </div>
+        <div className="admin-task-monitor-task-card-field">
+          <Typography.Text type="secondary">队列</Typography.Text>
+          <Typography.Text>{getQueueDisplayName(task.queue_name)}</Typography.Text>
+        </div>
+        <div className="admin-task-monitor-task-card-field">
+          <Typography.Text type="secondary">节点</Typography.Text>
+          <Typography.Text ellipsis={{ tooltip: task.worker || "-" }}>
+            {task.worker || "-"}
+          </Typography.Text>
+        </div>
+        <div className="admin-task-monitor-task-card-field">
+          <Typography.Text type="secondary">接收</Typography.Text>
+          <Typography.Text>{formatDateTime(task.received_at)}</Typography.Text>
+        </div>
+        <div className="admin-task-monitor-task-card-field">
+          <Typography.Text type="secondary">完成</Typography.Text>
+          <Typography.Text>{formatDateTime(task.finished_at)}</Typography.Text>
+        </div>
+        <div className="admin-task-monitor-task-card-field">
+          <Typography.Text type="secondary">时长</Typography.Text>
+          <Typography.Text>{formatTaskMonitorDuration(task.runtime_seconds)}</Typography.Text>
+        </div>
+        {task.exception_text && (
+          <div className="admin-task-monitor-task-card-field">
+            <Typography.Text type="secondary">异常</Typography.Text>
+            <Typography.Text type="danger" ellipsis={{ tooltip: task.exception_text }}>
+              {task.exception_text}
+            </Typography.Text>
+          </div>
+        )}
+      </Space>
+    </AntCard>
+  );
 
   if (initializing) {
     return (
@@ -491,10 +574,10 @@ export default function AdminTaskMonitorPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col space-y-6">
+    <div className="flex min-h-0 flex-1 flex-col">
       <AntCard
+        className="admin-task-monitor-page-card"
         title="任务监控"
-        style={{ height: '100%' }}
         extra={(
           <Space>
             {(workersOverviewQuery.isFetching || allTasksQuery.isFetching) && <Spin size="small" />}
@@ -510,57 +593,110 @@ export default function AdminTaskMonitorPage() {
           </Space>
         )}
       >
-        <Form layout="inline" style={{ rowGap: 12 }}>
-          <Form.Item label="执行节点" className="min-w-[220px]">
-            <Input
-              allowClear
-              placeholder="按执行节点名称筛选"
-              value={workerKeyword}
-              onChange={(event) => setWorkerKeyword(event.target.value)}
-            />
-          </Form.Item>
+        {viewMode === "card" ? (
+          <Form layout="vertical" style={{ marginBottom: 16 }}>
+            <Form.Item label="执行节点" style={{ marginBottom: 12 }}>
+              <Input
+                allowClear
+                placeholder="按执行节点名称筛选"
+                value={workerKeyword}
+                onChange={(event) => setWorkerKeyword(event.target.value)}
+              />
+            </Form.Item>
 
-          <Form.Item label="队列" className="min-w-[220px]">
-            <Input
-              allowClear
-              placeholder="按队列名称筛选"
-              value={queueKeyword}
-              onChange={(event) => setQueueKeyword(event.target.value)}
-            />
-          </Form.Item>
+            <Form.Item label="队列" style={{ marginBottom: 12 }}>
+              <Input
+                allowClear
+                placeholder="按队列名称筛选"
+                value={queueKeyword}
+                onChange={(event) => setQueueKeyword(event.target.value)}
+              />
+            </Form.Item>
 
-          <Form.Item label="任务" className="min-w-[240px]">
-            <Input
-              allowClear
-              placeholder="按任务 ID / 任务名称筛选"
-              value={taskKeyword}
-              onChange={(event) => setTaskKeyword(event.target.value)}
-            />
-          </Form.Item>
+            <Form.Item label="任务" style={{ marginBottom: 12 }}>
+              <Input
+                allowClear
+                placeholder="按任务 ID / 任务名称筛选"
+                value={taskKeyword}
+                onChange={(event) => setTaskKeyword(event.target.value)}
+              />
+            </Form.Item>
 
-          <Form.Item label="状态" className="min-w-[170px]">
-            <Select
-              value={statusFilter}
-              onChange={(value) => setStatusFilter(parseStatusFilter(value))}
-              options={[
-                { label: "全部状态", value: "all" },
-                { label: "在线", value: "online" },
-                { label: "离线", value: "offline" },
-              ]}
-            />
-          </Form.Item>
+            <Form.Item label="状态" style={{ marginBottom: 12 }}>
+              <Select
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(parseStatusFilter(value))}
+                options={[
+                  { label: "全部状态", value: "all" },
+                  { label: "在线", value: "online" },
+                  { label: "离线", value: "offline" },
+                ]}
+              />
+            </Form.Item>
 
-          <Form.Item>
-            <Space size={8}>
-              <Text>自动刷新</Text>
-              <Switch checked={autoRefresh} onChange={setAutoRefresh} />
-            </Space>
-          </Form.Item>
+            <Form.Item style={{ marginBottom: 0 }}>
+              <Space size={12} wrap>
+                <Space size={8}>
+                  <Text>自动刷新</Text>
+                  <Switch checked={autoRefresh} onChange={setAutoRefresh} />
+                </Space>
+                <Button onClick={handleResetFilters}>重置筛选</Button>
+              </Space>
+            </Form.Item>
+          </Form>
+        ) : (
+          <Form layout="inline" style={{ rowGap: 12 }}>
+            <Form.Item label="执行节点" style={{ width: 220 }}>
+              <Input
+                allowClear
+                placeholder="按执行节点名称筛选"
+                value={workerKeyword}
+                onChange={(event) => setWorkerKeyword(event.target.value)}
+              />
+            </Form.Item>
 
-          <Form.Item>
-            <Button onClick={handleResetFilters}>重置筛选</Button>
-          </Form.Item>
-        </Form>
+            <Form.Item label="队列" style={{ width: 220 }}>
+              <Input
+                allowClear
+                placeholder="按队列名称筛选"
+                value={queueKeyword}
+                onChange={(event) => setQueueKeyword(event.target.value)}
+              />
+            </Form.Item>
+
+            <Form.Item label="任务" style={{ width: 240 }}>
+              <Input
+                allowClear
+                placeholder="按任务 ID / 任务名称筛选"
+                value={taskKeyword}
+                onChange={(event) => setTaskKeyword(event.target.value)}
+              />
+            </Form.Item>
+
+            <Form.Item label="状态" style={{ width: 170 }}>
+              <Select
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(parseStatusFilter(value))}
+                options={[
+                  { label: "全部状态", value: "all" },
+                  { label: "在线", value: "online" },
+                  { label: "离线", value: "offline" },
+                ]}
+              />
+            </Form.Item>
+
+            <Form.Item>
+              <Space size={8}>
+                <Text>自动刷新</Text>
+                <Switch checked={autoRefresh} onChange={setAutoRefresh} />
+              </Space>
+            </Form.Item>
+
+            <Form.Item>
+              <Button onClick={handleResetFilters}>重置筛选</Button>
+            </Form.Item>
+          </Form>
+        )}
 
         <Space className="mt-4" size={[16, 8]} wrap>
           <Text type="secondary">生成时间：{formatDateTime(workersOverview?.generated_at)}</Text>
@@ -570,36 +706,16 @@ export default function AdminTaskMonitorPage() {
           <Text type="secondary">任务：{filteredTaskRows.length} 条</Text>
         </Space>
 
-        {workersOverviewQuery.error && (
-          <Alert
-            className="mt-4"
-            type="error"
-            showIcon
-            message={formatTaskMonitorErrorMessage(
-              workersOverviewQuery.error instanceof Error ? workersOverviewQuery.error.message : "",
-              "任务监控数据加载失败，请稍后重试。",
-            )}
-          />
-        )}
-        {allTasksQuery.error && (
-          <Alert
-            className="mt-4"
-            type="error"
-            showIcon
-            message={formatTaskMonitorErrorMessage(
-              allTasksQuery.error instanceof Error ? allTasksQuery.error.message : "",
-              "任务列表数据加载失败，请稍后重试。",
-            )}
-          />
-        )}
-
         {!workersOverview && !workersOverviewQuery.isFetching && (
           <div className="mt-4">
-            <Empty description="暂无任务监控数据" />
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="暂无任务监控数据"
+            />
           </div>
         )}
 
-        {workersOverview && (
+        {workersOverview && viewMode === "table" ? (
           <div
             ref={tableScrollAnchorRef}
             className="admin-task-monitor-table-anchor mt-4"
@@ -609,6 +725,8 @@ export default function AdminTaskMonitorPage() {
               rowKey={(record) => record.key}
               columns={taskColumns}
               dataSource={filteredTaskRows}
+              loading={workersOverviewQuery.isLoading || allTasksQuery.isLoading}
+              tableLayout="fixed"
               pagination={{
                 pageSize: 50,
                 showSizeChanger: true,
@@ -625,10 +743,40 @@ export default function AdminTaskMonitorPage() {
                   />
                 ),
               }}
-              scroll={{ x: 2600, y: tableScrollY }}
+              scroll={{ y: tableScrollY }}
             />
           </div>
-        )}
+        ) : workersOverview ? (
+          <div className="admin-task-monitor-card-view">
+            {allTasksQuery.isLoading ? (
+              <div className="admin-task-monitor-card-view-state">
+                <Spin tip="加载中..." />
+              </div>
+            ) : filteredTaskRows.length === 0 ? (
+              <div className="admin-task-monitor-card-view-state">
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="暂无符合筛选条件的任务数据。"
+                />
+              </div>
+            ) : (
+              <div className="admin-task-monitor-card-view-content">
+                <Row gutter={[12, 12]}>
+                  {filteredTaskRows.map((task) => (
+                    <Col key={task.key} xs={24} sm={24} md={12} lg={8} xl={6}>
+                      {renderTaskCard(task)}
+                    </Col>
+                  ))}
+                </Row>
+                <div style={{ textAlign: "center", padding: "20px 0" }}>
+                  <Typography.Text type="secondary">
+                    已加载全部 {filteredTaskRows.length} 条数据
+                  </Typography.Text>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
       </AntCard>
     </div>
   );
