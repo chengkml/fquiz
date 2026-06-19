@@ -503,6 +503,14 @@ body {
   flex-direction: column;
 }
 
+.admin-atp-models-card-view-state {
+  display: flex;
+  min-height: 240px;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+}
+
 .admin-atp-models-model-card {
   height: 100%;
   border-color: color-mix(in srgb, var(--fquiz-theme-primary) 26%, var(--ant-color-border-secondary));

@@ -8,6 +8,7 @@ import {
   Button,
   Card,
   Col,
+  Empty,
   Form,
   Input,
   Popconfirm,
@@ -583,7 +584,14 @@ export default function AtpModelsPage() {
               loading={assetsQuery.isLoading}
               columns={columns}
               dataSource={assetItems}
-              locale={{ emptyText: "暂无 ATP 模型" }}
+              locale={{
+                emptyText: (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="暂无 ATP 模型"
+                  />
+                ),
+              }}
               pagination={false}
               scroll={{ x: 1080, y: tableScrollY }}
             />
@@ -591,12 +599,15 @@ export default function AtpModelsPage() {
         ) : (
           <div className="admin-atp-models-card-view mt-4">
             {assetsQuery.isLoading ? (
-              <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "240px" }}>
+              <div className="admin-atp-models-card-view-state">
                 <Spin tip="加载中..." />
               </div>
             ) : assetItems.length === 0 ? (
-              <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "240px" }}>
-                <Typography.Text type="secondary">暂无 ATP 模型</Typography.Text>
+              <div className="admin-atp-models-card-view-state">
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="暂无 ATP 模型"
+                />
               </div>
             ) : (
               <Row gutter={[12, 12]}>
