@@ -96,7 +96,7 @@ export default function AdminUsersPage() {
   const [cardViewPage, setCardViewPage] = useState(1);
   const [allLoadedUsers, setAllLoadedUsers] = useState<UserPublic[]>([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const cardViewScrollRef = useRef<HTMLDivElement | null>(null);
+  const cardViewContainerRef = useRef<HTMLDivElement | null>(null);
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -634,12 +634,15 @@ export default function AdminUsersPage() {
   useEffect(() => {
     if (viewMode !== "card") return;
 
+    const container = cardViewContainerRef.current;
+    if (!container) return;
+
     const handleScroll = () => {
       if (isLoadingMore || usersQuery.isLoading) return;
 
-      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-      const scrollHeight = document.documentElement.scrollHeight;
-      const clientHeight = document.documentElement.clientHeight;
+      const scrollTop = container.scrollTop;
+      const scrollHeight = container.scrollHeight;
+      const clientHeight = container.clientHeight;
 
       if (scrollTop + clientHeight >= scrollHeight - 100) {
         const total = usersQuery.data?.total ?? 0;
@@ -653,8 +656,8 @@ export default function AdminUsersPage() {
       }
     };
 
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
+    container.addEventListener("scroll", handleScroll);
+    return () => container.removeEventListener("scroll", handleScroll);
   }, [viewMode, isLoadingMore, usersQuery.isLoading, usersQuery.data?.total, allLoadedUsers.length]);
 
   // Reset card view state when switching modes or filters change
@@ -1088,7 +1091,7 @@ export default function AdminUsersPage() {
             />
           </div>
         ) : (
-          <div className="admin-users-card-view">
+          <div ref={cardViewContainerRef} className="admin-users-card-view">
             {usersQuery.isLoading && allLoadedUsers.length === 0 ? (
               <div className="admin-users-card-view-state">
                 <Spin tip="加载中..." />
