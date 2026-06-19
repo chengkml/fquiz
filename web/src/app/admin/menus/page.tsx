@@ -26,7 +26,7 @@ import {
   type MenuProps,
   type TableColumnsType,
 } from "antd";
-import { MoreOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { MoreOutlined, EditOutlined } from "@ant-design/icons";
 import type { CSSProperties, ComponentType } from "react";
 
 import { useAuth } from "@/components/auth-provider";
@@ -91,13 +91,15 @@ function normalizeMenuItemPath(menu: MenuItem): MenuItem {
 
 export default function AdminMenusPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
-  const { message: messageApi, modal } = App.useApp();
+  const { message: messageApi } = App.useApp();
   const isMobile = useMobileDetection();
   const [menus, setMenus] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingMenuId, setDeletingMenuId] = useState<string | null>(null);
+  const [updatingStatusMenuId, setUpdatingStatusMenuId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingMenuId, setEditingMenuId] = useState<string | null>(null);
   const [keyword, setKeyword] = useState("");
@@ -120,7 +122,9 @@ export default function AdminMenusPage() {
 
   useToastFeedback({
     errorMessage: error,
+    successMessage: success,
     clearError: () => setError(""),
+    clearSuccess: () => setSuccess(""),
   });
 
   const parentOptions = useMemo(
@@ -369,6 +373,7 @@ export default function AdminMenusPage() {
   const removeMenu = useCallback(async (menu: MenuItem) => {
     setDeletingMenuId(menu.id);
     setError("");
+    setSuccess("");
 
     try {
       const response = await fetchWithAuth(`/api/v1/admin/menus/${menu.id}`, {
@@ -390,6 +395,34 @@ export default function AdminMenusPage() {
       setDeletingMenuId(null);
     }
   }, [closeDialog, editingMenuId, fetchWithAuth, loadMenus, messageApi]);
+
+  const updateMenuStatus = useCallback(async (menu: MenuItem) => {
+    const nextStatus: "enabled" | "disabled" = menu.status === "enabled" ? "disabled" : "enabled";
+
+    setUpdatingStatusMenuId(menu.id);
+    setError("");
+    setSuccess("");
+
+    try {
+      const response = await fetchWithAuth(`/api/v1/admin/menus/${menu.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+
+      const payload = await loadMenus();
+      if (payload) {
+        setSuccess(nextStatus === "enabled" ? "菜单已启用" : "菜单已禁用");
+      }
+    } catch (candidate) {
+      setError(candidate instanceof Error ? candidate.message : "菜单状态更新失败");
+    } finally {
+      setUpdatingStatusMenuId(null);
+    }
+  }, [fetchWithAuth, loadMenus]);
 
   const columns = useMemo<TableColumnsType<MenuItem>>(() => {
     const base: TableColumnsType<MenuItem> = [
@@ -441,8 +474,9 @@ export default function AdminMenusPage() {
       fixed: "right",
       width: 180,
       render: (_, record) => {
+        const updatingLoading = updatingStatusMenuId === record.id;
         const deleteLoading = deletingMenuId === record.id;
-        const menuBusy = deleteLoading;
+        const menuBusy = updatingLoading || deleteLoading;
 
         const moreMenuItems: MenuProps["items"] = [
           {
@@ -461,29 +495,7 @@ export default function AdminMenusPage() {
             key: "toggle-status",
             label: record.status === "enabled" ? "禁用" : "启用",
             disabled: menuBusy,
-            onClick: async () => {
-              try {
-                const response = await fetchWithAuth(`/api/menus/${record.id}`, {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    status: record.status === "enabled" ? "disabled" : "enabled",
-                  }),
-                });
-                if (!response.ok) {
-                  const msg = await readApiError(response);
-                  setError(msg);
-                  messageApi.error(msg);
-                  return;
-                }
-                messageApi.success("菜单状态已更新");
-                await loadMenus();
-              } catch (err) {
-                const msg = err instanceof Error ? err.message : "更新失败";
-                setError(msg);
-                messageApi.error(msg);
-              }
-            },
+            onClick: () => updateMenuStatus(record),
           },
         ];
 
@@ -507,7 +519,7 @@ export default function AdminMenusPage() {
             </Popconfirm>
 
             <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
-              <Button size="small" disabled={menuBusy} icon={<MoreOutlined />} />
+              <Button size="small" loading={updatingLoading} disabled={menuBusy} icon={<MoreOutlined />} />
             </Dropdown>
           </Space>
         );
@@ -515,10 +527,12 @@ export default function AdminMenusPage() {
     });
 
     return base;
-  }, [canManage, deletingMenuId, fetchWithAuth, loadMenus, menuNameById, messageApi, removeMenu, setError, startEdit]);
+  }, [canManage, deletingMenuId, menuNameById, removeMenu, startEdit, updateMenuStatus, updatingStatusMenuId]);
 
   const renderMenuCard = (menuItem: MenuItem) => {
-    const menuBusy = deletingMenuId === menuItem.id;
+    const updatingLoading = updatingStatusMenuId === menuItem.id;
+    const deleteLoading = deletingMenuId === menuItem.id;
+    const menuBusy = updatingLoading || deleteLoading;
 
     const moreMenuItems: MenuProps["items"] = [
       {
@@ -537,29 +551,7 @@ export default function AdminMenusPage() {
         key: "toggle-status",
         label: menuItem.status === "enabled" ? "禁用" : "启用",
         disabled: menuBusy || !canManage,
-        onClick: async () => {
-          try {
-            const response = await fetchWithAuth(`/api/menus/${menuItem.id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                status: menuItem.status === "enabled" ? "disabled" : "enabled",
-              }),
-            });
-            if (!response.ok) {
-              const msg = await readApiError(response);
-              setError(msg);
-              messageApi.error(msg);
-              return;
-            }
-            messageApi.success("菜单状态已更新");
-            await loadMenus();
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : "更新失败";
-            setError(msg);
-            messageApi.error(msg);
-          }
-        },
+        onClick: () => updateMenuStatus(menuItem),
       },
     ];
 
@@ -585,7 +577,7 @@ export default function AdminMenusPage() {
                 onClick={() => startEdit(menuItem)}
               />
               <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
-                <Button type="text" size="small" disabled={menuBusy} icon={<MoreOutlined />} />
+                <Button type="text" size="small" loading={updatingLoading} disabled={menuBusy} icon={<MoreOutlined />} />
               </Dropdown>
             </Space>
           ) : null
