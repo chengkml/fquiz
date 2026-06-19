@@ -828,7 +828,7 @@ export default function AdminUsersPage() {
         className="admin-users-user-card"
         size="small"
         title={
-          <Space className="min-w-0" size={8}>
+          <Space className="min-w-0" size={8} onClick={(e) => e.stopPropagation()}>
             <Typography.Text strong>{userItem.username}</Typography.Text>
             <Tag color={userItem.status === "active" ? "green" : "default"}>
               {statusLabel(userItem.status)}
@@ -836,9 +836,11 @@ export default function AdminUsersPage() {
           </Space>
         }
         extra={
-          <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
-            <Button size="small" disabled={rowBusy} icon={<MoreOutlined />} />
-          </Dropdown>
+          <div onClick={(e) => e.stopPropagation()}>
+            <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+              <Button size="small" disabled={rowBusy} icon={<MoreOutlined />} />
+            </Dropdown>
+          </div>
         }
         onClick={() => !rowBusy && openEditUserModal(userItem)}
         style={{ cursor: rowBusy ? "default" : "pointer" }}
