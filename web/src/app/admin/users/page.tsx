@@ -807,12 +807,6 @@ export default function AdminUsersPage() {
             <Typography.Text copyable>{userItem.id}</Typography.Text>
           </div>
           <div className="admin-users-user-card-field">
-            <Typography.Text type="secondary">邮箱</Typography.Text>
-            <Typography.Text ellipsis={{ tooltip: userItem.email || "-" }}>
-              {userItem.email || "-"}
-            </Typography.Text>
-          </div>
-          <div className="admin-users-user-card-field">
             <Typography.Text type="secondary">角色</Typography.Text>
             <Space wrap size={[4, 4]}>
               {userItem.role_codes && userItem.role_codes.length > 0 ? (
@@ -825,6 +819,12 @@ export default function AdminUsersPage() {
                 <Typography.Text type="secondary">-</Typography.Text>
               )}
             </Space>
+          </div>
+          <div className="admin-users-user-card-field">
+            <Typography.Text type="secondary">邮箱</Typography.Text>
+            <Typography.Text ellipsis={{ tooltip: userItem.email || "-" }}>
+              {userItem.email || "-"}
+            </Typography.Text>
           </div>
           <div className="admin-users-user-card-actions">
             <Space wrap>
