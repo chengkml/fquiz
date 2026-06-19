@@ -50,7 +50,6 @@ type EditUserValues = {
   user_id: string;
   username: string;
   email: string;
-  status: "active" | "disabled";
 };
 
 type ResetPasswordValues = {
@@ -408,7 +407,6 @@ export default function AdminUsersPage() {
       user_id: target.id,
       username: target.username,
       email: target.email,
-      status: target.status === "disabled" ? "disabled" : "active",
     });
   };
 
@@ -423,7 +421,6 @@ export default function AdminUsersPage() {
     const nextUserId = values.user_id.trim();
     const nextUsername = values.username.trim();
     const nextEmail = values.email ? values.email.trim().toLowerCase() : "";
-    const nextStatus = values.status;
 
     const payload: { new_user_id?: string; username?: string; email?: string; status?: "active" | "disabled" } = {};
 
@@ -440,9 +437,6 @@ export default function AdminUsersPage() {
     }
     if (nextEmail && nextEmail !== editingUser.email.toLowerCase()) {
       payload.email = nextEmail;
-    }
-    if (nextStatus !== editingUser.status) {
-      payload.status = nextStatus;
     }
 
     if (Object.keys(payload).length === 0) {
@@ -1028,17 +1022,6 @@ export default function AdminUsersPage() {
             ]}
           >
             <Input placeholder="请输入邮箱" />
-          </Form.Item>
-          <Form.Item
-            label="状态"
-            name="status"
-          >
-            <Select
-              options={[
-                { label: "启用", value: "active" },
-                { label: "禁用", value: "disabled" },
-              ]}
-            />
           </Form.Item>
         </Form>
       </Modal>
