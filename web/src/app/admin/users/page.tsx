@@ -1008,32 +1008,45 @@ export default function AdminUsersPage() {
           </Button>
         )}
       >
-        <Form layout="inline" style={{ rowGap: 12 }}>
-          <Form.Item label="关键词" style={{ width: 260 }}>
-            <Input
-              allowClear
-              placeholder="按用户 ID/邮箱/用户名搜索"
-              value={keywordInput}
-              onChange={(event) => handleKeywordChange(event.target.value)}
-            />
-          </Form.Item>
+        {viewMode === "card" ? (
+          <Form layout="vertical" style={{ marginBottom: 16 }}>
+            <Form.Item style={{ marginBottom: 0 }}>
+              <Input
+                allowClear
+                placeholder="按用户 ID/邮箱/用户名搜索"
+                value={keywordInput}
+                onChange={(event) => handleKeywordChange(event.target.value)}
+              />
+            </Form.Item>
+          </Form>
+        ) : (
+          <Form layout="inline" style={{ rowGap: 12 }}>
+            <Form.Item label="关键词" style={{ width: 260 }}>
+              <Input
+                allowClear
+                placeholder="按用户 ID/邮箱/用户名搜索"
+                value={keywordInput}
+                onChange={(event) => handleKeywordChange(event.target.value)}
+              />
+            </Form.Item>
 
-          <Form.Item label="状态" style={{ width: 170 }}>
-            <Select<"active" | "disabled">
-              value={statusFilter}
-              allowClear
-              placeholder="全部"
-              options={[
-                { value: "active", label: "已启用" },
-                { value: "disabled", label: "已禁用" },
-              ]}
-              onChange={(value) => {
-                setStatusFilter(value);
-                setPagination((prev) => ({ ...prev, current: 1 }));
-              }}
-            />
-          </Form.Item>
-        </Form>
+            <Form.Item label="状态" style={{ width: 170 }}>
+              <Select<"active" | "disabled">
+                value={statusFilter}
+                allowClear
+                placeholder="全部"
+                options={[
+                  { value: "active", label: "已启用" },
+                  { value: "disabled", label: "已禁用" },
+                ]}
+                onChange={(value) => {
+                  setStatusFilter(value);
+                  setPagination((prev) => ({ ...prev, current: 1 }));
+                }}
+              />
+            </Form.Item>
+          </Form>
+        )}
 
         {viewMode === "table" ? (
           <div
