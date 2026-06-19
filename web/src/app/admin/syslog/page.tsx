@@ -52,8 +52,51 @@ export default function AdminSyslogPage() {
   const [allLoadedLogs, setAllLoadedLogs] = useState<AuditLogItem[]>([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const pageCardRef = useRef<HTMLDivElement | null>(null);
+  const actionDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const userIdDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const canRead = hasPermission("menu.read") || hasPermission("menu.manage");
+
+  const handleActionChange = (value: string) => {
+    setDraftFilters((prev) => ({ ...prev, action: value }));
+
+    if (actionDebounceTimeoutRef.current) {
+      clearTimeout(actionDebounceTimeoutRef.current);
+    }
+
+    actionDebounceTimeoutRef.current = setTimeout(() => {
+      setFilters((prev) => ({ ...prev, action: value.trim() }));
+      setOffset(0);
+      setCardViewPage(1);
+      setAllLoadedLogs([]);
+    }, 500);
+  };
+
+  const handleUserIdChange = (value: string) => {
+    setDraftFilters((prev) => ({ ...prev, user_id: value }));
+
+    if (userIdDebounceTimeoutRef.current) {
+      clearTimeout(userIdDebounceTimeoutRef.current);
+    }
+
+    userIdDebounceTimeoutRef.current = setTimeout(() => {
+      setFilters((prev) => ({ ...prev, user_id: value.trim() }));
+      setOffset(0);
+      setCardViewPage(1);
+      setAllLoadedLogs([]);
+    }, 500);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (actionDebounceTimeoutRef.current) {
+        clearTimeout(actionDebounceTimeoutRef.current);
+      }
+      if (userIdDebounceTimeoutRef.current) {
+        clearTimeout(userIdDebounceTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const logsPath = useMemo(() => {
     const params = new URLSearchParams();
@@ -345,12 +388,7 @@ export default function AdminSyslogPage() {
                 allowClear
                 placeholder="按动作筛选（如 auth.login）"
                 value={draftFilters.action}
-                onChange={(event) =>
-                  setDraftFilters((prev) => ({
-                    ...prev,
-                    action: event.target.value,
-                  }))
-                }
+                onChange={(event) => handleActionChange(event.target.value)}
               />
             </Form.Item>
             <Form.Item label="用户ID">
@@ -358,12 +396,7 @@ export default function AdminSyslogPage() {
                 allowClear
                 placeholder="按用户ID筛选（如 openclaw）"
                 value={draftFilters.user_id}
-                onChange={(event) =>
-                  setDraftFilters((prev) => ({
-                    ...prev,
-                    user_id: event.target.value,
-                  }))
-                }
+                onChange={(event) => handleUserIdChange(event.target.value)}
               />
             </Form.Item>
             <Form.Item>
@@ -399,12 +432,7 @@ export default function AdminSyslogPage() {
                 allowClear
                 placeholder="按动作筛选（如 auth.login）"
                 value={draftFilters.action}
-                onChange={(event) =>
-                  setDraftFilters((prev) => ({
-                    ...prev,
-                    action: event.target.value,
-                  }))
-                }
+                onChange={(event) => handleActionChange(event.target.value)}
               />
             </Form.Item>
             <Form.Item label="用户ID" className="min-w-[280px]">
@@ -412,12 +440,7 @@ export default function AdminSyslogPage() {
                 allowClear
                 placeholder="按用户ID筛选（如 openclaw）"
                 value={draftFilters.user_id}
-                onChange={(event) =>
-                  setDraftFilters((prev) => ({
-                    ...prev,
-                    user_id: event.target.value,
-                  }))
-                }
+                onChange={(event) => handleUserIdChange(event.target.value)}
               />
             </Form.Item>
             <Form.Item>
