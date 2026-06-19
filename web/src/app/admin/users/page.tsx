@@ -848,7 +848,7 @@ export default function AdminUsersPage() {
         <Space direction="vertical" size={10} style={{ width: "100%" }}>
           <div className="admin-users-user-card-field">
             <Typography.Text type="secondary">用户 ID</Typography.Text>
-            <Typography.Text copyable>{userItem.id}</Typography.Text>
+            <Typography.Text>{userItem.id}</Typography.Text>
           </div>
           <div className="admin-users-user-card-field">
             <Typography.Text type="secondary">角色</Typography.Text>
