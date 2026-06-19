@@ -1122,7 +1122,7 @@ export default function AdminElevationPage() {
         )}
       >
         <Form layout="inline" style={{ rowGap: 12 }}>
-          <Form.Item label="关键词" className="min-w-[240px]">
+          <Form.Item label="关键词" style={{ width: 260 }}>
             <Input
               allowClear
               placeholder="按编码/名称/来源搜索"
@@ -1132,7 +1132,7 @@ export default function AdminElevationPage() {
             />
           </Form.Item>
 
-          <Form.Item label="状态" className="min-w-[170px]">
+          <Form.Item label="状态" style={{ width: 170 }}>
             <Select<"all" | "active" | "disabled">
               allowClear
               value={statusFilter}
