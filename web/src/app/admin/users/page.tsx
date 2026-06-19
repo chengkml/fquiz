@@ -614,10 +614,13 @@ export default function AdminUsersPage() {
 
   // Update allLoadedUsers when users data changes in card view
   useEffect(() => {
-    if (viewMode === "card" && users.length > 0 && !usersQuery.isLoading) {
+    if (viewMode === "card" && !usersQuery.isLoading) {
       setAllLoadedUsers((prev) => {
         if (cardViewPage === 1) {
           return users;
+        }
+        if (users.length === 0) {
+          return prev;
         }
         const existingIds = new Set(prev.map(u => u.id));
         const newUsers = users.filter(u => !existingIds.has(u.id));
