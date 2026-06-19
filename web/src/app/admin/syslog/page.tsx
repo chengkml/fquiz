@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Button, Card, Empty, Form, Input, Space, Spin, Table, Tag, Typography, type CardProps } from "antd";
+import { Alert, Button, Card, Col, Empty, Form, Input, Row, Space, Spin, Table, Tag, Typography, type CardProps } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { CSSProperties, ComponentType } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 import type { AuditLogItem, AuditLogListResponse } from "@/types/auth";
@@ -39,12 +40,18 @@ function formatDate(value: string): string {
 export default function AdminSyslogPage() {
   const queryClient = useQueryClient();
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
+  const isMobile = useMobileDetection();
 
   const [offset, setOffset] = useState(0);
   const [draftFilters, setDraftFilters] = useState<Filters>(EMPTY_FILTERS);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [tableScrollY, setTableScrollY] = useState(SYSLOG_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const viewMode: "table" | "card" = isMobile ? "card" : "table";
+  const [cardViewPage, setCardViewPage] = useState(1);
+  const [allLoadedLogs, setAllLoadedLogs] = useState<AuditLogItem[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const pageCardRef = useRef<HTMLDivElement | null>(null);
 
   const canRead = hasPermission("menu.read") || hasPermission("menu.manage");
 
@@ -86,6 +93,63 @@ export default function AdminSyslogPage() {
   const total = logsQuery.data?.total ?? 0;
   const error = logsQuery.error instanceof Error ? logsQuery.error.message : "";
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+
+  // Update allLoadedLogs when logs data changes in card view
+  useEffect(() => {
+    if (viewMode === "card" && !logsQuery.isLoading) {
+      if (cardViewPage === 1) {
+        setAllLoadedLogs(logs);
+      } else {
+        setAllLoadedLogs((prev) => {
+          if (logs.length === 0) {
+            return prev;
+          }
+          const existingIds = new Set(prev.map(l => l.id));
+          const newLogs = logs.filter(l => !existingIds.has(l.id));
+          return [...prev, ...newLogs];
+        });
+      }
+      setIsLoadingMore(false);
+    }
+  }, [logs, logsQuery.isLoading, viewMode, cardViewPage]);
+
+  // Handle infinite scroll for card view
+  useEffect(() => {
+    if (viewMode !== "card") return;
+
+    const pageCard = pageCardRef.current;
+    if (!pageCard) return;
+
+    const cardBody = pageCard.querySelector<HTMLElement>(".ant-card-body");
+    if (!cardBody) return;
+
+    const handleScroll = () => {
+      if (isLoadingMore || logsQuery.isLoading) return;
+
+      const scrollTop = cardBody.scrollTop;
+      const scrollHeight = cardBody.scrollHeight;
+      const clientHeight = cardBody.clientHeight;
+
+      if (scrollTop + clientHeight >= scrollHeight - 100) {
+        const loadedCount = allLoadedLogs.length;
+
+        if (loadedCount < total) {
+          setIsLoadingMore(true);
+          setCardViewPage((prev) => prev + 1);
+          setOffset((prev) => prev + PAGE_SIZE);
+        }
+      }
+    };
+
+    cardBody.addEventListener("scroll", handleScroll);
+    return () => cardBody.removeEventListener("scroll", handleScroll);
+  }, [viewMode, isLoadingMore, logsQuery.isLoading, total, allLoadedLogs.length]);
+
+  // Reset card view state when filters change
+  useEffect(() => {
+    setCardViewPage(1);
+    setAllLoadedLogs([]);
+  }, [filters.action, filters.user_id]);
 
   const columns = useMemo<ColumnsType<AuditLogItem>>(
     () => [
@@ -197,6 +261,42 @@ export default function AdminSyslogPage() {
     };
   }, [updateTableScrollY]);
 
+  const renderLogCard = (log: AuditLogItem) => (
+    <AntCard
+      key={log.id}
+      className="admin-syslog-log-card"
+      size="small"
+    >
+      <Space direction="vertical" size={10} style={{ width: "100%" }}>
+        <div className="admin-syslog-log-card-field">
+          <Typography.Text type="secondary">时间</Typography.Text>
+          <Typography.Text className="text-xs">
+            {formatDate(log.created_at)}
+          </Typography.Text>
+        </div>
+        <div className="admin-syslog-log-card-field">
+          <Typography.Text type="secondary">用户</Typography.Text>
+          <Space size={6}>
+            <span>{log.username ?? "-"}</span>
+            <Typography.Text code type="secondary">
+              {log.user_id ?? "-"}
+            </Typography.Text>
+          </Space>
+        </div>
+        <div className="admin-syslog-log-card-field">
+          <Typography.Text type="secondary">动作</Typography.Text>
+          <Tag>{log.action}</Tag>
+        </div>
+        {log.detail && (
+          <div className="admin-syslog-log-card-field">
+            <Typography.Text type="secondary">详情</Typography.Text>
+            <Typography.Text type="secondary">{log.detail}</Typography.Text>
+          </div>
+        )}
+      </Space>
+    </AntCard>
+  );
+
   if (initializing) {
     return (
       <div className="flex min-h-[240px] items-center justify-center">
@@ -237,88 +337,183 @@ export default function AdminSyslogPage() {
     <div className="flex flex-1 flex-col space-y-6">
       {error ? <Alert type="error" showIcon message="日志加载失败" description={error} /> : null}
 
-      <AntCard title="系统日志" style={{ height: '100%' }}>
-        <Form layout="inline" style={{ rowGap: 12 }}>
-          <Form.Item label="动作" className="min-w-[280px]">
-            <Input
-              allowClear
-              placeholder="按动作筛选（如 auth.login）"
-              value={draftFilters.action}
-              onChange={(event) =>
-                setDraftFilters((prev) => ({
-                  ...prev,
-                  action: event.target.value,
-                }))
-              }
-            />
-          </Form.Item>
-          <Form.Item label="用户ID" className="min-w-[280px]">
-            <Input
-              allowClear
-              placeholder="按用户ID筛选（如 openclaw）"
-              value={draftFilters.user_id}
-              onChange={(event) =>
-                setDraftFilters((prev) => ({
-                  ...prev,
-                  user_id: event.target.value,
-                }))
-              }
-            />
-          </Form.Item>
-          <Form.Item>
-            <Space size={8}>
-              <Button
-                type="primary"
-                onClick={() => {
-                  setOffset(0);
-                  setFilters({
-                    action: draftFilters.action.trim(),
-                    user_id: draftFilters.user_id.trim(),
-                  });
-                }}
-              >
-                查询
-              </Button>
-              <Button
-                onClick={() => {
-                  setOffset(0);
-                  setDraftFilters(EMPTY_FILTERS);
-                  setFilters(EMPTY_FILTERS);
-                }}
-              >
-                重置筛选
-              </Button>
-            </Space>
-          </Form.Item>
-        </Form>
+      <AntCard ref={pageCardRef} title="系统日志" style={{ height: '100%' }}>
+        {viewMode === "card" ? (
+          <Form layout="vertical" style={{ marginBottom: 16 }}>
+            <Form.Item label="动作">
+              <Input
+                allowClear
+                placeholder="按动作筛选（如 auth.login）"
+                value={draftFilters.action}
+                onChange={(event) =>
+                  setDraftFilters((prev) => ({
+                    ...prev,
+                    action: event.target.value,
+                  }))
+                }
+              />
+            </Form.Item>
+            <Form.Item label="用户ID">
+              <Input
+                allowClear
+                placeholder="按用户ID筛选（如 openclaw）"
+                value={draftFilters.user_id}
+                onChange={(event) =>
+                  setDraftFilters((prev) => ({
+                    ...prev,
+                    user_id: event.target.value,
+                  }))
+                }
+              />
+            </Form.Item>
+            <Form.Item>
+              <Space size={8}>
+                <Button
+                  type="primary"
+                  onClick={() => {
+                    setOffset(0);
+                    setFilters({
+                      action: draftFilters.action.trim(),
+                      user_id: draftFilters.user_id.trim(),
+                    });
+                  }}
+                >
+                  查询
+                </Button>
+                <Button
+                  onClick={() => {
+                    setOffset(0);
+                    setDraftFilters(EMPTY_FILTERS);
+                    setFilters(EMPTY_FILTERS);
+                  }}
+                >
+                  重置筛选
+                </Button>
+              </Space>
+            </Form.Item>
+          </Form>
+        ) : (
+          <Form layout="inline" style={{ rowGap: 12 }}>
+            <Form.Item label="动作" className="min-w-[280px]">
+              <Input
+                allowClear
+                placeholder="按动作筛选（如 auth.login）"
+                value={draftFilters.action}
+                onChange={(event) =>
+                  setDraftFilters((prev) => ({
+                    ...prev,
+                    action: event.target.value,
+                  }))
+                }
+              />
+            </Form.Item>
+            <Form.Item label="用户ID" className="min-w-[280px]">
+              <Input
+                allowClear
+                placeholder="按用户ID筛选（如 openclaw）"
+                value={draftFilters.user_id}
+                onChange={(event) =>
+                  setDraftFilters((prev) => ({
+                    ...prev,
+                    user_id: event.target.value,
+                  }))
+                }
+              />
+            </Form.Item>
+            <Form.Item>
+              <Space size={8}>
+                <Button
+                  type="primary"
+                  onClick={() => {
+                    setOffset(0);
+                    setFilters({
+                      action: draftFilters.action.trim(),
+                      user_id: draftFilters.user_id.trim(),
+                    });
+                  }}
+                >
+                  查询
+                </Button>
+                <Button
+                  onClick={() => {
+                    setOffset(0);
+                    setDraftFilters(EMPTY_FILTERS);
+                    setFilters(EMPTY_FILTERS);
+                  }}
+                >
+                  重置筛选
+                </Button>
+              </Space>
+            </Form.Item>
+          </Form>
+        )}
 
-        <div
-          ref={tableScrollAnchorRef}
-          className="admin-syslog-table-anchor mt-4"
-          style={{ "--admin-syslog-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
-        >
-          <Table<AuditLogItem>
-            rowKey={(record) => String(record.id)}
-            columns={columns}
-            dataSource={logs}
-            loading={logsQuery.isFetching}
-            pagination={{
-              current: currentPage,
-              pageSize: PAGE_SIZE,
-              total,
-              onChange: (page) => setOffset((page - 1) * PAGE_SIZE),
-              showSizeChanger: false,
-              showQuickJumper: false,
-              showTotal: (value) => `共 ${value} 条`,
-              hideOnSinglePage: false,
-              style: { marginBottom: 0 },
-            }}
-            locale={{
-              emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无日志数据" />,
-            }}
-            scroll={{ x: 980, y: tableScrollY }}
-          />
-        </div>
+        {viewMode === "table" ? (
+          <div
+            ref={tableScrollAnchorRef}
+            className="admin-syslog-table-anchor mt-4"
+            style={{ "--admin-syslog-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+          >
+            <Table<AuditLogItem>
+              rowKey={(record) => String(record.id)}
+              columns={columns}
+              dataSource={logs}
+              loading={logsQuery.isFetching}
+              pagination={{
+                current: currentPage,
+                pageSize: PAGE_SIZE,
+                total,
+                onChange: (page) => setOffset((page - 1) * PAGE_SIZE),
+                showSizeChanger: false,
+                showQuickJumper: false,
+                showTotal: (value) => `共 ${value} 条`,
+                hideOnSinglePage: false,
+                style: { marginBottom: 0 },
+              }}
+              locale={{
+                emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无日志数据" />,
+              }}
+              scroll={{ x: 980, y: tableScrollY }}
+            />
+          </div>
+        ) : (
+          <div className="admin-syslog-card-view">
+            {logsQuery.isLoading && allLoadedLogs.length === 0 ? (
+              <div className="admin-syslog-card-view-state">
+                <Spin tip="加载中..." />
+              </div>
+            ) : allLoadedLogs.length === 0 ? (
+              <div className="admin-syslog-card-view-state">
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="暂无日志数据"
+                />
+              </div>
+            ) : (
+              <div className="admin-syslog-card-view-content">
+                <Row gutter={[12, 12]}>
+                  {allLoadedLogs.map((log) => (
+                    <Col key={log.id} xs={24} sm={24} md={12} lg={8} xl={6}>
+                      {renderLogCard(log)}
+                    </Col>
+                  ))}
+                </Row>
+                {isLoadingMore && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Spin tip="加载更多..." />
+                  </div>
+                )}
+                {allLoadedLogs.length >= total && allLoadedLogs.length > 0 && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Typography.Text type="secondary">
+                      已加载全部 {allLoadedLogs.length} 条数据
+                    </Typography.Text>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </AntCard>
     </div>
   );

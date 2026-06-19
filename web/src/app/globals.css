@@ -403,6 +403,61 @@ body {
   min-height: var(--admin-syslog-table-body-min-height, 180px);
 }
 
+.admin-syslog-card-view {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.admin-syslog-card-view-content {
+  min-height: 0;
+  flex: 1;
+  padding: 2px 2px 4px;
+}
+
+.admin-syslog-card-view-state {
+  display: flex;
+  min-height: 240px;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-syslog-log-card {
+  height: 100%;
+  border-color: color-mix(in srgb, var(--fquiz-theme-primary) 26%, var(--ant-color-border-secondary));
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--fquiz-theme-bg-container) 96%, var(--fquiz-theme-primary) 4%) 0%,
+      var(--fquiz-theme-bg-container) 100%
+    );
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--fquiz-theme-text-primary) 8%, transparent);
+}
+
+.admin-syslog-log-card > .ant-card-body {
+  padding-block: 14px;
+}
+
+.admin-syslog-log-card-field {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+:root[data-fquiz-theme="dark"] .admin-syslog-log-card {
+  border-color: color-mix(in srgb, var(--fquiz-theme-primary) 35%, var(--ant-color-border-secondary)) !important;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--ant-color-bg-container) 92%, var(--fquiz-theme-primary) 8%) 0%,
+      var(--ant-color-bg-container) 100%
+    ) !important;
+  box-shadow: 0 8px 18px color-mix(in srgb, black 40%, transparent) !important;
+}
+
 .admin-files-table-anchor .ant-table-body {
   min-height: var(--admin-files-table-body-min-height, 180px);
 }

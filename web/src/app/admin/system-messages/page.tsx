@@ -308,16 +308,13 @@ export default function AdminSystemMessagesPage() {
   const [detailMessage, setDetailMessage] = useState<SystemMessageSummary | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-<<<<<<< HEAD
   const [tableScrollY, setTableScrollY] = useState(MESSAGES_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
-=======
   const viewMode: "table" | "card" = isMobile ? "card" : "table";
   const [cardViewPage, setCardViewPage] = useState(1);
   const [allLoadedMessages, setAllLoadedMessages] = useState<SystemMessageSummary[]>([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const pageCardRef = useRef<HTMLDivElement | null>(null);
->>>>>>> b0790dc... feat:[FL-47][系统消息页面：添加移动端响应式卡片视图]
 
   const canManage = hasPermission("admin.system_message");
 
@@ -462,7 +459,6 @@ export default function AdminSystemMessagesPage() {
     [messages],
   );
 
-<<<<<<< HEAD
   const updateTableScrollY = useCallback(() => {
     if (typeof window === "undefined") {
       return;
@@ -530,7 +526,7 @@ export default function AdminSystemMessagesPage() {
       resizeObserver.disconnect();
     };
   }, [updateTableScrollY]);
-=======
+
   // Update allLoadedMessages when messages data changes in card view
   useEffect(() => {
     if (viewMode === "card" && !listQuery.isLoading) {
@@ -587,7 +583,6 @@ export default function AdminSystemMessagesPage() {
     setCardViewPage(1);
     setAllLoadedMessages([]);
   }, [messageTypeFilter, unreadOnly]);
->>>>>>> b0790dc... feat:[FL-47][系统消息页面：添加移动端响应式卡片视图]
 
   const openCreateMessageModal = () => {
     setError("");
@@ -879,32 +874,22 @@ export default function AdminSystemMessagesPage() {
           </Form.Item>
         </Form>
 
-<<<<<<< HEAD
-        <div
-          ref={tableScrollAnchorRef}
-          className="admin-system-messages-table-anchor mt-4"
-          style={{ "--admin-system-messages-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
-        >
-          <Table<SystemMessageSummary>
-            rowKey="id"
-=======
         {viewMode === "table" ? (
-          <Table<SystemMessageSummary>
-            rowKey="id"
-            className="mt-4"
->>>>>>> b0790dc... feat:[FL-47][系统消息页面：添加移动端响应式卡片视图]
-            columns={columns}
-            dataSource={messages}
-            loading={listQuery.isFetching}
-            locale={{ emptyText: <Empty description="暂无系统消息" /> }}
-            pagination={{ pageSize: 20, showSizeChanger: true, hideOnSinglePage: false, showTotal: (total) => `共 ${total} 条` }}
-<<<<<<< HEAD
-            scroll={{ x: 1100, y: tableScrollY }}
-          />
-        </div>
-=======
-            scroll={{ x: 1100 }}
-          />
+          <div
+            ref={tableScrollAnchorRef}
+            className="admin-system-messages-table-anchor mt-4"
+            style={{ "--admin-system-messages-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+          >
+            <Table<SystemMessageSummary>
+              rowKey="id"
+              columns={columns}
+              dataSource={messages}
+              loading={listQuery.isFetching}
+              locale={{ emptyText: <Empty description="暂无系统消息" /> }}
+              pagination={{ pageSize: 20, showSizeChanger: true, hideOnSinglePage: false, showTotal: (total) => `共 ${total} 条` }}
+              scroll={{ x: 1100, y: tableScrollY }}
+            />
+          </div>
         ) : (
           <div className="mt-4">
             {listQuery.isLoading && allLoadedMessages.length === 0 ? (
@@ -940,7 +925,6 @@ export default function AdminSystemMessagesPage() {
             )}
           </div>
         )}
->>>>>>> b0790dc... feat:[FL-47][系统消息页面：添加移动端响应式卡片视图]
       </AntCard>
 
       <Modal
