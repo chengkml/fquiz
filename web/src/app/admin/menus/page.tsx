@@ -106,6 +106,9 @@ export default function AdminMenusPage() {
   const [activeStatusFilter, setActiveStatusFilter] = useState<FilterStatus>("all");
   const [tableScrollY, setTableScrollY] = useState(MENU_TABLE_MIN_SCROLL_Y);
   const viewMode: "table" | "card" = isMobile ? "card" : "table";
+  const [cardViewPage, setCardViewPage] = useState(1);
+  const [allLoadedMenus, setAllLoadedMenus] = useState<MenuItem[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [form] = Form.useForm<MenuFormValues>();
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -145,7 +148,7 @@ export default function AdminMenusPage() {
     });
   }, [menus]);
 
-  const loadMenus = useCallback(async () => {
+  const loadMenus = useCallback(async (page = 1, pageSize = 20) => {
     if (!canRead) {
       setLoading(false);
       return;
@@ -155,6 +158,8 @@ export default function AdminMenusPage() {
     setError("");
 
     const params = new URLSearchParams();
+    params.append("limit", String(pageSize));
+    params.append("offset", String((page - 1) * pageSize));
     if (activeKeyword.trim()) {
       params.append("keyword", activeKeyword.trim());
     }
@@ -173,6 +178,7 @@ export default function AdminMenusPage() {
     const payload = (await response.json()) as MenuListResponse;
     setMenus(payload.items.map(normalizeMenuItemPath));
     setLoading(false);
+    return payload;
   }, [canRead, fetchWithAuth, activeKeyword, activeStatusFilter]);
 
   useEffect(() => {
@@ -193,6 +199,62 @@ export default function AdminMenusPage() {
       }
     }, [canRead, loadMenus, user]),
   );
+
+  // Update allLoadedMenus when menus data changes in card view
+  useEffect(() => {
+    if (viewMode === "card" && !loading) {
+      if (cardViewPage === 1) {
+        setAllLoadedMenus(menus);
+      } else {
+        setAllLoadedMenus((prev) => {
+          if (menus.length === 0) {
+            return prev;
+          }
+          const existingIds = new Set(prev.map(m => m.id));
+          const newMenus = menus.filter(m => !existingIds.has(m.id));
+          return [...prev, ...newMenus];
+        });
+      }
+      setIsLoadingMore(false);
+    }
+  }, [menus, loading, viewMode, cardViewPage]);
+
+  // Handle infinite scroll for card view
+  useEffect(() => {
+    if (viewMode !== "card") return;
+
+    const pageCard = pageCardRef.current;
+    if (!pageCard) return;
+
+    const cardBody = pageCard.querySelector<HTMLElement>(".ant-card-body");
+    if (!cardBody) return;
+
+    const handleScroll = () => {
+      if (isLoadingMore || loading) return;
+
+      const scrollTop = cardBody.scrollTop;
+      const scrollHeight = cardBody.scrollHeight;
+      const clientHeight = cardBody.clientHeight;
+
+      if (scrollTop + clientHeight >= scrollHeight - 100) {
+        setIsLoadingMore(true);
+        setCardViewPage((prev) => {
+          const nextPage = prev + 1;
+          void loadMenus(nextPage, 20);
+          return nextPage;
+        });
+      }
+    };
+
+    cardBody.addEventListener("scroll", handleScroll);
+    return () => cardBody.removeEventListener("scroll", handleScroll);
+  }, [viewMode, isLoadingMore, loading, loadMenus, allLoadedMenus.length]);
+
+  // Reset card view state when search conditions change
+  useEffect(() => {
+    setCardViewPage(1);
+    setAllLoadedMenus([]);
+  }, [activeStatusFilter, activeKeyword]);
 
   const handleSearch = useCallback(() => {
     setActiveKeyword(keyword);
@@ -781,11 +843,11 @@ export default function AdminMenusPage() {
           </div>
         ) : (
           <div className="admin-menus-card-view mt-4">
-            {loading && filteredMenus.length === 0 ? (
+            {loading && allLoadedMenus.length === 0 ? (
               <div style={{ textAlign: "center", padding: "60px 0" }}>
                 <Spin tip="加载中..." />
               </div>
-            ) : filteredMenus.length === 0 ? (
+            ) : allLoadedMenus.length === 0 ? (
               <div style={{ textAlign: "center", padding: "60px 0" }}>
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -793,13 +855,27 @@ export default function AdminMenusPage() {
                 />
               </div>
             ) : (
-              <Row gutter={[12, 12]}>
-                {filteredMenus.map((menuItem) => (
-                  <Col key={menuItem.id} xs={24} sm={24} md={12} lg={8} xl={6}>
-                    {renderMenuCard(menuItem)}
-                  </Col>
-                ))}
-              </Row>
+              <>
+                <Row gutter={[12, 12]}>
+                  {allLoadedMenus.map((menuItem) => (
+                    <Col key={menuItem.id} xs={24} sm={24} md={12} lg={8} xl={6}>
+                      {renderMenuCard(menuItem)}
+                    </Col>
+                  ))}
+                </Row>
+                {isLoadingMore && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Spin tip="加载更多..." />
+                  </div>
+                )}
+                {!loading && !isLoadingMore && allLoadedMenus.length > 0 && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Typography.Text type="secondary">
+                      已加载全部 {allLoadedMenus.length} 条数据
+                    </Typography.Text>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
