@@ -707,6 +707,14 @@ export default function AdminMenusPage() {
     };
   }, [updateTableScrollY]);
 
+  useEffect(() => {
+    return () => {
+      if (keywordDebounceTimeoutRef.current) {
+        clearTimeout(keywordDebounceTimeoutRef.current);
+      }
+    };
+  }, []);
+
   if (initializing) {
     return (
       <div className="flex min-h-[240px] items-center justify-center">
