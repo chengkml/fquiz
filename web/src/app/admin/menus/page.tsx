@@ -14,6 +14,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Row,
   Select,
   Space,
@@ -316,17 +317,6 @@ export default function AdminMenusPage() {
     }
   }, [closeDialog, editingMenuId, fetchWithAuth, loadMenus, messageApi]);
 
-  const requestDeleteMenu = useCallback((menu: MenuItem) => {
-    modal.confirm({
-      title: "删除菜单",
-      content: `确认删除菜单 ${menu.name} (${menu.code}) 吗？`,
-      okText: "删除",
-      cancelText: "取消",
-      okButtonProps: { danger: true },
-      onOk: () => removeMenu(menu),
-    });
-  }, [modal, removeMenu]);
-
   const columns = useMemo<TableColumnsType<MenuItem>>(() => {
     const base: TableColumnsType<MenuItem> = [
       { title: "ID", dataIndex: "id", width: 110 },
@@ -376,26 +366,82 @@ export default function AdminMenusPage() {
       key: "actions",
       fixed: "right",
       width: 180,
-      render: (_, record) => (
-        <Space size="small">
-          <Button size="small" onClick={() => startEdit(record)}>
-            编辑
-          </Button>
-          <Button
-            size="small"
-            danger
-            loading={deletingMenuId === record.id}
-            disabled={Boolean(deletingMenuId && deletingMenuId !== record.id)}
-            onClick={() => requestDeleteMenu(record)}
-          >
-            删除
-          </Button>
-        </Space>
-      ),
+      render: (_, record) => {
+        const deleteLoading = deletingMenuId === record.id;
+        const menuBusy = deleteLoading;
+
+        const moreMenuItems: MenuProps["items"] = [
+          {
+            key: "edit",
+            label: "编辑",
+            disabled: menuBusy,
+            onClick: () => startEdit(record),
+          },
+          {
+            key: "delete",
+            label: "删除",
+            disabled: menuBusy,
+            onClick: () => removeMenu(record),
+          },
+          {
+            key: "toggle-status",
+            label: record.status === "enabled" ? "禁用" : "启用",
+            disabled: menuBusy,
+            onClick: async () => {
+              try {
+                const response = await fetchWithAuth(`/api/menus/${record.id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    status: record.status === "enabled" ? "disabled" : "enabled",
+                  }),
+                });
+                if (!response.ok) {
+                  const msg = await readApiError(response);
+                  setError(msg);
+                  messageApi.error(msg);
+                  return;
+                }
+                messageApi.success("菜单状态已更新");
+                await loadMenus();
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : "更新失败";
+                setError(msg);
+                messageApi.error(msg);
+              }
+            },
+          },
+        ];
+
+        return (
+          <Space wrap>
+            <Button size="small" disabled={menuBusy} onClick={() => startEdit(record)}>
+              编辑
+            </Button>
+
+            <Popconfirm
+              title={`确认删除菜单 ${record.name}（${record.code}）？`}
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true, loading: deleteLoading }}
+              onConfirm={() => removeMenu(record)}
+              disabled={menuBusy}
+            >
+              <Button danger size="small" loading={deleteLoading} disabled={menuBusy}>
+                删除
+              </Button>
+            </Popconfirm>
+
+            <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+              <Button size="small" disabled={menuBusy} icon={<MoreOutlined />} />
+            </Dropdown>
+          </Space>
+        );
+      },
     });
 
     return base;
-  }, [canManage, deletingMenuId, menuNameById, requestDeleteMenu, startEdit]);
+  }, [canManage, deletingMenuId, fetchWithAuth, loadMenus, menuNameById, messageApi, removeMenu, setError, startEdit]);
 
   const renderMenuCard = (menuItem: MenuItem) => {
     const menuBusy = deletingMenuId === menuItem.id;
@@ -411,7 +457,35 @@ export default function AdminMenusPage() {
         key: "delete",
         label: "删除",
         disabled: menuBusy || !canManage,
-        onClick: () => requestDeleteMenu(menuItem),
+        onClick: () => removeMenu(menuItem),
+      },
+      {
+        key: "toggle-status",
+        label: menuItem.status === "enabled" ? "禁用" : "启用",
+        disabled: menuBusy || !canManage,
+        onClick: async () => {
+          try {
+            const response = await fetchWithAuth(`/api/menus/${menuItem.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                status: menuItem.status === "enabled" ? "disabled" : "enabled",
+              }),
+            });
+            if (!response.ok) {
+              const msg = await readApiError(response);
+              setError(msg);
+              messageApi.error(msg);
+              return;
+            }
+            messageApi.success("菜单状态已更新");
+            await loadMenus();
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "更新失败";
+            setError(msg);
+            messageApi.error(msg);
+          }
+        },
       },
     ];
 
