@@ -713,7 +713,7 @@ export default function AdminTowerModelsPage() {
   }
 
   return (
-    <Space direction="vertical" size={16} className="w-full">
+    <div className="flex min-h-0 flex-1 flex-col">
       <AntCard
         className="admin-tower-models-page-card"
         title="杆塔模型管理"
@@ -936,6 +936,6 @@ export default function AdminTowerModelsPage() {
           />
         </Space>
       </Modal>
-    </Space>
+    </div>
   );
 }
