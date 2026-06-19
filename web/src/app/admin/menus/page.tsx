@@ -351,7 +351,7 @@ export default function AdminMenusPage() {
   });
 
   const updateMenuMutation = useMutation({
-    mutationFn: async ({ menuId, payload }: { menuId: string; payload: MenuMutationPayload }) => {
+    mutationFn: async ({ menuId, payload }: { menuId: string; payload: Partial<MenuMutationPayload> }) => {
       const response = await fetchWithAuth(`/api/v1/admin/menus/${menuId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -360,18 +360,33 @@ export default function AdminMenusPage() {
       if (!response.ok) throw new Error(await readApiError(response));
       return response.json() as Promise<MenuItem>;
     },
-    onMutate: () => {
+    onMutate: ({ menuId, payload }) => {
+      if (payload.status && Object.keys(payload).length === 1) {
+        setUpdatingStatusMenuId(menuId);
+      }
       setError("");
       setSuccess("");
     },
-    onSuccess: async () => {
-      setSuccess("菜单已更新");
-      closeDialog();
+    onSuccess: async (_, variables) => {
+      if (variables.payload.status && Object.keys(variables.payload).length === 1) {
+        setSuccess(variables.payload.status === "enabled" ? "菜单已启用" : "菜单已禁用");
+      } else {
+        setSuccess("菜单已更新");
+        closeDialog();
+      }
       await refreshData();
     },
-    onError: (candidate) => {
+    onError: (candidate, variables) => {
       setSuccess("");
-      setError(candidate instanceof Error ? candidate.message : "更新菜单失败");
+      const fallbackMessage = variables.payload.status && Object.keys(variables.payload).length === 1
+        ? "菜单状态更新失败"
+        : "更新菜单失败";
+      setError(candidate instanceof Error ? candidate.message : fallbackMessage);
+    },
+    onSettled: (_data, _error, variables) => {
+      if (variables?.payload.status && Object.keys(variables.payload).length === 1) {
+        setUpdatingStatusMenuId(null);
+      }
     },
   });
 
@@ -401,32 +416,6 @@ export default function AdminMenusPage() {
       setError(candidate instanceof Error ? candidate.message : "菜单删除失败");
     },
     onSettled: () => setDeletingMenuId(null),
-  });
-
-  const updateMenuStatusMutation = useMutation({
-    mutationFn: async ({ menuId, status }: { menuId: string; status: "enabled" | "disabled" }) => {
-      const response = await fetchWithAuth(`/api/v1/admin/menus/${menuId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-      if (!response.ok) throw new Error(await readApiError(response));
-      return response.json() as Promise<MenuItem>;
-    },
-    onMutate: ({ menuId }) => {
-      setUpdatingStatusMenuId(menuId);
-      setError("");
-      setSuccess("");
-    },
-    onSuccess: async (_, variables) => {
-      setSuccess(variables.status === "enabled" ? "菜单已启用" : "菜单已禁用");
-      await refreshData();
-    },
-    onError: (candidate) => {
-      setSuccess("");
-      setError(candidate instanceof Error ? candidate.message : "菜单状态更新失败");
-    },
-    onSettled: () => setUpdatingStatusMenuId(null),
   });
 
   const submit = useCallback(async () => {
@@ -479,8 +468,8 @@ export default function AdminMenusPage() {
 
   const updateMenuStatus = useCallback(async (menu: MenuItem) => {
     const nextStatus: "enabled" | "disabled" = menu.status === "enabled" ? "disabled" : "enabled";
-    updateMenuStatusMutation.mutate({ menuId: menu.id, status: nextStatus });
-  }, [updateMenuStatusMutation]);
+    updateMenuMutation.mutate({ menuId: menu.id, payload: { status: nextStatus } });
+  }, [updateMenuMutation]);
 
   const columns = useMemo<TableColumnsType<MenuItem>>(() => {
     const base: TableColumnsType<MenuItem> = [
@@ -876,7 +865,7 @@ export default function AdminMenusPage() {
                     <Spin tip="加载更多..." />
                   </div>
                 )}
-                {!menusQuery.isLoading && !isLoadingMore && allLoadedMenus.length >= menuTotal && allLoadedMenus.length > 0 && (
+                {allLoadedMenus.length >= menuTotal && allLoadedMenus.length > 0 && (
                   <div style={{ textAlign: "center", padding: "20px 0" }}>
                     <Typography.Text type="secondary">
                       已加载全部 {allLoadedMenus.length} 条数据

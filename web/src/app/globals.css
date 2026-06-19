@@ -554,7 +554,7 @@ body {
 
 .admin-menus-menu-card-field {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-columns: 64px minmax(0, 1fr);
   gap: 8px;
   align-items: baseline;
 }
