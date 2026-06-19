@@ -8,6 +8,7 @@ import {
   Button,
   Card,
   Col,
+  Dropdown,
   Empty,
   Form,
   Input,
@@ -21,7 +22,9 @@ import {
   Tag,
   Typography,
   type CardProps,
+  type MenuProps,
 } from "antd";
+import { MoreOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
 
@@ -376,9 +379,18 @@ export default function AtpModelsPage() {
       {
         title: "操作",
         key: "actions",
-        width: 200,
+        width: 240,
         render: (_, item) => {
           const deleteLoading = deleteMutation.isPending;
+          const rowBusy = deleteLoading;
+
+          const moreMenuItems: MenuProps["items"] = [
+            // 未来可在此添加更多操作，如：
+            // - 查看版本历史
+            // - 导出模型配置
+            // - 复制模型
+            // - 归档/取消归档
+          ];
 
           return (
             <Space wrap>
@@ -389,7 +401,7 @@ export default function AtpModelsPage() {
               </Link>
               <Button
                 size="small"
-                disabled={!canManage}
+                disabled={!canManage || rowBusy}
                 onClick={() => {
                   setEditingAsset(item);
                   form.setFieldsValue(toFormValues(item));
@@ -405,12 +417,17 @@ export default function AtpModelsPage() {
                 cancelText="取消"
                 okButtonProps={{ danger: true, loading: deleteLoading }}
                 onConfirm={() => deleteMutation.mutate(item.id)}
-                disabled={!canManage}
+                disabled={!canManage || rowBusy}
               >
-                <Button danger size="small" loading={deleteLoading} disabled={!canManage}>
+                <Button danger size="small" loading={deleteLoading} disabled={!canManage || rowBusy}>
                   删除
                 </Button>
               </Popconfirm>
+              {moreMenuItems && moreMenuItems.length > 0 && (
+                <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+                  <Button size="small" disabled={rowBusy} icon={<MoreOutlined />} />
+                </Dropdown>
+              )}
             </Space>
           );
         },
@@ -421,6 +438,15 @@ export default function AtpModelsPage() {
 
   const renderAtpModelCard = (item: AtpAssetSummary) => {
     const deleteLoading = deleteMutation.isPending;
+    const rowBusy = deleteLoading;
+
+    const moreMenuItems: MenuProps["items"] = [
+      // 未来可在此添加更多操作，如：
+      // - 查看版本历史
+      // - 导出模型配置
+      // - 复制模型
+      // - 归档/取消归档
+    ];
 
     return (
       <AntCard
@@ -474,7 +500,7 @@ export default function AtpModelsPage() {
               </Link>
               <Button
                 size="small"
-                disabled={!canManage}
+                disabled={!canManage || rowBusy}
                 onClick={() => {
                   setEditingAsset(item);
                   form.setFieldsValue(toFormValues(item));
@@ -490,12 +516,17 @@ export default function AtpModelsPage() {
                 cancelText="取消"
                 okButtonProps={{ danger: true, loading: deleteLoading }}
                 onConfirm={() => deleteMutation.mutate(item.id)}
-                disabled={!canManage}
+                disabled={!canManage || rowBusy}
               >
-                <Button danger size="small" loading={deleteLoading} disabled={!canManage}>
+                <Button danger size="small" loading={deleteLoading} disabled={!canManage || rowBusy}>
                   删除
                 </Button>
               </Popconfirm>
+              {moreMenuItems && moreMenuItems.length > 0 && (
+                <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+                  <Button size="small" disabled={rowBusy} icon={<MoreOutlined />} />
+                </Dropdown>
+              )}
             </Space>
           </div>
         </Space>
