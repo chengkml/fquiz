@@ -1012,21 +1012,34 @@ export default function AdminUsersPage() {
                     </Col>
                   ))}
                 </Row>
-                <div style={{ marginTop: 16, display: "flex", justifyContent: "center" }}>
-                  <Space direction="vertical" size={12} style={{ width: "100%", alignItems: "center" }}>
+                <div
+                  style={{
+                    position: "fixed",
+                    bottom: 20,
+                    right: 20,
+                    background: "var(--gray-2)",
+                    padding: "8px 16px",
+                    borderRadius: 8,
+                    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
+                    zIndex: 1000,
+                  }}
+                >
+                  <Space size={16}>
                     <Typography.Text type="secondary">
                       共 {usersQuery.data?.total ?? 0} 条
                     </Typography.Text>
-                    <Space wrap>
+                    <Space size={8}>
                       <Button
+                        type="text"
                         icon={<LeftOutlined />}
                         disabled={pagination.current === 1}
                         onClick={() => setPagination((prev) => ({ ...prev, current: prev.current - 1 }))}
                       />
                       <Typography.Text>
-                        第 {pagination.current} 页 / 共 {Math.ceil((usersQuery.data?.total ?? 0) / pagination.pageSize)} 页
+                        第 {pagination.current} / {Math.ceil((usersQuery.data?.total ?? 0) / pagination.pageSize)} 页
                       </Typography.Text>
                       <Button
+                        type="text"
                         icon={<RightOutlined />}
                         disabled={pagination.current >= Math.ceil((usersQuery.data?.total ?? 0) / pagination.pageSize)}
                         onClick={() => setPagination((prev) => ({ ...prev, current: prev.current + 1 }))}
