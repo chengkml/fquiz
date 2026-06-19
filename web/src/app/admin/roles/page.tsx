@@ -483,7 +483,7 @@ export default function AdminRolesPage() {
         }
       >
         <Form layout="inline" style={{ rowGap: 12 }}>
-          <Form.Item label="关键词" className="min-w-[260px]">
+          <Form.Item label="关键词" style={{ width: 260 }}>
             <Input
               allowClear
               placeholder="搜索角色编码、名称或菜单"
