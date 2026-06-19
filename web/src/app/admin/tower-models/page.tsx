@@ -26,7 +26,7 @@ import {
 } from "antd";
 import { MoreOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { AdminPageLoading } from "@/components/admin-page-loading";
@@ -64,8 +64,8 @@ const EMPTY_FORM: TowerModelFormValues = {
 
 const TOWER_MODEL_TABLE_MIN_SCROLL_Y = 220;
 const TOWER_MODEL_CARD_MIN_SCROLL_Y = 280;
-const TOWER_MODEL_VIEWPORT_BOTTOM_GAP = 40;
-const TOWER_MODEL_MAX_GROW_STEP = 6;
+const TOWER_MODEL_VIEWPORT_GAP = 40;
+const TOWER_MODEL_FALLBACK_RESERVE = 220;
 const TOWER_MODEL_PAGE_SIZE_OPTIONS = [6, 9, 12, 18, 24];
 const TOWER_MODEL_DEFAULT_PAGE_SIZE = 12;
 
@@ -618,27 +618,34 @@ export default function AdminTowerModelsPage() {
       return;
     }
     const anchor = viewScrollAnchorRef.current;
-    const paginationEl = paginationRef.current;
-    if (!anchor || !paginationEl) {
+    if (!anchor) {
       return;
     }
 
-    const paginationRect = paginationEl.getBoundingClientRect();
-    const targetBottom = window.innerHeight - TOWER_MODEL_VIEWPORT_BOTTOM_GAP;
-    const rawDelta = targetBottom - paginationRect.bottom;
-    const delta = rawDelta > 0 ? Math.min(rawDelta, TOWER_MODEL_MAX_GROW_STEP) : rawDelta;
-    if (Math.abs(delta) <= 1) {
-      return;
-    }
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
 
     const minHeight = viewMode === "card" ? TOWER_MODEL_CARD_MIN_SCROLL_Y : TOWER_MODEL_TABLE_MIN_SCROLL_Y;
-    const clampedHeight = Math.max(minHeight, Math.floor(tableScrollY + delta));
-    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
-  }, [tableScrollY, viewMode]);
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - TOWER_MODEL_FALLBACK_RESERVE);
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? minHeight;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - TOWER_MODEL_VIEWPORT_GAP);
+    }
 
-  useLayoutEffect(() => {
-    updateTableScrollY();
-  }, [currentPage, error, listError, pageSize, totalItems, towerModelsQuery.isFetching, updateTableScrollY, viewMode]);
+    const clampedHeight = Math.max(minHeight, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, [viewMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.requestAnimationFrame(updateTableScrollY);
+  }, [currentPage, error, listError, pageSize, totalItems, towerModelsQuery.isFetching, updateTableScrollY]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
