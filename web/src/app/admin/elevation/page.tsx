@@ -206,6 +206,7 @@ export default function AdminElevationPage() {
   const [keywordInput, setKeywordInput] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "disabled">("all");
+  const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [tableScrollY, setTableScrollY] = useState(DATASETS_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -976,7 +977,23 @@ export default function AdminElevationPage() {
     [],
   );
 
+  const handleKeywordChange = (value: string) => {
+    setKeywordInput(value);
+
+    if (keywordDebounceTimeoutRef.current) {
+      clearTimeout(keywordDebounceTimeoutRef.current);
+    }
+
+    keywordDebounceTimeoutRef.current = setTimeout(() => {
+      setSearchKeyword(value);
+      setPagination((prev) => ({ ...prev, current: 1 }));
+    }, 500);
+  };
+
   const handleSearch = () => {
+    if (keywordDebounceTimeoutRef.current) {
+      clearTimeout(keywordDebounceTimeoutRef.current);
+    }
     setSearchKeyword(keywordInput);
     setPagination((prev) => ({ ...prev, current: 1 }));
   };
@@ -1129,7 +1146,7 @@ export default function AdminElevationPage() {
               allowClear
               placeholder="按编码/名称/来源搜索"
               value={keywordInput}
-              onChange={(event) => setKeywordInput(event.target.value)}
+              onChange={(event) => handleKeywordChange(event.target.value)}
               onPressEnter={handleSearch}
             />
           </Form.Item>
