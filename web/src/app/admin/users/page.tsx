@@ -656,11 +656,9 @@ export default function AdminUsersPage() {
 
   // Reset card view state when switching modes or filters change
   useEffect(() => {
-    if (viewMode === "card") {
-      setCardViewPage(1);
-      setAllLoadedUsers([]);
-    }
-  }, [viewMode, statusFilter, trimmedKeyword]);
+    setCardViewPage(1);
+    setAllLoadedUsers([]);
+  }, [statusFilter, trimmedKeyword]);
 
   const updateTableScrollY = useCallback(() => {
     if (typeof window === "undefined") {
