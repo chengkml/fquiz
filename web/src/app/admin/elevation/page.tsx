@@ -980,13 +980,6 @@ export default function AdminElevationPage() {
     setPagination((prev) => ({ ...prev, current: 1 }));
   };
 
-  const handleResetSearch = () => {
-    setKeywordInput("");
-    setSearchKeyword("");
-    setStatusFilter("all");
-    setPagination((prev) => ({ ...prev, current: 1 }));
-  };
-
   const updateTableScrollY = useCallback(() => {
     if (typeof window === "undefined") {
       return;
@@ -1141,6 +1134,7 @@ export default function AdminElevationPage() {
 
           <Form.Item label="状态" className="min-w-[170px]">
             <Select<"all" | "active" | "disabled">
+              allowClear
               value={statusFilter}
               options={[
                 { value: "all", label: "全部" },
@@ -1158,10 +1152,6 @@ export default function AdminElevationPage() {
             <Button type="primary" onClick={handleSearch}>
               搜索
             </Button>
-          </Form.Item>
-
-          <Form.Item>
-            <Button onClick={handleResetSearch}>重置筛选</Button>
           </Form.Item>
         </Form>
 
