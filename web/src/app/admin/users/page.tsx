@@ -96,7 +96,7 @@ export default function AdminUsersPage() {
   const [cardViewPage, setCardViewPage] = useState(1);
   const [allLoadedUsers, setAllLoadedUsers] = useState<UserPublic[]>([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const cardViewContainerRef = useRef<HTMLDivElement | null>(null);
+  const pageCardRef = useRef<HTMLDivElement | null>(null);
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -635,15 +635,18 @@ export default function AdminUsersPage() {
   useEffect(() => {
     if (viewMode !== "card") return;
 
-    const container = cardViewContainerRef.current;
-    if (!container) return;
+    const pageCard = pageCardRef.current;
+    if (!pageCard) return;
+
+    const cardBody = pageCard.querySelector<HTMLElement>(".ant-card-body");
+    if (!cardBody) return;
 
     const handleScroll = () => {
       if (isLoadingMore || usersQuery.isLoading) return;
 
-      const scrollTop = container.scrollTop;
-      const scrollHeight = container.scrollHeight;
-      const clientHeight = container.clientHeight;
+      const scrollTop = cardBody.scrollTop;
+      const scrollHeight = cardBody.scrollHeight;
+      const clientHeight = cardBody.clientHeight;
 
       if (scrollTop + clientHeight >= scrollHeight - 100) {
         const total = usersQuery.data?.total ?? 0;
@@ -657,8 +660,8 @@ export default function AdminUsersPage() {
       }
     };
 
-    container.addEventListener("scroll", handleScroll);
-    return () => container.removeEventListener("scroll", handleScroll);
+    cardBody.addEventListener("scroll", handleScroll);
+    return () => cardBody.removeEventListener("scroll", handleScroll);
   }, [viewMode, isLoadingMore, usersQuery.isLoading, usersQuery.data?.total, allLoadedUsers.length]);
 
   // Reset card view state when switching modes or filters change
@@ -1007,6 +1010,7 @@ export default function AdminUsersPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <AntCard
+        ref={pageCardRef}
         className="admin-users-page-card"
         title="用户管理"
         extra={(
@@ -1092,7 +1096,7 @@ export default function AdminUsersPage() {
             />
           </div>
         ) : (
-          <div ref={cardViewContainerRef} className="admin-users-card-view">
+          <div className="admin-users-card-view">
             {usersQuery.isLoading && allLoadedUsers.length === 0 ? (
               <div className="admin-users-card-view-state">
                 <Spin tip="加载中..." />
