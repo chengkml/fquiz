@@ -71,6 +71,8 @@ export default function AdminRolesPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
+  const [deletingRoleId, setDeletingRoleId] = useState<string | null>(null);
+  const [savingRoleId, setSavingRoleId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [tableScrollY, setTableScrollY] = useState(ROLE_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -223,21 +225,32 @@ export default function AdminRolesPage() {
     }
   }, [closeDialog, editingRoleId, fetchWithAuth, form, loadData, message]);
 
-  const removeRole = useCallback(async (role: RoleItem) => {
+  const removeRole = useCallback(async (roleId: string) => {
+    setDeletingRoleId(roleId);
     setError("");
-    const response = await fetchWithAuth(`/api/v1/admin/roles/${role.id}`, {
-      method: "DELETE",
-    });
-    if (!response.ok) {
-      const nextError = await readApiError(response);
-      setError(nextError);
-      throw new Error(nextError);
+
+    try {
+      const response = await fetchWithAuth(`/api/v1/admin/roles/${roleId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const nextError = await readApiError(response);
+        setError(nextError);
+        throw new Error(nextError);
+      }
+
+      message.success("角色已删除");
+      if (editingRoleId === roleId) {
+        closeDialog();
+      }
+      await loadData();
+    } catch (candidate) {
+      const errorMsg = candidate instanceof Error ? candidate.message : "删除失败";
+      setError(errorMsg);
+    } finally {
+      setDeletingRoleId(null);
     }
-    message.success("角色已删除");
-    if (editingRoleId === role.id) {
-      closeDialog();
-    }
-    await loadData();
   }, [closeDialog, editingRoleId, fetchWithAuth, loadData, message]);
 
   const columns = useMemo<ColumnsType<RoleItem>>(() => {
@@ -289,32 +302,52 @@ export default function AdminRolesPage() {
         key: "actions",
         fixed: "right",
         width: 140,
-        render: (_, role) => (
-          <Space size="small">
-            <Button size="small" onClick={() => startEdit(role)}>
-              编辑
-            </Button>
-            <Popconfirm
-              title={`确认删除角色 ${role.code} 吗？`}
-              description="删除后无法恢复，请谨慎操作。"
-              okText="删除"
-              cancelText="取消"
-              okButtonProps={{ danger: true }}
-              onConfirm={() => removeRole(role)}
-            >
-              <Button danger size="small">
-                删除
+        render: (_, role) => {
+          const isDeleting = deletingRoleId === role.id;
+          const isSaving = savingRoleId === role.id;
+          const rowBusy = isDeleting || isSaving || saving;
+
+          return (
+            <Space size="small">
+              <Button
+                size="small"
+                disabled={rowBusy}
+                onClick={() => startEdit(role)}
+              >
+                编辑
               </Button>
-            </Popconfirm>
-          </Space>
-        ),
+              <Popconfirm
+                title={`确认删除角色 ${role.code} 吗？`}
+                description="删除后无法恢复，请谨慎操作。"
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true, loading: isDeleting }}
+                onConfirm={() => removeRole(role.id)}
+                disabled={rowBusy}
+              >
+                <Button
+                  danger
+                  size="small"
+                  loading={isDeleting}
+                  disabled={rowBusy}
+                >
+                  删除
+                </Button>
+              </Popconfirm>
+            </Space>
+          );
+        },
       });
     }
 
     return base;
-  }, [canManage, menuNameById, removeRole, startEdit]);
+  }, [canManage, deletingRoleId, menuNameById, removeRole, saving, savingRoleId, startEdit]);
 
   const renderRoleCard = (role: RoleItem) => {
+    const isDeleting = deletingRoleId === role.id;
+    const isSaving = savingRoleId === role.id;
+    const rowBusy = isDeleting || isSaving || saving;
+
     const menuLabels = role.menu_ids.length > 0
       ? role.menu_ids.map((menuId) => menuNameById.get(menuId) ?? String(menuId))
       : [];
@@ -340,6 +373,7 @@ export default function AdminRolesPage() {
                 type="text"
                 size="small"
                 icon={<EditOutlined />}
+                disabled={rowBusy}
                 onClick={() => startEdit(role)}
               />
               <Popconfirm
@@ -347,14 +381,17 @@ export default function AdminRolesPage() {
                 description="删除后无法恢复，请谨慎操作。"
                 okText="删除"
                 cancelText="取消"
-                okButtonProps={{ danger: true }}
-                onConfirm={() => removeRole(role)}
+                okButtonProps={{ danger: true, loading: isDeleting }}
+                onConfirm={() => removeRole(role.id)}
+                disabled={rowBusy}
               >
                 <Button
                   type="text"
                   size="small"
                   danger
                   icon={<DeleteOutlined />}
+                  loading={isDeleting}
+                  disabled={rowBusy}
                 />
               </Popconfirm>
             </Space>
