@@ -5,11 +5,14 @@ import {
   Alert,
   Button,
   Card,
+  Col,
+  Dropdown,
   Empty,
   Form,
   Input,
   Modal,
   Popconfirm,
+  Row,
   Select,
   Space,
   Spin,
@@ -17,14 +20,17 @@ import {
   Tag,
   Typography,
   type CardProps,
+  type MenuProps,
   type TableColumnsType,
 } from "antd";
+import { MoreOutlined } from "@ant-design/icons";
 import Link from "next/link";
 import type { ComponentType, CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
+import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { readApiError } from "@/lib/api";
 import type { SystemMessageListResponse, SystemMessageSummary, SystemMessageType } from "@/types/auth";
 
@@ -292,6 +298,7 @@ const MESSAGES_TABLE_FALLBACK_RESERVE = 220;
 export default function AdminSystemMessagesPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
+  const isMobile = useMobileDetection();
   const [formApi] = Form.useForm<CreateMessageValues>();
   const contentPreview = Form.useWatch("content", formApi) ?? "";
   const [messageTypeFilter, setMessageTypeFilter] = useState<SystemMessageType | "all">("all");
@@ -301,20 +308,33 @@ export default function AdminSystemMessagesPage() {
   const [detailMessage, setDetailMessage] = useState<SystemMessageSummary | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+<<<<<<< HEAD
   const [tableScrollY, setTableScrollY] = useState(MESSAGES_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+=======
+  const viewMode: "table" | "card" = isMobile ? "card" : "table";
+  const [cardViewPage, setCardViewPage] = useState(1);
+  const [allLoadedMessages, setAllLoadedMessages] = useState<SystemMessageSummary[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const pageCardRef = useRef<HTMLDivElement | null>(null);
+>>>>>>> b0790dc... feat:[FL-47][系统消息页面：添加移动端响应式卡片视图]
 
   const canManage = hasPermission("admin.system_message");
 
   const listPath = useMemo(() => {
     const params = new URLSearchParams();
-    params.set("limit", "200");
+    if (viewMode === "card") {
+      params.set("limit", "20");
+      params.set("offset", String((cardViewPage - 1) * 20));
+    } else {
+      params.set("limit", "200");
+    }
     if (unreadOnly) {
       params.set("unread_only", "true");
     }
     const qs = params.toString();
     return `/api/v1/system-messages/me?${qs}`;
-  }, [unreadOnly]);
+  }, [unreadOnly, viewMode, cardViewPage]);
 
   const listQuery = useQuery({
     queryKey: ["admin.system-messages", listPath],
@@ -442,6 +462,7 @@ export default function AdminSystemMessagesPage() {
     [messages],
   );
 
+<<<<<<< HEAD
   const updateTableScrollY = useCallback(() => {
     if (typeof window === "undefined") {
       return;
@@ -509,6 +530,64 @@ export default function AdminSystemMessagesPage() {
       resizeObserver.disconnect();
     };
   }, [updateTableScrollY]);
+=======
+  // Update allLoadedMessages when messages data changes in card view
+  useEffect(() => {
+    if (viewMode === "card" && !listQuery.isLoading) {
+      if (cardViewPage === 1) {
+        setAllLoadedMessages(messages);
+      } else {
+        setAllLoadedMessages((prev) => {
+          if (messages.length === 0) {
+            return prev;
+          }
+          const existingIds = new Set(prev.map(m => m.id));
+          const newMessages = messages.filter(m => !existingIds.has(m.id));
+          return [...prev, ...newMessages];
+        });
+      }
+      setIsLoadingMore(false);
+    }
+  }, [messages, listQuery.isLoading, viewMode, cardViewPage]);
+
+  // Handle infinite scroll for card view
+  useEffect(() => {
+    if (viewMode !== "card") return;
+
+    const pageCard = pageCardRef.current;
+    if (!pageCard) return;
+
+    const cardBody = pageCard.querySelector<HTMLElement>(".ant-card-body");
+    if (!cardBody) return;
+
+    const handleScroll = () => {
+      if (isLoadingMore || listQuery.isLoading) return;
+
+      const scrollTop = cardBody.scrollTop;
+      const scrollHeight = cardBody.scrollHeight;
+      const clientHeight = cardBody.clientHeight;
+
+      if (scrollTop + clientHeight >= scrollHeight - 100) {
+        const total = listQuery.data?.total ?? 0;
+        const loadedCount = allLoadedMessages.length;
+
+        if (loadedCount < total) {
+          setIsLoadingMore(true);
+          setCardViewPage((prev) => prev + 1);
+        }
+      }
+    };
+
+    cardBody.addEventListener("scroll", handleScroll);
+    return () => cardBody.removeEventListener("scroll", handleScroll);
+  }, [viewMode, isLoadingMore, listQuery.isLoading, listQuery.data?.total, allLoadedMessages.length]);
+
+  // Reset card view state when filters change
+  useEffect(() => {
+    setCardViewPage(1);
+    setAllLoadedMessages([]);
+  }, [messageTypeFilter, unreadOnly]);
+>>>>>>> b0790dc... feat:[FL-47][系统消息页面：添加移动端响应式卡片视图]
 
   const openCreateMessageModal = () => {
     setError("");
@@ -527,6 +606,94 @@ export default function AdminSystemMessagesPage() {
     setError("");
     setSuccess("");
     createMutation.mutate(values);
+  };
+
+  const renderMessageCard = (item: SystemMessageSummary) => {
+    const isDeleting = deletingMessageId === item.id;
+    const isMarkingRead = markReadMutation.isPending && markReadMutation.variables?.includes(item.id);
+
+    const moreMenuItems: MenuProps["items"] = [
+      {
+        key: "mark-read",
+        label: "标记已读",
+        disabled: item.is_read || isDeleting || isMarkingRead,
+        onClick: () => markReadMutation.mutate([item.id]),
+      },
+      canManage && {
+        key: "delete",
+        label: "删除",
+        danger: true,
+        disabled: isDeleting,
+        onClick: () => {
+          Modal.confirm({
+            title: "删除系统消息",
+            content: `确认删除系统消息「${item.title}」吗？`,
+            okText: "删除",
+            cancelText: "取消",
+            okButtonProps: { danger: true },
+            onOk: () => deleteMutation.mutate(item.id),
+          });
+        },
+      },
+    ].filter(Boolean);
+
+    return (
+      <AntCard
+        key={item.id}
+        size="small"
+        title={
+          <Space direction="vertical" size={2} style={{ width: "100%" }}>
+            <Typography.Text strong={!item.is_read} ellipsis={{ tooltip: item.title }}>
+              {item.title}
+            </Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {item.target_user_id ? `用户：${item.target_user_id}` : "全员广播"}
+            </Typography.Text>
+          </Space>
+        }
+        extra={
+          <Space size={4}>
+            <Button size="small" type="text" onClick={() => setDetailMessage(item)}>
+              查看
+            </Button>
+            <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+              <Button type="text" size="small" disabled={isDeleting} icon={<MoreOutlined />} />
+            </Dropdown>
+          </Space>
+        }
+      >
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <div>
+            <Typography.Text type="secondary">类型</Typography.Text>
+            <div style={{ marginTop: 4 }}>
+              <Tag color={MESSAGE_TYPE_COLORS[item.message_type]}>
+                {MESSAGE_TYPE_LABELS[item.message_type]}
+              </Tag>
+            </div>
+          </div>
+          <div>
+            <Typography.Text type="secondary">状态</Typography.Text>
+            <div style={{ marginTop: 4 }}>
+              <Tag color={item.is_read ? "default" : "processing"}>
+                {item.is_read ? "已读" : "未读"}
+              </Tag>
+            </div>
+          </div>
+          <div>
+            <Typography.Text type="secondary">内容</Typography.Text>
+            <div style={{ marginTop: 4 }}>
+              <MarkdownPreview compact content={item.content} />
+            </div>
+          </div>
+          <div>
+            <Typography.Text type="secondary">创建时间</Typography.Text>
+            <div style={{ marginTop: 4 }}>
+              <Typography.Text>{formatDateTime(item.created_at)}</Typography.Text>
+            </div>
+          </div>
+        </Space>
+      </AntCard>
+    );
   };
 
   const columns: TableColumnsType<SystemMessageSummary> = [
@@ -642,6 +809,7 @@ export default function AdminSystemMessagesPage() {
   return (
     <div className="flex flex-1 flex-col space-y-6">
       <AntCard
+        ref={pageCardRef}
         title="消息列表"
         style={{ height: '100%' }}
         extra={(
@@ -711,6 +879,7 @@ export default function AdminSystemMessagesPage() {
           </Form.Item>
         </Form>
 
+<<<<<<< HEAD
         <div
           ref={tableScrollAnchorRef}
           className="admin-system-messages-table-anchor mt-4"
@@ -718,14 +887,60 @@ export default function AdminSystemMessagesPage() {
         >
           <Table<SystemMessageSummary>
             rowKey="id"
+=======
+        {viewMode === "table" ? (
+          <Table<SystemMessageSummary>
+            rowKey="id"
+            className="mt-4"
+>>>>>>> b0790dc... feat:[FL-47][系统消息页面：添加移动端响应式卡片视图]
             columns={columns}
             dataSource={messages}
             loading={listQuery.isFetching}
             locale={{ emptyText: <Empty description="暂无系统消息" /> }}
             pagination={{ pageSize: 20, showSizeChanger: true, hideOnSinglePage: false, showTotal: (total) => `共 ${total} 条` }}
+<<<<<<< HEAD
             scroll={{ x: 1100, y: tableScrollY }}
           />
         </div>
+=======
+            scroll={{ x: 1100 }}
+          />
+        ) : (
+          <div className="mt-4">
+            {listQuery.isLoading && allLoadedMessages.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "40px 0" }}>
+                <Spin tip="加载中..." />
+              </div>
+            ) : allLoadedMessages.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "40px 0" }}>
+                <Empty description="暂无系统消息" />
+              </div>
+            ) : (
+              <div>
+                <Row gutter={[12, 12]}>
+                  {allLoadedMessages.map((item) => (
+                    <Col key={item.id} xs={24} sm={24} md={12} lg={8} xl={6}>
+                      {renderMessageCard(item)}
+                    </Col>
+                  ))}
+                </Row>
+                {isLoadingMore && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Spin tip="加载更多..." />
+                  </div>
+                )}
+                {allLoadedMessages.length >= (listQuery.data?.total ?? 0) && allLoadedMessages.length > 0 && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Typography.Text type="secondary">
+                      已加载全部 {allLoadedMessages.length} 条数据
+                    </Typography.Text>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+>>>>>>> b0790dc... feat:[FL-47][系统消息页面：添加移动端响应式卡片视图]
       </AntCard>
 
       <Modal
