@@ -6,24 +6,31 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import {
   Button,
   Card,
+  Col,
+  Dropdown,
   Empty,
   Form,
   Input,
   Modal,
   Popconfirm,
+  Row,
   Select,
   Spin,
   Space,
   Table,
   Tag,
+  Typography,
   type CardProps,
+  type MenuProps,
   type TableColumnsType,
 } from "antd";
+import { EditOutlined, MoreOutlined } from "@ant-design/icons";
 import type { ComponentType } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
+import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { readApiError } from "@/lib/api";
 import type { SystemParamListResponse, SystemParamSummary } from "@/types/auth";
 
@@ -65,6 +72,7 @@ const PARAM_TABLE_FALLBACK_RESERVE = 220;
 export default function AdminSystemParamsPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
+  const isMobile = useMobileDetection();
   const [formApi] = Form.useForm<FormState>();
 
   const [keyword, setKeyword] = useState("");
@@ -77,6 +85,11 @@ export default function AdminSystemParamsPage() {
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [tableScrollY, setTableScrollY] = useState(PARAM_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const viewMode: "table" | "card" = isMobile ? "card" : "table";
+  const [cardViewPage, setCardViewPage] = useState(1);
+  const [allLoadedParams, setAllLoadedParams] = useState<SystemParamSummary[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const pageCardRef = useRef<HTMLDivElement | null>(null);
 
   const canRead = hasPermission("system_param.read") || hasPermission("system_param.manage");
   const canManage = hasPermission("system_param.manage");
@@ -251,6 +264,140 @@ export default function AdminSystemParamsPage() {
     clearError: () => setError(""),
     clearSuccess: () => setSuccess(""),
   });
+
+  // Accumulate loaded params for card view
+  useEffect(() => {
+    if (viewMode === "card" && items.length > 0 && !listQuery.isLoading) {
+      setAllLoadedParams((prev) => {
+        const existingIds = new Set(prev.map((p) => p.id));
+        const newParams = items.filter((p) => !existingIds.has(p.id));
+        return [...prev, ...newParams];
+      });
+      setIsLoadingMore(false);
+    }
+  }, [items, listQuery.isLoading, viewMode]);
+
+  // Handle infinite scroll for card view
+  useEffect(() => {
+    if (viewMode !== "card") return;
+
+    const pageCard = pageCardRef.current;
+    if (!pageCard) return;
+
+    const cardBody = pageCard.querySelector<HTMLElement>(".ant-card-body");
+    if (!cardBody) return;
+
+    const handleScroll = () => {
+      if (isLoadingMore || listQuery.isLoading) return;
+
+      const scrollTop = cardBody.scrollTop;
+      const scrollHeight = cardBody.scrollHeight;
+      const clientHeight = cardBody.clientHeight;
+
+      if (scrollTop + clientHeight >= scrollHeight - 100) {
+        const total = listQuery.data?.total ?? 0;
+        const loadedCount = allLoadedParams.length;
+
+        if (loadedCount < total) {
+          setIsLoadingMore(true);
+          setCardViewPage((prev) => prev + 1);
+        }
+      }
+    };
+
+    cardBody.addEventListener("scroll", handleScroll);
+    return () => cardBody.removeEventListener("scroll", handleScroll);
+  }, [viewMode, isLoadingMore, listQuery.isLoading, listQuery.data?.total, allLoadedParams.length]);
+
+  // Reset card view state when filters change
+  useEffect(() => {
+    setCardViewPage(1);
+    setAllLoadedParams([]);
+  }, [statusFilter, keyword]);
+
+  const renderParamCard = (param: SystemParamSummary) => {
+    const deleteLoading = deletingId === param.id;
+    const rowBusy = deleteLoading;
+
+    const moreMenuItems: MenuProps["items"] = [
+      {
+        key: "delete",
+        label: "删除",
+        danger: true,
+        disabled: rowBusy || !canManage,
+        onClick: () => {
+          Modal.confirm({
+            title: `确认删除系统参数 ${param.param_key}？`,
+            okText: "删除",
+            cancelText: "取消",
+            okButtonProps: { danger: true },
+            onOk: () => void removeParam(param),
+          });
+        },
+      },
+    ];
+
+    return (
+      <AntCard
+        key={param.id}
+        className="admin-system-params-param-card"
+        size="small"
+        title={
+          <Space className="min-w-0" size={8}>
+            <Typography.Text strong>{param.param_name}</Typography.Text>
+            <Tag color={param.status === "enabled" ? "success" : "default"}>
+              {param.status === "enabled" ? "已启用" : "已禁用"}
+            </Tag>
+          </Space>
+        }
+        extra={
+          canManage ? (
+            <Space size={4}>
+              <Button
+                type="text"
+                size="small"
+                disabled={rowBusy}
+                icon={<EditOutlined />}
+                onClick={() => startEdit(param)}
+              />
+              <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+                <Button type="text" size="small" disabled={rowBusy} icon={<MoreOutlined />} />
+              </Dropdown>
+            </Space>
+          ) : null
+        }
+      >
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <div className="admin-system-params-param-card-field">
+            <Typography.Text type="secondary">ID</Typography.Text>
+            <Typography.Text>{param.id}</Typography.Text>
+          </div>
+          <div className="admin-system-params-param-card-field">
+            <Typography.Text type="secondary">参数键</Typography.Text>
+            <Typography.Text className="font-mono text-xs">{param.param_key}</Typography.Text>
+          </div>
+          <div className="admin-system-params-param-card-field">
+            <Typography.Text type="secondary">参数值</Typography.Text>
+            <Typography.Text ellipsis={{ tooltip: param.param_value || "-" }}>
+              {param.param_value || "-"}
+            </Typography.Text>
+          </div>
+          {param.description && (
+            <div className="admin-system-params-param-card-field">
+              <Typography.Text type="secondary">说明</Typography.Text>
+              <Typography.Text ellipsis={{ tooltip: param.description }}>
+                {param.description}
+              </Typography.Text>
+            </div>
+          )}
+          <div className="admin-system-params-param-card-field">
+            <Typography.Text type="secondary">更新时间</Typography.Text>
+            <Typography.Text>{new Date(param.updated_at).toLocaleString()}</Typography.Text>
+          </div>
+        </Space>
+      </AntCard>
+    );
+  };
 
   const columns = useMemo<TableColumnsType<SystemParamSummary>>(() => {
     const baseColumns: TableColumnsType<SystemParamSummary> = [
@@ -436,8 +583,9 @@ export default function AdminSystemParamsPage() {
   return (
     <div className="flex flex-1 flex-col space-y-6">
       <AntCard
+        ref={viewMode === "card" ? pageCardRef : undefined}
         title="参数列表"
-        style={{ height: '100%' }}
+        style={{ height: viewMode === "card" ? '100%' : undefined }}
         extra={(
           <Space>
             {listQuery.isFetching && <Spin size="small" />}
@@ -479,35 +627,69 @@ export default function AdminSystemParamsPage() {
           </Form.Item>
         </Form>
 
-        <div
-          ref={tableScrollAnchorRef}
-          className="admin-system-params-table-anchor mt-4"
-          style={{ "--admin-system-params-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
-        >
-          <Table<SystemParamSummary>
-            rowKey="id"
-            loading={listQuery.isFetching}
-            dataSource={items}
-            columns={columns}
-            scroll={{ x: 1120, y: tableScrollY }}
-            pagination={{
-              current: pagination.current,
-              pageSize: pagination.pageSize,
-              total: listQuery.data?.total ?? 0,
-              showSizeChanger: true,
-              pageSizeOptions: [10, 20, 50, 100],
-              showTotal: (total) => `共 ${total} 条`,
-              hideOnSinglePage: false,
-              style: { marginBottom: 0 },
-              onChange: (page, pageSize) => {
-                setPagination({ current: page, pageSize });
-              },
-            }}
-            locale={{
-              emptyText: <Empty description="未找到符合筛选条件的系统参数。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
-            }}
-          />
-        </div>
+        {viewMode === "table" ? (
+          <div
+            ref={tableScrollAnchorRef}
+            className="admin-system-params-table-anchor mt-4"
+            style={{ "--admin-system-params-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+          >
+            <Table<SystemParamSummary>
+              rowKey="id"
+              loading={listQuery.isFetching}
+              dataSource={items}
+              columns={columns}
+              scroll={{ x: 1120, y: tableScrollY }}
+              pagination={{
+                current: pagination.current,
+                pageSize: pagination.pageSize,
+                total: listQuery.data?.total ?? 0,
+                showSizeChanger: true,
+                pageSizeOptions: [10, 20, 50, 100],
+                showTotal: (total) => `共 ${total} 条`,
+                hideOnSinglePage: false,
+                style: { marginBottom: 0 },
+                onChange: (page, pageSize) => {
+                  setPagination({ current: page, pageSize });
+                },
+              }}
+              locale={{
+                emptyText: <Empty description="未找到符合筛选条件的系统参数。" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
+              }}
+            />
+          </div>
+        ) : (
+          <div className="admin-system-params-card-view mt-4">
+            {listQuery.isLoading && allLoadedParams.length === 0 ? (
+              <div className="flex min-h-[240px] items-center justify-center">
+                <Spin tip="加载中..." />
+              </div>
+            ) : allLoadedParams.length === 0 ? (
+              <Empty description="未找到符合筛选条件的系统参数。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            ) : (
+              <div className="admin-system-params-card-view-content">
+                <Row gutter={[12, 12]}>
+                  {allLoadedParams.map((param) => (
+                    <Col key={param.id} xs={24} sm={24} md={12} lg={8} xl={6}>
+                      {renderParamCard(param)}
+                    </Col>
+                  ))}
+                </Row>
+                {isLoadingMore && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Spin tip="加载更多..." />
+                  </div>
+                )}
+                {allLoadedParams.length >= (listQuery.data?.total ?? 0) && allLoadedParams.length > 0 && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Typography.Text type="secondary">
+                      已加载全部 {allLoadedParams.length} 条数据
+                    </Typography.Text>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </AntCard>
 
       {canManage && (
