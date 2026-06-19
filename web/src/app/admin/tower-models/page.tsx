@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   App,
   Button,
+  Card,
   Dropdown,
   Empty,
   Form,
@@ -20,15 +21,15 @@ import {
   Table,
   Tag,
   Typography,
+  type CardProps,
   type MenuProps,
 } from "antd";
 import { MoreOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { AdminPageLoading } from "@/components/admin-page-loading";
-import { Card } from "@/components/ui-antd";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { useMobileDetection } from "@/hooks/use-mobile-detection";
@@ -40,6 +41,8 @@ import type {
   TowerModelListResponse,
   TowerModelSummary,
 } from "@/types/auth";
+
+const AntCard = Card as unknown as ComponentType<CardProps>;
 
 type TowerModelFormValues = {
   code: string;
@@ -704,7 +707,8 @@ export default function AdminTowerModelsPage() {
 
   return (
     <Space direction="vertical" size={16} className="w-full">
-      <Card
+      <AntCard
+        className="admin-tower-models-page-card"
         title="杆塔模型管理"
         extra={canManage ? (
           <Button onClick={openCreate} type="primary">新建模型</Button>
@@ -837,7 +841,7 @@ export default function AdminTowerModelsPage() {
             </>
           )}
         </Space>
-      </Card>
+      </AntCard>
 
       <Modal
         title={editingModel ? "编辑杆塔模型" : "新建杆塔模型"}
