@@ -7,11 +7,11 @@ import {
   Button,
   Card,
   Col,
-  Dropdown,
   Empty,
   Form,
   Input,
   Modal,
+  Popconfirm,
   Row,
   Select,
   Space,
@@ -21,7 +21,7 @@ import {
   type CardProps,
   type MenuProps,
 } from "antd";
-import { EditOutlined, MoreOutlined, DeleteOutlined } from "@ant-design/icons";
+import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import type { CSSProperties, ComponentType } from "react";
 
@@ -223,31 +223,22 @@ export default function AdminRolesPage() {
     }
   }, [closeDialog, editingRoleId, fetchWithAuth, form, loadData, message]);
 
-  const removeRole = useCallback((role: RoleItem) => {
-    modal.confirm({
-      title: `确认删除角色 ${role.code} 吗？`,
-      content: "删除后无法恢复，请谨慎操作。",
-      okText: "删除",
-      okType: "danger",
-      cancelText: "取消",
-      onOk: async () => {
-        setError("");
-        const response = await fetchWithAuth(`/api/v1/admin/roles/${role.id}`, {
-          method: "DELETE",
-        });
-        if (!response.ok) {
-          const nextError = await readApiError(response);
-          setError(nextError);
-          throw new Error(nextError);
-        }
-        message.success("角色已删除");
-        if (editingRoleId === role.id) {
-          closeDialog();
-        }
-        await loadData();
-      },
+  const removeRole = useCallback(async (role: RoleItem) => {
+    setError("");
+    const response = await fetchWithAuth(`/api/v1/admin/roles/${role.id}`, {
+      method: "DELETE",
     });
-  }, [closeDialog, editingRoleId, fetchWithAuth, loadData, message, modal]);
+    if (!response.ok) {
+      const nextError = await readApiError(response);
+      setError(nextError);
+      throw new Error(nextError);
+    }
+    message.success("角色已删除");
+    if (editingRoleId === role.id) {
+      closeDialog();
+    }
+    await loadData();
+  }, [closeDialog, editingRoleId, fetchWithAuth, loadData, message]);
 
   const columns = useMemo<ColumnsType<RoleItem>>(() => {
     const base: ColumnsType<RoleItem> = [
@@ -303,9 +294,18 @@ export default function AdminRolesPage() {
             <Button size="small" onClick={() => startEdit(role)}>
               编辑
             </Button>
-            <Button danger size="small" onClick={() => removeRole(role)}>
-              删除
-            </Button>
+            <Popconfirm
+              title={`确认删除角色 ${role.code} 吗？`}
+              description="删除后无法恢复，请谨慎操作。"
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => removeRole(role)}
+            >
+              <Button danger size="small">
+                删除
+              </Button>
+            </Popconfirm>
           </Space>
         ),
       });
@@ -342,22 +342,21 @@ export default function AdminRolesPage() {
                 icon={<EditOutlined />}
                 onClick={() => startEdit(role)}
               />
-              <Dropdown
-                menu={{
-                  items: [
-                    {
-                      key: "delete",
-                      label: "删除",
-                      danger: true,
-                      icon: <DeleteOutlined />,
-                      onClick: () => removeRole(role),
-                    },
-                  ],
-                }}
-                trigger={["click"]}
+              <Popconfirm
+                title={`确认删除角色 ${role.code} 吗？`}
+                description="删除后无法恢复，请谨慎操作。"
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => removeRole(role)}
               >
-                <Button type="text" size="small" icon={<MoreOutlined />} />
-              </Dropdown>
+                <Button
+                  type="text"
+                  size="small"
+                  danger
+                  icon={<DeleteOutlined />}
+                />
+              </Popconfirm>
             </Space>
           ) : null
         }
@@ -502,7 +501,7 @@ export default function AdminRolesPage() {
         }
       >
         <Form layout="inline" style={{ rowGap: 12 }}>
-          <Form.Item label="关键词" style={{ width: 260 }}>
+          <Form.Item label="关键词" className="min-w-[260px]">
             <Input
               allowClear
               placeholder="搜索角色编码、名称或菜单"
