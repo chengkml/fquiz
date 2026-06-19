@@ -209,6 +209,7 @@ export default function AdminElevationPage() {
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [tableScrollY, setTableScrollY] = useState(DATASETS_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const pageCardRef = useRef<HTMLDivElement>(null);
 
   const [datasetForm] = Form.useForm<DatasetFormValues>();
   const [applyForm] = Form.useForm<ApplyFormValues>();
@@ -1091,8 +1092,9 @@ export default function AdminElevationPage() {
       {messageContextHolder}
 
       <Card
+        ref={pageCardRef}
+        className="admin-elevation-page-card"
         title="高程数据集"
-        style={{ height: '100%' }}
         extra={(
           <Space>
             {datasetsQuery.isFetching && <Spin size="small" />}
