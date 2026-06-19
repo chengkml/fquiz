@@ -941,7 +941,7 @@ export default function AdminUsersPage() {
             <Space wrap size={[4, 4]}>
               {userItem.role_codes && userItem.role_codes.length > 0 ? (
                 userItem.role_codes.map((code) => (
-                  <Tag key={code} color="blue">
+                  <Tag key={code} color="blue" bordered={false}>
                     {getRoleName(code)}
                   </Tag>
                 ))
