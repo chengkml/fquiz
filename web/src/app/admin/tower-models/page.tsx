@@ -31,6 +31,7 @@ import { AdminPageLoading } from "@/components/admin-page-loading";
 import { Card } from "@/components/ui-antd";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
+import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { readApiError } from "@/lib/api";
 import type {
   FileListResponse,
@@ -303,6 +304,7 @@ export default function AdminTowerModelsPage() {
   const { message: messageApi } = App.useApp();
   const [form] = Form.useForm<TowerModelFormValues>();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const isMobile = useMobileDetection();
   const [keywordInput, setKeywordInput] = useState("");
   const [keyword, setKeyword] = useState("");
   const [enabledFilter, setEnabledFilter] = useState<"all" | "enabled" | "disabled">("all");
@@ -310,7 +312,7 @@ export default function AdminTowerModelsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<TowerModelSummary | null>(null);
   const [uploadModel, setUploadModel] = useState<TowerModelSummary | null>(null);
-  const [viewMode, setViewMode] = useState<TowerModelViewMode>("card");
+  const [viewMode, setViewMode] = useState<TowerModelViewMode>(isMobile ? "card" : "list");
   const [pagination, setPagination] = useState({ current: 1, pageSize: TOWER_MODEL_DEFAULT_PAGE_SIZE });
   const [tableScrollY, setTableScrollY] = useState(TOWER_MODEL_CARD_MIN_SCROLL_Y);
   const viewScrollAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -742,17 +744,19 @@ export default function AdminTowerModelsPage() {
               <Button onClick={handleResetFilters}>重置筛选</Button>
             </Form.Item>
           </Form>
-          <Space size={8} align="center" wrap>
-            <Typography.Text type="secondary">展示方式</Typography.Text>
-            <Segmented
-              options={[
-                { label: "卡片", value: "card" },
-                { label: "列表", value: "list" },
-              ]}
-              value={viewMode}
-              onChange={(value) => setViewMode(value === "list" ? "list" : "card")}
-            />
-          </Space>
+          {!isMobile && (
+            <Space size={8} align="center" wrap>
+              <Typography.Text type="secondary">展示方式</Typography.Text>
+              <Segmented
+                options={[
+                  { label: "卡片", value: "card" },
+                  { label: "列表", value: "list" },
+                ]}
+                value={viewMode}
+                onChange={(value) => setViewMode(value === "list" ? "list" : "card")}
+              />
+            </Space>
+          )}
           {totalItems === 0 ? (
             <Empty description="暂无杆塔模型数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           ) : (
