@@ -430,7 +430,7 @@ export default function AdminRolesPage() {
           const rowBusy = isDeleting || isSaving || createRoleMutation.isPending || updateRoleMutation.isPending;
 
           return (
-            <Space size="small">
+            <Space wrap>
               <Button
                 size="small"
                 disabled={rowBusy}
@@ -499,9 +499,11 @@ export default function AdminRolesPage() {
         className="admin-roles-role-card"
         size="small"
         title={
-          <Space direction="vertical" size={0}>
-            <Typography.Text strong>{role.name}</Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: '12px' }}>
+          <Space className="min-w-0" size={8}>
+            <Typography.Text strong ellipsis={{ tooltip: role.name }}>
+              {role.name}
+            </Typography.Text>
+            <Typography.Text type="secondary" ellipsis={{ tooltip: role.code }}>
               {role.code}
             </Typography.Text>
           </Space>
@@ -529,6 +531,18 @@ export default function AdminRolesPage() {
         }
       >
         <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <div className="admin-roles-role-card-field">
+            <Typography.Text type="secondary">角色编码</Typography.Text>
+            <Typography.Text ellipsis={{ tooltip: role.code }}>
+              {role.code}
+            </Typography.Text>
+          </div>
+          <div className="admin-roles-role-card-field">
+            <Typography.Text type="secondary">角色名称</Typography.Text>
+            <Typography.Text ellipsis={{ tooltip: role.name }}>
+              {role.name}
+            </Typography.Text>
+          </div>
           <div className="admin-roles-role-card-field">
             <Typography.Text type="secondary">菜单</Typography.Text>
             <Typography.Text
@@ -785,6 +799,7 @@ export default function AdminRolesPage() {
           confirmLoading={createRoleMutation.isPending || updateRoleMutation.isPending}
           onCancel={closeDialog}
           onOk={() => void submit()}
+          width={760}
         >
           <Form<RoleFormValues>
             form={form}
@@ -821,6 +836,7 @@ export default function AdminRolesPage() {
                 <Form.Item label="可见菜单" name="menu_ids">
                   <Select
                     allowClear
+                    showSearch
                     mode="multiple"
                     optionFilterProp="label"
                     options={menuOptions}
