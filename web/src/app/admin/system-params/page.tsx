@@ -321,6 +321,15 @@ export default function AdminSystemParamsPage() {
 
     const moreMenuItems: MenuProps["items"] = [
       {
+        key: "copy-key",
+        label: "复制参数键",
+        disabled: rowBusy,
+        onClick: () => {
+          void navigator.clipboard.writeText(param.param_key);
+          setSuccess(`已复制参数键: ${param.param_key}`);
+        },
+      },
+      {
         key: "delete",
         label: "删除",
         danger: true,
@@ -453,26 +462,47 @@ export default function AdminSystemParamsPage() {
         title: "操作",
         key: "actions",
         fixed: "right",
-        width: 150,
-        render: (_, record) => (
-          <Space size="small">
-            <Button size="small" onClick={() => startEdit(record)}>
-              编辑
-            </Button>
-            <Popconfirm
-              title="删除系统参数"
-              description={`确认删除系统参数 ${record.param_key} 吗？`}
-              okText="删除"
-              cancelText="取消"
-              okButtonProps={{ danger: true, loading: deletingId === record.id }}
-              onConfirm={() => void removeParam(record)}
-            >
-              <Button size="small" danger loading={deletingId === record.id}>
-                删除
+        width: 180,
+        render: (_, record) => {
+          const deleteLoading = deletingId === record.id;
+          const rowBusy = deleteLoading;
+
+          const moreMenuItems: MenuProps["items"] = [
+            {
+              key: "copy-key",
+              label: "复制参数键",
+              disabled: rowBusy,
+              onClick: () => {
+                void navigator.clipboard.writeText(record.param_key);
+                setSuccess(`已复制参数键: ${record.param_key}`);
+              },
+            },
+          ];
+
+          return (
+            <Space size="small">
+              <Button size="small" disabled={rowBusy} onClick={() => startEdit(record)}>
+                编辑
               </Button>
-            </Popconfirm>
-          </Space>
-        ),
+              <Popconfirm
+                title="删除系统参数"
+                description={`确认删除系统参数 ${record.param_key} 吗？`}
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true, loading: deleteLoading }}
+                onConfirm={() => void removeParam(record)}
+                disabled={rowBusy}
+              >
+                <Button size="small" danger loading={deleteLoading} disabled={rowBusy}>
+                  删除
+                </Button>
+              </Popconfirm>
+              <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+                <Button size="small" disabled={rowBusy} icon={<MoreOutlined />} />
+              </Dropdown>
+            </Space>
+          );
+        },
       });
     }
 
