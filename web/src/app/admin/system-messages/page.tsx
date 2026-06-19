@@ -807,11 +807,11 @@ export default function AdminSystemMessagesPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col space-y-6">
+    <div className="flex min-h-0 flex-1 flex-col">
       <AntCard
         ref={pageCardRef}
+        className="admin-system-messages-page-card"
         title="消息列表"
-        style={{ height: '100%' }}
         extra={(
           <Space>
             {listQuery.isFetching && <Spin size="small" />}

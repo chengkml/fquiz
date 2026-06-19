@@ -307,6 +307,22 @@ body {
   overflow-y: auto;
 }
 
+.admin-system-messages-page-card {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.admin-system-messages-page-card > .ant-card-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 .admin-users-card-view {
   display: flex;
   min-height: 0;
