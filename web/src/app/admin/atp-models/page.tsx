@@ -8,10 +8,8 @@ import {
   Button,
   Card,
   Col,
-  Dropdown,
   Form,
   Input,
-  Modal,
   Popconfirm,
   Row,
   Select,
@@ -21,9 +19,7 @@ import {
   Tag,
   Typography,
   type CardProps,
-  type MenuProps,
 } from "antd";
-import { MoreOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
 
@@ -329,6 +325,7 @@ export default function AtpModelsPage() {
       {
         title: "模型",
         key: "asset",
+        width: 200,
         render: (_, item) => (
           <Space direction="vertical" size={0}>
             <Typography.Text strong>{item.name}</Typography.Text>
@@ -341,6 +338,7 @@ export default function AtpModelsPage() {
       {
         title: "业务维度",
         key: "dimensions",
+        width: 240,
         render: (_, item) => (
           <Space size={[4, 4]} wrap>
             <Tag>{item.voltage_level || "未设置电压等级"}</Tag>
@@ -353,6 +351,7 @@ export default function AtpModelsPage() {
       {
         title: "当前版本",
         key: "release",
+        width: 180,
         render: (_, item) => (
           <Space direction="vertical" size={0}>
             <Typography.Text>{item.active_release_tag || (item.active_release_no ? `r${item.active_release_no}` : "-")}</Typography.Text>
@@ -364,21 +363,17 @@ export default function AtpModelsPage() {
       },
       {
         title: "更新时间",
+        key: "update_date",
+        width: 180,
         dataIndex: "update_date",
         render: (value: string) => formatDateTime(value),
       },
       {
         title: "操作",
         key: "actions",
+        width: 200,
         render: (_, item) => {
-          const moreMenuItems: MenuProps["items"] = [
-            {
-              key: "delete",
-              label: "删除",
-              danger: true,
-              disabled: !canManage || deleteMutation.isPending,
-            },
-          ];
+          const deleteLoading = deleteMutation.isPending;
 
           return (
             <Space wrap>
@@ -398,28 +393,19 @@ export default function AtpModelsPage() {
               >
                 编辑
               </Button>
-              <Dropdown
-                menu={{
-                  items: moreMenuItems,
-                  onClick: ({ key }) => {
-                    if (key === "delete") {
-                      Modal.confirm({
-                        title: "删除模型",
-                        content: "这会同时删除其版本与运行记录。",
-                        okText: "删除",
-                        cancelText: "取消",
-                        okButtonProps: { danger: true },
-                        onOk: async () => {
-                          await deleteMutation.mutateAsync(item.id);
-                        },
-                      });
-                    }
-                  },
-                }}
-                trigger={["click"]}
+              <Popconfirm
+                title="删除模型"
+                description="这会同时删除其版本与运行记录。"
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true, loading: deleteLoading }}
+                onConfirm={() => deleteMutation.mutate(item.id)}
+                disabled={!canManage}
               >
-                <Button size="small" icon={<MoreOutlined />} disabled={!canManage} />
-              </Dropdown>
+                <Button danger size="small" loading={deleteLoading} disabled={!canManage}>
+                  删除
+                </Button>
+              </Popconfirm>
             </Space>
           );
         },
