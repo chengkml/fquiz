@@ -26,7 +26,7 @@ import {
   type MenuProps,
   type TableColumnsType,
 } from "antd";
-import { MoreOutlined } from "@ant-design/icons";
+import { MoreOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import type { CSSProperties, ComponentType } from "react";
 
 import { useAuth } from "@/components/auth-provider";
@@ -504,9 +504,18 @@ export default function AdminMenusPage() {
         }
         extra={
           canManage ? (
-            <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
-              <Button size="small" disabled={menuBusy} icon={<MoreOutlined />} />
-            </Dropdown>
+            <Space size={4}>
+              <Button
+                type="text"
+                size="small"
+                disabled={menuBusy}
+                icon={<EditOutlined />}
+                onClick={() => startEdit(menuItem)}
+              />
+              <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+                <Button type="text" size="small" disabled={menuBusy} icon={<MoreOutlined />} />
+              </Dropdown>
+            </Space>
           ) : null
         }
       >
