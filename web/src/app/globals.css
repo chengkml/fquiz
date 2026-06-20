@@ -1319,3 +1319,25 @@ body {
 :root[data-fquiz-theme="dark"] .admin-lightning-distribution-card-view-state {
   color: var(--ant-color-text-secondary) !important;
 }
+
+.login-page-card {
+  border-color: color-mix(in srgb, var(--fquiz-theme-primary) 26%, var(--ant-color-border-secondary));
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--fquiz-theme-bg-container) 96%, var(--fquiz-theme-primary) 4%) 0%,
+      var(--fquiz-theme-bg-container) 100%
+    );
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--fquiz-theme-text-primary) 8%, transparent);
+}
+
+:root[data-fquiz-theme="dark"] .login-page-card {
+  border-color: color-mix(in srgb, var(--fquiz-theme-primary) 35%, var(--ant-color-border-secondary)) !important;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--ant-color-bg-container) 92%, var(--fquiz-theme-primary) 8%) 0%,
+      var(--ant-color-bg-container) 100%
+    ) !important;
+  box-shadow: 0 8px 18px color-mix(in srgb, black 40%, transparent) !important;
+}

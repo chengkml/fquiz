@@ -135,7 +135,7 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[var(--fquiz-theme-bg-layout)] px-4 py-8">
-      <Card className="w-full max-w-[360px]">
+      <Card className="login-page-card w-full max-w-[360px]">
         <Space direction="vertical" size={20} className="w-full">
           <div className="flex justify-center">
             <img
