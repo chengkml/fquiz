@@ -164,6 +164,18 @@ export default function AdminTaskMonitorPage() {
   const [tableScrollY, setTableScrollY] = useState(TASK_MONITOR_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const viewMode: "table" | "card" = isMobile ? "card" : "table";
+  const [cardViewPage, setCardViewPage] = useState(1);
+  const [allLoadedTasks, setAllLoadedTasks] = useState<TaskTableRow[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const pageCardRef = useRef<HTMLDivElement | null>(null);
+  const { current: paginationCurrent, pageSize: paginationPageSize } = pagination;
+
+  const resetTaskListPagination = useCallback(() => {
+    setPagination((prev) => ({ ...prev, current: 1 }));
+    setCardViewPage(1);
+    setAllLoadedTasks([]);
+    setIsLoadingMore(false);
+  }, []);
 
   const workersOverviewQuery = useQuery({
     queryKey: ["flower-workers-overview"],
@@ -381,7 +393,7 @@ export default function AdminTaskMonitorPage() {
     setQueueKeyword("");
     setTaskKeyword("");
     setStatusFilter("all");
-    setPagination((prev) => ({ ...prev, current: 1 }));
+    resetTaskListPagination();
   };
 
   const workersOverviewErrorMessage = workersOverviewQuery.error instanceof Error
@@ -395,6 +407,74 @@ export default function AdminTaskMonitorPage() {
   useToastFeedback({
     errorMessage: anyError,
   });
+
+  useEffect(() => {
+    if (viewMode !== "card" || allTasksQuery.isLoading) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const nextTasks = filteredTaskRows.slice(0, cardViewPage * paginationPageSize);
+
+      if (cardViewPage === 1) {
+        setAllLoadedTasks(() => nextTasks);
+      } else {
+        setAllLoadedTasks((prev) => {
+          if (nextTasks.length === 0) {
+            return prev;
+          }
+          const existingKeys = new Set(prev.map((task) => task.key));
+          const newTasks = nextTasks.filter((task) => !existingKeys.has(task.key));
+          return [...prev, ...newTasks];
+        });
+      }
+
+      setIsLoadingMore(false);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [allTasksQuery.isLoading, cardViewPage, filteredTaskRows, paginationPageSize, viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== "card") {
+      return;
+    }
+
+    const pageCard = pageCardRef.current;
+    if (!pageCard) {
+      return;
+    }
+
+    const cardBody = pageCard.querySelector<HTMLElement>(".ant-card-body");
+    if (!cardBody) {
+      return;
+    }
+
+    const handleScroll = () => {
+      if (isLoadingMore || allTasksQuery.isLoading) {
+        return;
+      }
+
+      const { scrollTop, scrollHeight, clientHeight } = cardBody;
+      if (scrollTop + clientHeight >= scrollHeight - 100) {
+        const total = filteredTaskRows.length;
+        const loadedCount = allLoadedTasks.length;
+
+        if (loadedCount < total) {
+          setIsLoadingMore(true);
+          setCardViewPage((prev) => prev + 1);
+          setPagination((prev) => ({ ...prev, current: prev.current + 1 }));
+        }
+      }
+    };
+
+    cardBody.addEventListener("scroll", handleScroll);
+    return () => {
+      cardBody.removeEventListener("scroll", handleScroll);
+    };
+  }, [allLoadedTasks.length, allTasksQuery.isLoading, filteredTaskRows.length, isLoadingMore, viewMode]);
 
   const updateTableScrollY = useCallback(() => {
     if (typeof window === "undefined") {
@@ -578,6 +658,7 @@ export default function AdminTaskMonitorPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <AntCard
+        ref={pageCardRef}
         className="admin-task-monitor-page-card"
         title="任务监控"
         extra={(
@@ -597,48 +678,48 @@ export default function AdminTaskMonitorPage() {
       >
         {viewMode === "card" ? (
           <Form layout="vertical" style={{ marginBottom: 16 }}>
-            <Form.Item label="执行节点" style={{ marginBottom: 12 }}>
+            <Form.Item label="执行节点" style={{ marginBottom: 0 }}>
               <Input
                 allowClear
                 placeholder="按执行节点名称筛选"
                 value={workerKeyword}
                 onChange={(event) => {
                   setWorkerKeyword(event.target.value);
-                  setPagination((prev) => ({ ...prev, current: 1 }));
+                  resetTaskListPagination();
                 }}
               />
             </Form.Item>
 
-            <Form.Item label="队列" style={{ marginBottom: 12 }}>
+            <Form.Item label="队列" style={{ marginBottom: 0 }}>
               <Input
                 allowClear
                 placeholder="按队列名称筛选"
                 value={queueKeyword}
                 onChange={(event) => {
                   setQueueKeyword(event.target.value);
-                  setPagination((prev) => ({ ...prev, current: 1 }));
+                  resetTaskListPagination();
                 }}
               />
             </Form.Item>
 
-            <Form.Item label="任务" style={{ marginBottom: 12 }}>
+            <Form.Item label="任务" style={{ marginBottom: 0 }}>
               <Input
                 allowClear
                 placeholder="按任务 ID / 任务名称筛选"
                 value={taskKeyword}
                 onChange={(event) => {
                   setTaskKeyword(event.target.value);
-                  setPagination((prev) => ({ ...prev, current: 1 }));
+                  resetTaskListPagination();
                 }}
               />
             </Form.Item>
 
-            <Form.Item label="状态" style={{ marginBottom: 12 }}>
+            <Form.Item label="状态" style={{ marginBottom: 0 }}>
               <Select
                 value={statusFilter}
                 onChange={(value) => {
                   setStatusFilter(parseStatusFilter(value));
-                  setPagination((prev) => ({ ...prev, current: 1 }));
+                  resetTaskListPagination();
                 }}
                 options={[
                   { label: "全部状态", value: "all" },
@@ -667,7 +748,7 @@ export default function AdminTaskMonitorPage() {
                 value={workerKeyword}
                 onChange={(event) => {
                   setWorkerKeyword(event.target.value);
-                  setPagination((prev) => ({ ...prev, current: 1 }));
+                  resetTaskListPagination();
                 }}
               />
             </Form.Item>
@@ -679,7 +760,7 @@ export default function AdminTaskMonitorPage() {
                 value={queueKeyword}
                 onChange={(event) => {
                   setQueueKeyword(event.target.value);
-                  setPagination((prev) => ({ ...prev, current: 1 }));
+                  resetTaskListPagination();
                 }}
               />
             </Form.Item>
@@ -691,7 +772,7 @@ export default function AdminTaskMonitorPage() {
                 value={taskKeyword}
                 onChange={(event) => {
                   setTaskKeyword(event.target.value);
-                  setPagination((prev) => ({ ...prev, current: 1 }));
+                  resetTaskListPagination();
                 }}
               />
             </Form.Item>
@@ -701,7 +782,7 @@ export default function AdminTaskMonitorPage() {
                 value={statusFilter}
                 onChange={(value) => {
                   setStatusFilter(parseStatusFilter(value));
-                  setPagination((prev) => ({ ...prev, current: 1 }));
+                  resetTaskListPagination();
                 }}
                 options={[
                   { label: "全部状态", value: "all" },
@@ -754,8 +835,8 @@ export default function AdminTaskMonitorPage() {
               loading={workersOverviewQuery.isLoading || allTasksQuery.isLoading}
               tableLayout="fixed"
               pagination={{
-                current: pagination.current,
-                pageSize: pagination.pageSize,
+                current: paginationCurrent,
+                pageSize: paginationPageSize,
                 total: Math.max(filteredTaskRows.length, 1),
                 showSizeChanger: true,
                 pageSizeOptions: [10, 20, 50, 100],
@@ -779,11 +860,11 @@ export default function AdminTaskMonitorPage() {
           </div>
         ) : workersOverview ? (
           <div className="admin-task-monitor-card-view">
-            {allTasksQuery.isLoading ? (
+            {allTasksQuery.isLoading && allLoadedTasks.length === 0 ? (
               <div className="admin-task-monitor-card-view-state">
                 <Spin tip="加载中..." />
               </div>
-            ) : filteredTaskRows.length === 0 ? (
+            ) : allLoadedTasks.length === 0 ? (
               <div className="admin-task-monitor-card-view-state">
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -793,17 +874,24 @@ export default function AdminTaskMonitorPage() {
             ) : (
               <div className="admin-task-monitor-card-view-content">
                 <Row gutter={[12, 12]}>
-                  {filteredTaskRows.map((task) => (
+                  {allLoadedTasks.map((task) => (
                     <Col key={task.key} xs={24} sm={24} md={12} lg={8} xl={6}>
                       {renderTaskCard(task)}
                     </Col>
                   ))}
                 </Row>
-                <div style={{ textAlign: "center", padding: "20px 0" }}>
-                  <Typography.Text type="secondary">
-                    已加载全部 {filteredTaskRows.length} 条数据
-                  </Typography.Text>
-                </div>
+                {isLoadingMore && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Spin tip="加载更多..." />
+                  </div>
+                )}
+                {allLoadedTasks.length >= filteredTaskRows.length && allLoadedTasks.length > 0 && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Typography.Text type="secondary">
+                      已加载全部 {allLoadedTasks.length} 条数据
+                    </Typography.Text>
+                  </div>
+                )}
               </div>
             )}
           </div>
