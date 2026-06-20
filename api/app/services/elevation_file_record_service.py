@@ -1,0 +1,600 @@
+from __future__ import annotations
+
+import csv
+import io
+import mimetypes
+from pathlib import Path
+from typing import Any
+
+from fastapi import HTTPException, UploadFile, status
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from ..core.database import SessionLocal
+from ..models.base import utcnow
+from ..models.elevation import ElevationApplyJob, ElevationFileRecord
+from ..models.line import Line
+from ..models.user import User
+from ..schemas.elevation import (
+    ElevationFileRecordAnalyzeResponse,
+    ElevationFileRecordCreateRequest,
+    ElevationFileRecordListResponse,
+    ElevationFileRecordPreviewResponse,
+    ElevationFileRecordSummary,
+    ElevationFileRecordTerrainBuildResponse,
+    ElevationFileRecordUpdateRequest,
+    ElevationFileRecordUploadResponse,
+)
+from .elevation_service import (
+    ELEVATION_FILE_EXT_FORMAT_MAP,
+    ELEVATION_TOPIC,
+    IMPORTABLE_ELEVATION_EXTENSIONS,
+    RASTER_FILE_FORMATS,
+    TERRAIN_SUPPORTED_DATASET_FORMATS,
+    _analyze_dataset_content,
+    _build_dataset_or_400,
+    _build_raster_preview,
+    _decode_csv_bytes,
+    _default_terrain_status_for_format,
+    _detect_file_format,
+    _fire_and_forget,
+    _load_dataset_points,
+    _normalize_str,
+    _publish_elevation_change,
+    _queue_dataset_terrain_build_after_analysis,
+    _require_mount,
+    _require_rasterio_available,
+    _resolve_dataset_dir,
+    _resolve_dataset_file_path,
+    _resolve_dataset_mount_code,
+    _sample_preview_points_from_csv,
+    _supports_terrain_build,
+    _sync_dataset_terrain_support,
+    ElevationDatasetPreviewDiagnostics,
+    ElevationDatasetPreviewPoint,
+    join_virtual_path,
+    publish_topic,
+)
+from .file_service import _build_driver_or_400
+
+
+def serialize_file_record(item: ElevationFileRecord) -> ElevationFileRecordSummary:
+    return ElevationFileRecordSummary(
+        id=item.id,
+        file_name=item.file_name,
+        file_path=item.file_path,
+        file_format=item.file_format,
+        file_size=item.file_size,
+        source=item.source,
+        mount_code=item.mount_code,
+        resolution_m=item.resolution_m,
+        status=item.status,  # type: ignore[arg-type]
+        bbox_min_lon=item.bbox_min_lon,
+        bbox_max_lon=item.bbox_max_lon,
+        bbox_min_lat=item.bbox_min_lat,
+        bbox_max_lat=item.bbox_max_lat,
+        sample_count=item.sample_count,
+        analysis_task_id=item.analysis_task_id,
+        analysis_status=item.analysis_status,
+        analysis_error_message=item.analysis_error_message,
+        analysis_started_at=item.analysis_started_at,
+        analysis_finished_at=item.analysis_finished_at,
+        terrain_status=item.terrain_status,  # type: ignore[arg-type]
+        terrain_task_id=item.terrain_task_id,
+        terrain_error_message=item.terrain_error_message,
+        terrain_root_path=item.terrain_root_path,
+        terrain_url_template=item.terrain_url_template,
+        terrain_min_zoom=item.terrain_min_zoom,
+        terrain_max_zoom=item.terrain_max_zoom,
+        terrain_bounds=item.terrain_bounds,
+        terrain_metadata=item.terrain_metadata,
+        notes=item.notes,
+        create_date=item.create_date,
+        create_user=item.create_user,
+        update_date=item.update_date,
+        update_user=item.update_user,
+    )
+
+
+def list_file_records(
+    db: Session,
+    *,
+    keyword: str | None,
+    status_filter: str | None,
+) -> ElevationFileRecordListResponse:
+    stmt = select(ElevationFileRecord)
+    total_stmt = select(func.count()).select_from(ElevationFileRecord)
+
+    normalized_keyword = (keyword or "").strip()
+    if normalized_keyword:
+        like = f"%{normalized_keyword}%"
+        predicate = (
+            ElevationFileRecord.file_name.ilike(like)
+            | ElevationFileRecord.source.ilike(like)
+        )
+        stmt = stmt.where(predicate)
+        total_stmt = total_stmt.where(predicate)
+
+    if status_filter in {"active", "disabled"}:
+        stmt = stmt.where(ElevationFileRecord.status == status_filter)
+        total_stmt = total_stmt.where(ElevationFileRecord.status == status_filter)
+
+    total = int(db.scalar(total_stmt) or 0)
+    items = db.execute(
+        stmt.order_by(ElevationFileRecord.update_date.desc(), ElevationFileRecord.create_date.desc())
+    ).scalars().all()
+    return ElevationFileRecordListResponse(
+        items=[serialize_file_record(item) for item in items],
+        total=total,
+    )
+
+
+def get_file_record_by_id(db: Session, record_id: str) -> ElevationFileRecord | None:
+    return db.execute(
+        select(ElevationFileRecord).where(ElevationFileRecord.id == record_id)
+    ).scalar_one_or_none()
+
+
+def create_file_record_from_upload(
+    db: Session,
+    file: UploadFile,
+    payload: ElevationFileRecordCreateRequest,
+    *,
+    actor: User,
+) -> ElevationFileRecordUploadResponse:
+    """Create a file record and upload the file in one operation."""
+    if not file.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件名不能为空")
+
+    filename = file.filename.strip()
+    file_ext = Path(filename).suffix.lower()
+
+    if file_ext not in IMPORTABLE_ELEVATION_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"不支持的文件格式: {file_ext}，仅支持 .csv/.img/.tif/.tiff"
+        )
+
+    file_format = ELEVATION_FILE_EXT_FORMAT_MAP.get(file_ext, "csv")
+
+    if file_format in RASTER_FILE_FORMATS:
+        _require_rasterio_available()
+
+    # Read file content
+    try:
+        content = file.file.read()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"读取上传文件失败：{exc}"
+        ) from exc
+    finally:
+        try:
+            file.file.close()
+        except Exception:
+            pass
+
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="上传文件为空")
+
+    file_size = len(content)
+
+    # Determine mount and storage path
+    mount_code = _resolve_dataset_mount_code(db, requested_mount_code=payload.mount_code)
+    mount = _require_mount(db, mount_code)
+    driver = _build_driver_or_400(mount)
+
+    # Generate unique storage path
+    from uuid import uuid4
+    record_id = uuid4().hex
+    storage_dir = f"/elevation/records/{record_id[:2]}/{record_id[2:4]}"
+    storage_path = join_virtual_path(storage_dir, filename)
+
+    # Ensure directory exists and write file
+    try:
+        driver.ensure_directory(storage_dir)
+        driver.write_file(
+            storage_path,
+            content=content,
+            content_type=file.content_type or mimetypes.guess_type(filename)[0],
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"文件存储失败: {exc}"
+        ) from exc
+
+    # Create database record
+    now = utcnow()
+    record = ElevationFileRecord(
+        id=record_id,
+        file_name=filename,
+        file_path=storage_path,
+        file_format=file_format,
+        file_size=file_size,
+        source=_normalize_str(payload.source),
+        mount_code=mount_code,
+        resolution_m=payload.resolution_m,
+        status="active",
+        terrain_status=_default_terrain_status_for_format(file_format),
+        notes=_normalize_str(payload.notes),
+        create_date=now,
+        create_user=actor.id,
+        update_date=now,
+        update_user=actor.id,
+    )
+    db.add(record)
+    db.commit()
+
+    saved = get_file_record_by_id(db, record.id)
+    if not saved:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="文件记录创建失败"
+        )
+
+    _publish_elevation_change(
+        "elevation.file_record.created",
+        {"action": "file_record_created", "file_record_id": saved.id},
+    )
+
+    warnings: list[str] = []
+
+    # Trigger analysis if requested
+    if payload.trigger_analysis:
+        try:
+            from ..tasks.elevation_tasks import analyze_elevation_file_record_job
+            task = analyze_elevation_file_record_job.delay(saved.id, actor.id)
+            saved.analysis_task_id = str(task.id)
+            saved.analysis_status = "queued"
+            saved.update_date = utcnow()
+            db.commit()
+        except Exception as exc:
+            warnings.append(f"自动分析任务派发失败：{exc}")
+
+    return ElevationFileRecordUploadResponse(
+        record=serialize_file_record(saved),
+        queued=payload.trigger_analysis,
+        detail="文件已上传并创建记录",
+        warnings=warnings,
+    )
+
+
+def update_file_record(
+    db: Session,
+    record_id: str,
+    payload: ElevationFileRecordUpdateRequest,
+    *,
+    actor: User,
+) -> ElevationFileRecordSummary | None:
+    item = get_file_record_by_id(db, record_id)
+    if not item:
+        return None
+
+    update_data = payload.model_dump(exclude_unset=True)
+    if "source" in update_data:
+        item.source = _normalize_str(update_data["source"])
+    if "resolution_m" in update_data:
+        item.resolution_m = update_data["resolution_m"]
+    if "status" in update_data and update_data["status"] is not None:
+        item.status = str(update_data["status"]).strip().lower()
+    if "notes" in update_data:
+        item.notes = _normalize_str(update_data["notes"])
+
+    item.update_user = actor.id
+    item.update_date = utcnow()
+    db.commit()
+
+    saved = get_file_record_by_id(db, record_id)
+    if not saved:
+        return None
+
+    _publish_elevation_change(
+        "elevation.file_record.updated",
+        {"action": "file_record_updated", "file_record_id": saved.id},
+    )
+    return serialize_file_record(saved)
+
+
+def delete_file_record(db: Session, record_id: str) -> bool:
+    item = get_file_record_by_id(db, record_id)
+    if not item:
+        return False
+
+    # Check for running jobs
+    running_job_count = int(
+        db.scalar(
+            select(func.count())
+            .select_from(ElevationApplyJob)
+            .where(
+                ElevationApplyJob.file_record_id == record_id,
+                ElevationApplyJob.status == "running",
+            )
+        )
+        or 0
+    )
+    if running_job_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"该文件存在 {running_job_count} 个运行中的回填任务，暂不能删除",
+        )
+
+    # Delete associated jobs
+    from sqlalchemy import delete as sql_delete
+    db.execute(sql_delete(ElevationApplyJob).where(ElevationApplyJob.file_record_id == record_id))
+
+    # Delete the record
+    db.delete(item)
+    db.commit()
+
+    _publish_elevation_change(
+        "elevation.file_record.deleted",
+        {"action": "file_record_deleted", "file_record_id": record_id},
+    )
+    return True
+
+
+def queue_file_record_analysis(
+    db: Session,
+    *,
+    record_id: str,
+    actor: User,
+) -> ElevationFileRecordAnalyzeResponse:
+    item = get_file_record_by_id(db, record_id)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="文件记录不存在")
+    if item.status != "active":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件记录未启用")
+
+    if item.analysis_status in {"queued", "running"}:
+        return ElevationFileRecordAnalyzeResponse(
+            record=serialize_file_record(item),
+            task_id=item.analysis_task_id,
+            queued=False,
+            detail="分析任务已存在，无需重复提交。",
+            warnings=[],
+        )
+
+    item.analysis_status = "queued"
+    item.analysis_error_message = None
+    item.analysis_started_at = None
+    item.analysis_finished_at = None
+    item.update_user = actor.id
+    item.update_date = utcnow()
+    db.commit()
+
+    try:
+        from ..tasks.elevation_tasks import analyze_elevation_file_record_job
+        task = analyze_elevation_file_record_job.delay(item.id, actor.id)
+    except Exception as exc:
+        item.analysis_status = "failed"
+        item.analysis_error_message = str(exc)
+        item.analysis_finished_at = utcnow()
+        item.update_user = actor.id
+        item.update_date = utcnow()
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"分析任务派发失败: {exc}"
+        ) from exc
+
+    item.analysis_task_id = str(task.id)
+    item.update_user = actor.id
+    item.update_date = utcnow()
+    db.commit()
+
+    saved = get_file_record_by_id(db, record_id)
+    if not saved:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="文件记录分析任务保存失败"
+        )
+
+    _publish_elevation_change(
+        "elevation.file_record.analysis.queued",
+        {"action": "file_record_analysis_queued", "file_record_id": saved.id, "task_id": saved.analysis_task_id},
+    )
+    return ElevationFileRecordAnalyzeResponse(
+        record=serialize_file_record(saved),
+        task_id=saved.analysis_task_id,
+        queued=True,
+        detail="分析任务已提交，等待执行。",
+        warnings=[],
+    )
+
+
+def queue_file_record_terrain_build(
+    db: Session,
+    *,
+    record_id: str,
+    actor: User,
+) -> ElevationFileRecordTerrainBuildResponse:
+    item = get_file_record_by_id(db, record_id)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="文件记录不存在")
+    if item.status != "active":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件记录未启用")
+
+    # Check if format supports terrain
+    if item.file_format not in TERRAIN_SUPPORTED_DATASET_FORMATS:
+        item.terrain_status = "not_supported"
+        item.terrain_task_id = None
+        item.terrain_error_message = None
+        item.update_user = actor.id
+        item.update_date = utcnow()
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="当前文件格式不支持地形瓦片生成"
+        )
+
+    if item.terrain_status == "processing" or (item.terrain_status == "pending" and item.terrain_task_id):
+        return ElevationFileRecordTerrainBuildResponse(
+            record=serialize_file_record(item),
+            task_id=item.terrain_task_id,
+            queued=False,
+            detail="地形瓦片任务已存在，无需重复提交。",
+            warnings=[],
+        )
+
+    item.terrain_status = "pending"
+    item.terrain_error_message = None
+    item.terrain_root_path = None
+    item.terrain_url_template = None
+    item.terrain_min_zoom = None
+    item.terrain_max_zoom = None
+    item.terrain_bounds = None
+    item.terrain_metadata = None
+    item.update_user = actor.id
+    item.update_date = utcnow()
+    db.commit()
+
+    try:
+        from ..tasks.elevation_tasks import build_elevation_file_record_terrain_job
+        task = build_elevation_file_record_terrain_job.delay(item.id, actor.id)
+    except Exception as exc:
+        item.terrain_status = "failed"
+        item.terrain_error_message = str(exc)
+        item.terrain_task_id = None
+        item.update_user = actor.id
+        item.update_date = utcnow()
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"地形瓦片任务派发失败: {exc}"
+        ) from exc
+
+    item.terrain_task_id = str(task.id)
+    item.update_user = actor.id
+    item.update_date = utcnow()
+    db.commit()
+
+    saved = get_file_record_by_id(db, record_id)
+    if not saved:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="地形瓦片任务保存失败"
+        )
+
+    _publish_elevation_change(
+        "elevation.file_record.terrain.queued",
+        {"action": "file_record_terrain_queued", "file_record_id": saved.id, "task_id": saved.terrain_task_id},
+    )
+    return ElevationFileRecordTerrainBuildResponse(
+        record=serialize_file_record(saved),
+        task_id=saved.terrain_task_id,
+        queued=True,
+        detail="地形瓦片任务已提交，等待执行。",
+        warnings=[],
+    )
+
+
+def preview_file_record(
+    db: Session,
+    *,
+    record_id: str,
+    max_points: int,
+) -> ElevationFileRecordPreviewResponse:
+    item = get_file_record_by_id(db, record_id)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="文件记录不存在")
+    if item.status != "active":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件记录未启用")
+
+    preview_limit = max(1, min(max_points, 5000))
+    file_format = item.file_format
+
+    if file_format == "csv":
+        # Load CSV points - need to adapt _load_dataset_points to work with file records
+        # For now, create a temporary dataset-like object
+        from ..services.elevation_service import ElevationSamplePoint
+        mount = _require_mount(db, item.mount_code)
+        driver = _build_driver_or_400(mount)
+        try:
+            read_result = driver.read_file(item.file_path)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"文件不存在: {item.file_path}"
+            ) from exc
+
+        text = _decode_csv_bytes(read_result.content)
+        rows = list(csv.DictReader(io.StringIO(text)))
+        if not rows:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件为空")
+
+        points: list[ElevationSamplePoint] = []
+        warnings: list[str] = []
+        for index, row in enumerate(rows, start=2):
+            from ..services.elevation_service import _pick_float
+            lon = _pick_float(row, ["longitude", "lon", "lng", "经度"])
+            lat = _pick_float(row, ["latitude", "lat", "纬度"])
+            altitude = _pick_float(row, ["altitude_m", "altitude", "elevation", "dem", "海拔m", "高程"])
+            if lon is None or lat is None or altitude is None:
+                warnings.append(f"第 {index} 行缺少经纬度或高程，已忽略")
+                continue
+            if lon < -180 or lon > 180 or lat < -90 or lat > 90:
+                warnings.append(f"第 {index} 行经纬度越界，已忽略")
+                continue
+            points.append(ElevationSamplePoint(lon=lon, lat=lat, altitude_m=altitude))
+
+        if not points:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件没有有效样本点")
+
+        sampled = _sample_preview_points_from_csv(points=points, limit=preview_limit)
+        return ElevationFileRecordPreviewResponse(
+            record=serialize_file_record(item),
+            preview_mode="point_cloud",
+            total_points=len(points),
+            sampled_points=len(sampled),
+            points=[ElevationDatasetPreviewPoint(longitude=point.lon, latitude=point.lat, altitude_m=point.altitude_m) for point in sampled],
+            cells=[],
+            diagnostics=ElevationDatasetPreviewDiagnostics(
+                source_crs="EPSG:4326",
+                source_bounds_min_x=min(point.lon for point in points),
+                source_bounds_max_x=max(point.lon for point in points),
+                source_bounds_min_y=min(point.lat for point in points),
+                source_bounds_max_y=max(point.lat for point in points),
+                wgs84_bounds_min_lon=min(point.lon for point in points),
+                wgs84_bounds_max_lon=max(point.lon for point in points),
+                wgs84_bounds_min_lat=min(point.lat for point in points),
+                wgs84_bounds_max_lat=max(point.lat for point in points),
+                raster_width=None,
+                raster_height=None,
+                target_samples=preview_limit,
+                sampling_step=max(1, len(points) // max(1, len(sampled))) if sampled else None,
+                scanned_candidates=len(points),
+                valid_preview_count=len(sampled),
+            ),
+            warnings=warnings,
+        )
+
+    elif file_format in RASTER_FILE_FORMATS:
+        # Use existing raster preview logic
+        # Create a temporary dataset-like object for compatibility
+        class TempDataset:
+            def __init__(self, record: ElevationFileRecord):
+                self.id = record.id
+                self.file_path = record.file_path
+                self.mount_code = record.mount_code
+                self.file_format = record.file_format
+                self.status = record.status
+
+        temp_ds = TempDataset(item)
+        result = _build_raster_preview(db, dataset=temp_ds, limit=preview_limit)  # type: ignore
+
+        return ElevationFileRecordPreviewResponse(
+            record=serialize_file_record(item),
+            preview_mode=result.preview_mode,
+            total_points=result.total_points,
+            sampled_points=result.sampled_points,
+            points=result.points,
+            cells=result.cells,
+            diagnostics=result.diagnostics,
+            warnings=result.warnings,
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"不支持的文件格式: {file_format}",
+    )

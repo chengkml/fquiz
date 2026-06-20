@@ -14,6 +14,96 @@ ElevationApplyJobStatus = Literal["pending", "running", "success", "failed"]
 ElevationDataImportJobStatus = Literal["pending", "running", "success", "failed"]
 
 
+class ElevationFileRecordSummary(BaseModel):
+    id: str
+    file_name: str
+    file_path: str
+    file_format: str
+    file_size: int
+    source: str | None = None
+    mount_code: str
+    resolution_m: float | None = None
+    status: ElevationDatasetStatus
+    bbox_min_lon: float | None = None
+    bbox_max_lon: float | None = None
+    bbox_min_lat: float | None = None
+    bbox_max_lat: float | None = None
+    sample_count: int = 0
+    analysis_task_id: str | None = None
+    analysis_status: str = "not_started"
+    analysis_error_message: str | None = None
+    analysis_started_at: datetime | None = None
+    analysis_finished_at: datetime | None = None
+    terrain_status: ElevationDatasetTerrainStatus = "not_supported"
+    terrain_task_id: str | None = None
+    terrain_error_message: str | None = None
+    terrain_root_path: str | None = None
+    terrain_url_template: str | None = None
+    terrain_min_zoom: int | None = None
+    terrain_max_zoom: int | None = None
+    terrain_bounds: dict[str, Any] | None = None
+    terrain_metadata: dict[str, Any] | None = None
+    notes: str | None = None
+    create_date: datetime
+    create_user: str | None = None
+    update_date: datetime
+    update_user: str | None = None
+
+
+class ElevationFileRecordListResponse(BaseModel):
+    items: list[ElevationFileRecordSummary]
+    total: int
+
+
+class ElevationFileRecordCreateRequest(BaseModel):
+    source: str | None = Field(default=None, max_length=512)
+    mount_code: str | None = Field(default=None, min_length=2, max_length=64)
+    resolution_m: float | None = Field(default=None, gt=0)
+    notes: str | None = Field(default=None, max_length=2000)
+    trigger_analysis: bool = Field(default=True)
+
+
+class ElevationFileRecordUpdateRequest(BaseModel):
+    source: str | None = Field(default=None, max_length=512)
+    resolution_m: float | None = Field(default=None, gt=0)
+    status: ElevationDatasetStatus | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class ElevationFileRecordAnalyzeResponse(BaseModel):
+    record: ElevationFileRecordSummary
+    task_id: str | None = None
+    queued: bool = True
+    detail: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ElevationFileRecordTerrainBuildResponse(BaseModel):
+    record: ElevationFileRecordSummary
+    task_id: str | None = None
+    queued: bool = True
+    detail: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ElevationFileRecordPreviewResponse(BaseModel):
+    record: ElevationFileRecordSummary
+    preview_mode: Literal["point_cloud", "terrain_grid"]
+    total_points: int
+    sampled_points: int
+    points: list[ElevationDatasetPreviewPoint] = Field(default_factory=list)
+    cells: list[ElevationDatasetPreviewCell] = Field(default_factory=list)
+    diagnostics: ElevationDatasetPreviewDiagnostics | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ElevationFileRecordUploadResponse(BaseModel):
+    record: ElevationFileRecordSummary
+    queued: bool = True
+    detail: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ElevationDatasetSummary(BaseModel):
     id: str
     code: str
@@ -223,7 +313,9 @@ class ElevationApplyJobSummary(BaseModel):
     line_id: str
     line_code: str | None = None
     line_name: str | None = None
-    dataset_id: str
+    file_record_id: str
+    file_record_name: str | None = None
+    dataset_id: str | None = None
     dataset_code: str | None = None
     dataset_name: str | None = None
     mode: ElevationApplyMode
@@ -250,7 +342,8 @@ class ElevationApplyJobListResponse(BaseModel):
 
 class ElevationApplyJobCreateRequest(BaseModel):
     line_id: str = Field(min_length=1, max_length=64)
-    dataset_id: str = Field(min_length=1, max_length=64)
+    file_record_id: str | None = Field(default=None, min_length=1, max_length=64)
+    dataset_id: str | None = Field(default=None, min_length=1, max_length=64)
     mode: ElevationApplyMode = "fill_null_only"
 
 

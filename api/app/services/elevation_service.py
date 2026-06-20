@@ -3708,5 +3708,285 @@ def _store_file_metadata(
             sample_count=int(stats.get("sample_count", 0)),
         )
         db.add(meta)
-    
+
     db.commit()
+
+
+# ============================================================================
+# File Record Execution Functions (for new file-centric API)
+# ============================================================================
+
+
+def execute_file_record_analysis_job(*, record_id: str, actor_user_id: str | None) -> None:
+    """Execute analysis job for a single elevation file record."""
+    db = SessionLocal()
+    try:
+        from .elevation_file_record_service import get_file_record_by_id
+
+        item = get_file_record_by_id(db, record_id)
+        if not item:
+            return
+
+        item.analysis_status = "running"
+        item.analysis_error_message = None
+        item.analysis_started_at = utcnow()
+        item.analysis_finished_at = None
+        item.update_date = utcnow()
+        db.commit()
+        _publish_elevation_change(
+            "elevation.file_record.analysis.running",
+            {"action": "file_record_analysis_running", "file_record_id": item.id},
+        )
+
+        actor = db.execute(select(User).where(User.id == actor_user_id)).scalar_one_or_none() if actor_user_id else None
+        if actor is None:
+            actor = db.execute(select(User).where(User.status == "active").order_by(User.id.asc())).scalars().first()
+        if actor is None:
+            item.analysis_status = "failed"
+            item.analysis_error_message = "未找到可用用户执行分析"
+            item.analysis_finished_at = utcnow()
+            item.update_date = utcnow()
+            db.commit()
+            _publish_elevation_change(
+                "elevation.file_record.analysis.failed",
+                {"action": "file_record_analysis_failed", "file_record_id": item.id},
+            )
+            return
+
+        # Perform analysis using the same logic as dataset analysis
+        mount = _require_mount(db, item.mount_code)
+        driver = _build_driver_or_400(mount)
+
+        try:
+            read_result = driver.read_file(item.file_path)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"文件不存在: {item.file_path}"
+            ) from exc
+
+        # Analyze based on file format
+        if item.file_format == "csv":
+            text = _decode_csv_bytes(read_result.content)
+            import csv
+            import io
+            rows = list(csv.DictReader(io.StringIO(text)))
+            if not rows:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件为空")
+
+            points: list[ElevationSamplePoint] = []
+            for index, row in enumerate(rows, start=2):
+                lon = _pick_float(row, ["longitude", "lon", "lng", "经度"])
+                lat = _pick_float(row, ["latitude", "lat", "纬度"])
+                altitude = _pick_float(row, ["altitude_m", "altitude", "elevation", "dem", "海拔m", "高程"])
+                if lon is None or lat is None or altitude is None:
+                    continue
+                if lon < -180 or lon > 180 or lat < -90 or lat > 90:
+                    continue
+                points.append(ElevationSamplePoint(lon=lon, lat=lat, altitude_m=altitude))
+
+            if not points:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件没有有效样本点")
+
+            item.sample_count = len(points)
+            item.bbox_min_lon = min(p.lon for p in points)
+            item.bbox_max_lon = max(p.lon for p in points)
+            item.bbox_min_lat = min(p.lat for p in points)
+            item.bbox_max_lat = max(p.lat for p in points)
+
+        elif item.file_format in RASTER_FILE_FORMATS:
+            _require_rasterio_available()
+            import tempfile
+            import os
+
+            # Write to temp file for rasterio processing
+            with tempfile.NamedTemporaryFile(delete=False, suffix=Path(item.file_path).suffix) as tmp:
+                tmp.write(read_result.content)
+                tmp_path = tmp.name
+
+            try:
+                import rasterio
+                from rasterio.warp import calculate_default_transform, transform_bounds
+
+                with rasterio.open(tmp_path) as src:
+                    # Get bounds in WGS84
+                    if src.crs and src.crs.to_epsg() != 4326:
+                        bounds = transform_bounds(src.crs, "EPSG:4326", *src.bounds)
+                    else:
+                        bounds = src.bounds
+
+                    # Calculate sample count (approximate)
+                    sample_count = src.width * src.height
+                    if sample_count > 2147483647:
+                        sample_count = 2147483647
+
+                    item.sample_count = sample_count
+                    item.bbox_min_lon = float(bounds[0])
+                    item.bbox_max_lon = float(bounds[2])
+                    item.bbox_min_lat = float(bounds[1])
+                    item.bbox_max_lat = float(bounds[3])
+            finally:
+                os.unlink(tmp_path)
+
+        saved = get_file_record_by_id(db, record_id)
+        if saved is None:
+            return
+        saved.analysis_status = "success"
+        saved.analysis_error_message = None
+        saved.analysis_finished_at = utcnow()
+        saved.update_date = utcnow()
+        saved.update_user = actor.id
+        db.commit()
+        _publish_elevation_change(
+            "elevation.file_record.analysis.success",
+            {"action": "file_record_analysis_success", "file_record_id": saved.id},
+        )
+    except Exception as exc:
+        from .elevation_file_record_service import get_file_record_by_id
+        failed = get_file_record_by_id(db, record_id)
+        if failed is not None:
+            failed.analysis_status = "failed"
+            failed.analysis_error_message = str(exc)
+            failed.analysis_finished_at = utcnow()
+            failed.update_date = utcnow()
+            db.commit()
+            _publish_elevation_change(
+                "elevation.file_record.analysis.failed",
+                {"action": "file_record_analysis_failed", "file_record_id": failed.id},
+            )
+        raise
+    finally:
+        db.close()
+
+
+def execute_file_record_terrain_build_job(*, record_id: str, actor_user_id: str | None) -> None:
+    """Execute terrain build job for a single elevation file record."""
+    db = SessionLocal()
+    try:
+        from .elevation_file_record_service import get_file_record_by_id
+
+        item = get_file_record_by_id(db, record_id)
+        if not item:
+            return
+
+        if item.file_format not in TERRAIN_SUPPORTED_DATASET_FORMATS:
+            item.terrain_status = "not_supported"
+            item.terrain_error_message = "文件格式不支持地形瓦片生成"
+            item.update_date = utcnow()
+            db.commit()
+            return
+
+        item.terrain_status = "processing"
+        item.terrain_error_message = None
+        item.update_date = utcnow()
+        db.commit()
+        _publish_elevation_change(
+            "elevation.file_record.terrain.processing",
+            {"action": "file_record_terrain_processing", "file_record_id": item.id},
+        )
+
+        actor = db.execute(select(User).where(User.id == actor_user_id)).scalar_one_or_none() if actor_user_id else None
+        if actor is None:
+            actor = db.execute(select(User).where(User.status == "active").order_by(User.id.asc())).scalars().first()
+        if actor is None:
+            item.terrain_status = "failed"
+            item.terrain_error_message = "未找到可用用户执行地形构建"
+            item.update_date = utcnow()
+            db.commit()
+            _publish_elevation_change(
+                "elevation.file_record.terrain.failed",
+                {"action": "file_record_terrain_failed", "file_record_id": item.id},
+            )
+            return
+
+        # Build terrain tiles
+        mount = _require_mount(db, item.mount_code)
+        driver = _build_driver_or_400(mount)
+
+        # Create terrain output directory
+        terrain_dir = f"/elevation/terrain/records/{item.id[:2]}/{item.id[2:4]}/{item.id}"
+        driver.ensure_directory(terrain_dir)
+
+        # Read source file
+        try:
+            read_result = driver.read_file(item.file_path)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"文件不存在: {item.file_path}"
+            ) from exc
+
+        # Process with ctb-tile (similar to dataset terrain build)
+        _require_rasterio_available()
+        import tempfile
+        import subprocess
+        import os
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(item.file_path).suffix) as src_tmp:
+            src_tmp.write(read_result.content)
+            src_path = src_tmp.name
+
+        try:
+            with tempfile.TemporaryDirectory() as output_tmp:
+                # Run ctb-tile
+                cmd = ["ctb-tile", "-f", "Mesh", "-C", "-N", "-o", output_tmp, src_path]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+
+                if result.returncode != 0:
+                    raise Exception(f"ctb-tile failed: {result.stderr}")
+
+                # Upload generated tiles to storage
+                for root, dirs, files in os.walk(output_tmp):
+                    for file in files:
+                        local_path = os.path.join(root, file)
+                        rel_path = os.path.relpath(local_path, output_tmp)
+                        remote_path = join_virtual_path(terrain_dir, rel_path)
+
+                        with open(local_path, "rb") as f:
+                            content = f.read()
+
+                        driver.write_file(remote_path, content=content, content_type="application/octet-stream")
+
+                # Read layer.json if exists
+                layer_json_path = os.path.join(output_tmp, "layer.json")
+                if os.path.exists(layer_json_path):
+                    with open(layer_json_path, "r") as f:
+                        import json
+                        layer_data = json.load(f)
+                        item.terrain_min_zoom = layer_data.get("minzoom", 0)
+                        item.terrain_max_zoom = layer_data.get("maxzoom", 18)
+                        item.terrain_bounds = {"bounds": layer_data.get("bounds")}
+                        item.terrain_metadata = layer_data
+
+        finally:
+            os.unlink(src_path)
+
+        saved = get_file_record_by_id(db, record_id)
+        if saved is None:
+            return
+        saved.terrain_status = "ready"
+        saved.terrain_error_message = None
+        saved.terrain_root_path = terrain_dir
+        saved.terrain_url_template = f"/api/v1/elevation/records/{record_id}/terrain/{{z}}/{{x}}/{{y}}.terrain"
+        saved.update_date = utcnow()
+        saved.update_user = actor.id
+        db.commit()
+        _publish_elevation_change(
+            "elevation.file_record.terrain.ready",
+            {"action": "file_record_terrain_ready", "file_record_id": saved.id},
+        )
+    except Exception as exc:
+        from .elevation_file_record_service import get_file_record_by_id
+        failed = get_file_record_by_id(db, record_id)
+        if failed is not None:
+            failed.terrain_status = "failed"
+            failed.terrain_error_message = str(exc)
+            failed.update_date = utcnow()
+            db.commit()
+            _publish_elevation_change(
+                "elevation.file_record.terrain.failed",
+                {"action": "file_record_terrain_failed", "file_record_id": failed.id},
+            )
+        raise
+    finally:
+        db.close()
