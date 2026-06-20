@@ -3,20 +3,19 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   Card,
-  Col,
   Empty,
   Layout,
   Menu,
-  Row,
   Spin,
   Typography,
   theme,
+  type CardProps,
 } from "antd";
 import {
   FolderOutlined,
   FileTextOutlined,
 } from "@ant-design/icons";
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ComponentType, type RefAttributes } from "react";
 import type { MenuProps } from "antd";
 import ReactMarkdown from "react-markdown";
 
@@ -29,14 +28,17 @@ import type {
 
 const { Content, Sider } = Layout;
 const { Title, Paragraph } = Typography;
+const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 type MenuItem = Required<MenuProps>["items"][number];
 
 export default function DocsViewPage() {
-  const { fetchWithAuth } = useAuth();
+  const { user, fetchWithAuth, hasPermission } = useAuth();
   const { token } = theme.useToken();
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
   const [collapsed, setCollapsed] = useState(false);
+
+  const canRead = hasPermission("document.read") || true;
 
   const { data: treeData, isLoading: treeLoading } = useQuery({
     queryKey: ["/api/v1/documents/chapters/tree"],
@@ -45,6 +47,7 @@ export default function DocsViewPage() {
       if (!response.ok) throw new Error(await readApiError(response));
       return response.json() as Promise<DocumentChapterTreeItem[]>;
     },
+    enabled: !!user && canRead,
   });
 
   const { data: selectedDocument, isLoading: documentLoading } = useQuery({
@@ -55,13 +58,12 @@ export default function DocsViewPage() {
       if (!response.ok) throw new Error(await readApiError(response));
       return response.json() as Promise<Document>;
     },
-    enabled: !!selectedDocumentId,
+    enabled: !!selectedDocumentId && !!user && canRead,
   });
 
-  const convertToMenuItems = (chapters: DocumentChapterTreeItem[]): MenuItem[] => {
+  const convertToMenuItems = useCallback((chapters: DocumentChapterTreeItem[]): MenuItem[] => {
     return chapters
       .filter((chapter) => {
-        // Only show chapters with published documents or published children
         const hasPublishedDocs = chapter.documents?.some((doc) => doc.status === "published");
         const hasPublishedChildren = chapter.children?.some((child) =>
           child.documents?.some((doc) => doc.status === "published")
@@ -87,18 +89,17 @@ export default function DocsViewPage() {
           children: [...docItems, ...childItems],
         };
       });
-  };
+  }, []);
 
-  const handleMenuClick: MenuProps["onClick"] = (e) => {
+  const handleMenuClick: MenuProps["onClick"] = useCallback((e) => {
     if (e.key.startsWith("doc-")) {
       const docId = parseInt(e.key.replace("doc-", ""), 10);
       setSelectedDocumentId(docId);
     }
-  };
+  }, []);
 
-  // Auto-select first document on load
   const selectFirstDocument = useCallback(() => {
-    if (!treeData || treeData.length === 0) return;
+    if (!treeData || treeData.length === 0 || selectedDocumentId) return;
 
     const findFirstPublishedDoc = (chapters: DocumentChapterTreeItem[]): Document | null => {
       for (const chapter of chapters) {
@@ -114,7 +115,7 @@ export default function DocsViewPage() {
     };
 
     const firstDoc = findFirstPublishedDoc(treeData);
-    if (firstDoc && !selectedDocumentId) {
+    if (firstDoc) {
       setSelectedDocumentId(firstDoc.id);
     }
   }, [treeData, selectedDocumentId]);
@@ -122,6 +123,16 @@ export default function DocsViewPage() {
   useState(() => {
     selectFirstDocument();
   });
+
+  if (!user || !canRead) {
+    return (
+      <Layout style={{ minHeight: "calc(100vh - 64px)" }}>
+        <Content style={{ padding: "24px" }}>
+          <Empty description="暂无权限访问" />
+        </Content>
+      </Layout>
+    );
+  }
 
   return (
     <Layout style={{ minHeight: "calc(100vh - 64px)" }}>
@@ -165,7 +176,7 @@ export default function DocsViewPage() {
               <Spin size="large" />
             </div>
           ) : selectedDocument ? (
-            <Card>
+            <AntCard>
               <Title level={2}>{selectedDocument.title}</Title>
               <div
                 style={{
@@ -212,7 +223,7 @@ export default function DocsViewPage() {
                   {selectedDocument.content}
                 </ReactMarkdown>
               </div>
-            </Card>
+            </AntCard>
           ) : (
             <div style={{ textAlign: "center", padding: "48px" }}>
               <Empty description="请从左侧目录选择要查看的文档" />

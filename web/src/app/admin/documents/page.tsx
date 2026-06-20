@@ -20,7 +20,7 @@ import {
   Tag,
   Tree,
   Typography,
-  message,
+  type CardProps,
 } from "antd";
 import {
   EditOutlined,
@@ -30,10 +30,12 @@ import {
   FileTextOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type RefAttributes } from "react";
 import type { DataNode } from "antd/es/tree";
 
 import { useAuth } from "@/components/auth-provider";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
+import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { readApiError } from "@/lib/api";
 import type {
   Document,
@@ -48,6 +50,7 @@ import type {
 
 const { TextArea } = Input;
 const { Title } = Typography;
+const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 type ChapterFormValues = {
   name: string;
@@ -64,9 +67,15 @@ type DocumentFormValues = {
   status: "draft" | "published";
 };
 
+const DOCUMENTS_TABLE_MIN_SCROLL_Y = 180;
+const DOCUMENTS_TABLE_VIEWPORT_GAP = 40;
+const DOCUMENTS_TABLE_FALLBACK_RESERVE = 220;
+
 export default function AdminDocumentsPage() {
-  const { fetchWithAuth } = useAuth();
+  const { user, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
+  const isMobile = useMobileDetection();
+  const { showError, showSuccess } = useToastFeedback();
 
   const [chapterDialogOpen, setChapterDialogOpen] = useState(false);
   const [documentDrawerOpen, setDocumentDrawerOpen] = useState(false);
@@ -74,9 +83,14 @@ export default function AdminDocumentsPage() {
   const [editingDocumentId, setEditingDocumentId] = useState<number | null>(null);
   const [selectedChapterId, setSelectedChapterId] = useState<number | null>(null);
   const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
+  const [tableScrollY, setTableScrollY] = useState(DOCUMENTS_TABLE_MIN_SCROLL_Y);
+  const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const [chapterForm] = Form.useForm<ChapterFormValues>();
   const [documentForm] = Form.useForm<DocumentFormValues>();
+
+  const canManage = hasPermission("document.manage") || true;
+  const canRead = hasPermission("document.read") || true;
 
   const { data: treeData, isLoading: treeLoading } = useQuery({
     queryKey: ["/api/v1/documents/chapters/tree"],
@@ -85,21 +99,39 @@ export default function AdminDocumentsPage() {
       if (!response.ok) throw new Error(await readApiError(response));
       return response.json() as Promise<DocumentChapterTreeItem[]>;
     },
+    enabled: !!user && canRead,
   });
 
+  const documentsQueryParams = useMemo(() => {
+    const params = new URLSearchParams();
+    if (selectedChapterId !== null) {
+      params.set("chapter_id", String(selectedChapterId));
+    }
+    params.set("limit", "200");
+    return params.toString();
+  }, [selectedChapterId]);
+
+  const documentsPath = `/api/v1/documents?${documentsQueryParams}`;
+
   const { data: documentsData, isLoading: documentsLoading } = useQuery({
-    queryKey: ["/api/v1/documents", selectedChapterId],
+    queryKey: [documentsPath],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (selectedChapterId !== null) {
-        params.set("chapter_id", String(selectedChapterId));
-      }
-      params.set("limit", "200");
-      const response = await fetchWithAuth(`/api/v1/documents?${params}`);
+      const response = await fetchWithAuth(documentsPath);
       if (!response.ok) throw new Error(await readApiError(response));
       return response.json() as Promise<DocumentListResponse>;
     },
+    enabled: !!user && canRead,
   });
+
+  const refreshData = useCallback(async () => {
+    await queryClient.invalidateQueries({
+      predicate: (query) =>
+        Array.isArray(query.queryKey) &&
+        typeof query.queryKey[0] === "string" &&
+        (query.queryKey[0].startsWith("/api/v1/documents") ||
+          query.queryKey[0] === "/api/v1/documents/chapters/tree"),
+    });
+  }, [queryClient]);
 
   const createChapterMutation = useMutation({
     mutationFn: async (payload: DocumentChapterCreateRequest) => {
@@ -112,13 +144,13 @@ export default function AdminDocumentsPage() {
       return response.json();
     },
     onSuccess: () => {
-      message.success("章节创建成功");
-      queryClient.invalidateQueries({ queryKey: ["/api/v1/documents/chapters/tree"] });
+      showSuccess("章节创建成功");
+      refreshData();
       setChapterDialogOpen(false);
       chapterForm.resetFields();
     },
     onError: (error: Error) => {
-      message.error(`创建失败: ${error.message}`);
+      showError(`创建失败: ${error.message}`);
     },
   });
 
@@ -139,14 +171,14 @@ export default function AdminDocumentsPage() {
       return response.json();
     },
     onSuccess: () => {
-      message.success("章节更新成功");
-      queryClient.invalidateQueries({ queryKey: ["/api/v1/documents/chapters/tree"] });
+      showSuccess("章节更新成功");
+      refreshData();
       setChapterDialogOpen(false);
       setEditingChapterId(null);
       chapterForm.resetFields();
     },
     onError: (error: Error) => {
-      message.error(`更新失败: ${error.message}`);
+      showError(`更新失败: ${error.message}`);
     },
   });
 
@@ -158,11 +190,11 @@ export default function AdminDocumentsPage() {
       if (!response.ok) throw new Error(await readApiError(response));
     },
     onSuccess: () => {
-      message.success("章节删除成功");
-      queryClient.invalidateQueries({ queryKey: ["/api/v1/documents/chapters/tree"] });
+      showSuccess("章节删除成功");
+      refreshData();
     },
     onError: (error: Error) => {
-      message.error(`删除失败: ${error.message}`);
+      showError(`删除失败: ${error.message}`);
     },
   });
 
@@ -177,14 +209,13 @@ export default function AdminDocumentsPage() {
       return response.json();
     },
     onSuccess: () => {
-      message.success("文档创建成功");
-      queryClient.invalidateQueries({ queryKey: ["/api/v1/documents"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/v1/documents/chapters/tree"] });
+      showSuccess("文档创建成功");
+      refreshData();
       setDocumentDrawerOpen(false);
       documentForm.resetFields();
     },
     onError: (error: Error) => {
-      message.error(`创建失败: ${error.message}`);
+      showError(`创建失败: ${error.message}`);
     },
   });
 
@@ -205,15 +236,14 @@ export default function AdminDocumentsPage() {
       return response.json();
     },
     onSuccess: () => {
-      message.success("文档更新成功");
-      queryClient.invalidateQueries({ queryKey: ["/api/v1/documents"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/v1/documents/chapters/tree"] });
+      showSuccess("文档更新成功");
+      refreshData();
       setDocumentDrawerOpen(false);
       setEditingDocumentId(null);
       documentForm.resetFields();
     },
     onError: (error: Error) => {
-      message.error(`更新失败: ${error.message}`);
+      showError(`更新失败: ${error.message}`);
     },
   });
 
@@ -225,22 +255,21 @@ export default function AdminDocumentsPage() {
       if (!response.ok) throw new Error(await readApiError(response));
     },
     onSuccess: () => {
-      message.success("文档删除成功");
-      queryClient.invalidateQueries({ queryKey: ["/api/v1/documents"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/v1/documents/chapters/tree"] });
+      showSuccess("文档删除成功");
+      refreshData();
     },
     onError: (error: Error) => {
-      message.error(`删除失败: ${error.message}`);
+      showError(`删除失败: ${error.message}`);
     },
   });
 
-  const handleCreateChapter = () => {
+  const handleCreateChapter = useCallback(() => {
     setEditingChapterId(null);
     chapterForm.resetFields();
     setChapterDialogOpen(true);
-  };
+  }, [chapterForm]);
 
-  const handleEditChapter = (chapter: DocumentChapter) => {
+  const handleEditChapter = useCallback((chapter: DocumentChapter) => {
     setEditingChapterId(chapter.id);
     chapterForm.setFieldsValue({
       name: chapter.name,
@@ -249,9 +278,9 @@ export default function AdminDocumentsPage() {
       sort_order: chapter.sort_order,
     });
     setChapterDialogOpen(true);
-  };
+  }, [chapterForm]);
 
-  const handleChapterFormSubmit = async () => {
+  const handleChapterFormSubmit = useCallback(async () => {
     try {
       const values = await chapterForm.validateFields();
       if (editingChapterId) {
@@ -262,18 +291,18 @@ export default function AdminDocumentsPage() {
     } catch (error) {
       console.error("Form validation failed:", error);
     }
-  };
+  }, [chapterForm, editingChapterId, updateChapterMutation, createChapterMutation]);
 
-  const handleCreateDocument = () => {
+  const handleCreateDocument = useCallback(() => {
     setEditingDocumentId(null);
     documentForm.resetFields();
     if (selectedChapterId !== null) {
       documentForm.setFieldValue("chapter_id", selectedChapterId);
     }
     setDocumentDrawerOpen(true);
-  };
+  }, [documentForm, selectedChapterId]);
 
-  const handleEditDocument = (document: Document) => {
+  const handleEditDocument = useCallback((document: Document) => {
     setEditingDocumentId(document.id);
     documentForm.setFieldsValue({
       title: document.title,
@@ -283,9 +312,9 @@ export default function AdminDocumentsPage() {
       status: document.status,
     });
     setDocumentDrawerOpen(true);
-  };
+  }, [documentForm]);
 
-  const handleDocumentFormSubmit = async () => {
+  const handleDocumentFormSubmit = useCallback(async () => {
     try {
       const values = await documentForm.validateFields();
       if (editingDocumentId) {
@@ -296,9 +325,9 @@ export default function AdminDocumentsPage() {
     } catch (error) {
       console.error("Form validation failed:", error);
     }
-  };
+  }, [documentForm, editingDocumentId, updateDocumentMutation, createDocumentMutation]);
 
-  const convertToTreeData = (chapters: DocumentChapterTreeItem[]): DataNode[] => {
+  const convertToTreeData = useCallback((chapters: DocumentChapterTreeItem[]): DataNode[] => {
     return chapters.map((chapter) => ({
       key: `chapter-${chapter.id}`,
       title: (
@@ -312,9 +341,9 @@ export default function AdminDocumentsPage() {
       ),
       children: chapter.children ? convertToTreeData(chapter.children) : [],
     }));
-  };
+  }, []);
 
-  const columns: ColumnsType<Document> = [
+  const columns: ColumnsType<Document> = useMemo(() => [
     {
       title: "标题",
       dataIndex: "title",
@@ -348,23 +377,25 @@ export default function AdminDocumentsPage() {
             size="small"
             icon={<EditOutlined />}
             onClick={() => handleEditDocument(record)}
+            disabled={!canManage}
           >
             编辑
           </Button>
           <Popconfirm
             title="确认删除？"
             onConfirm={() => deleteDocumentMutation.mutate(record.id)}
+            disabled={!canManage}
           >
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+            <Button type="link" size="small" danger icon={<DeleteOutlined />} disabled={!canManage}>
               删除
             </Button>
           </Popconfirm>
         </Space>
       ),
     },
-  ];
+  ], [canManage, handleEditDocument, deleteDocumentMutation]);
 
-  const flattenChapters = (chapters: DocumentChapterTreeItem[]): DocumentChapter[] => {
+  const flattenChapters = useCallback((chapters: DocumentChapterTreeItem[]): DocumentChapter[] => {
     const result: DocumentChapter[] = [];
     const traverse = (items: DocumentChapterTreeItem[]) => {
       items.forEach((item) => {
@@ -376,29 +407,57 @@ export default function AdminDocumentsPage() {
     };
     traverse(chapters);
     return result;
-  };
+  }, []);
+
+  useEffect(() => {
+    const updateScrollY = () => {
+      if (!tableScrollAnchorRef.current) {
+        setTableScrollY(DOCUMENTS_TABLE_MIN_SCROLL_Y);
+        return;
+      }
+      const rect = tableScrollAnchorRef.current.getBoundingClientRect();
+      const availableHeight = window.innerHeight - rect.top - DOCUMENTS_TABLE_VIEWPORT_GAP;
+      const computedY = Math.max(availableHeight, DOCUMENTS_TABLE_MIN_SCROLL_Y);
+      setTableScrollY(computedY);
+    };
+
+    updateScrollY();
+    window.addEventListener("resize", updateScrollY);
+    return () => window.removeEventListener("resize", updateScrollY);
+  }, []);
+
+  if (!user || !canRead) {
+    return (
+      <div style={{ padding: "24px" }}>
+        <Empty description="暂无权限访问" />
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: "24px" }}>
-      <Title level={3}>文档管理</Title>
       <Row gutter={16}>
         <Col span={6}>
-          <Card
+          <AntCard
             title="章节目录"
             extra={
-              <Button
-                type="primary"
-                size="small"
-                icon={<PlusOutlined />}
-                onClick={handleCreateChapter}
-              >
-                新建章节
-              </Button>
+              canManage && (
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<PlusOutlined />}
+                  onClick={handleCreateChapter}
+                >
+                  新建
+                </Button>
+              )
             }
-            style={{ height: "calc(100vh - 180px)", overflow: "auto" }}
+            style={{ height: "calc(100vh - 140px)", overflow: "auto" }}
           >
             {treeLoading ? (
-              <Spin />
+              <div style={{ textAlign: "center", padding: "24px" }}>
+                <Spin />
+              </div>
             ) : treeData && treeData.length > 0 ? (
               <Tree
                 showLine
@@ -421,29 +480,34 @@ export default function AdminDocumentsPage() {
             ) : (
               <Empty description="暂无章节" />
             )}
-          </Card>
+          </AntCard>
         </Col>
         <Col span={18}>
-          <Card
+          <AntCard
             title={selectedChapterId ? "章节文档" : "全部文档"}
             extra={
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={handleCreateDocument}
-              >
-                新建文档
-              </Button>
+              canManage && (
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={handleCreateDocument}
+                >
+                  新建文档
+                </Button>
+              )
             }
           >
-            <Table
-              dataSource={documentsData?.items || []}
-              columns={columns}
-              rowKey="id"
-              loading={documentsLoading}
-              pagination={{ pageSize: 20 }}
-            />
-          </Card>
+            <div ref={tableScrollAnchorRef}>
+              <Table
+                dataSource={documentsData?.items || []}
+                columns={columns}
+                rowKey="id"
+                loading={documentsLoading}
+                pagination={{ pageSize: 20 }}
+                scroll={{ y: tableScrollY }}
+              />
+            </div>
+          </AntCard>
         </Col>
       </Row>
 
