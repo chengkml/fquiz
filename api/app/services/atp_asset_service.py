@@ -496,6 +496,7 @@ def serialize_asset(
         voltage_level=item.voltage_level,
         tower_type=item.tower_type,
         scene_type=item.scene_type,
+        arrester_config=item.arrester_config,
         latest_release_no=item.latest_release_no,
         active_release_no=item.active_release_no,
         active_release_id=active_release.id if active_release else None,
@@ -653,6 +654,8 @@ def list_assets(
     voltage_level: str | None,
     tower_type: str | None,
     scene_type: str | None,
+    limit: int = 50,
+    offset: int = 0,
 ) -> AtpAssetListResponse:
     stmt = select(AtpAsset)
     total_stmt = select(func.count()).select_from(AtpAsset)
@@ -681,7 +684,11 @@ def list_assets(
         stmt = stmt.where(AtpAsset.scene_type == scene_type.strip())
         total_stmt = total_stmt.where(AtpAsset.scene_type == scene_type.strip())
 
-    items = db.execute(stmt.order_by(AtpAsset.update_date.desc(), AtpAsset.code.asc())).scalars().all()
+    items = db.execute(
+        stmt.order_by(AtpAsset.update_date.desc(), AtpAsset.code.asc())
+        .limit(limit)
+        .offset(offset)
+    ).scalars().all()
     total = int(db.scalar(total_stmt) or 0)
     asset_ids = [item.id for item in items]
     release_count_map = _load_asset_release_count_map(db, asset_ids)
@@ -729,6 +736,7 @@ def create_asset(db: Session, payload: AtpAssetCreateRequest, *, actor_user_id: 
         voltage_level=_normalize_optional_str(payload.voltage_level),
         tower_type=_normalize_optional_str(payload.tower_type),
         scene_type=_normalize_optional_str(payload.scene_type),
+        arrester_config=_normalize_optional_str(payload.arrester_config),
         latest_release_no=0,
         active_release_no=None,
         create_user=actor_user_id,
@@ -771,6 +779,8 @@ def update_asset(
         item.tower_type = _normalize_optional_str(update_data["tower_type"])
     if "scene_type" in update_data:
         item.scene_type = _normalize_optional_str(update_data["scene_type"])
+    if "arrester_config" in update_data:
+        item.arrester_config = _normalize_optional_str(update_data["arrester_config"])
 
     item.update_user = actor_user_id
     item.update_date = utcnow()

@@ -1032,6 +1032,12 @@ body {
   flex-direction: column;
 }
 
+.admin-atp-models-card-view-content {
+  min-height: 0;
+  flex: 1;
+  padding: 2px 2px 4px;
+}
+
 .admin-atp-models-card-view-state {
   display: flex;
   min-height: 240px;
@@ -1060,6 +1066,13 @@ body {
 
 .admin-atp-models-model-card > .ant-card-body {
   padding-block: 14px;
+}
+
+.admin-atp-models-model-card-field {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
 }
 
 .lightning-table-anchor .ant-table-body {

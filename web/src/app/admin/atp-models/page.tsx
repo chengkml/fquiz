@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Alert,
-  App,
   Button,
   Card,
   Col,
@@ -15,7 +13,6 @@ import {
   Modal,
   Popconfirm,
   Row,
-  Select,
   Space,
   Spin,
   Table,
@@ -24,7 +21,7 @@ import {
   type CardProps,
   type MenuProps,
 } from "antd";
-import { MoreOutlined } from "@ant-design/icons";
+import { EditOutlined, MoreOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
 
@@ -32,6 +29,7 @@ import { AdminPageLoading } from "@/components/admin-page-loading";
 import { useAuth } from "@/components/auth-provider";
 import { CreatableSingleSelect } from "@/components/creatable-single-select";
 import { useMobileDetection } from "@/hooks/use-mobile-detection";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { readApiError } from "@/lib/api";
 import { getAtpAssetStatusDisplay } from "@/lib/atp-asset-display";
 import type { AtpAssetListResponse, AtpAssetSummary } from "@/types/auth";
@@ -173,34 +171,47 @@ const ATP_TABLE_VIEWPORT_GAP = 40;
 const ATP_TABLE_FALLBACK_RESERVE = 220;
 
 export default function AtpModelsPage() {
-  const { message } = App.useApp();
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const [form] = Form.useForm<AssetFormValues>();
   const isMobile = useMobileDetection();
 
   const [keywordInput, setKeywordInput] = useState("");
-  const [keyword, setKeyword] = useState("");
+  const [searchKeyword, setSearchKeyword] = useState("");
   const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [editingAsset, setEditingAsset] = useState<AtpAssetSummary | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [tableScrollY, setTableScrollY] = useState(ATP_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const viewMode: "table" | "card" = isMobile ? "card" : "table";
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
+  const [cardViewPage, setCardViewPage] = useState(1);
+  const [allLoadedAssets, setAllLoadedAssets] = useState<AtpAssetSummary[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const pageCardRef = useRef<HTMLDivElement | null>(null);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const canRead = hasPermission("atp.read") || hasPermission("atp.run") || hasPermission("atp.manage");
   const canManage = hasPermission("atp.manage");
+  const { current: paginationCurrent, pageSize: paginationPageSize } = pagination;
+
+  const trimmedKeyword = searchKeyword.trim();
+  const assetsQueryParams = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("limit", String(paginationPageSize));
+    params.set("offset", String((paginationCurrent - 1) * paginationPageSize));
+    if (trimmedKeyword) {
+      params.set("keyword", trimmedKeyword);
+    }
+    return params.toString();
+  }, [paginationCurrent, paginationPageSize, trimmedKeyword]);
 
   const assetsQuery = useQuery({
-    queryKey: ["atp-assets", keyword],
+    queryKey: ["atp-assets", assetsQueryParams],
     enabled: Boolean(user && canRead),
     queryFn: async () => {
-      const searchParams = new URLSearchParams();
-      if (keyword.trim()) {
-        searchParams.set("keyword", keyword.trim());
-      }
-      const suffix = searchParams.toString();
-      const response = await fetchWithAuth(`/api/v1/atp/assets${suffix ? `?${suffix}` : ""}`);
+      const response = await fetchWithAuth(`/api/v1/atp/assets?${assetsQueryParams}`);
       if (!response.ok) {
         throw new Error(await readApiError(response));
       }
@@ -229,13 +240,15 @@ export default function AtpModelsPage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["atp-assets"] });
-      message.success(editingAsset ? "模型已更新" : "模型已创建");
+      setSuccess(editingAsset ? "模型已更新" : "模型已创建");
+      setError("");
       setModalOpen(false);
       setEditingAsset(null);
       form.resetFields();
     },
     onError: (candidate) => {
-      message.error(candidate instanceof Error ? candidate.message : "保存模型失败");
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "保存模型失败");
     },
   });
 
@@ -248,12 +261,37 @@ export default function AtpModelsPage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["atp-assets"] });
-      message.success("模型已删除");
+      setSuccess("模型已删除");
+      setError("");
     },
     onError: (candidate) => {
-      message.error(candidate instanceof Error ? candidate.message : "删除模型失败");
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "删除模型失败");
     },
   });
+
+  const openCreateModal = useCallback(() => {
+    setError("");
+    setSuccess("");
+    setEditingAsset(null);
+    form.setFieldsValue(EMPTY_FORM);
+    setModalOpen(true);
+  }, [form]);
+
+  const openEditModal = useCallback((item: AtpAssetSummary) => {
+    setError("");
+    setSuccess("");
+    setEditingAsset(item);
+    form.setFieldsValue(toFormValues(item));
+    setModalOpen(true);
+  }, [form]);
+
+  const closeModal = () => {
+    if (saveMutation.isPending) return;
+    setModalOpen(false);
+    setEditingAsset(null);
+    form.resetFields();
+  };
 
   const handleKeywordChange = (value: string) => {
     setKeywordInput(value);
@@ -263,7 +301,10 @@ export default function AtpModelsPage() {
     }
 
     keywordDebounceTimeoutRef.current = setTimeout(() => {
-      setKeyword(value);
+      setSearchKeyword(value);
+      setPagination((previous) => ({ ...previous, current: 1 }));
+      setCardViewPage(1);
+      setAllLoadedAssets([]);
     }, 500);
   };
 
@@ -275,11 +316,72 @@ export default function AtpModelsPage() {
     };
   }, []);
 
-  const assetItems = assetsQuery.data?.items ?? [];
+  const assetItems = useMemo(() => assetsQuery.data?.items ?? [], [assetsQuery.data?.items]);
   const voltageLevelOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.voltage_level, DEFAULT_VOLTAGE_LEVELS), [assetItems]);
   const towerTypeOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.tower_type, DEFAULT_TOWER_TYPES), [assetItems]);
   const sceneTypeOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.scene_type, DEFAULT_SCENE_TYPES), [assetItems]);
   const arresterConfigOptions = useMemo(() => buildDimensionOptions(assetItems, (item) => item.arrester_config, DEFAULT_ARRESTER_CONFIGS), [assetItems]);
+  const assetTotal = assetsQuery.data?.total ?? 0;
+  const queryError = assetsQuery.error instanceof Error ? assetsQuery.error.message : "";
+  const anyError = error || queryError;
+
+  useToastFeedback({
+    errorMessage: anyError,
+    successMessage: success,
+    clearError: () => setError(""),
+    clearSuccess: () => setSuccess(""),
+  });
+
+  useEffect(() => {
+    if (viewMode !== "card" || assetsQuery.isLoading) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      if (cardViewPage === 1) {
+        setAllLoadedAssets(() => assetItems);
+      } else {
+        setAllLoadedAssets((previous) => {
+          if (assetItems.length === 0) {
+            return previous;
+          }
+          const existingIds = new Set(previous.map((item) => item.id));
+          const newAssets = assetItems.filter((item) => !existingIds.has(item.id));
+          return [...previous, ...newAssets];
+        });
+      }
+      setIsLoadingMore(false);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [assetItems, assetsQuery.isLoading, viewMode, cardViewPage]);
+
+  useEffect(() => {
+    if (viewMode !== "card") return;
+
+    const pageCard = pageCardRef.current;
+    if (!pageCard) return;
+
+    const cardBody = pageCard.querySelector<HTMLElement>(".ant-card-body");
+    if (!cardBody) return;
+
+    const handleScroll = () => {
+      if (isLoadingMore || assetsQuery.isLoading) return;
+
+      const { scrollTop, scrollHeight, clientHeight } = cardBody;
+
+      if (scrollTop + clientHeight >= scrollHeight - 100 && allLoadedAssets.length < assetTotal) {
+        setIsLoadingMore(true);
+        setCardViewPage((previous) => previous + 1);
+        setPagination((previous) => ({ ...previous, current: previous.current + 1 }));
+      }
+    };
+
+    cardBody.addEventListener("scroll", handleScroll);
+    return () => cardBody.removeEventListener("scroll", handleScroll);
+  }, [allLoadedAssets.length, assetTotal, assetsQuery.isLoading, isLoadingMore, viewMode]);
 
   const updateTableScrollY = useCallback(() => {
     if (typeof window === "undefined") {
@@ -312,7 +414,7 @@ export default function AtpModelsPage() {
       return;
     }
     window.requestAnimationFrame(updateTableScrollY);
-  }, [assetsQuery.error, keyword, assetItems.length, assetsQuery.isFetching, updateTableScrollY]);
+  }, [anyError, paginationCurrent, paginationPageSize, assetItems.length, assetsQuery.isFetching, updateTableScrollY]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -365,9 +467,19 @@ export default function AtpModelsPage() {
         ),
       },
       {
+        title: "状态",
+        dataIndex: "status",
+        width: 96,
+        align: "center",
+        render: (value: string) => {
+          const display = getAtpAssetStatusDisplay(value);
+          return <Tag color={display.color}>{display.label}</Tag>;
+        },
+      },
+      {
         title: "业务维度",
         key: "dimensions",
-        width: 240,
+        width: 220,
         render: (_, item) => (
           <Space size={[4, 4]} wrap>
             <Tag>{item.voltage_level || "未设置电压等级"}</Tag>
@@ -380,7 +492,7 @@ export default function AtpModelsPage() {
       {
         title: "当前版本",
         key: "release",
-        width: 180,
+        width: 160,
         render: (_, item) => (
           <Space direction="vertical" size={0}>
             <Typography.Text>{item.active_release_tag || (item.active_release_no ? `r${item.active_release_no}` : "-")}</Typography.Text>
@@ -393,25 +505,17 @@ export default function AtpModelsPage() {
       {
         title: "更新时间",
         key: "update_date",
-        width: 180,
+        width: 170,
         dataIndex: "update_date",
         render: (value: string) => formatDateTime(value),
       },
       {
         title: "操作",
         key: "actions",
-        width: 240,
+        width: 180,
         render: (_, item) => {
           const deleteLoading = deleteMutation.isPending;
           const rowBusy = deleteLoading;
-
-          const moreMenuItems: MenuProps["items"] = [
-            // 未来可在此添加更多操作，如：
-            // - 查看版本历史
-            // - 导出模型配置
-            // - 复制模型
-            // - 归档/取消归档
-          ];
 
           return (
             <Space wrap>
@@ -423,11 +527,7 @@ export default function AtpModelsPage() {
               <Button
                 size="small"
                 disabled={!canManage || rowBusy}
-                onClick={() => {
-                  setEditingAsset(item);
-                  form.setFieldsValue(toFormValues(item));
-                  setModalOpen(true);
-                }}
+                onClick={() => openEditModal(item)}
               >
                 编辑
               </Button>
@@ -444,29 +544,45 @@ export default function AtpModelsPage() {
                   删除
                 </Button>
               </Popconfirm>
-              {moreMenuItems && moreMenuItems.length > 0 && (
-                <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
-                  <Button size="small" disabled={rowBusy} icon={<MoreOutlined />} />
-                </Dropdown>
-              )}
             </Space>
           );
         },
       },
     ],
-    [canManage, deleteMutation, form],
+    [canManage, deleteMutation, openEditModal],
   );
 
   const renderAtpModelCard = (item: AtpAssetSummary) => {
     const deleteLoading = deleteMutation.isPending;
     const rowBusy = deleteLoading;
+    const statusDisplay = getAtpAssetStatusDisplay(item.status);
 
     const moreMenuItems: MenuProps["items"] = [
-      // 未来可在此添加更多操作，如：
-      // - 查看版本历史
-      // - 导出模型配置
-      // - 复制模型
-      // - 归档/取消归档
+      {
+        key: "detail",
+        label: (
+          <Link href={`/admin/atp-models/${item.id}`}>
+            详情
+          </Link>
+        ),
+        disabled: rowBusy,
+      },
+      {
+        key: "delete",
+        label: "删除",
+        danger: true,
+        disabled: !canManage || rowBusy,
+        onClick: () => {
+          Modal.confirm({
+            title: "删除模型",
+            content: "这会同时删除其版本与运行记录。",
+            okText: "删除",
+            cancelText: "取消",
+            okButtonProps: { danger: true },
+            onOk: () => deleteMutation.mutate(item.id),
+          });
+        },
+      },
     ];
 
     return (
@@ -475,19 +591,37 @@ export default function AtpModelsPage() {
         className="admin-atp-models-model-card"
         size="small"
         title={
-          <Space className="min-w-0" size={8} direction="vertical">
-            <Typography.Text strong>{item.name}</Typography.Text>
-            <Typography.Text type="secondary" code style={{ fontSize: "12px" }}>
-              {item.code}
+          <Space className="min-w-0" size={8}>
+            <Typography.Text strong ellipsis={{ tooltip: item.name }}>
+              {item.name}
             </Typography.Text>
+            <Tag color={statusDisplay.color}>{statusDisplay.label}</Tag>
+          </Space>
+        }
+        extra={
+          <Space size={4}>
+            <Button
+              type="text"
+              size="small"
+              disabled={!canManage || rowBusy}
+              icon={<EditOutlined />}
+              onClick={() => openEditModal(item)}
+            />
+            <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+              <Button type="text" size="small" disabled={rowBusy} icon={<MoreOutlined />} />
+            </Dropdown>
           </Space>
         }
       >
         <Space direction="vertical" size={10} style={{ width: "100%" }}>
-          <div>
-            <Typography.Text type="secondary" style={{ fontSize: "12px", display: "block", marginBottom: "4px" }}>
-              业务维度
+          <div className="admin-atp-models-model-card-field">
+            <Typography.Text type="secondary">模型编码</Typography.Text>
+            <Typography.Text code ellipsis={{ tooltip: item.code }}>
+              {item.code}
             </Typography.Text>
+          </div>
+          <div className="admin-atp-models-model-card-field">
+            <Typography.Text type="secondary">业务维度</Typography.Text>
             <Space size={[4, 4]} wrap>
               <Tag>{item.voltage_level || "未设置电压等级"}</Tag>
               <Tag>{item.tower_type || "未设置塔型"}</Tag>
@@ -495,60 +629,18 @@ export default function AtpModelsPage() {
               <Tag>{item.arrester_config || "未设置避雷器"}</Tag>
             </Space>
           </div>
-          <div>
-            <Typography.Text type="secondary" style={{ fontSize: "12px", display: "block", marginBottom: "4px" }}>
-              版本信息
-            </Typography.Text>
+          <div className="admin-atp-models-model-card-field">
+            <Typography.Text type="secondary">版本信息</Typography.Text>
             <Space direction="vertical" size={0}>
               <Typography.Text>{item.active_release_tag || (item.active_release_no ? `r${item.active_release_no}` : "-")}</Typography.Text>
-              <Typography.Text type="secondary" style={{ fontSize: "12px" }}>
+              <Typography.Text type="secondary">
                 {item.release_count} 个版本 / {item.run_count} 次运行
               </Typography.Text>
             </Space>
           </div>
-          <div>
-            <Typography.Text type="secondary" style={{ fontSize: "12px", display: "block", marginBottom: "4px" }}>
-              更新时间
-            </Typography.Text>
-            <Typography.Text style={{ fontSize: "13px" }}>{formatDateTime(item.update_date)}</Typography.Text>
-          </div>
-          <div style={{ borderTop: "1px solid var(--ant-color-border-secondary)", marginTop: "4px", paddingTop: "12px" }}>
-            <Space wrap>
-              <Link href={`/admin/atp-models/${item.id}`}>
-                <Button size="small" type="primary">
-                  详情
-                </Button>
-              </Link>
-              <Button
-                size="small"
-                disabled={!canManage || rowBusy}
-                onClick={() => {
-                  setEditingAsset(item);
-                  form.setFieldsValue(toFormValues(item));
-                  setModalOpen(true);
-                }}
-              >
-                编辑
-              </Button>
-              <Popconfirm
-                title="删除模型"
-                description="这会同时删除其版本与运行记录。"
-                okText="删除"
-                cancelText="取消"
-                okButtonProps={{ danger: true, loading: deleteLoading }}
-                onConfirm={() => deleteMutation.mutate(item.id)}
-                disabled={!canManage || rowBusy}
-              >
-                <Button danger size="small" loading={deleteLoading} disabled={!canManage || rowBusy}>
-                  删除
-                </Button>
-              </Popconfirm>
-              {moreMenuItems && moreMenuItems.length > 0 && (
-                <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
-                  <Button size="small" disabled={rowBusy} icon={<MoreOutlined />} />
-                </Dropdown>
-              )}
-            </Space>
+          <div className="admin-atp-models-model-card-field">
+            <Typography.Text type="secondary">更新时间</Typography.Text>
+            <Typography.Text>{formatDateTime(item.update_date)}</Typography.Text>
           </div>
         </Space>
       </AntCard>
@@ -570,8 +662,9 @@ export default function AtpModelsPage() {
   }
 
   return (
-    <>
+    <div className="flex min-h-0 flex-1 flex-col">
       <AntCard
+        ref={pageCardRef}
         className="admin-atp-models-page-card"
         title="ATP 模型管理"
         extra={(
@@ -580,31 +673,36 @@ export default function AtpModelsPage() {
             <Button
               type="primary"
               disabled={!canManage}
-              onClick={() => {
-                setEditingAsset(null);
-                form.setFieldsValue(EMPTY_FORM);
-                setModalOpen(true);
-              }}
+              onClick={openCreateModal}
             >
               新建模型
             </Button>
           </Space>
         )}
       >
-        <Form layout="inline" style={{ rowGap: 12 }}>
-          <Form.Item label="关键词" style={{ width: 260 }}>
-            <Input
-              allowClear
-              value={keywordInput}
-              onChange={(event) => handleKeywordChange(event.target.value)}
-              placeholder="按编码 / 名称 / 描述搜索"
-            />
-          </Form.Item>
-        </Form>
-
-        {assetsQuery.error instanceof Error ? (
-          <Alert type="error" showIcon message="ATP 模型加载失败" description={assetsQuery.error.message} className="mt-4" />
-        ) : null}
+        {viewMode === "card" ? (
+          <Form layout="vertical" style={{ marginBottom: 16 }}>
+            <Form.Item style={{ marginBottom: 0 }}>
+              <Input
+                allowClear
+                value={keywordInput}
+                onChange={(event) => handleKeywordChange(event.target.value)}
+                placeholder="按编码/名称/描述搜索"
+              />
+            </Form.Item>
+          </Form>
+        ) : (
+          <Form layout="inline" style={{ rowGap: 12 }}>
+            <Form.Item label="关键词" style={{ width: 260 }}>
+              <Input
+                allowClear
+                value={keywordInput}
+                onChange={(event) => handleKeywordChange(event.target.value)}
+                placeholder="按编码/名称/描述搜索"
+              />
+            </Form.Item>
+          </Form>
+        )}
 
         {viewMode === "table" ? (
           <div
@@ -617,39 +715,66 @@ export default function AtpModelsPage() {
               loading={assetsQuery.isLoading}
               columns={columns}
               dataSource={assetItems}
+              tableLayout="fixed"
               locale={{
                 emptyText: (
                   <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="暂无 ATP 模型"
+                    description="未找到符合筛选条件的 ATP 模型。"
                   />
                 ),
               }}
-              pagination={false}
-              scroll={{ x: 1080, y: tableScrollY }}
+              pagination={{
+                current: pagination.current,
+                pageSize: pagination.pageSize,
+                total: Math.max(assetTotal, 1),
+                showSizeChanger: true,
+                pageSizeOptions: [10, 20, 50, 100],
+                showTotal: () => `共 ${assetTotal} 条`,
+                hideOnSinglePage: false,
+                style: { marginBottom: 0 },
+                onChange: (page, pageSize) => {
+                  setPagination({ current: page, pageSize });
+                },
+              }}
+              scroll={{ y: tableScrollY }}
             />
           </div>
         ) : (
-          <div className="admin-atp-models-card-view mt-4">
-            {assetsQuery.isLoading ? (
+          <div className="admin-atp-models-card-view">
+            {assetsQuery.isLoading && allLoadedAssets.length === 0 ? (
               <div className="admin-atp-models-card-view-state">
                 <Spin tip="加载中..." />
               </div>
-            ) : assetItems.length === 0 ? (
+            ) : allLoadedAssets.length === 0 ? (
               <div className="admin-atp-models-card-view-state">
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="暂无 ATP 模型"
+                  description="未找到符合筛选条件的 ATP 模型。"
                 />
               </div>
             ) : (
-              <Row gutter={[12, 12]}>
-                {assetItems.map((item) => (
-                  <Col key={item.id} xs={24} sm={24} md={12} lg={8} xl={6}>
-                    {renderAtpModelCard(item)}
-                  </Col>
-                ))}
-              </Row>
+              <div className="admin-atp-models-card-view-content">
+                <Row gutter={[12, 12]}>
+                  {allLoadedAssets.map((item) => (
+                    <Col key={item.id} xs={24} sm={24} md={12} lg={8} xl={6}>
+                      {renderAtpModelCard(item)}
+                    </Col>
+                  ))}
+                </Row>
+                {isLoadingMore && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Spin tip="加载更多..." />
+                  </div>
+                )}
+                {allLoadedAssets.length >= assetTotal && allLoadedAssets.length > 0 && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Typography.Text type="secondary">
+                      已加载全部 {allLoadedAssets.length} 条数据
+                    </Typography.Text>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -658,21 +783,20 @@ export default function AtpModelsPage() {
       <Modal
         title={editingAsset ? "编辑 ATP 模型" : "新建 ATP 模型"}
         open={modalOpen}
-        onCancel={() => {
-          setModalOpen(false);
-          setEditingAsset(null);
-          form.resetFields();
-        }}
+        onCancel={closeModal}
         onOk={() => void form.submit()}
         confirmLoading={saveMutation.isPending}
         destroyOnClose
         width={760}
+        okText={saveMutation.isPending ? "提交中..." : editingAsset ? "保存修改" : "创建模型"}
+        cancelText="取消"
       >
         <Form<AssetFormValues>
           form={form}
           layout="vertical"
           initialValues={EMPTY_FORM}
           onFinish={(values) => void saveMutation.mutateAsync(values)}
+          autoComplete="off"
         >
           <Row gutter={16}>
             <Col xs={24} md={12}>
@@ -703,6 +827,6 @@ export default function AtpModelsPage() {
           </Row>
         </Form>
       </Modal>
-    </>
+    </div>
   );
 }

@@ -177,6 +177,46 @@ def test_create_release_from_archive_requires_asset_dimensions(tmp_path) -> None
         session.close()
 
 
+def test_list_assets_paginates_after_filtering(tmp_path) -> None:
+    testing_session = _build_sessionmaker()
+    session: Session = testing_session()
+    try:
+        _seed_vfs_mount(session, root_dir=tmp_path / "vfs")
+        for index in range(4):
+            created = atp_asset_service.create_asset(
+                session,
+                AtpAssetCreateRequest(
+                    code=f"ATP-ASSET-PAGE-{index}",
+                    name=f"分页模型 {index}",
+                    voltage_level="220",
+                    tower_type="sihuita",
+                    scene_type="fanji",
+                    arrester_config="M123",
+                ),
+                actor_user_id="tester",
+            )
+            assert created is not None
+            assert created.arrester_config == "M123"
+
+        result = atp_asset_service.list_assets(
+            session,
+            keyword="分页模型",
+            status_filter=None,
+            voltage_level=None,
+            tower_type=None,
+            scene_type=None,
+            limit=2,
+            offset=1,
+        )
+
+        assert result.total == 4
+        assert len(result.items) == 2
+        assert [item.code for item in result.items] == ["ATP-ASSET-PAGE-2", "ATP-ASSET-PAGE-1"]
+        assert [item.arrester_config for item in result.items] == ["M123", "M123"]
+    finally:
+        session.close()
+
+
 def test_run_release_dry_run_materializes_directory(tmp_path, monkeypatch) -> None:
     testing_session = _build_sessionmaker()
     monkeypatch.setattr(core_database, "SessionLocal", testing_session)
