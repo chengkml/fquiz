@@ -89,6 +89,7 @@
 }
 
 :root[data-fquiz-theme="dark"] {
+  --fquiz-theme-bg-layout: color-mix(in srgb, var(--ant-color-bg-container) 90%, black);
   --fquiz-theme-bg-elevated: color-mix(in srgb, var(--ant-color-bg-container) 80%, black);
   --fquiz-theme-table-header-bg: color-mix(in srgb, var(--ant-color-bg-container) 85%, black);
   --fquiz-theme-shell-header-bg: color-mix(in srgb, var(--ant-color-bg-container) 82%, black);
