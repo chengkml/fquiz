@@ -1,8 +1,6 @@
 "use client";
 
-import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   Card,
@@ -24,10 +22,11 @@ import {
   Typography,
   type CardProps,
   type MenuProps,
-  type TableColumnsType,
 } from "antd";
 import { MoreOutlined, EditOutlined } from "@ant-design/icons";
-import type { CSSProperties, ComponentType, RefAttributes } from "react";
+import type { ColumnsType } from "antd/es/table";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType, type RefAttributes } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
@@ -38,8 +37,6 @@ import { normalizeAppRoutePath } from "@/lib/app-route-path";
 import type { MenuItem, MenuListResponse } from "@/types/auth";
 
 const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
-
-type FilterStatus = "all" | "enabled" | "disabled";
 
 type MenuFormValues = {
   code: string;
@@ -113,8 +110,8 @@ export default function AdminMenusPage() {
   const [success, setSuccess] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingMenuId, setEditingMenuId] = useState<string | null>(null);
-  const [keyword, setKeyword] = useState("");
-  const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
+  const [keywordInput, setKeywordInput] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"enabled" | "disabled" | undefined>(undefined);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [tableScrollY, setTableScrollY] = useState(MENU_TABLE_MIN_SCROLL_Y);
@@ -129,8 +126,8 @@ export default function AdminMenusPage() {
   const paginationCurrent = pagination.current;
   const paginationPageSize = pagination.pageSize;
 
-  const canRead = hasPermission("menu.read") || hasPermission("menu.manage");
   const canManage = hasPermission("menu.manage");
+  const canRead = hasPermission("menu.read") || hasPermission("menu.manage");
 
   const trimmedKeyword = searchKeyword.trim();
   const menusQueryParams = useMemo(() => {
@@ -140,7 +137,7 @@ export default function AdminMenusPage() {
     if (trimmedKeyword) {
       params.set("keyword", trimmedKeyword);
     }
-    if (statusFilter !== "all") {
+    if (statusFilter) {
       params.set("status", statusFilter);
     }
     return params.toString();
@@ -200,6 +197,10 @@ export default function AdminMenusPage() {
       return compareMenuIds(a.id, b.id);
     });
   }, [menus]);
+  const editingMenu = useMemo(
+    () => menus.find((menu) => menu.id === editingMenuId) ?? null,
+    [editingMenuId, menus],
+  );
 
   useTopicSubscription(
     "admin.menus",
@@ -274,7 +275,7 @@ export default function AdminMenusPage() {
   }, [allLoadedMenus.length, menusQuery.isLoading, isLoadingMore, menuTotal, viewMode]);
 
   const handleKeywordChange = (value: string) => {
-    setKeyword(value);
+    setKeywordInput(value);
 
     if (keywordDebounceTimeoutRef.current) {
       clearTimeout(keywordDebounceTimeoutRef.current);
@@ -288,8 +289,8 @@ export default function AdminMenusPage() {
     }, 500);
   };
 
-  const handleStatusFilterChange = (value?: Exclude<FilterStatus, "all">) => {
-    setStatusFilter(value ?? "all");
+  const handleStatusFilterChange = (value?: "enabled" | "disabled") => {
+    setStatusFilter(value);
     setPagination((prev) => ({ ...prev, current: 1 }));
     setCardViewPage(1);
     setAllLoadedMenus([]);
@@ -456,66 +457,49 @@ export default function AdminMenusPage() {
     }
   }, [createMenuMutation, editingMenuId, form, updateMenuMutation]);
 
-  const confirmRemoveMenu = useCallback((menu: MenuItem) => {
-    Modal.confirm({
-      title: `确认删除菜单 ${menu.name}（${menu.code}）？`,
-      okText: "删除",
-      cancelText: "取消",
-      okButtonProps: { danger: true },
-      onOk: () => deleteMenuMutation.mutate(menu.id),
-    });
-  }, [deleteMenuMutation]);
-
   const updateMenuStatus = useCallback(async (menu: MenuItem) => {
     const nextStatus: "enabled" | "disabled" = menu.status === "enabled" ? "disabled" : "enabled";
     updateMenuMutation.mutate({ menuId: menu.id, payload: { status: nextStatus } });
   }, [updateMenuMutation]);
 
-  const columns = useMemo<TableColumnsType<MenuItem>>(() => {
-    const base: TableColumnsType<MenuItem> = [
-      { title: "ID", dataIndex: "id", width: 110 },
-      {
-        title: "编码",
-        dataIndex: "code",
-        width: 220,
-        render: (value: string) => <span className="font-mono text-xs">{value}</span>,
-      },
-      {
-        title: "名称",
-        dataIndex: "name",
-        width: 180,
-      },
-      {
-        title: "路径",
-        dataIndex: "path",
-        width: 220,
-        render: (value: string | null) => value || "-",
-      },
-      {
-        title: "父菜单",
-        dataIndex: "parent_id",
-        width: 220,
-        render: (value: string | null) => (value ? menuNameById.get(value) ?? value : "-"),
-      },
-      {
-        title: "状态",
-        dataIndex: "status",
-        width: 110,
-        render: (value: string) =>
-          value === "enabled" ? <Tag color="success">已启用</Tag> : <Tag color="default">已禁用</Tag>,
-      },
-      {
-        title: "排序",
-        dataIndex: "sort_order",
-        width: 90,
-      },
-    ];
-
-    if (!canManage) {
-      return base;
-    }
-
-    base.push({
+  const columns: ColumnsType<MenuItem> = [
+    { title: "ID", dataIndex: "id", width: 110 },
+    {
+      title: "编码",
+      dataIndex: "code",
+      width: 220,
+      render: (value: string) => <span className="font-mono text-xs">{value}</span>,
+    },
+    {
+      title: "名称",
+      dataIndex: "name",
+      width: 180,
+    },
+    {
+      title: "路径",
+      dataIndex: "path",
+      width: 220,
+      render: (value: string | null) => value || "-",
+    },
+    {
+      title: "父菜单",
+      dataIndex: "parent_id",
+      width: 220,
+      render: (value: string | null) => (value ? menuNameById.get(value) ?? value : "-"),
+    },
+    {
+      title: "状态",
+      dataIndex: "status",
+      width: 110,
+      render: (value: string) =>
+        value === "enabled" ? <Tag color="success">已启用</Tag> : <Tag color="default">已禁用</Tag>,
+    },
+    {
+      title: "排序",
+      dataIndex: "sort_order",
+      width: 90,
+    },
+    ...(canManage ? [{
       title: "操作",
       key: "actions",
       fixed: "right",
@@ -559,10 +543,8 @@ export default function AdminMenusPage() {
           </Space>
         );
       },
-    });
-
-    return base;
-  }, [canManage, deleteMenuMutation, deletingMenuId, menuNameById, startEdit, updateMenuStatus, updatingStatusMenuId]);
+    } satisfies ColumnsType<MenuItem>[number]] : []),
+  ];
 
   const renderMenuCard = (menuItem: MenuItem) => {
     const updatingLoading = updatingStatusMenuId === menuItem.id;
@@ -575,7 +557,15 @@ export default function AdminMenusPage() {
         label: "删除",
         danger: true,
         disabled: menuBusy || !canManage,
-        onClick: () => confirmRemoveMenu(menuItem),
+        onClick: () => {
+          Modal.confirm({
+            title: `确认删除菜单 ${menuItem.name}（${menuItem.code}）？`,
+            okText: "删除",
+            cancelText: "取消",
+            okButtonProps: { danger: true },
+            onOk: () => deleteMenuMutation.mutate(menuItem.id),
+          });
+        },
       },
       {
         key: "toggle-status",
@@ -770,7 +760,7 @@ export default function AdminMenusPage() {
             <Form.Item style={{ marginBottom: 0 }}>
               <Input
                 allowClear
-                value={keyword}
+                value={keywordInput}
                 onChange={(event) => handleKeywordChange(event.currentTarget.value)}
                 placeholder="按编码/名称/路径筛选"
               />
@@ -778,18 +768,18 @@ export default function AdminMenusPage() {
           </Form>
         ) : (
           <Form layout="inline" style={{ rowGap: 12 }}>
-            <Form.Item label="关键词" style={{ width: 240 }}>
+            <Form.Item label="关键词" style={{ width: 260 }}>
               <Input
                 allowClear
-                value={keyword}
+                value={keywordInput}
                 onChange={(event) => handleKeywordChange(event.currentTarget.value)}
                 placeholder="按编码/名称/路径筛选"
               />
             </Form.Item>
 
             <Form.Item label="状态" style={{ width: 170 }}>
-              <Select<Exclude<FilterStatus, "all">>
-                value={statusFilter === "all" ? undefined : statusFilter}
+              <Select<"enabled" | "disabled">
+                value={statusFilter}
                 allowClear
                 placeholder="全部"
                 onChange={handleStatusFilterChange}
@@ -839,7 +829,7 @@ export default function AdminMenusPage() {
             />
           </div>
         ) : (
-          <div className="admin-menus-card-view mt-4">
+          <div className="admin-menus-card-view">
             {menusQuery.isLoading && allLoadedMenus.length === 0 ? (
               <div className="admin-menus-card-view-state">
                 <Spin tip="加载中..." />
@@ -879,7 +869,7 @@ export default function AdminMenusPage() {
       </AntCard>
 
       <Modal
-        title={editingMenuId ? "编辑菜单" : "新建菜单"}
+        title={editingMenu ? `编辑菜单：${editingMenu.name}（${editingMenu.id}）` : editingMenuId ? "编辑菜单" : "新建菜单"}
         open={dialogOpen}
         onCancel={closeDialog}
         onOk={() => void submit()}
