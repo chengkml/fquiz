@@ -160,6 +160,7 @@ export default function AdminTaskMonitorPage() {
   const [queueKeyword, setQueueKeyword] = useState("");
   const [taskKeyword, setTaskKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "online" | "offline">("all");
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [tableScrollY, setTableScrollY] = useState(TASK_MONITOR_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const viewMode: "table" | "card" = isMobile ? "card" : "table";
@@ -380,6 +381,7 @@ export default function AdminTaskMonitorPage() {
     setQueueKeyword("");
     setTaskKeyword("");
     setStatusFilter("all");
+    setPagination((prev) => ({ ...prev, current: 1 }));
   };
 
   const workersOverviewErrorMessage = workersOverviewQuery.error instanceof Error
@@ -600,7 +602,10 @@ export default function AdminTaskMonitorPage() {
                 allowClear
                 placeholder="按执行节点名称筛选"
                 value={workerKeyword}
-                onChange={(event) => setWorkerKeyword(event.target.value)}
+                onChange={(event) => {
+                  setWorkerKeyword(event.target.value);
+                  setPagination((prev) => ({ ...prev, current: 1 }));
+                }}
               />
             </Form.Item>
 
@@ -609,7 +614,10 @@ export default function AdminTaskMonitorPage() {
                 allowClear
                 placeholder="按队列名称筛选"
                 value={queueKeyword}
-                onChange={(event) => setQueueKeyword(event.target.value)}
+                onChange={(event) => {
+                  setQueueKeyword(event.target.value);
+                  setPagination((prev) => ({ ...prev, current: 1 }));
+                }}
               />
             </Form.Item>
 
@@ -618,14 +626,20 @@ export default function AdminTaskMonitorPage() {
                 allowClear
                 placeholder="按任务 ID / 任务名称筛选"
                 value={taskKeyword}
-                onChange={(event) => setTaskKeyword(event.target.value)}
+                onChange={(event) => {
+                  setTaskKeyword(event.target.value);
+                  setPagination((prev) => ({ ...prev, current: 1 }));
+                }}
               />
             </Form.Item>
 
             <Form.Item label="状态" style={{ marginBottom: 12 }}>
               <Select
                 value={statusFilter}
-                onChange={(value) => setStatusFilter(parseStatusFilter(value))}
+                onChange={(value) => {
+                  setStatusFilter(parseStatusFilter(value));
+                  setPagination((prev) => ({ ...prev, current: 1 }));
+                }}
                 options={[
                   { label: "全部状态", value: "all" },
                   { label: "在线", value: "online" },
@@ -651,7 +665,10 @@ export default function AdminTaskMonitorPage() {
                 allowClear
                 placeholder="按执行节点名称筛选"
                 value={workerKeyword}
-                onChange={(event) => setWorkerKeyword(event.target.value)}
+                onChange={(event) => {
+                  setWorkerKeyword(event.target.value);
+                  setPagination((prev) => ({ ...prev, current: 1 }));
+                }}
               />
             </Form.Item>
 
@@ -660,7 +677,10 @@ export default function AdminTaskMonitorPage() {
                 allowClear
                 placeholder="按队列名称筛选"
                 value={queueKeyword}
-                onChange={(event) => setQueueKeyword(event.target.value)}
+                onChange={(event) => {
+                  setQueueKeyword(event.target.value);
+                  setPagination((prev) => ({ ...prev, current: 1 }));
+                }}
               />
             </Form.Item>
 
@@ -669,14 +689,20 @@ export default function AdminTaskMonitorPage() {
                 allowClear
                 placeholder="按任务 ID / 任务名称筛选"
                 value={taskKeyword}
-                onChange={(event) => setTaskKeyword(event.target.value)}
+                onChange={(event) => {
+                  setTaskKeyword(event.target.value);
+                  setPagination((prev) => ({ ...prev, current: 1 }));
+                }}
               />
             </Form.Item>
 
             <Form.Item label="状态" style={{ width: 170 }}>
               <Select
                 value={statusFilter}
-                onChange={(value) => setStatusFilter(parseStatusFilter(value))}
+                onChange={(value) => {
+                  setStatusFilter(parseStatusFilter(value));
+                  setPagination((prev) => ({ ...prev, current: 1 }));
+                }}
                 options={[
                   { label: "全部状态", value: "all" },
                   { label: "在线", value: "online" },
@@ -728,18 +754,23 @@ export default function AdminTaskMonitorPage() {
               loading={workersOverviewQuery.isLoading || allTasksQuery.isLoading}
               tableLayout="fixed"
               pagination={{
-                pageSize: 50,
+                current: pagination.current,
+                pageSize: pagination.pageSize,
+                total: Math.max(filteredTaskRows.length, 1),
                 showSizeChanger: true,
-                pageSizeOptions: [20, 50, 100, 200],
-                showTotal: (total) => `共 ${total} 条`,
+                pageSizeOptions: [10, 20, 50, 100],
+                showTotal: () => `共 ${filteredTaskRows.length} 条`,
                 hideOnSinglePage: false,
                 style: { marginBottom: 0 },
+                onChange: (page, pageSize) => {
+                  setPagination({ current: page, pageSize });
+                },
               }}
               locale={{
                 emptyText: (
                   <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="暂无符合筛选条件的任务数据。"
+                    description="未找到符合筛选条件的任务。"
                   />
                 ),
               }}
@@ -756,7 +787,7 @@ export default function AdminTaskMonitorPage() {
               <div className="admin-task-monitor-card-view-state">
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="暂无符合筛选条件的任务数据。"
+                  description="未找到符合筛选条件的任务。"
                 />
               </div>
             ) : (
