@@ -892,6 +892,22 @@ body {
   min-height: var(--admin-syslog-table-body-min-height, 180px);
 }
 
+.admin-syslog-page-card {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.admin-syslog-page-card > .ant-card-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 .admin-syslog-card-view {
   display: flex;
   min-height: 0;
@@ -923,6 +939,12 @@ body {
       var(--fquiz-theme-bg-container) 100%
     );
   box-shadow: 0 8px 18px color-mix(in srgb, var(--fquiz-theme-text-primary) 8%, transparent);
+}
+
+.admin-syslog-log-card > .ant-card-head {
+  min-height: 44px;
+  border-bottom-color: color-mix(in srgb, var(--fquiz-theme-primary) 18%, var(--ant-color-border-secondary));
+  background: color-mix(in srgb, var(--fquiz-theme-primary) 6%, transparent);
 }
 
 .admin-syslog-log-card > .ant-card-body {

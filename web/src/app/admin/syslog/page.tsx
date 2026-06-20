@@ -337,6 +337,12 @@ export default function AdminSyslogPage() {
       key={log.id}
       className="admin-syslog-log-card"
       size="small"
+      title={
+        <Space className="min-w-0" size={8}>
+          <Typography.Text strong>{log.username ?? "-"}</Typography.Text>
+          <Tag>{log.action}</Tag>
+        </Space>
+      }
     >
       <Space direction="vertical" size={10} style={{ width: "100%" }}>
         <div className="admin-syslog-log-card-field">
@@ -346,22 +352,17 @@ export default function AdminSyslogPage() {
           </Typography.Text>
         </div>
         <div className="admin-syslog-log-card-field">
-          <Typography.Text type="secondary">用户</Typography.Text>
-          <Space size={6}>
-            <span>{log.username ?? "-"}</span>
-            <Typography.Text code type="secondary">
-              {log.user_id ?? "-"}
-            </Typography.Text>
-          </Space>
-        </div>
-        <div className="admin-syslog-log-card-field">
-          <Typography.Text type="secondary">动作</Typography.Text>
-          <Tag>{log.action}</Tag>
+          <Typography.Text type="secondary">用户 ID</Typography.Text>
+          <Typography.Text code type="secondary" ellipsis={{ tooltip: log.user_id ?? "-" }}>
+            {log.user_id ?? "-"}
+          </Typography.Text>
         </div>
         {log.detail && (
           <div className="admin-syslog-log-card-field">
             <Typography.Text type="secondary">详情</Typography.Text>
-            <Typography.Text type="secondary">{log.detail}</Typography.Text>
+            <Typography.Text type="secondary" ellipsis={{ tooltip: log.detail }}>
+              {log.detail}
+            </Typography.Text>
           </div>
         )}
       </Space>
@@ -405,8 +406,12 @@ export default function AdminSyslogPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col space-y-6">
-      <AntCard ref={pageCardRef} title="系统日志" style={{ height: '100%' }}>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <AntCard
+        ref={pageCardRef}
+        className="admin-syslog-page-card"
+        title="系统日志"
+      >
         {viewMode === "card" ? (
           <Form layout="vertical" style={{ marginBottom: 16 }}>
             <Form.Item label="动作">
@@ -453,7 +458,7 @@ export default function AdminSyslogPage() {
           </Form>
         ) : (
           <Form layout="inline" style={{ rowGap: 12 }}>
-            <Form.Item label="动作" className="min-w-[280px]">
+            <Form.Item label="动作" style={{ width: 260 }}>
               <Input
                 allowClear
                 placeholder="按动作筛选（如 auth.login）"
@@ -461,7 +466,7 @@ export default function AdminSyslogPage() {
                 onChange={(event) => handleActionChange(event.target.value)}
               />
             </Form.Item>
-            <Form.Item label="用户ID" className="min-w-[280px]">
+            <Form.Item label="用户ID" style={{ width: 260 }}>
               <Input
                 allowClear
                 placeholder="按用户ID筛选（如 openclaw）"
@@ -508,21 +513,22 @@ export default function AdminSyslogPage() {
               columns={columns}
               dataSource={logs}
               loading={logsQuery.isFetching}
+              tableLayout="fixed"
               pagination={{
                 current: currentPage,
                 pageSize: PAGE_SIZE,
-                total,
+                total: Math.max(total, 1),
                 onChange: (page) => setOffset((page - 1) * PAGE_SIZE),
                 showSizeChanger: false,
                 showQuickJumper: false,
-                showTotal: (value) => `共 ${value} 条`,
+                showTotal: () => `共 ${total} 条`,
                 hideOnSinglePage: false,
                 style: { marginBottom: 0 },
               }}
               locale={{
                 emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无日志数据" />,
               }}
-              scroll={{ x: 980, y: tableScrollY }}
+              scroll={{ y: tableScrollY }}
             />
           </div>
         ) : (
