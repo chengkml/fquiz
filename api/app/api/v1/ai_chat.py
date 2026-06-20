@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
-from ...core.dependencies import CurrentUser, require_enabled_menu_route, require_user
+from ...core.dependencies import CurrentUser, get_current_user, require_enabled_menu_route
 from ...schemas.ai_chat import (
     AiChatConversationCreateRequest,
     AiChatConversationDetail,
@@ -33,7 +33,7 @@ router = APIRouter(
 def get_conversations(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    current_user: CurrentUser = Depends(require_user),
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AiChatConversationListResponse:
     return list_conversations(db, user_id=current_user.user.id, limit=limit, offset=offset)
@@ -42,7 +42,7 @@ def get_conversations(
 @router.post("/conversations", response_model=AiChatConversationSummary)
 def create_conversation_endpoint(
     payload: AiChatConversationCreateRequest,
-    current_user: CurrentUser = Depends(require_user),
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AiChatConversationSummary:
     return create_conversation(db, payload, user_id=current_user.user.id)
@@ -51,7 +51,7 @@ def create_conversation_endpoint(
 @router.get("/conversations/{conversation_id}", response_model=AiChatConversationDetail)
 def get_conversation_detail(
     conversation_id: int,
-    current_user: CurrentUser = Depends(require_user),
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AiChatConversationDetail:
     conv = get_conversation_by_id(db, conversation_id, user_id=current_user.user.id)
@@ -64,7 +64,7 @@ def get_conversation_detail(
 def update_conversation_endpoint(
     conversation_id: int,
     payload: AiChatConversationUpdateRequest,
-    current_user: CurrentUser = Depends(require_user),
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AiChatConversationSummary:
     updated = update_conversation(db, conversation_id, payload, user_id=current_user.user.id)
@@ -76,7 +76,7 @@ def update_conversation_endpoint(
 @router.delete("/conversations/{conversation_id}")
 def delete_conversation_endpoint(
     conversation_id: int,
-    current_user: CurrentUser = Depends(require_user),
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, bool]:
     deleted = delete_conversation(db, conversation_id, user_id=current_user.user.id)
@@ -89,7 +89,7 @@ def delete_conversation_endpoint(
 def send_message_endpoint(
     conversation_id: int,
     payload: AiChatMessageSendRequest,
-    current_user: CurrentUser = Depends(require_user),
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AiChatMessageResponse:
     result = send_message(db, conversation_id, payload.content, user_id=current_user.user.id)
