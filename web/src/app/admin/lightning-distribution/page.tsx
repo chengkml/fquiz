@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
+  Card,
   Descriptions,
   Dropdown,
   Empty,
@@ -15,18 +16,21 @@ import {
   Table,
   Tag,
   Typography,
+  type CardProps,
   type MenuProps,
 } from "antd";
 import { MoreOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, type ComponentType, type RefAttributes, useEffect } from "react";
+
+const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 import { useAuth } from "@/components/auth-provider";
 import { AdminPageLoading } from "@/components/admin-page-loading";
 import { LightningDistributionMap } from "@/components/lightning-distribution-map";
-import { Card } from "@/components/ui-antd";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
+import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { readApiError } from "@/lib/api";
 import type {
   LightningDistributionImportResponse,
@@ -62,6 +66,10 @@ const INITIAL_DISTRIBUTION_FILTERS: DistributionFilterValues = {
   years: null,
 };
 
+const LIGHTNING_TABLE_MIN_SCROLL_Y = 180;
+const LIGHTNING_TABLE_VIEWPORT_GAP = 40;
+const LIGHTNING_TABLE_FALLBACK_RESERVE = 220;
+
 function formatNullable(value: number | string | null | undefined): string {
   if (value === null || value === undefined || value === "") {
     return "-";
@@ -86,6 +94,7 @@ function formatPolarity(polarity: LightningPolarity): string {
 export default function AdminLightningDistributionPage() {
   const { user, initializing, hasPermission, fetchWithAuth } = useAuth();
   const queryClient = useQueryClient();
+  const isMobile = useMobileDetection();
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [importForm] = Form.useForm<ImportFormValues>();
   const [distributionForm] = Form.useForm<DistributionFilterValues>();
@@ -96,23 +105,33 @@ export default function AdminLightningDistributionPage() {
   const [statsModalOpen, setStatsModalOpen] = useState(false);
 
   const [distributionFilters, setDistributionFilters] = useState<DistributionFilterValues>(INITIAL_DISTRIBUTION_FILTERS);
-  const [keyword, setKeyword] = useState("");
+  const [keywordInput, setKeywordInput] = useState("");
+  const [searchKeyword, setSearchKeyword] = useState("");
   const [regionFilter, setRegionFilter] = useState("");
   const [selectedEventForModal, setSelectedEventForModal] = useState<LightningDistributionScatterPoint | null>(null);
+  const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pageCardRef = useRef<HTMLDivElement | null>(null);
+  const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const viewMode: "table" | "card" = isMobile ? "card" : "table";
+  const [cardViewPage, setCardViewPage] = useState(1);
+  const [allLoadedEvents, setAllLoadedEvents] = useState<LightningDistributionScatterPoint[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [tableScrollY, setTableScrollY] = useState(LIGHTNING_TABLE_MIN_SCROLL_Y);
 
   const canRead = hasPermission("lightning.read") || hasPermission("lightning.manage");
   const canManage = hasPermission("lightning.manage");
 
+  const trimmedKeyword = searchKeyword.trim();
   const distributionStatsPath = useMemo(() => {
     const params = new URLSearchParams();
     if (regionFilter.trim()) params.set("region_id", regionFilter.trim());
-    if (keyword.trim()) params.set("location_tag", keyword.trim());
+    if (trimmedKeyword) params.set("location_tag", trimmedKeyword);
     if (distributionFilters.years !== null) params.set("years", String(distributionFilters.years));
     params.set("grid_size_km", String(distributionFilters.grid_size_km));
     params.set("grid_limit", "1000");
     params.set("scatter_limit", "2000");
     return `/api/v1/lightning-currents/stats/distribution?${params.toString()}`;
-  }, [distributionFilters, keyword, regionFilter]);
+  }, [distributionFilters, trimmedKeyword, regionFilter]);
 
   const distributionStatsQuery = useQuery({
     queryKey: [distributionStatsPath],
@@ -202,6 +221,153 @@ export default function AdminLightningDistributionPage() {
     setStatsModalOpen(true);
   };
 
+  const handleKeywordChange = (value: string) => {
+    setKeywordInput(value);
+
+    if (keywordDebounceTimeoutRef.current) {
+      clearTimeout(keywordDebounceTimeoutRef.current);
+    }
+
+    keywordDebounceTimeoutRef.current = setTimeout(() => {
+      setSearchKeyword(value);
+      setCardViewPage(1);
+      setAllLoadedEvents([]);
+    }, 500);
+  };
+
+  const updateTableScrollY = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - LIGHTNING_TABLE_FALLBACK_RESERVE);
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? LIGHTNING_TABLE_MIN_SCROLL_Y;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - LIGHTNING_TABLE_VIEWPORT_GAP);
+    }
+
+    const clampedHeight = Math.max(LIGHTNING_TABLE_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (keywordDebounceTimeoutRef.current) {
+        clearTimeout(keywordDebounceTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (viewMode !== "card" || distributionStatsQuery.isLoading) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      if (cardViewPage === 1) {
+        setAllLoadedEvents(() => scatterPoints);
+      } else {
+        setAllLoadedEvents((prev) => {
+          if (scatterPoints.length === 0) {
+            return prev;
+          }
+          const existingIds = new Set(prev.map(e => e.id));
+          const newEvents = scatterPoints.filter(e => !existingIds.has(e.id));
+          return [...prev, ...newEvents];
+        });
+      }
+      setIsLoadingMore(false);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [scatterPoints, distributionStatsQuery.isLoading, viewMode, cardViewPage]);
+
+  useEffect(() => {
+    if (viewMode !== "card") return;
+
+    const pageCard = pageCardRef.current;
+    if (!pageCard) return;
+
+    const cardBody = pageCard.querySelector<HTMLElement>(".ant-card-body");
+    if (!cardBody) return;
+
+    const handleScroll = () => {
+      if (isLoadingMore || distributionStatsQuery.isLoading) return;
+
+      const scrollTop = cardBody.scrollTop;
+      const scrollHeight = cardBody.scrollHeight;
+      const clientHeight = cardBody.clientHeight;
+
+      if (scrollTop + clientHeight >= scrollHeight - 100) {
+        const loadedCount = allLoadedEvents.length;
+        const totalCount = scatterPoints.length;
+
+        if (loadedCount < totalCount) {
+          setIsLoadingMore(true);
+          setCardViewPage((prev) => prev + 1);
+        }
+      }
+    };
+
+    cardBody.addEventListener("scroll", handleScroll);
+    return () => cardBody.removeEventListener("scroll", handleScroll);
+  }, [viewMode, isLoadingMore, distributionStatsQuery.isLoading, allLoadedEvents.length, scatterPoints.length]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.requestAnimationFrame(updateTableScrollY);
+  }, [error, distributionError, scatterPoints.length, distributionStatsQuery.isFetching, updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updateTableScrollY);
+    };
+
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateTableScrollY);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTableScrollY]);
+
   const eventColumns = useMemo<ColumnsType<LightningDistributionScatterPoint>>(
     () => [
       {
@@ -276,6 +442,62 @@ export default function AdminLightningDistributionPage() {
     [],
   );
 
+  const renderEventCard = (event: LightningDistributionScatterPoint) => {
+    return (
+      <AntCard
+        key={event.id}
+        className="admin-lightning-distribution-event-card"
+        size="small"
+        title={
+          <Space className="min-w-0" size={8}>
+            <Typography.Text strong code>{event.event_id}</Typography.Text>
+          </Space>
+        }
+        extra={
+          <Button
+            type="text"
+            size="small"
+            onClick={() => openStatsModal(event)}
+          >
+            详情
+          </Button>
+        }
+      >
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <div className="admin-lightning-distribution-event-card-field">
+            <Typography.Text type="secondary">城市</Typography.Text>
+            <Typography.Text>{event.city || "-"}</Typography.Text>
+          </div>
+          <div className="admin-lightning-distribution-event-card-field">
+            <Typography.Text type="secondary">地点标签</Typography.Text>
+            <Typography.Text>{event.location_tag || "-"}</Typography.Text>
+          </div>
+          <div className="admin-lightning-distribution-event-card-field">
+            <Typography.Text type="secondary">坐标</Typography.Text>
+            <Typography.Text>
+              {formatNumber(event.longitude, 5)}, {formatNumber(event.latitude, 5)}
+            </Typography.Text>
+          </div>
+          <div className="admin-lightning-distribution-event-card-field">
+            <Typography.Text type="secondary">电流/极性</Typography.Text>
+            <Space size={4}>
+              <Typography.Text>{formatNumber(event.current_ka, 2)} kA</Typography.Text>
+              <Tag>{formatPolarity(event.polarity)}</Tag>
+            </Space>
+          </div>
+          {event.event_time && (
+            <div className="admin-lightning-distribution-event-card-field">
+              <Typography.Text type="secondary">事件时间</Typography.Text>
+              <Typography.Text>
+                {new Date(event.event_time).toLocaleString("zh-CN", { hour12: false })}
+              </Typography.Text>
+            </div>
+          )}
+        </Space>
+      </AntCard>
+    );
+  };
+
   if (initializing) {
     return (
       <AdminPageLoading
@@ -287,35 +509,41 @@ export default function AdminLightningDistributionPage() {
 
   if (!user) {
     return (
-      <Card>
-        <Space direction="vertical" size={12}>
-          <Typography.Text type="secondary">
-            请先登录后再访问地闪密度统计页面。
-          </Typography.Text>
-          <Button>
-            <Link href="/">返回首页</Link>
-          </Button>
-        </Space>
-      </Card>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <AntCard>
+          <Space direction="vertical" size={12}>
+            <Typography.Text type="secondary">
+              请先登录后再访问地闪密度统计页面。
+            </Typography.Text>
+            <Button>
+              <Link href="/">返回首页</Link>
+            </Button>
+          </Space>
+        </AntCard>
+      </div>
     );
   }
 
   if (!canRead) {
     return (
-      <Card>
-        <Space direction="vertical" size={12}>
-          <Typography.Text type="secondary">你没有访问该页面的权限（需要 `lightning.read`）。</Typography.Text>
-          <Button>
-            <Link href="/">返回首页</Link>
-          </Button>
-        </Space>
-      </Card>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <AntCard>
+          <Space direction="vertical" size={12}>
+            <Typography.Text type="secondary">你没有访问该页面的权限（需要 `lightning.read`）。</Typography.Text>
+            <Button>
+              <Link href="/">返回首页</Link>
+            </Button>
+          </Space>
+        </AntCard>
+      </div>
     );
   }
 
   return (
-    <Space direction="vertical" size={16} className="w-full">
-      <Card
+    <div className="flex min-h-0 flex-1 flex-col">
+      <AntCard
+        ref={pageCardRef}
+        className="admin-lightning-distribution-page-card"
         title="地闪密度统计"
         extra={
           canManage && (
@@ -332,60 +560,107 @@ export default function AdminLightningDistributionPage() {
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             <Input
-              value={keyword}
+              value={keywordInput}
               allowClear
-              onChange={(event) => setKeyword(event.target.value)}
+              onChange={(event) => handleKeywordChange(event.target.value)}
               placeholder="按地点/标签筛选"
             />
             <Input
               value={regionFilter}
               allowClear
-              onChange={(event) => setRegionFilter(event.target.value)}
+              onChange={(event) => {
+                setRegionFilter(event.target.value);
+                setCardViewPage(1);
+                setAllLoadedEvents([]);
+              }}
               placeholder="按 Region ID 筛选"
             />
           </div>
 
-          <Form<DistributionFilterValues>
-            form={distributionForm}
-            layout="vertical"
-            initialValues={INITIAL_DISTRIBUTION_FILTERS}
-            onFinish={(values) => {
-              setDistributionFilters(values);
-            }}
-          >
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <Form.Item name="grid_size_km" label="网格尺寸(km)" rules={[{ required: true, message: "请输入网格尺寸" }]}>
-                <InputNumber className="w-full" min={0.1} max={100} precision={2} />
-              </Form.Item>
-              <Form.Item name="years" label="统计年限(可选)">
-                <InputNumber className="w-full" min={0.01} precision={2} />
-              </Form.Item>
-            </div>
-            <Space wrap>
-              <Button type="primary" htmlType="submit" loading={distributionStatsQuery.isFetching}>
-                更新筛选条件
-              </Button>
-              <Button
-                onClick={() => {
-                  distributionForm.setFieldsValue(INITIAL_DISTRIBUTION_FILTERS);
-                  setDistributionFilters(INITIAL_DISTRIBUTION_FILTERS);
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <Typography.Text type="secondary" style={{ fontSize: 14 }}>网格尺寸(km)</Typography.Text>
+              <InputNumber
+                className="w-full"
+                min={0.1}
+                max={100}
+                precision={2}
+                value={distributionFilters.grid_size_km}
+                onChange={(value) => {
+                  if (value !== null) {
+                    setDistributionFilters((prev) => ({ ...prev, grid_size_km: value }));
+                    setCardViewPage(1);
+                    setAllLoadedEvents([]);
+                  }
                 }}
-              >
-                重置筛选
-              </Button>
-            </Space>
-          </Form>
+              />
+            </div>
+            <div>
+              <Typography.Text type="secondary" style={{ fontSize: 14 }}>统计年限(可选)</Typography.Text>
+              <InputNumber
+                className="w-full"
+                min={0.01}
+                precision={2}
+                value={distributionFilters.years}
+                onChange={(value) => {
+                  setDistributionFilters((prev) => ({ ...prev, years: value }));
+                  setCardViewPage(1);
+                  setAllLoadedEvents([]);
+                }}
+              />
+            </div>
+          </div>
 
-          <Table<LightningDistributionScatterPoint>
-            rowKey={(row) => row.id}
-            columns={eventColumns}
-            dataSource={scatterPoints}
-            loading={distributionStatsQuery.isFetching}
-            pagination={{ pageSize: 20, showSizeChanger: true, hideOnSinglePage: false, showTotal: (total) => `共 ${total} 条` }}
-            scroll={{ x: 1400 }}
-          />
+          {viewMode === "table" ? (
+            <div ref={tableScrollAnchorRef} className="admin-lightning-distribution-table-anchor mt-4">
+              <Table<LightningDistributionScatterPoint>
+                rowKey={(row) => row.id}
+                columns={eventColumns}
+                dataSource={scatterPoints}
+                loading={distributionStatsQuery.isFetching}
+                tableLayout="fixed"
+                pagination={{ pageSize: 20, showSizeChanger: true, hideOnSinglePage: false, showTotal: (total) => `共 ${total} 条` }}
+                scroll={{ x: 1400, y: tableScrollY }}
+              />
+            </div>
+          ) : (
+            <div className="admin-lightning-distribution-card-view">
+              {distributionStatsQuery.isLoading && allLoadedEvents.length === 0 ? (
+                <div className="admin-lightning-distribution-card-view-state">
+                  <Space direction="vertical" align="center">
+                    <Typography.Text type="secondary">加载中...</Typography.Text>
+                  </Space>
+                </div>
+              ) : allLoadedEvents.length === 0 ? (
+                <div className="admin-lightning-distribution-card-view-state">
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="未找到符合筛选条件的事件。"
+                  />
+                </div>
+              ) : (
+                <div className="admin-lightning-distribution-card-view-content">
+                  <Space direction="vertical" size={12} className="w-full">
+                    {allLoadedEvents.map((event) => renderEventCard(event))}
+                  </Space>
+                  {isLoadingMore && (
+                    <div style={{ textAlign: "center", padding: "20px 0" }}>
+                      <Typography.Text type="secondary">加载更多...</Typography.Text>
+                    </div>
+                  )}
+                  {allLoadedEvents.length >= scatterPoints.length && allLoadedEvents.length > 0 && (
+                    <div style={{ textAlign: "center", padding: "20px 0" }}>
+                      <Typography.Text type="secondary">
+                        已加载全部 {allLoadedEvents.length} 条数据
+                      </Typography.Text>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </Space>
-      </Card>
+      </AntCard>
 
       <Modal
         title="导入地闪密度数据"
@@ -511,7 +786,7 @@ export default function AdminLightningDistributionPage() {
           </Space>
         )}
       </Modal>
-    </Space>
+    </div>
   );
 }
 
