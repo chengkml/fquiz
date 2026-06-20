@@ -826,10 +826,10 @@ export default function AdminRolesPage() {
               pagination={{
                 current: paginationCurrent,
                 pageSize: paginationPageSize,
-                total: rolesQuery.data?.roles_total ?? 0,
+                total: Math.max(rolesQuery.data?.roles_total ?? 0, 1),
                 showSizeChanger: true,
                 pageSizeOptions: [10, 20, 50, 100],
-                showTotal: (total) => `共 ${total} 条`,
+                showTotal: () => `共 ${rolesQuery.data?.roles_total ?? 0} 条`,
                 hideOnSinglePage: false,
                 style: { marginBottom: 0 },
                 onChange: (page, pageSize) => {
@@ -898,7 +898,6 @@ export default function AdminRolesPage() {
           confirmLoading={createRoleMutation.isPending || updateRoleMutation.isPending}
           onCancel={closeDialog}
           onOk={() => void submit()}
-          width={760}
         >
           <Form<RoleFormValues>
             form={form}
