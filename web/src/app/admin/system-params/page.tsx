@@ -41,7 +41,6 @@ type FormState = {
   param_name: string;
   param_value: string;
   description: string;
-  status: "enabled" | "disabled";
 };
 
 const EMPTY_FORM: FormState = {
@@ -49,13 +48,7 @@ const EMPTY_FORM: FormState = {
   param_name: "",
   param_value: "",
   description: "",
-  status: "enabled",
 };
-
-const PARAM_STATUS_OPTIONS = [
-  { label: "已启用", value: "enabled" },
-  { label: "已禁用", value: "disabled" },
-] as const satisfies ReadonlyArray<{ label: string; value: FormState["status"] }>;
 
 const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
@@ -83,6 +76,7 @@ export default function AdminSystemParamsPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [tableScrollY, setTableScrollY] = useState(PARAM_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -167,7 +161,6 @@ export default function AdminSystemParamsPage() {
       param_name: item.param_name,
       param_value: item.param_value,
       description: item.description ?? "",
-      status: item.status,
     });
     setEditorOpen(true);
   }, [formApi]);
@@ -264,7 +257,7 @@ export default function AdminSystemParamsPage() {
             param_name: values.param_name.trim(),
             param_value: values.param_value,
             description: values.description,
-            status: values.status,
+            status: "enabled",
           }),
         });
         if (!response.ok) {
@@ -280,7 +273,6 @@ export default function AdminSystemParamsPage() {
           param_name: values.param_name.trim(),
           param_value: values.param_value,
           description: values.description,
-          status: values.status,
         }),
       });
       if (!response.ok) {
@@ -338,6 +330,39 @@ export default function AdminSystemParamsPage() {
       setDeletingId(null);
     }
   }, [deleteMutation]);
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ item, status }: { item: SystemParamSummary; status: SystemParamSummary["status"] }) => {
+      const response = await fetchWithAuth(`/api/v1/admin/system-params/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return status;
+    },
+    onMutate: ({ item }) => {
+      setUpdatingStatusId(item.id);
+      setError("");
+      setSuccess("");
+    },
+    onSuccess: async (status) => {
+      setSuccess(status === "enabled" ? "系统参数已启用" : "系统参数已禁用");
+      await refreshList();
+    },
+    onError: (candidate) => {
+      setSuccess("");
+      setError(candidate instanceof Error ? candidate.message : "更新系统参数状态失败");
+    },
+    onSettled: () => setUpdatingStatusId(null),
+  });
+
+  const toggleParamStatus = useCallback((item: SystemParamSummary) => {
+    const nextStatus: SystemParamSummary["status"] = item.status === "enabled" ? "disabled" : "enabled";
+    updateStatusMutation.mutate({ item, status: nextStatus });
+  }, [updateStatusMutation]);
 
   const handleKeywordChange = (value: string) => {
     setKeywordInput(value);
@@ -444,7 +469,8 @@ export default function AdminSystemParamsPage() {
 
   const renderParamCard = (param: SystemParamSummary) => {
     const deleteLoading = deletingId === param.id;
-    const rowBusy = deleteLoading;
+    const statusLoading = updatingStatusId === param.id;
+    const rowBusy = deleteLoading || statusLoading;
 
     const moreMenuItems: MenuProps["items"] = [
       {
@@ -455,6 +481,12 @@ export default function AdminSystemParamsPage() {
           void navigator.clipboard.writeText(param.param_key);
           setSuccess(`已复制参数键: ${param.param_key}`);
         },
+      },
+      {
+        key: "toggle-status",
+        label: param.status === "enabled" ? "禁用" : "启用",
+        disabled: rowBusy || !canManage,
+        onClick: () => toggleParamStatus(param),
       },
       {
         key: "delete",
@@ -591,7 +623,8 @@ export default function AdminSystemParamsPage() {
         width: 180,
         render: (_, record) => {
           const deleteLoading = deletingId === record.id;
-          const rowBusy = deleteLoading;
+          const statusLoading = updatingStatusId === record.id;
+          const rowBusy = deleteLoading || statusLoading;
 
           const moreMenuItems: MenuProps["items"] = [
             {
@@ -602,6 +635,12 @@ export default function AdminSystemParamsPage() {
                 void navigator.clipboard.writeText(record.param_key);
                 setSuccess(`已复制参数键: ${record.param_key}`);
               },
+            },
+            {
+              key: "toggle-status",
+              label: record.status === "enabled" ? "禁用" : "启用",
+              disabled: rowBusy,
+              onClick: () => toggleParamStatus(record),
             },
           ];
 
@@ -633,7 +672,7 @@ export default function AdminSystemParamsPage() {
     }
 
     return baseColumns;
-  }, [canManage, deletingId, removeParam, startEdit]);
+  }, [canManage, deletingId, removeParam, startEdit, toggleParamStatus, updatingStatusId]);
 
   const updateTableScrollY = useCallback(() => {
     if (typeof window === "undefined") {
@@ -930,10 +969,6 @@ export default function AdminSystemParamsPage() {
                 rules={[{ max: 20000, message: "说明不能超过 20000 位" }]}
               >
                 <Input.TextArea rows={3} />
-              </Form.Item>
-
-              <Form.Item<FormState> label="状态" name="status">
-                <Select options={[...PARAM_STATUS_OPTIONS]} />
               </Form.Item>
             </div>
           </Form>
