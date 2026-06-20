@@ -30,7 +30,9 @@ from ...schemas.elevation import (
     ElevationFileRecordListResponse,
     ElevationFileRecordPreviewResponse,
     ElevationFileRecordSummary,
+    ElevationFileRecordTaskStatusResponse,
     ElevationFileRecordTerrainBuildResponse,
+    ElevationFileRecordTerrainTaskStatusResponse,
     ElevationFileRecordUpdateRequest,
     ElevationFileRecordUploadResponse,
 )
@@ -40,6 +42,10 @@ from ...services.elevation_service import (
     delete_dataset,
     get_data_import_job_by_id,
     get_dataset_analysis_task_status,
+    get_file_record_analysis_task_status,
+    get_file_record_terrain_layer,
+    get_file_record_terrain_task_status,
+    get_file_record_terrain_tile,
     get_dataset_terrain_layer,
     get_dataset_terrain_task_status,
     get_dataset_terrain_tile,
@@ -178,6 +184,46 @@ def preview_elevation_file_record(
         record_id=record_id,
         max_points=max_points,
     )
+
+
+@router.get("/records/{record_id}/analysis-status", response_model=ElevationFileRecordTaskStatusResponse)
+def get_elevation_file_record_analysis_status(
+    record_id: str,
+    _: CurrentUser = Depends(require_any_permission("elevation.read", "elevation.manage")),
+    db: Session = Depends(get_db),
+) -> ElevationFileRecordTaskStatusResponse:
+    return get_file_record_analysis_task_status(db, record_id=record_id)
+
+
+@router.get("/records/{record_id}/terrain-status", response_model=ElevationFileRecordTerrainTaskStatusResponse)
+def get_elevation_file_record_terrain_status(
+    record_id: str,
+    _: CurrentUser = Depends(require_any_permission("elevation.read", "elevation.manage")),
+    db: Session = Depends(get_db),
+) -> ElevationFileRecordTerrainTaskStatusResponse:
+    return get_file_record_terrain_task_status(db, record_id=record_id)
+
+
+@router.get("/records/{record_id}/terrain/layer.json", response_model=ElevationTerrainLayerResponse)
+def get_elevation_file_record_terrain_layer(
+    record_id: str,
+    _: CurrentUser = Depends(require_any_permission("elevation.read", "elevation.manage")),
+    db: Session = Depends(get_db),
+) -> ElevationTerrainLayerResponse:
+    return get_file_record_terrain_layer(db, record_id=record_id)
+
+
+@router.get("/records/{record_id}/terrain/{z}/{x}/{y}.terrain")
+def get_elevation_file_record_terrain_tile_endpoint(
+    record_id: str,
+    z: int,
+    x: int,
+    y: int,
+    _: CurrentUser = Depends(require_any_permission("elevation.read", "elevation.manage")),
+    db: Session = Depends(get_db),
+) -> Response:
+    content = get_file_record_terrain_tile(db, record_id=record_id, z=z, x=x, y=y)
+    return Response(content=content, media_type="application/octet-stream")
 
 
 # ============================================================================
@@ -378,6 +424,7 @@ def get_elevation_dataset_terrain_tile_endpoint(
 def get_elevation_jobs(
     line_id: str | None = Query(default=None),
     dataset_id: str | None = Query(default=None),
+    file_record_id: str | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
     limit: int = Query(default=50, ge=1, le=200),
     _: CurrentUser = Depends(require_any_permission("elevation.read", "elevation.manage")),
@@ -387,6 +434,7 @@ def get_elevation_jobs(
         db,
         line_id=line_id,
         dataset_id=dataset_id,
+        file_record_id=file_record_id,
         status_filter=status_filter,
         limit=limit,
     )

@@ -273,6 +273,66 @@ export type ElevationDatasetSummary = {
   update_user: string | null;
 };
 
+export type ElevationFileRecordSummary = {
+  id: string;
+  file_name: string;
+  file_path: string;
+  file_format: string;
+  file_size: number;
+  source: string | null;
+  mount_code: string;
+  resolution_m: number | null;
+  status: ElevationDatasetStatus;
+  bbox_min_lon: number | null;
+  bbox_max_lon: number | null;
+  bbox_min_lat: number | null;
+  bbox_max_lat: number | null;
+  sample_count: number;
+  analysis_task_id: string | null;
+  analysis_status: string;
+  analysis_error_message: string | null;
+  analysis_started_at: string | null;
+  analysis_finished_at: string | null;
+  terrain_status: ElevationDatasetTerrainStatus;
+  terrain_task_id: string | null;
+  terrain_error_message: string | null;
+  terrain_root_path: string | null;
+  terrain_url_template: string | null;
+  terrain_min_zoom: number | null;
+  terrain_max_zoom: number | null;
+  terrain_bounds: ElevationTerrainBounds | null;
+  terrain_metadata: Record<string, unknown> | null;
+  notes: string | null;
+  create_date: string;
+  create_user: string | null;
+  update_date: string;
+  update_user: string | null;
+};
+
+export type ElevationFileRecordListResponse = {
+  items: ElevationFileRecordSummary[];
+  total: number;
+};
+
+export type ElevationFileRecordPreviewResponse = {
+  record: ElevationFileRecordSummary;
+  preview_mode: "point_cloud" | "terrain_grid";
+  total_points: number;
+  sampled_points: number;
+  points: ElevationDatasetPreviewPoint[];
+  cells: ElevationDatasetPreviewCell[];
+  diagnostics: ElevationDatasetPreviewDiagnostics | null;
+  warnings: string[];
+};
+
+export type ElevationFileRecordTaskResponse = {
+  record: ElevationFileRecordSummary;
+  task_id: string | null;
+  queued: boolean;
+  detail: string | null;
+  warnings: string[];
+};
+
 export type ElevationDatasetListResponse = {
   items: ElevationDatasetSummary[];
   total: number;
@@ -466,7 +526,9 @@ export type ElevationApplyJobSummary = {
   line_id: string;
   line_code: string | null;
   line_name: string | null;
-  dataset_id: string;
+  file_record_id: string | null;
+  file_record_name: string | null;
+  dataset_id: string | null;
   dataset_code: string | null;
   dataset_name: string | null;
   mode: ElevationApplyMode;

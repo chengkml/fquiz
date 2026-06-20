@@ -29,6 +29,7 @@ import { useAuth } from "@/components/auth-provider";
 import { ElevationPreviewCesiumMap } from "@/components/elevation-preview-cesium-map";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
+import type { ElevationDatasetTerrainStatus } from "@/types/auth";
 
 type ElevationFileRecordSummary = {
   id: string;
@@ -47,8 +48,19 @@ type ElevationFileRecordSummary = {
   sample_count: number;
   analysis_status: string;
   analysis_task_id: string | null;
-  terrain_status: string;
+  terrain_status: ElevationDatasetTerrainStatus;
   terrain_task_id: string | null;
+  terrain_error_message: string | null;
+  terrain_url_template: string | null;
+  terrain_min_zoom: number | null;
+  terrain_max_zoom: number | null;
+  terrain_bounds: {
+    west: number;
+    south: number;
+    east: number;
+    north: number;
+  } | null;
+  terrain_metadata: Record<string, unknown> | null;
   notes: string | null;
   create_date: string;
   create_user: string | null;
@@ -190,7 +202,7 @@ function readMutationError(error: unknown, fallback: string): string {
 }
 
 export default function ElevationRecordsPage() {
-  const { fetchWithAuth } = useAuth();
+  const { fetchWithAuth, getAccessToken } = useAuth();
   const queryClient = useQueryClient();
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
@@ -437,7 +449,7 @@ export default function ElevationRecordsPage() {
                 disabled:
                   record.file_format === "csv" ||
                   record.terrain_status === "processing" ||
-                  record.terrain_status === "pending",
+                  (record.terrain_status === "pending" && !!record.terrain_task_id),
                 onClick: () => terrainMutation.mutate(record.id),
               },
               {
@@ -566,7 +578,7 @@ export default function ElevationRecordsPage() {
           </Form.Item>
 
           <Form.Item label="分辨率(米)" name="resolution_m">
-            <InputNumber min={0} step={0.1} style={{ width: "100%" }} placeholder="例如：30" />
+            <InputNumber min={0.1} step={0.1} style={{ width: "100%" }} placeholder="例如：30" />
           </Form.Item>
 
           <Form.Item label="备注" name="notes">
@@ -650,6 +662,15 @@ export default function ElevationRecordsPage() {
             </Descriptions>
             <div style={{ height: 600 }}>
               <ElevationPreviewCesiumMap
+                dataset={{
+                  id: previewData.record.id,
+                  name: previewData.record.file_name,
+                  terrain_status: previewData.record.terrain_status,
+                  terrain_url_template: previewData.record.terrain_url_template,
+                  terrain_bounds: previewData.record.terrain_bounds,
+                  terrain_metadata: previewData.record.terrain_metadata,
+                }}
+                accessToken={getAccessToken()}
                 points={previewData.points}
                 cells={previewData.cells}
               />

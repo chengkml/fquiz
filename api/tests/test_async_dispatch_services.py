@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.database import Base
 from app.models.atp_model import AtpModel, AtpModelVersion, AtpSimulationRun
-from app.models.elevation import ElevationDataImportJob, ElevationDataset
+from app.models.elevation import ElevationDataImportJob, ElevationDataset, ElevationFileRecord
 from app.models.user import User
 from app.models.wine import WineRun
 from app.schemas.atp_model import AtpSimulationRunRequest
@@ -233,6 +233,53 @@ def test_queue_dataset_terrain_build_reuses_existing_running_task(monkeypatch) -
         session.close()
 
 
+def test_file_record_terrain_layer_and_tile_read_from_record_storage(monkeypatch) -> None:
+    testing_session = _build_sessionmaker(ElevationFileRecord.__table__)
+    session: Session = testing_session()
+    try:
+        record = ElevationFileRecord(
+            id="abcdef1234567890abcdef1234567890",
+            file_name="terrain.tif",
+            file_path="/elevation/records/ab/cd/terrain.tif",
+            file_format="tif",
+            file_size=128,
+            mount_code="default",
+            status="active",
+            terrain_status="ready",
+            terrain_root_path="/elevation/terrain/records/ab/cd/abcdef1234567890abcdef1234567890",
+            terrain_url_template="/api/v1/elevation/records/abcdef1234567890abcdef1234567890/terrain/{z}/{x}/{y}.terrain?v=1.0.0",
+            terrain_min_zoom=0,
+            terrain_max_zoom=0,
+        )
+        session.add(record)
+        session.commit()
+
+        driver = _MemoryStorageDriver()
+        layer_payload = b'{"tilejson":"2.1.0","format":"heightmap-1.0","version":"1.0.0","scheme":"tms","projection":"EPSG:4326","tiles":["{z}/{x}/{y}.terrain?v=1.0.0"],"minzoom":0,"maxzoom":0}'
+        driver.write_file(
+            "/elevation/terrain/records/ab/cd/abcdef1234567890abcdef1234567890/layer.json",
+            content=layer_payload,
+            content_type="application/json",
+        )
+        driver.write_file(
+            "/elevation/terrain/records/ab/cd/abcdef1234567890abcdef1234567890/0/0/0.terrain",
+            content=b"tile-bytes",
+            content_type="application/octet-stream",
+        )
+
+        monkeypatch.setattr(elevation_service, "_require_mount", lambda *_args, **_kwargs: SimpleNamespace(code="default"))
+        monkeypatch.setattr(elevation_service, "_build_driver_or_400", lambda *_args, **_kwargs: driver)
+
+        layer = elevation_service.get_file_record_terrain_layer(session, record_id=record.id)
+        tile = elevation_service.get_file_record_terrain_tile(session, record_id=record.id, z=0, x=0, y=0)
+
+        assert layer.maxzoom == 0
+        assert layer.tiles == ["{z}/{x}/{y}.terrain?v=1.0.0"]
+        assert tile == b"tile-bytes"
+    finally:
+        session.close()
+
+
 def test_import_dataset_data_files_queue_job_and_worker_keeps_preferred_raster(monkeypatch) -> None:
     testing_session = _build_sessionmaker(ElevationDataset.__table__, ElevationDataImportJob.__table__)
     session: Session = testing_session()
@@ -296,7 +343,10 @@ def test_import_dataset_data_files_queue_job_and_worker_keeps_preferred_raster(m
         assert first.job.uploaded_file_count == 1
         assert first.job.analysis_task_queued is False
         assert import_calls == [(first.job.id, actor.id)]
-        assert any(path.endswith(".img") and "/.imports/" in path for path in driver.files)
+        saved_pending_job = session.get(ElevationDataImportJob, first.job.id)
+        assert saved_pending_job is not None
+        assert saved_pending_job.staged_files_json[0]["filename"] == "terrain.img"
+        assert "content_base64" in saved_pending_job.staged_files_json[0]
 
         second = elevation_service.import_dataset_data_files(
             session,

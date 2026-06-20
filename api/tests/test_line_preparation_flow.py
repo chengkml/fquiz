@@ -158,7 +158,7 @@ def test_apply_points_to_line_towers_computes_ground_slopes() -> None:
         stats = elevation_service._apply_points_to_line_towers(
             session,
             line_id=line.id,
-            dataset=SimpleNamespace(id="ds-1", code="DEM-001"),
+            elevation_source=SimpleNamespace(id="ds-1", code="DEM-001"),
             mode="overwrite_all",
             points=points,
         )

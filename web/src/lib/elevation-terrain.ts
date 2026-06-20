@@ -44,7 +44,7 @@ export function countLineTowersOutsideTerrainBounds(
 
 export function getElevationTerrainLayerUrl(dataset: Pick<
   ElevationDatasetSummary,
-  "id" | "terrain_metadata"
+  "id" | "terrain_metadata" | "terrain_url_template"
 > | null): string | null {
   if (!dataset) {
     return null;
@@ -53,5 +53,12 @@ export function getElevationTerrainLayerUrl(dataset: Pick<
   if (typeof candidate === "string" && candidate.trim()) {
     return candidate.trim().replace(/\/layer\.json$/, "");
   }
-  return `/api/v1/elevation/datasets/${dataset.id}/terrain/layer.json`;
+  if (dataset.terrain_url_template) {
+    const template = dataset.terrain_url_template.trim();
+    const terrainIndex = template.indexOf("/terrain/");
+    if (terrainIndex >= 0) {
+      return template.slice(0, terrainIndex + "/terrain".length);
+    }
+  }
+  return `/api/v1/elevation/datasets/${dataset.id}/terrain`;
 }

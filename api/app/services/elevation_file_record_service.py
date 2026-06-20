@@ -27,32 +27,21 @@ from ..schemas.elevation import (
 )
 from .elevation_service import (
     ELEVATION_FILE_EXT_FORMAT_MAP,
-    ELEVATION_TOPIC,
     IMPORTABLE_ELEVATION_EXTENSIONS,
     RASTER_FILE_FORMATS,
     TERRAIN_SUPPORTED_DATASET_FORMATS,
-    _analyze_dataset_content,
     _build_raster_preview,
     _decode_csv_bytes,
     _default_terrain_status_for_format,
-    _detect_file_format,
-    _fire_and_forget,
-    _load_dataset_points,
     _normalize_str,
     _publish_elevation_change,
-    _queue_dataset_terrain_build_after_analysis,
     _require_mount,
     _require_rasterio_available,
-    _resolve_dataset_dir,
-    _resolve_dataset_file_path,
     _resolve_dataset_mount_code,
     _sample_preview_points_from_csv,
-    _supports_terrain_build,
-    _sync_dataset_terrain_support,
     ElevationDatasetPreviewDiagnostics,
     ElevationDatasetPreviewPoint,
     join_virtual_path,
-    publish_topic,
 )
 from .file_service import _build_driver_or_400
 

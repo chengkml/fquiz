@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from ..core.database import SessionLocal
 from ..models.base import utcnow
-from ..models.elevation import ElevationApplyJob, ElevationDataImportJob, ElevationDataset, ElevationDatasetFileMeta
+from ..models.elevation import ElevationApplyJob, ElevationDataImportJob, ElevationDataset, ElevationDatasetFileMeta, ElevationFileRecord
 from ..models.line import Line
 from ..models.line_tower import LineTower
 from ..models.user import User
@@ -36,6 +36,8 @@ from ..schemas.elevation import (
     ElevationDatasetDataImportResponse,
     ElevationDatasetTerrainBuildResponse,
     ElevationDatasetTerrainTaskStatusResponse,
+    ElevationFileRecordTaskStatusResponse,
+    ElevationFileRecordTerrainTaskStatusResponse,
     ElevationTerrainLayerResponse,
     ElevationDatasetPreviewCell,
     ElevationDatasetPreviewDiagnostics,
@@ -181,11 +183,14 @@ def serialize_dataset(item: ElevationDataset) -> ElevationDatasetSummary:
 def serialize_job(item: ElevationApplyJob) -> ElevationApplyJobSummary:
     line = item.line
     dataset = item.dataset
+    file_record = item.file_record
     return ElevationApplyJobSummary(
         id=item.id,
         line_id=item.line_id,
         line_code=line.code if line else None,
         line_name=line.name if line else None,
+        file_record_id=item.file_record_id,
+        file_record_name=file_record.file_name if file_record else None,
         dataset_id=item.dataset_id,
         dataset_code=dataset.code if dataset else None,
         dataset_name=dataset.name if dataset else None,
@@ -209,9 +214,12 @@ def serialize_job(item: ElevationApplyJob) -> ElevationApplyJobSummary:
 
 def serialize_data_import_job(item: ElevationDataImportJob) -> ElevationDataImportJobSummary:
     dataset = item.dataset
+    file_record = item.file_record
     return ElevationDataImportJobSummary(
         id=item.id,
         dataset_id=item.dataset_id,
+        file_record_id=item.file_record_id,
+        file_record_name=file_record.file_name if file_record else None,
         dataset_code=dataset.code if dataset else None,
         dataset_name=dataset.name if dataset else None,
         status=item.status,  # type: ignore[arg-type]
@@ -277,6 +285,12 @@ def get_dataset_by_id(db: Session, dataset_id: str) -> ElevationDataset | None:
     ).scalar_one_or_none()
 
 
+def get_file_record_by_id(db: Session, record_id: str) -> ElevationFileRecord | None:
+    return db.execute(
+        select(ElevationFileRecord).where(ElevationFileRecord.id == record_id)
+    ).scalar_one_or_none()
+
+
 def get_dataset_by_code(db: Session, code: str) -> ElevationDataset | None:
     normalized = code.strip()
     if not normalized:
@@ -309,6 +323,10 @@ def _supports_terrain_build(dataset: ElevationDataset) -> bool:
     return _resolve_dataset_file_format(dataset) in TERRAIN_SUPPORTED_DATASET_FORMATS
 
 
+def _supports_file_record_terrain_build(record: ElevationFileRecord) -> bool:
+    return _resolve_file_record_format(record) in TERRAIN_SUPPORTED_DATASET_FORMATS
+
+
 def _default_terrain_status_for_format(file_format: str) -> str:
     return "pending" if file_format in TERRAIN_SUPPORTED_DATASET_FORMATS else "not_supported"
 
@@ -339,8 +357,24 @@ def _resolve_dataset_terrain_tile_path(*, dataset_code: str, z: int, x: int, y: 
     return join_virtual_path(join_virtual_path(join_virtual_path(_resolve_dataset_terrain_dir(dataset_code), str(z)), str(x)), f"{y}.terrain")
 
 
+def _resolve_file_record_terrain_dir(record_id: str) -> str:
+    return f"/elevation/terrain/records/{record_id[:2]}/{record_id[2:4]}/{record_id}"
+
+
+def _resolve_file_record_terrain_layer_path(record_id: str) -> str:
+    return join_virtual_path(_resolve_file_record_terrain_dir(record_id), "layer.json")
+
+
+def _resolve_file_record_terrain_tile_path(*, record_id: str, z: int, x: int, y: int) -> str:
+    return join_virtual_path(join_virtual_path(join_virtual_path(_resolve_file_record_terrain_dir(record_id), str(z)), str(x)), f"{y}.terrain")
+
+
 def _build_dataset_terrain_url_template(dataset_id: str) -> str:
     return f"/api/v1/elevation/datasets/{dataset_id}/terrain/{{z}}/{{x}}/{{y}}.terrain?v={TERRAIN_TILE_VERSION}"
+
+
+def _build_file_record_terrain_url_template(record_id: str) -> str:
+    return f"/api/v1/elevation/records/{record_id}/terrain/{{z}}/{{x}}/{{y}}.terrain?v={TERRAIN_TILE_VERSION}"
 
 
 def _map_dataset_task_status(status_value: str | None) -> str:
@@ -1276,6 +1310,7 @@ def get_dataset_terrain_layer(
         data = json.loads(payload.content.decode("utf-8"))
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="地形 layer.json 解析失败") from exc
+    data.setdefault("minzoom", 0)
     return ElevationTerrainLayerResponse.model_validate(data)
 
 
@@ -1296,6 +1331,106 @@ def get_dataset_terrain_tile(
     mount = _require_mount(db, dataset.mount_code)
     driver = _build_driver_or_400(mount)
     tile_path = _resolve_dataset_terrain_tile_path(dataset_code=dataset.code, z=z, x=x, y=y)
+    try:
+        payload = driver.read_file(tile_path)
+    except StoragePathNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="地形瓦片不存在") from exc
+    except StorageInvalidPathError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except StorageDriverError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return payload.content
+
+
+def get_file_record_analysis_task_status(
+    db: Session,
+    *,
+    record_id: str,
+) -> ElevationFileRecordTaskStatusResponse:
+    record = get_file_record_by_id(db, record_id)
+    if not record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程文件记录不存在")
+    return ElevationFileRecordTaskStatusResponse(
+        record_id=record.id,
+        file_name=record.file_name,
+        task_id=record.analysis_task_id,
+        status=_map_dataset_task_status(record.analysis_status),  # type: ignore[arg-type]
+        detail=record.analysis_error_message,
+        started_at=record.analysis_started_at,
+        finished_at=record.analysis_finished_at,
+        update_date=record.update_date,
+    )
+
+
+def get_file_record_terrain_task_status(
+    db: Session,
+    *,
+    record_id: str,
+) -> ElevationFileRecordTerrainTaskStatusResponse:
+    record = get_file_record_by_id(db, record_id)
+    if not record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程文件记录不存在")
+    return ElevationFileRecordTerrainTaskStatusResponse(
+        record_id=record.id,
+        file_name=record.file_name,
+        task_id=record.terrain_task_id,
+        status=_map_dataset_task_status(record.terrain_status),  # type: ignore[arg-type]
+        detail=record.terrain_error_message,
+        terrain_url_template=record.terrain_url_template,
+        terrain_min_zoom=record.terrain_min_zoom,
+        terrain_max_zoom=record.terrain_max_zoom,
+        update_date=record.update_date,
+    )
+
+
+def get_file_record_terrain_layer(
+    db: Session,
+    *,
+    record_id: str,
+) -> ElevationTerrainLayerResponse:
+    record = get_file_record_by_id(db, record_id)
+    if not record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程文件记录不存在")
+    if record.terrain_status != "ready" or not record.terrain_root_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="地形瓦片尚未就绪")
+
+    mount = _require_mount(db, record.mount_code)
+    driver = _build_driver_or_400(mount)
+    layer_path = _resolve_file_record_terrain_layer_path(record.id)
+    try:
+        payload = driver.read_file(layer_path)
+    except StoragePathNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="地形 layer.json 不存在") from exc
+    except StorageInvalidPathError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except StorageDriverError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    try:
+        data = json.loads(payload.content.decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="地形 layer.json 解析失败") from exc
+    data.setdefault("minzoom", 0)
+    return ElevationTerrainLayerResponse.model_validate(data)
+
+
+def get_file_record_terrain_tile(
+    db: Session,
+    *,
+    record_id: str,
+    z: int,
+    x: int,
+    y: int,
+) -> bytes:
+    record = get_file_record_by_id(db, record_id)
+    if not record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程文件记录不存在")
+    if record.terrain_status != "ready" or not record.terrain_root_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="地形瓦片尚未就绪")
+
+    mount = _require_mount(db, record.mount_code)
+    driver = _build_driver_or_400(mount)
+    tile_path = _resolve_file_record_terrain_tile_path(record_id=record.id, z=z, x=x, y=y)
     try:
         payload = driver.read_file(tile_path)
     except StoragePathNotFoundError as exc:
@@ -1563,6 +1698,7 @@ def list_jobs(
     dataset_id: str | None,
     status_filter: str | None,
     limit: int,
+    file_record_id: str | None = None,
 ) -> ElevationApplyJobListResponse:
     stmt = select(ElevationApplyJob)
     total_stmt = select(func.count()).select_from(ElevationApplyJob)
@@ -1573,6 +1709,9 @@ def list_jobs(
     if dataset_id:
         stmt = stmt.where(ElevationApplyJob.dataset_id == dataset_id)
         total_stmt = total_stmt.where(ElevationApplyJob.dataset_id == dataset_id)
+    if file_record_id:
+        stmt = stmt.where(ElevationApplyJob.file_record_id == file_record_id)
+        total_stmt = total_stmt.where(ElevationApplyJob.file_record_id == file_record_id)
     if status_filter in {"pending", "running", "success", "failed"}:
         stmt = stmt.where(ElevationApplyJob.status == status_filter)
         total_stmt = total_stmt.where(ElevationApplyJob.status == status_filter)
@@ -1603,11 +1742,22 @@ def create_apply_job(
     if not line:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="线路不存在")
 
-    dataset = get_dataset_by_id(db, payload.dataset_id)
-    if not dataset:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程数据集不存在")
-    if dataset.status != "active":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="高程数据集未启用")
+    dataset: ElevationDataset | None = None
+    file_record: ElevationFileRecord | None = None
+    if payload.file_record_id:
+        file_record = get_file_record_by_id(db, payload.file_record_id)
+        if not file_record:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程文件记录不存在")
+        if file_record.status != "active":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="高程文件记录未启用")
+    elif payload.dataset_id:
+        dataset = get_dataset_by_id(db, payload.dataset_id)
+        if not dataset:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="高程数据集不存在")
+        if dataset.status != "active":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="高程数据集未启用")
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="必须提供 file_record_id 或 dataset_id")
 
     allowed_modes = {"fill_null_only", "overwrite_all"}
     if payload.mode not in allowed_modes:
@@ -1627,7 +1777,8 @@ def create_apply_job(
     now = utcnow()
     job = ElevationApplyJob(
         line_id=line.id,
-        dataset_id=dataset.id,
+        dataset_id=dataset.id if dataset is not None else None,
+        file_record_id=file_record.id if file_record is not None else None,
         mode=payload.mode,
         status="pending",
         total_tower_count=total_tower_count,
@@ -1652,11 +1803,18 @@ def create_apply_job(
     if not latest:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="任务派发失败")
 
-    _refresh_dataset_usage_status(db, dataset_id=latest.dataset_id)
+    if latest.dataset_id:
+        _refresh_dataset_usage_status(db, dataset_id=latest.dataset_id)
 
     _publish_elevation_change(
         "elevation.job.created",
-        {"action": "job_created", "job_id": latest.id, "line_id": latest.line_id},
+        {
+            "action": "job_created",
+            "job_id": latest.id,
+            "line_id": latest.line_id,
+            "dataset_id": latest.dataset_id,
+            "file_record_id": latest.file_record_id,
+        },
     )
     return ElevationApplyJobCreateResponse(job=serialize_job(latest), queued=True)
 
@@ -1699,34 +1857,50 @@ def execute_apply_job(job_id: str, actor_user_id: str | None = None) -> None:
         job.started_at = utcnow()
         job.update_date = utcnow()
         db.commit()
-        _refresh_dataset_usage_status(db, dataset_id=job.dataset_id)
+        if job.dataset_id:
+            _refresh_dataset_usage_status(db, dataset_id=job.dataset_id)
         _publish_elevation_change(
             "elevation.job.running",
-            {"action": "job_running", "job_id": job.id, "line_id": job.line_id},
+            {
+                "action": "job_running",
+                "job_id": job.id,
+                "line_id": job.line_id,
+                "dataset_id": job.dataset_id,
+                "file_record_id": job.file_record_id,
+            },
         )
 
         line = db.execute(select(Line).where(Line.id == job.line_id)).scalar_one_or_none()
-        dataset = get_dataset_by_id(db, job.dataset_id)
-        if not line or not dataset:
+        dataset = get_dataset_by_id(db, job.dataset_id) if job.dataset_id else None
+        file_record = get_file_record_by_id(db, job.file_record_id) if job.file_record_id else None
+        elevation_source = file_record or dataset
+        if not line or elevation_source is None:
             job.status = "failed"
-            job.error_message = "线路或高程数据集不存在"
+            job.error_message = "线路或高程文件记录不存在"
             job.finished_at = utcnow()
             job.update_date = utcnow()
             db.commit()
-            _refresh_dataset_usage_status(db, dataset_id=job.dataset_id)
+            if job.dataset_id:
+                _refresh_dataset_usage_status(db, dataset_id=job.dataset_id)
             _publish_elevation_change(
                 "elevation.job.failed",
-                {"action": "job_failed", "job_id": job.id, "line_id": job.line_id},
+                {
+                    "action": "job_failed",
+                    "job_id": job.id,
+                    "line_id": job.line_id,
+                    "dataset_id": job.dataset_id,
+                    "file_record_id": job.file_record_id,
+                },
             )
             return
 
-        file_format = _resolve_dataset_file_format(dataset)
+        file_format = _resolve_elevation_file_format(elevation_source)
         if file_format == "csv":
-            points, warnings = _load_dataset_points(db, dataset)
+            points, warnings = _load_dataset_points(db, elevation_source)
             stats = _apply_points_to_line_towers(
                 db,
                 line_id=line.id,
-                dataset=dataset,
+                elevation_source=elevation_source,
                 mode=job.mode,
                 points=points,
             )
@@ -1734,7 +1908,7 @@ def execute_apply_job(job_id: str, actor_user_id: str | None = None) -> None:
             stats, warnings = _apply_raster_to_line_towers(
                 db,
                 line_id=line.id,
-                dataset=dataset,
+                elevation_source=elevation_source,
                 mode=job.mode,
             )
         else:
@@ -1743,7 +1917,8 @@ def execute_apply_job(job_id: str, actor_user_id: str | None = None) -> None:
                 detail=f"不支持的高程文件格式: {file_format}",
             )
 
-        _refresh_dataset_usage_status(db, dataset_id=dataset.id)
+        if dataset is not None:
+            _refresh_dataset_usage_status(db, dataset_id=dataset.id)
 
         warning_note = "; ".join(warnings[:5]) if warnings else None
         job.updated_tower_count = stats["updated_tower_count"]
@@ -1762,8 +1937,10 @@ def execute_apply_job(job_id: str, actor_user_id: str | None = None) -> None:
             payload={
                 "prepared_at": utcnow().isoformat(),
                 "prepared_by_user_id": resolved_actor_user_id,
-                "dataset_id": dataset.id,
-                "dataset_code": dataset.code,
+                "dataset_id": dataset.id if dataset is not None else None,
+                "dataset_code": dataset.code if dataset is not None else None,
+                "file_record_id": file_record.id if file_record is not None else None,
+                "file_record_name": file_record.file_name if file_record is not None else None,
                 "job_id": job.id,
                 "mode": job.mode,
                 "updated_tower_count": job.updated_tower_count,
@@ -1772,7 +1949,8 @@ def execute_apply_job(job_id: str, actor_user_id: str | None = None) -> None:
             },
         )
         db.commit()
-        _refresh_dataset_usage_status(db, dataset_id=job.dataset_id)
+        if job.dataset_id:
+            _refresh_dataset_usage_status(db, dataset_id=job.dataset_id)
 
         _publish_elevation_change(
             "elevation.job.success",
@@ -1780,6 +1958,8 @@ def execute_apply_job(job_id: str, actor_user_id: str | None = None) -> None:
                 "action": "job_success",
                 "job_id": job.id,
                 "line_id": line.id,
+                "dataset_id": job.dataset_id,
+                "file_record_id": job.file_record_id,
                 "updated_tower_count": job.updated_tower_count,
                 "skipped_tower_count": job.skipped_tower_count,
             },
@@ -1797,10 +1977,17 @@ def execute_apply_job(job_id: str, actor_user_id: str | None = None) -> None:
             failed.finished_at = utcnow()
             failed.update_date = utcnow()
             db.commit()
-            _refresh_dataset_usage_status(db, dataset_id=failed.dataset_id)
+            if failed.dataset_id:
+                _refresh_dataset_usage_status(db, dataset_id=failed.dataset_id)
             _publish_elevation_change(
                 "elevation.job.failed",
-                {"action": "job_failed", "job_id": failed.id, "line_id": failed.line_id},
+                {
+                    "action": "job_failed",
+                    "job_id": failed.id,
+                    "line_id": failed.line_id,
+                    "dataset_id": failed.dataset_id,
+                    "file_record_id": failed.file_record_id,
+                },
             )
         raise
     finally:
@@ -2120,6 +2307,35 @@ def _queue_dataset_terrain_build_after_analysis(db: Session, *, dataset: Elevati
         db.commit()
 
 
+def _queue_file_record_terrain_build_after_analysis(db: Session, *, record: ElevationFileRecord, actor_user_id: str | None) -> None:
+    if not _supports_file_record_terrain_build(record):
+        return
+    if record.terrain_status in {"processing", "ready"}:
+        return
+    if record.terrain_status == "pending" and record.terrain_task_id:
+        return
+    record.terrain_status = "pending"
+    record.terrain_error_message = None
+    record.update_date = utcnow()
+    db.commit()
+    try:
+        from ..tasks.elevation_tasks import build_elevation_file_record_terrain_job
+
+        task = build_elevation_file_record_terrain_job.delay(record.id, actor_user_id)
+        record.terrain_task_id = str(task.id)
+        record.update_date = utcnow()
+        db.commit()
+        _publish_elevation_change(
+            "elevation.file_record.terrain.queued",
+            {"action": "file_record_terrain_queued", "file_record_id": record.id, "task_id": record.terrain_task_id},
+        )
+    except Exception as exc:
+        record.terrain_status = "failed"
+        record.terrain_error_message = str(exc)
+        record.update_date = utcnow()
+        db.commit()
+
+
 def _ensure_dataset_file_exists(db: Session, *, mount_code: str, file_path: str) -> None:
     mount = _require_mount(db, mount_code.strip())
     driver = _build_driver_or_400(mount)
@@ -2342,7 +2558,7 @@ def _refresh_dataset_usage_status(db: Session, *, dataset_id: str) -> None:
 
 def _load_dataset_points(
     db: Session,
-    dataset: ElevationDataset,
+    dataset: ElevationDataset | ElevationFileRecord,
 ) -> tuple[list[ElevationSamplePoint], list[str]]:
     mount = _require_mount(db, dataset.mount_code)
     driver = _build_driver_or_400(mount)
@@ -2461,7 +2677,7 @@ def _apply_points_to_line_towers(
     db: Session,
     *,
     line_id: str,
-    dataset: ElevationDataset,
+    elevation_source: ElevationDataset | ElevationFileRecord,
     mode: str,
     points: list[ElevationSamplePoint],
 ) -> dict[str, int]:
@@ -2521,8 +2737,7 @@ def _apply_points_to_line_towers(
 
         raw_extra = dict(tower.raw_extra_json or {})
         raw_extra["elevation"] = {
-            "dataset_id": dataset.id,
-            "dataset_code": dataset.code,
+            **_elevation_source_metadata(elevation_source),
             "sample_method": "nearest",
             "sample_distance_m": round(distance_m, 3),
             "sample_distance_source": "computed",
@@ -2755,6 +2970,39 @@ def _resolve_dataset_file_format(dataset: ElevationDataset) -> str:
     return detected
 
 
+def _resolve_file_record_format(record: ElevationFileRecord) -> str:
+    declared = (record.file_format or "").strip().lower()
+    detected = _detect_file_format(record.file_path)
+    if declared and declared in ELEVATION_FILE_EXT_FORMAT_MAP.values():
+        if declared == detected:
+            return declared
+        if declared in RASTER_FILE_FORMATS and detected in RASTER_FILE_FORMATS:
+            return detected
+    return detected
+
+
+def _resolve_elevation_file_format(elevation_source: ElevationDataset | ElevationFileRecord) -> str:
+    if isinstance(elevation_source, ElevationFileRecord):
+        return _resolve_file_record_format(elevation_source)
+    return _resolve_dataset_file_format(elevation_source)
+
+
+def _elevation_source_metadata(elevation_source: Any) -> dict[str, str | None]:
+    if isinstance(elevation_source, ElevationFileRecord) or hasattr(elevation_source, "file_name"):
+        return {
+            "dataset_id": None,
+            "dataset_code": None,
+            "file_record_id": getattr(elevation_source, "id", None),
+            "file_record_name": getattr(elevation_source, "file_name", None),
+        }
+    return {
+        "dataset_id": getattr(elevation_source, "id", None),
+        "dataset_code": getattr(elevation_source, "code", None),
+        "file_record_id": None,
+        "file_record_name": None,
+    }
+
+
 def _require_rasterio_available() -> Any:
     try:
         import rasterio
@@ -2772,9 +3020,9 @@ def _require_rasterio_available() -> Any:
 
 def _open_raster_dataset(
     db: Session,
-    dataset: ElevationDataset,
+    dataset: ElevationDataset | ElevationFileRecord,
 ) -> _OpenedRasterDataset:
-    file_format = _resolve_dataset_file_format(dataset)
+    file_format = _resolve_elevation_file_format(dataset)
     if file_format not in RASTER_FILE_FORMATS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -3164,6 +3412,84 @@ def _build_dataset_terrain_tiles(db: Session, dataset: ElevationDataset) -> _Ter
         )
 
 
+def _build_file_record_terrain_tiles(db: Session, record: ElevationFileRecord) -> _TerrainBuildArtifacts:
+    mount = _require_mount(db, record.mount_code)
+    driver = _build_driver_or_400(mount)
+    terrain_dir = _resolve_file_record_terrain_dir(record.id)
+
+    _delete_virtual_directory_if_exists(driver, terrain_dir)
+    _ensure_virtual_directory(driver, terrain_dir)
+
+    with _open_raster_dataset(db, record) as opened:
+        rasterio = opened.rasterio
+        src = opened.dataset
+        bounds = _compute_raster_wgs84_bounds(rasterio=rasterio, src=src)
+        min_zoom, max_zoom = _resolve_terrain_zoom_limits(bounds=bounds, resolution_m=record.resolution_m)
+        availability = _build_terrain_available_ranges(bounds=bounds, max_zoom=max_zoom)
+
+        tile_count = 0
+        for level in range(min_zoom, max_zoom + 1):
+            ranges = availability.get(level, [])
+            for tile_range in ranges:
+                for tile_x in range(tile_range["startX"], tile_range["endX"] + 1):
+                    for tile_y in range(tile_range["startY"], tile_range["endY"] + 1):
+                        tile_count += 1
+                        tile_bounds = _tile_bounds_from_tms(level, tile_x, tile_y)
+                        child_mask = _build_terrain_child_mask(
+                            availability=availability,
+                            level=level,
+                            x=tile_x,
+                            y=tile_y,
+                            max_zoom=max_zoom,
+                        )
+                        tile_bytes = _generate_heightmap_tile_bytes(
+                            rasterio=rasterio,
+                            src=src,
+                            tile_bounds=tile_bounds,
+                            child_mask=child_mask,
+                            is_blank_root=level == 0 and not _tile_intersects_bounds(tile_bounds, bounds),
+                        )
+                        tile_path = _resolve_file_record_terrain_tile_path(record_id=record.id, z=level, x=tile_x, y=tile_y)
+                        _write_virtual_file(driver, path=tile_path, content=tile_bytes, content_type=TERRAIN_CONTENT_TYPE)
+
+        layer_url = f"/api/v1/elevation/records/{record.id}/terrain/layer.json"
+        terrain_url_template = _build_file_record_terrain_url_template(record.id)
+        layer_payload = ElevationTerrainLayerResponse(
+            tiles=[f"{{z}}/{{x}}/{{y}}.terrain?v={TERRAIN_TILE_VERSION}"],
+            minzoom=0,
+            maxzoom=max_zoom,
+            attribution=record.file_name,
+            bounds=[bounds["west"], bounds["south"], bounds["east"], bounds["north"]],
+            available=[availability.get(level, []) for level in range(0, max_zoom + 1)],
+        ).model_dump(mode="json")
+        _write_virtual_file(
+            driver,
+            path=_resolve_file_record_terrain_layer_path(record.id),
+            content=json.dumps(layer_payload, ensure_ascii=True, separators=(",", ":")).encode("utf-8"),
+            content_type="application/json",
+        )
+
+        metadata = {
+            "tool": TERRAIN_BUILD_TOOL,
+            "format": TERRAIN_TILE_FORMAT,
+            "projection": TERRAIN_TILE_PROJECTION,
+            "tile_size": TERRAIN_TILE_SIZE,
+            "generated_at": utcnow().isoformat(),
+            "source_crs": str(src.crs) if src.crs is not None else None,
+            "source_nodata": src.nodatavals[0] if src.nodatavals else None,
+            "resolution_m": record.resolution_m,
+            "tile_count": tile_count,
+            "layer_url": layer_url,
+            "terrain_url_template": terrain_url_template,
+        }
+        return _TerrainBuildArtifacts(
+            min_zoom=min_zoom,
+            max_zoom=max_zoom,
+            bounds=bounds,
+            metadata=metadata,
+        )
+
+
 def _generate_heightmap_tile_bytes(
     *,
     rasterio: Any,
@@ -3414,7 +3740,7 @@ def _apply_raster_to_line_towers(
     db: Session,
     *,
     line_id: str,
-    dataset: ElevationDataset,
+    elevation_source: ElevationDataset | ElevationFileRecord,
     mode: str,
 ) -> tuple[dict[str, int], list[str]]:
     towers = db.execute(
@@ -3429,7 +3755,7 @@ def _apply_raster_to_line_towers(
     unmatched_count = 0
     warnings: list[str] = []
 
-    with _open_raster_dataset(db, dataset) as opened:
+    with _open_raster_dataset(db, elevation_source) as opened:
         rasterio = opened.rasterio
         src = opened.dataset
         warning_text = _append_non_wgs84_bounds_warning(rasterio=rasterio, src=src)
@@ -3476,8 +3802,7 @@ def _apply_raster_to_line_towers(
 
             raw_extra = dict(tower.raw_extra_json or {})
             raw_extra["elevation"] = {
-                "dataset_id": dataset.id,
-                "dataset_code": dataset.code,
+                **_elevation_source_metadata(elevation_source),
                 "sample_method": "raster_pixel",
                 "sample_distance_m": 0.0,
                 "sample_distance_source": "pixel_lookup",
@@ -3558,10 +3883,15 @@ def _publish_elevation_change(event_name: str, payload: dict[str, Any]) -> None:
             ELEVATION_TOPIC,
             name=event_name,
             payload=payload,
-            requires_refetch=["/api/v1/elevation/datasets", "/api/v1/elevation/jobs", "/api/v1/elevation/import-jobs"],
+            requires_refetch=[
+                "/api/v1/elevation/records",
+                "/api/v1/elevation/datasets",
+                "/api/v1/elevation/jobs",
+                "/api/v1/elevation/import-jobs",
+            ],
             dedupe_key=(
                 f"{event_name}:"
-                f"{payload.get('import_job_id') or payload.get('job_id') or payload.get('dataset_id') or 'unknown'}"
+                f"{payload.get('import_job_id') or payload.get('job_id') or payload.get('file_record_id') or payload.get('dataset_id') or 'unknown'}"
             ),
         )
     )
@@ -3841,6 +4171,7 @@ def execute_file_record_analysis_job(*, record_id: str, actor_user_id: str | Non
             "elevation.file_record.analysis.success",
             {"action": "file_record_analysis_success", "file_record_id": saved.id},
         )
+        _queue_file_record_terrain_build_after_analysis(db, record=saved, actor_user_id=actor.id)
     except Exception as exc:
         from .elevation_file_record_service import get_file_record_by_id
         failed = get_file_record_by_id(db, record_id)
@@ -3899,75 +4230,19 @@ def execute_file_record_terrain_build_job(*, record_id: str, actor_user_id: str 
             )
             return
 
-        # Build terrain tiles
-        mount = _require_mount(db, item.mount_code)
-        driver = _build_driver_or_400(mount)
-
-        # Create terrain output directory
-        terrain_dir = f"/elevation/terrain/records/{item.id[:2]}/{item.id[2:4]}/{item.id}"
-        driver.ensure_directory(terrain_dir)
-
-        # Read source file
-        try:
-            read_result = driver.read_file(item.file_path)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"文件不存在: {item.file_path}"
-            ) from exc
-
-        # Process with ctb-tile (similar to dataset terrain build)
-        _require_rasterio_available()
-        import tempfile
-        import subprocess
-        import os
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(item.file_path).suffix) as src_tmp:
-            src_tmp.write(read_result.content)
-            src_path = src_tmp.name
-
-        try:
-            with tempfile.TemporaryDirectory() as output_tmp:
-                # Run ctb-tile
-                cmd = ["ctb-tile", "-f", "Mesh", "-C", "-N", "-o", output_tmp, src_path]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
-
-                if result.returncode != 0:
-                    raise Exception(f"ctb-tile failed: {result.stderr}")
-
-                # Upload generated tiles to storage
-                for root, dirs, files in os.walk(output_tmp):
-                    for file in files:
-                        local_path = os.path.join(root, file)
-                        rel_path = os.path.relpath(local_path, output_tmp)
-                        remote_path = join_virtual_path(terrain_dir, rel_path)
-
-                        with open(local_path, "rb") as f:
-                            content = f.read()
-
-                        driver.write_file(remote_path, content=content, content_type="application/octet-stream")
-
-                # Read layer.json if exists
-                layer_json_path = os.path.join(output_tmp, "layer.json")
-                if os.path.exists(layer_json_path):
-                    with open(layer_json_path, "r") as f:
-                        import json
-                        layer_data = json.load(f)
-                        item.terrain_min_zoom = layer_data.get("minzoom", 0)
-                        item.terrain_max_zoom = layer_data.get("maxzoom", 18)
-                        item.terrain_bounds = {"bounds": layer_data.get("bounds")}
-                        item.terrain_metadata = layer_data
-
-        finally:
-            os.unlink(src_path)
+        artifacts = _build_file_record_terrain_tiles(db, item)
 
         saved = get_file_record_by_id(db, record_id)
         if saved is None:
             return
         saved.terrain_status = "ready"
         saved.terrain_error_message = None
-        saved.terrain_root_path = terrain_dir
-        saved.terrain_url_template = f"/api/v1/elevation/records/{record_id}/terrain/{{z}}/{{x}}/{{y}}.terrain"
+        saved.terrain_root_path = _resolve_file_record_terrain_dir(saved.id)
+        saved.terrain_url_template = _build_file_record_terrain_url_template(saved.id)
+        saved.terrain_min_zoom = artifacts.min_zoom
+        saved.terrain_max_zoom = artifacts.max_zoom
+        saved.terrain_bounds = artifacts.bounds
+        saved.terrain_metadata = artifacts.metadata
         saved.update_date = utcnow()
         saved.update_user = actor.id
         db.commit()

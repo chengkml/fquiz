@@ -293,6 +293,29 @@ class ElevationDatasetTerrainTaskStatusResponse(BaseModel):
     update_date: datetime | None = None
 
 
+class ElevationFileRecordTaskStatusResponse(BaseModel):
+    record_id: str
+    file_name: str
+    task_id: str | None = None
+    status: Literal["queued", "running", "success", "failed", "unknown", "not_found"] = "not_found"
+    detail: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    update_date: datetime | None = None
+
+
+class ElevationFileRecordTerrainTaskStatusResponse(BaseModel):
+    record_id: str
+    file_name: str
+    task_id: str | None = None
+    status: Literal["queued", "running", "success", "failed", "unknown", "not_found"] = "not_found"
+    detail: str | None = None
+    terrain_url_template: str | None = None
+    terrain_min_zoom: int | None = None
+    terrain_max_zoom: int | None = None
+    update_date: datetime | None = None
+
+
 class ElevationTerrainLayerResponse(BaseModel):
     tilejson: str = "2.1.0"
     format: str = "heightmap-1.0"
@@ -313,7 +336,7 @@ class ElevationApplyJobSummary(BaseModel):
     line_id: str
     line_code: str | None = None
     line_name: str | None = None
-    file_record_id: str
+    file_record_id: str | None = None
     file_record_name: str | None = None
     dataset_id: str | None = None
     dataset_code: str | None = None
@@ -354,7 +377,9 @@ class ElevationApplyJobCreateResponse(BaseModel):
 
 class ElevationDataImportJobSummary(BaseModel):
     id: str
-    dataset_id: str
+    dataset_id: str | None = None
+    file_record_id: str | None = None
+    file_record_name: str | None = None
     dataset_code: str | None = None
     dataset_name: str | None = None
     status: ElevationDataImportJobStatus
@@ -384,4 +409,5 @@ class ElevationDataImportJobListResponse(BaseModel):
     total: int
 
 
+ElevationFileRecordPreviewResponse.model_rebuild()
 ElevationDatasetDataImportResponse.model_rebuild()
