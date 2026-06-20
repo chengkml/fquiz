@@ -607,7 +607,6 @@ body {
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  margin-top: 16px;
 }
 
 .admin-workers-card-view-content {
