@@ -1,25 +1,32 @@
 "use client";
 
-import type { ComponentType } from "react";
-import { useState } from "react";
+import type { ComponentType, CSSProperties, RefAttributes } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Button,
-  Card as AntdCard,
+  Card,
+  Col,
   Descriptions,
   Dropdown,
+  Empty,
   Form,
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
+  Row,
   Select,
   Space,
+  Spin,
   Table,
   Tag,
+  Typography,
   Upload,
   message,
   type CardProps,
+  type MenuProps,
   type UploadFile,
 } from "antd";
 import { MoreOutlined, UploadOutlined } from "@ant-design/icons";
@@ -28,8 +35,11 @@ import type { ColumnsType } from "antd/es/table";
 import { useAuth } from "@/components/auth-provider";
 import { ElevationPreviewCesiumMap } from "@/components/elevation-preview-cesium-map";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
+import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { readApiError } from "@/lib/api";
 import type { ElevationDatasetTerrainStatus } from "@/types/auth";
+
+const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 type ElevationFileRecordSummary = {
   id: string;
@@ -168,7 +178,9 @@ const DEFAULT_APPLY_FORM: ApplyFormValues = {
   mode: "fill_null_only",
 };
 
-const Card = AntdCard as unknown as ComponentType<CardProps>;
+const ELEVATION_TABLE_MIN_SCROLL_Y = 180;
+const ELEVATION_TABLE_VIEWPORT_GAP = 40;
+const ELEVATION_TABLE_FALLBACK_RESERVE = 220;
 
 function statusTagColor(status: string): string {
   if (status === "success" || status === "active" || status === "ready") return "green";
@@ -204,26 +216,44 @@ function readMutationError(error: unknown, fallback: string): string {
 export default function ElevationRecordsPage() {
   const { fetchWithAuth, getAccessToken } = useAuth();
   const queryClient = useQueryClient();
-  const [keyword, setKeyword] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string | undefined>();
-  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const isMobile = useMobileDetection();
+
   const [uploadForm] = Form.useForm();
+  const [applyForm] = Form.useForm<ApplyFormValues>();
+
+  const [keywordInput, setKeywordInput] = useState("");
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string | undefined>();
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
+  const [tableScrollY, setTableScrollY] = useState(ELEVATION_TABLE_MIN_SCROLL_Y);
+  const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const viewMode: "table" | "card" = isMobile ? "card" : "table";
+  const [cardViewPage, setCardViewPage] = useState(1);
+  const [allLoadedRecords, setAllLoadedRecords] = useState<ElevationFileRecordSummary[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const pageCardRef = useRef<HTMLDivElement | null>(null);
+  const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [applyModalOpen, setApplyModalOpen] = useState(false);
-  const [applyForm] = Form.useForm<ApplyFormValues>();
   const [selectedRecord, setSelectedRecord] = useState<ElevationFileRecordSummary | null>(null);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [previewData, setPreviewData] = useState<ElevationFileRecordPreviewResponse | null>(null);
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Fetch file records
   const { data: recordsData, isLoading } = useQuery<FileRecordListResponse>({
-    queryKey: ["elevation-records", keyword, statusFilter],
+    queryKey: ["elevation-records", searchKeyword, statusFilter, pagination.current, pagination.pageSize],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (keyword) params.append("keyword", keyword);
+      params.set("limit", String(pagination.pageSize));
+      params.set("offset", String((pagination.current - 1) * pagination.pageSize));
+      if (searchKeyword) params.append("keyword", searchKeyword);
       if (statusFilter) params.append("status", statusFilter);
       const query = params.toString();
-      const response = await fetchWithAuth(`/api/v1/elevation/records${query ? `?${query}` : ""}`);
+      const response = await fetchWithAuth(`/api/v1/elevation/records?${query}`);
       return readJsonResponse<FileRecordListResponse>(response);
     },
   });
@@ -236,6 +266,8 @@ export default function ElevationRecordsPage() {
       return readJsonResponse<LineListResponse>(response);
     },
   });
+
+  const records = useMemo(() => recordsData?.items ?? [], [recordsData?.items]);
 
   // Subscribe to real-time updates
   useTopicSubscription("admin.elevation", () => {
@@ -281,6 +313,9 @@ export default function ElevationRecordsPage() {
       });
       await ensureOkResponse(response);
     },
+    onMutate: (id) => {
+      setDeletingId(id);
+    },
     onSuccess: () => {
       message.success("删除成功");
       queryClient.invalidateQueries({ queryKey: ["elevation-records"] });
@@ -288,6 +323,7 @@ export default function ElevationRecordsPage() {
     onError: (error) => {
       message.error(readMutationError(error, "删除失败"));
     },
+    onSettled: () => setDeletingId(null),
   });
 
   // Analyze mutation
@@ -298,6 +334,9 @@ export default function ElevationRecordsPage() {
       });
       return readJsonResponse<ElevationFileRecordTaskResponse>(response);
     },
+    onMutate: (id) => {
+      setAnalyzingId(id);
+    },
     onSuccess: () => {
       message.success("分析任务已提交");
       queryClient.invalidateQueries({ queryKey: ["elevation-records"] });
@@ -305,6 +344,7 @@ export default function ElevationRecordsPage() {
     onError: (error) => {
       message.error(readMutationError(error, "分析失败"));
     },
+    onSettled: () => setAnalyzingId(null),
   });
 
   // Terrain build mutation
@@ -358,6 +398,157 @@ export default function ElevationRecordsPage() {
       message.error(readMutationError(error, "预览失败"));
     },
   });
+
+  const handleKeywordChange = (value: string) => {
+    setKeywordInput(value);
+
+    if (keywordDebounceTimeoutRef.current) {
+      clearTimeout(keywordDebounceTimeoutRef.current);
+    }
+
+    keywordDebounceTimeoutRef.current = setTimeout(() => {
+      setSearchKeyword(value);
+      setPagination((prev) => ({ ...prev, current: 1 }));
+      setCardViewPage(1);
+      setAllLoadedRecords([]);
+    }, 500);
+  };
+
+  const updateTableScrollY = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - ELEVATION_TABLE_FALLBACK_RESERVE);
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? ELEVATION_TABLE_MIN_SCROLL_Y;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - ELEVATION_TABLE_VIEWPORT_GAP);
+    }
+
+    const clampedHeight = Math.max(ELEVATION_TABLE_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, []);
+
+  // Update allLoadedRecords when records data changes in card view
+  useEffect(() => {
+    if (viewMode !== "card" || isLoading) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      if (cardViewPage === 1) {
+        setAllLoadedRecords(() => records);
+      } else {
+        setAllLoadedRecords((prev) => {
+          if (records.length === 0) {
+            return prev;
+          }
+          const existingIds = new Set(prev.map(r => r.id));
+          const newRecords = records.filter(r => !existingIds.has(r.id));
+          return [...prev, ...newRecords];
+        });
+      }
+      setIsLoadingMore(false);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [records, isLoading, viewMode, cardViewPage]);
+
+  // Handle infinite scroll for card view
+  useEffect(() => {
+    if (viewMode !== "card") return;
+
+    const pageCard = pageCardRef.current;
+    if (!pageCard) return;
+
+    const cardBody = pageCard.querySelector<HTMLElement>(".ant-card-body");
+    if (!cardBody) return;
+
+    const handleScroll = () => {
+      if (isLoadingMore || isLoading) return;
+
+      const scrollTop = cardBody.scrollTop;
+      const scrollHeight = cardBody.scrollHeight;
+      const clientHeight = cardBody.clientHeight;
+
+      if (scrollTop + clientHeight >= scrollHeight - 100) {
+        const total = recordsData?.total ?? 0;
+        const loadedCount = allLoadedRecords.length;
+
+        if (loadedCount < total) {
+          setIsLoadingMore(true);
+          setCardViewPage((prev) => prev + 1);
+          setPagination((prev) => ({ ...prev, current: prev.current + 1 }));
+        }
+      }
+    };
+
+    cardBody.addEventListener("scroll", handleScroll);
+    return () => cardBody.removeEventListener("scroll", handleScroll);
+  }, [viewMode, isLoadingMore, isLoading, recordsData?.total, allLoadedRecords.length]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.requestAnimationFrame(updateTableScrollY);
+  }, [pagination.current, pagination.pageSize, records.length, isLoading, updateTableScrollY]);
+
+  useEffect(() => {
+    return () => {
+      if (keywordDebounceTimeoutRef.current) {
+        clearTimeout(keywordDebounceTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updateTableScrollY);
+    };
+
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateTableScrollY);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTableScrollY]);
 
   const columns: ColumnsType<ElevationFileRecordSummary> = [
     {
@@ -426,108 +617,316 @@ export default function ElevationRecordsPage() {
     {
       title: "操作",
       key: "actions",
-      width: 100,
-      fixed: "right",
-      render: (_, record) => (
-        <Dropdown
-          menu={{
-            items: [
-              {
-                key: "analyze",
-                label: "分析",
-                disabled: record.analysis_status === "running" || record.analysis_status === "queued",
-                onClick: () => analyzeMutation.mutate(record.id),
-              },
-              {
-                key: "preview",
-                label: "预览",
-                onClick: () => previewMutation.mutate(record.id),
-              },
-              {
-                key: "terrain",
-                label: "生成地形",
-                disabled:
-                  record.file_format === "csv" ||
-                  record.terrain_status === "processing" ||
-                  (record.terrain_status === "pending" && !!record.terrain_task_id),
-                onClick: () => terrainMutation.mutate(record.id),
-              },
-              {
-                key: "apply",
-                label: "回填线路",
-                onClick: () => {
-                  setSelectedRecord(record);
-                  applyForm.setFieldsValue({ ...DEFAULT_APPLY_FORM, file_record_id: record.id });
-                  setApplyModalOpen(true);
-                },
-              },
-              { type: "divider" },
-              {
-                key: "delete",
-                label: "删除",
-                danger: true,
-                onClick: () => {
-                  Modal.confirm({
-                    title: "确认删除",
-                    content: `确定要删除文件 "${record.file_name}" 吗？`,
-                    onOk: () => deleteMutation.mutate(record.id),
-                  });
-                },
-              },
-            ],
-          }}
-        >
-          <Button type="text" icon={<MoreOutlined />} />
-        </Dropdown>
-      ),
+      width: 180,
+      render: (_value, row) => {
+        const analyzing = analyzeMutation.isPending && analyzingId === row.id;
+        const deleting = deleteMutation.isPending && deletingId === row.id;
+        const rowBusy = analyzing || deleting;
+
+        const moreMenuItems: MenuProps["items"] = [
+          {
+            key: "analyze",
+            label: "分析",
+            disabled: row.analysis_status === "running" || row.analysis_status === "queued" || rowBusy,
+            onClick: () => analyzeMutation.mutate(row.id),
+          },
+          {
+            key: "terrain",
+            label: "生成地形",
+            disabled:
+              row.file_format === "csv" ||
+              row.terrain_status === "processing" ||
+              (row.terrain_status === "pending" && !!row.terrain_task_id) ||
+              rowBusy,
+            onClick: () => terrainMutation.mutate(row.id),
+          },
+          {
+            key: "apply",
+            label: "回填线路",
+            disabled: rowBusy,
+            onClick: () => {
+              setSelectedRecord(row);
+              applyForm.setFieldsValue({ ...DEFAULT_APPLY_FORM, file_record_id: row.id });
+              setApplyModalOpen(true);
+            },
+          },
+        ];
+
+        return (
+          <Space wrap>
+            <Button
+              size="small"
+              disabled={rowBusy}
+              onClick={() => previewMutation.mutate(row.id)}
+            >
+              预览
+            </Button>
+
+            <Popconfirm
+              title={`确认删除文件 "${row.file_name}"？`}
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true, loading: deleting }}
+              onConfirm={() => deleteMutation.mutate(row.id)}
+              disabled={rowBusy}
+            >
+              <Button danger size="small" loading={deleting} disabled={rowBusy}>
+                删除
+              </Button>
+            </Popconfirm>
+
+            <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+              <Button size="small" disabled={rowBusy} icon={<MoreOutlined />} />
+            </Dropdown>
+          </Space>
+        );
+      },
     },
   ];
 
+  const renderRecordCard = (record: ElevationFileRecordSummary) => {
+    const analyzing = analyzeMutation.isPending && analyzingId === record.id;
+    const deleting = deleteMutation.isPending && deletingId === record.id;
+    const rowBusy = analyzing || deleting;
+
+    const moreMenuItems: MenuProps["items"] = [
+      {
+        key: "analyze",
+        label: "分析",
+        disabled: record.analysis_status === "running" || record.analysis_status === "queued" || rowBusy,
+        onClick: () => analyzeMutation.mutate(record.id),
+      },
+      {
+        key: "terrain",
+        label: "生成地形",
+        disabled:
+          record.file_format === "csv" ||
+          record.terrain_status === "processing" ||
+          (record.terrain_status === "pending" && !!record.terrain_task_id) ||
+          rowBusy,
+        onClick: () => terrainMutation.mutate(record.id),
+      },
+      {
+        key: "apply",
+        label: "回填线路",
+        disabled: rowBusy,
+        onClick: () => {
+          setSelectedRecord(record);
+          applyForm.setFieldsValue({ ...DEFAULT_APPLY_FORM, file_record_id: record.id });
+          setApplyModalOpen(true);
+        },
+      },
+      { type: "divider" },
+      {
+        key: "delete",
+        label: "删除",
+        danger: true,
+        disabled: rowBusy,
+        onClick: () => {
+          Modal.confirm({
+            title: "确认删除",
+            content: `确定要删除文件 "${record.file_name}" 吗？`,
+            okText: "删除",
+            cancelText: "取消",
+            okButtonProps: { danger: true },
+            onOk: () => deleteMutation.mutate(record.id),
+          });
+        },
+      },
+    ];
+
+    return (
+      <AntCard
+        key={record.id}
+        className="admin-elevation-record-card"
+        size="small"
+        title={
+          <Space className="min-w-0" size={8}>
+            <Typography.Text strong ellipsis>{record.file_name}</Typography.Text>
+            <Tag color={statusTagColor(record.status)}>{record.status}</Tag>
+          </Space>
+        }
+        extra={
+          <Space size={4}>
+            <Button
+              type="text"
+              size="small"
+              disabled={rowBusy}
+              onClick={() => previewMutation.mutate(record.id)}
+            >
+              预览
+            </Button>
+            <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+              <Button type="text" size="small" disabled={rowBusy} icon={<MoreOutlined />} />
+            </Dropdown>
+          </Space>
+        }
+      >
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <div className="admin-elevation-record-card-field">
+            <Typography.Text type="secondary">格式</Typography.Text>
+            <Tag>{record.file_format.toUpperCase()}</Tag>
+          </div>
+          <div className="admin-elevation-record-card-field">
+            <Typography.Text type="secondary">大小</Typography.Text>
+            <Typography.Text>{formatFileSize(record.file_size)}</Typography.Text>
+          </div>
+          <div className="admin-elevation-record-card-field">
+            <Typography.Text type="secondary">来源</Typography.Text>
+            <Typography.Text ellipsis={{ tooltip: record.source || "-" }}>
+              {record.source || "-"}
+            </Typography.Text>
+          </div>
+          <div className="admin-elevation-record-card-field">
+            <Typography.Text type="secondary">分辨率</Typography.Text>
+            <Typography.Text>{record.resolution_m ? `${record.resolution_m.toFixed(1)} m` : "-"}</Typography.Text>
+          </div>
+          <div className="admin-elevation-record-card-field">
+            <Typography.Text type="secondary">样本数</Typography.Text>
+            <Typography.Text>{record.sample_count.toLocaleString()}</Typography.Text>
+          </div>
+          <div className="admin-elevation-record-card-field">
+            <Typography.Text type="secondary">分析状态</Typography.Text>
+            <Tag color={statusTagColor(record.analysis_status)}>{record.analysis_status}</Tag>
+          </div>
+          <div className="admin-elevation-record-card-field">
+            <Typography.Text type="secondary">地形状态</Typography.Text>
+            <Tag color={statusTagColor(record.terrain_status)}>{record.terrain_status}</Tag>
+          </div>
+        </Space>
+      </AntCard>
+    );
+  };
+
   return (
-    <div style={{ padding: 24 }}>
-      <Card
-        title="高程文件管理"
+    <div className="flex min-h-0 flex-1 flex-col">
+      <AntCard
+        ref={pageCardRef}
+        className="admin-elevation-page-card"
+        title="高程数据管理"
         extra={
           <Button type="primary" icon={<UploadOutlined />} onClick={() => setUploadModalOpen(true)}>
             上传文件
           </Button>
         }
       >
-        <Space direction="vertical" style={{ width: "100%", marginBottom: 16 }}>
-          <Space>
-            <Input.Search
-              placeholder="搜索文件名或来源"
-              allowClear
-              style={{ width: 300 }}
-              onSearch={setKeyword}
-            />
-            <Select
-              placeholder="状态筛选"
-              allowClear
-              style={{ width: 150 }}
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={[
-                { label: "启用", value: "active" },
-                { label: "禁用", value: "disabled" },
-              ]}
-            />
-          </Space>
-        </Space>
+        {viewMode === "card" ? (
+          <Form layout="vertical" style={{ marginBottom: 16 }}>
+            <Form.Item style={{ marginBottom: 0 }}>
+              <Input
+                allowClear
+                placeholder="搜索文件名或来源"
+                value={keywordInput}
+                onChange={(event) => handleKeywordChange(event.target.value)}
+              />
+            </Form.Item>
+          </Form>
+        ) : (
+          <Form layout="inline" style={{ rowGap: 12 }}>
+            <Form.Item label="关键词" style={{ width: 260 }}>
+              <Input
+                allowClear
+                placeholder="搜索文件名或来源"
+                value={keywordInput}
+                onChange={(event) => handleKeywordChange(event.target.value)}
+              />
+            </Form.Item>
 
-        <Table
-          columns={columns}
-          dataSource={recordsData?.items || []}
-          loading={isLoading}
-          rowKey="id"
-          scroll={{ x: 1400 }}
-          pagination={{
-            total: recordsData?.total || 0,
-            showSizeChanger: true,
-            showTotal: (total) => `共 ${total} 条`,
-          }}
-        />
-      </Card>
+            <Form.Item label="状态" style={{ width: 170 }}>
+              <Select
+                value={statusFilter}
+                allowClear
+                placeholder="全部"
+                options={[
+                  { value: "active", label: "启用" },
+                  { value: "disabled", label: "禁用" },
+                ]}
+                onChange={(value) => {
+                  setStatusFilter(value);
+                  setPagination((prev) => ({ ...prev, current: 1 }));
+                  setCardViewPage(1);
+                  setAllLoadedRecords([]);
+                }}
+              />
+            </Form.Item>
+          </Form>
+        )}
+
+        {viewMode === "table" ? (
+          <div
+            ref={tableScrollAnchorRef}
+            className="admin-elevation-table-anchor mt-4"
+            style={{ "--admin-elevation-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+          >
+            <Table<ElevationFileRecordSummary>
+              rowKey="id"
+              dataSource={records}
+              columns={columns}
+              loading={isLoading}
+              tableLayout="fixed"
+              pagination={{
+                current: pagination.current,
+                pageSize: pagination.pageSize,
+                total: Math.max(recordsData?.total ?? 0, 1),
+                showSizeChanger: true,
+                pageSizeOptions: [10, 20, 50, 100],
+                showTotal: () => `共 ${recordsData?.total ?? 0} 条`,
+                hideOnSinglePage: false,
+                style: { marginBottom: 0 },
+                onChange: (page, pageSize) => {
+                  setPagination({ current: page, pageSize });
+                },
+              }}
+              scroll={{ y: tableScrollY }}
+              locale={{
+                emptyText: (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="未找到符合筛选条件的高程数据。"
+                  />
+                ),
+              }}
+            />
+          </div>
+        ) : (
+          <div className="admin-elevation-card-view">
+            {isLoading && allLoadedRecords.length === 0 ? (
+              <div className="admin-elevation-card-view-state">
+                <Spin tip="加载中..." />
+              </div>
+            ) : allLoadedRecords.length === 0 ? (
+              <div className="admin-elevation-card-view-state">
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="未找到符合筛选条件的高程数据。"
+                />
+              </div>
+            ) : (
+              <div className="admin-elevation-card-view-content">
+                <Row gutter={[12, 12]}>
+                  {allLoadedRecords.map((recordItem) => (
+                    <Col key={recordItem.id} xs={24} sm={24} md={12} lg={8} xl={6}>
+                      {renderRecordCard(recordItem)}
+                    </Col>
+                  ))}
+                </Row>
+                {isLoadingMore && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Spin tip="加载更多..." />
+                  </div>
+                )}
+                {allLoadedRecords.length >= (recordsData?.total ?? 0) && allLoadedRecords.length > 0 && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Typography.Text type="secondary">
+                      已加载全部 {allLoadedRecords.length} 条数据
+                    </Typography.Text>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </AntCard>
 
       {/* Upload Modal */}
       <Modal
