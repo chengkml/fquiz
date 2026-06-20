@@ -32,7 +32,6 @@ from .elevation_service import (
     RASTER_FILE_FORMATS,
     TERRAIN_SUPPORTED_DATASET_FORMATS,
     _analyze_dataset_content,
-    _build_dataset_or_400,
     _build_raster_preview,
     _decode_csv_bytes,
     _default_terrain_status_for_format,
