@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Col, Empty, Form, Input, Row, Space, Spin, Table, Tag, Typography, type CardProps } from "antd";
+import { Card, Col, Empty, Form, Input, Row, Space, Spin, Table, Tag, Typography, type CardProps } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { CSSProperties, ComponentType, RefAttributes } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -44,6 +44,7 @@ export default function AdminSyslogPage() {
   const isMobile = useMobileDetection();
 
   const [offset, setOffset] = useState(0);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const [draftFilters, setDraftFilters] = useState<Filters>(EMPTY_FILTERS);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [error, setError] = useState("");
@@ -103,7 +104,7 @@ export default function AdminSyslogPage() {
 
   const logsPath = useMemo(() => {
     const params = new URLSearchParams();
-    params.set("limit", String(PAGE_SIZE));
+    params.set("limit", String(pageSize));
     params.set("offset", String(offset));
     if (filters.action.trim()) {
       params.set("action", filters.action.trim());
@@ -112,7 +113,7 @@ export default function AdminSyslogPage() {
       params.set("user_id", filters.user_id.trim());
     }
     return `/api/v1/admin/audit-logs?${params.toString()}`;
-  }, [filters.action, filters.user_id, offset]);
+  }, [filters.action, filters.user_id, offset, pageSize]);
 
   const loadLogs = useCallback(async () => {
     const response = await fetchWithAuth(logsPath);
@@ -139,7 +140,7 @@ export default function AdminSyslogPage() {
   const total = logsQuery.data?.total ?? 0;
   const queryError = logsQuery.error instanceof Error ? logsQuery.error.message : "";
   const anyError = error || queryError;
-  const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+  const currentPage = Math.floor(offset / pageSize) + 1;
 
   useToastFeedback({
     errorMessage: anyError,
@@ -198,14 +199,14 @@ export default function AdminSyslogPage() {
         if (loadedCount < total) {
           setIsLoadingMore(true);
           setCardViewPage((prev) => prev + 1);
-          setOffset((prev) => prev + PAGE_SIZE);
+          setOffset((prev) => prev + pageSize);
         }
       }
     };
 
     cardBody.addEventListener("scroll", handleScroll);
     return () => cardBody.removeEventListener("scroll", handleScroll);
-  }, [viewMode, isLoadingMore, logsQuery.isLoading, total, allLoadedLogs.length]);
+  }, [viewMode, isLoadingMore, logsQuery.isLoading, total, allLoadedLogs.length, pageSize]);
 
   // Reset card view state when filters change
   useEffect(() => {
@@ -414,7 +415,7 @@ export default function AdminSyslogPage() {
       >
         {viewMode === "card" ? (
           <Form layout="vertical" style={{ marginBottom: 16 }}>
-            <Form.Item label="动作">
+            <Form.Item label="动作" style={{ marginBottom: 12 }}>
               <Input
                 allowClear
                 placeholder="按动作筛选（如 auth.login）"
@@ -422,38 +423,13 @@ export default function AdminSyslogPage() {
                 onChange={(event) => handleActionChange(event.target.value)}
               />
             </Form.Item>
-            <Form.Item label="用户ID">
+            <Form.Item label="用户ID" style={{ marginBottom: 0 }}>
               <Input
                 allowClear
                 placeholder="按用户ID筛选（如 openclaw）"
                 value={draftFilters.user_id}
                 onChange={(event) => handleUserIdChange(event.target.value)}
               />
-            </Form.Item>
-            <Form.Item>
-              <Space size={8}>
-                <Button
-                  type="primary"
-                  onClick={() => {
-                    setOffset(0);
-                    setFilters({
-                      action: draftFilters.action.trim(),
-                      user_id: draftFilters.user_id.trim(),
-                    });
-                  }}
-                >
-                  查询
-                </Button>
-                <Button
-                  onClick={() => {
-                    setOffset(0);
-                    setDraftFilters(EMPTY_FILTERS);
-                    setFilters(EMPTY_FILTERS);
-                  }}
-                >
-                  重置筛选
-                </Button>
-              </Space>
             </Form.Item>
           </Form>
         ) : (
@@ -474,31 +450,6 @@ export default function AdminSyslogPage() {
                 onChange={(event) => handleUserIdChange(event.target.value)}
               />
             </Form.Item>
-            <Form.Item>
-              <Space size={8}>
-                <Button
-                  type="primary"
-                  onClick={() => {
-                    setOffset(0);
-                    setFilters({
-                      action: draftFilters.action.trim(),
-                      user_id: draftFilters.user_id.trim(),
-                    });
-                  }}
-                >
-                  查询
-                </Button>
-                <Button
-                  onClick={() => {
-                    setOffset(0);
-                    setDraftFilters(EMPTY_FILTERS);
-                    setFilters(EMPTY_FILTERS);
-                  }}
-                >
-                  重置筛选
-                </Button>
-              </Space>
-            </Form.Item>
           </Form>
         )}
 
@@ -512,21 +463,24 @@ export default function AdminSyslogPage() {
               rowKey={(record) => String(record.id)}
               columns={columns}
               dataSource={logs}
-              loading={logsQuery.isFetching}
+              loading={logsQuery.isLoading}
               tableLayout="fixed"
               pagination={{
                 current: currentPage,
-                pageSize: PAGE_SIZE,
+                pageSize,
                 total: Math.max(total, 1),
-                onChange: (page) => setOffset((page - 1) * PAGE_SIZE),
-                showSizeChanger: false,
-                showQuickJumper: false,
+                onChange: (page, nextPageSize) => {
+                  setPageSize(nextPageSize);
+                  setOffset((page - 1) * nextPageSize);
+                },
+                showSizeChanger: true,
+                pageSizeOptions: [10, 20, 50, 100],
                 showTotal: () => `共 ${total} 条`,
                 hideOnSinglePage: false,
                 style: { marginBottom: 0 },
               }}
               locale={{
-                emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无日志数据" />,
+                emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="未找到符合筛选条件的日志记录。" />,
               }}
               scroll={{ y: tableScrollY }}
             />
@@ -541,7 +495,7 @@ export default function AdminSyslogPage() {
               <div className="admin-syslog-card-view-state">
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="暂无日志数据"
+                  description="未找到符合筛选条件的日志记录。"
                 />
               </div>
             ) : (
