@@ -901,8 +901,7 @@ export default function AdminFilesPage() {
         styles={{
           header: {
             borderBottom: '1px solid var(--ant-color-border-secondary)',
-            padding: '16px 20px',
-            background: 'var(--fquiz-theme-bg-elevated)'
+            padding: '16px 20px'
           },
           body: { padding: '20px' }
         }}
