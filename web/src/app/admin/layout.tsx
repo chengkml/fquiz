@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { usePathname } from "next/navigation";
@@ -31,7 +32,6 @@ import Icon, {
   UserOutlined,
 } from "@ant-design/icons";
 import {
-  Alert,
   Avatar,
   Badge,
   Button,
@@ -63,6 +63,7 @@ import { withBasePath } from "@/lib/base-path";
 
 const { Header, Sider, Content } = AntLayout;
 const AntResult = Result as unknown as ComponentType<ResultProps>;
+const ADMIN_ME_MENUS_QUERY_KEY = ["/api/v1/admin/me/menus"] as const;
 
 const ThemeSvgIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg width={20} height={20} viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -218,63 +219,59 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = normalizeAppRoutePath(rawPathname) ?? rawPathname;
   const screens = Grid.useBreakpoint();
   const isDesktop = screens.md === true;
+  const queryClient = useQueryClient();
   const { user, initializing, fetchWithAuth, logout } = useAuth();
   const {
     themePrimaryMode,
     setThemePrimaryMode,
   } = useThemeAppearance();
-  const [menuTree, setMenuTree] = useState<MenuTreeItem[]>([]);
-  const [loadingMenus, setLoadingMenus] = useState(true);
-  const [menuError, setMenuError] = useState("");
   const [menuOpenKeys, setMenuOpenKeys] = useState<string[]>([]);
   const [siderCollapsed, setSiderCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  const emptyMenuTree = useMemo<MenuTreeItem[]>(() => [], []);
+  const menusQueryKey = useMemo(
+    () => [...ADMIN_ME_MENUS_QUERY_KEY, user?.id ?? "anonymous"] as const,
+    [user?.id],
+  );
 
   const loadMenus = useCallback(async () => {
-    if (!user) {
-      setMenuTree([]);
-      setMenuError("");
-      setLoadingMenus(false);
-      return;
+    const response = await fetchWithAuth("/api/v1/admin/me/menus");
+    if (!response.ok) {
+      throw new Error(await readApiError(response));
     }
 
-    setLoadingMenus(true);
-    setMenuError("");
-    try {
-      const response = await fetchWithAuth("/api/v1/admin/me/menus");
-      if (!response.ok) {
-        setMenuTree([]);
-        setMenuError(await readApiError(response));
-        return;
-      }
+    const payload = (await response.json()) as MenuTreeItem[];
+    return normalizeMenuTreePaths(payload);
+  }, [fetchWithAuth]);
 
-      const payload = (await response.json()) as MenuTreeItem[];
-      setMenuTree(normalizeMenuTreePaths(payload));
-    } catch (error) {
-      setMenuTree([]);
-      setMenuError(error instanceof Error ? error.message : "菜单加载失败，请检查网络连接或后端服务。");
-    } finally {
-      setLoadingMenus(false);
-    }
-  }, [fetchWithAuth, user]);
-
-  useEffect(() => {
-    queueMicrotask(() => {
-      void loadMenus();
-    });
-  }, [loadMenus]);
+  const menusQuery = useQuery({
+    queryKey: menusQueryKey,
+    queryFn: loadMenus,
+    enabled: !!user,
+  });
 
   useTopicSubscription("admin.menus", useCallback(() => {
-    void loadMenus();
-  }, [loadMenus]));
+    if (user) {
+      void queryClient.invalidateQueries({ queryKey: ADMIN_ME_MENUS_QUERY_KEY });
+    }
+  }, [queryClient, user]));
 
   useTopicSubscription("auth", useCallback(() => {
-    void loadMenus();
-  }, [loadMenus]));
+    if (user) {
+      void queryClient.invalidateQueries({ queryKey: ADMIN_ME_MENUS_QUERY_KEY });
+    }
+  }, [queryClient, user]));
 
+  const menuTree = menusQuery.data ?? emptyMenuTree;
   const menuItems = useMemo(() => buildMenuItems(menuTree), [menuTree]);
   const activeMenuState = useMemo(() => findActiveMenuState(menuTree, pathname), [menuTree, pathname]);
+  const routeAllowed = useMemo(() => {
+    if (pathname === "/admin") {
+      return true;
+    }
+    return activeMenuState.selectedKeys.length > 0;
+  }, [activeMenuState.selectedKeys.length, pathname]);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -393,11 +390,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     }
   }, [loadUnreadCount, user]);
 
-  const onSystemMessageClick = useCallback(() => {
-    setMessagePopoverOpen(true);
-    void loadMessages();
-  }, [loadMessages]);
-
   const markAsRead = useCallback(async (messageIds: string[]) => {
     try {
       const response = await fetchWithAuth("/api/v1/system-messages/me/mark-read", {
@@ -425,7 +417,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     />
   );
 
-  if (initializing || loadingMenus) {
+  if (initializing || (user && menusQuery.isLoading)) {
     return (
       <AdminCenteredState>
         <Space align="center" direction="vertical" size={12}>
@@ -446,6 +438,29 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           extra={(
             <Button type="primary">
               <Link href="/login">前往登录</Link>
+            </Button>
+          )}
+        />
+      </AdminCenteredState>
+    );
+  }
+
+  if (menusQuery.isError || !routeAllowed) {
+    const subTitle = menusQuery.isError
+      ? menusQuery.error instanceof Error
+        ? menusQuery.error.message
+        : "菜单加载失败，请检查网络连接或后端服务。"
+      : "该菜单已禁用或你没有访问该菜单的权限。";
+
+    return (
+      <AdminCenteredState>
+        <AntResult
+          status="403"
+          title="无法访问"
+          subTitle={subTitle}
+          extra={(
+            <Button type="primary">
+              <Link href="/admin">返回后台首页</Link>
             </Button>
           )}
         />
@@ -630,15 +645,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <AntLayout className="admin-design-main">
           <Content className="admin-design-content">
             <div className="admin-design-page-body">
-              {menuError && (
-                <Alert
-                  showIcon
-                  type="error"
-                  message="菜单加载失败"
-                  description={menuError}
-                  style={{ marginBottom: 24 }}
-                />
-              )}
               {children}
             </div>
           </Content>

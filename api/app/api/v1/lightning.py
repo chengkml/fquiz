@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
-from ...core.dependencies import CurrentUser, require_any_permission, require_permission
+from ...core.dependencies import CurrentUser, require_any_permission, require_enabled_menu_route, require_permission
 from ...schemas.lightning import (
     LightningCurrentEventListResponse,
     LightningCurrentEventSummary,
@@ -45,7 +45,11 @@ from ...services.lightning_service import (
     update_lightning_event,
 )
 
-router = APIRouter(prefix="/lightning-currents", tags=["lightning-currents"])
+router = APIRouter(
+    prefix="/lightning-currents",
+    tags=["lightning-currents"],
+    dependencies=[Depends(require_enabled_menu_route)],
+)
 
 
 @router.get("", response_model=LightningCurrentEventListResponse)

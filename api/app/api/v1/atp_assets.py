@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
-from ...core.dependencies import CurrentUser, require_any_permission, require_permission
+from ...core.dependencies import CurrentUser, require_any_permission, require_enabled_menu_route, require_permission
 from ...schemas.atp_asset import (
     AtpAssetCreateRequest,
     AtpAssetDetail,
@@ -42,7 +42,7 @@ from ...services.atp_asset_service import (
 )
 from ...services.atp_model_service import get_engine_status
 
-router = APIRouter(prefix="/atp", tags=["atp-assets"])
+router = APIRouter(prefix="/atp", tags=["atp-assets"], dependencies=[Depends(require_enabled_menu_route)])
 
 
 @router.get("/engine/status", response_model=AtpEngineStatusResponse)

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
-from ...core.dependencies import CurrentUser, require_any_permission, require_permission
+from ...core.dependencies import CurrentUser, require_any_permission, require_enabled_menu_route, require_permission
 from ...schemas.atp_model import (
     AtpEngineStatusResponse,
     AtpModelCreateRequest,
@@ -38,7 +38,7 @@ from ...services.atp_model_service import (
     update_model_version,
 )
 
-router = APIRouter(prefix="/atp/models", tags=["atp-models"])
+router = APIRouter(prefix="/atp/models", tags=["atp-models"], dependencies=[Depends(require_enabled_menu_route)])
 
 
 @router.get("/engine/status", response_model=AtpEngineStatusResponse)

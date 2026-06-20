@@ -80,6 +80,7 @@ const DEFAULT_FORM_VALUES: MenuFormValues = {
   component: "",
 };
 
+const ADMIN_ME_MENUS_QUERY_KEY = ["/api/v1/admin/me/menus"] as const;
 const MENU_TABLE_MIN_SCROLL_Y = 180;
 const MENU_TABLE_VIEWPORT_GAP = 40;
 const MENU_TABLE_FALLBACK_RESERVE = 220;
@@ -213,6 +214,7 @@ export default function AdminMenusPage() {
 
   const refreshData = async () => {
     await queryClient.refetchQueries({ queryKey: ["admin.menus"] });
+    await queryClient.invalidateQueries({ queryKey: ADMIN_ME_MENUS_QUERY_KEY });
   };
 
   // Update allLoadedMenus when menus data changes in card view

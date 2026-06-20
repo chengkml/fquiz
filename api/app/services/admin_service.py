@@ -455,9 +455,10 @@ def build_menu_tree(db: Session, *, role_codes: set[str] | None = None) -> list[
 
     menus = db.execute(_menu_stmt().order_by(Menu.sort_order.asc(), Menu.id.asc())).scalars().all()
     menus = [menu for menu in menus if not _is_removed_menu_code(menu.code)]
+    menus = [menu for menu in menus if menu.status == "enabled" and menu.visible]
     if role_codes is not None and "admin" not in role_codes:
         allowed_ids = _get_allowed_menu_ids(db, role_codes)
-        menus = [menu for menu in menus if menu.id in allowed_ids and menu.status == "enabled" and menu.visible]
+        menus = [menu for menu in menus if menu.id in allowed_ids]
 
     return _to_tree(menus)
 

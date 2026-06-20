@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
-from ...core.dependencies import CurrentUser, get_current_user, require_permission
+from ...core.dependencies import CurrentUser, get_current_user, require_enabled_menu_route, require_permission
 from ...schemas.auth import MessageResponse
 from ...schemas.user import (
     UserCreateRequest,
@@ -27,7 +27,7 @@ from ...services.user_service import (
     update_user,
 )
 
-router = APIRouter(prefix="/users", tags=["users"])
+router = APIRouter(prefix="/users", tags=["users"], dependencies=[Depends(require_enabled_menu_route)])
 
 
 @router.get("/check-id/{user_id}", response_model=UserIdCheckResponse)

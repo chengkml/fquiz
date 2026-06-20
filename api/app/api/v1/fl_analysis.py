@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
-from ...core.dependencies import CurrentUser, require_any_permission
+from ...core.dependencies import CurrentUser, require_any_permission, require_enabled_menu_route
 from ...schemas.fl_analysis import (
     FlAnalysisJobCreateRequest,
     FlAnalysisJobCreateResponse,
@@ -28,7 +28,7 @@ from ...services.fl_analysis_service import (
 from ...services.tower_profile_service import get_tower_profile_detail, upsert_tower_profile
 from ...services.tower_topology import TowerGeometryValidationError
 
-router = APIRouter(prefix="/fl-analysis", tags=["fl-analysis"])
+router = APIRouter(prefix="/fl-analysis", tags=["fl-analysis"], dependencies=[Depends(require_enabled_menu_route)])
 
 
 @router.get("/tower-profiles/{tower_id}", response_model=TowerProfileDetail)

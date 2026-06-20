@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
-from ...core.dependencies import CurrentUser, require_any_permission, require_permission
+from ...core.dependencies import CurrentUser, require_any_permission, require_enabled_menu_route, require_permission
 from ...schemas.file_storage import (
     FileCreateDirectoryRequest,
     FileDeleteRequest,
@@ -23,7 +23,7 @@ from ...services.file_service import (
     upload_file_to_path,
 )
 
-router = APIRouter(prefix="/admin/files", tags=["admin-files"])
+router = APIRouter(prefix="/admin/files", tags=["admin-files"], dependencies=[Depends(require_enabled_menu_route)])
 
 
 @router.get("", response_model=FileListResponse)

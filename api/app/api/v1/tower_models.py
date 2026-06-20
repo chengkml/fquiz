@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
-from ...core.dependencies import CurrentUser, require_any_permission, require_permission
+from ...core.dependencies import CurrentUser, require_any_permission, require_enabled_menu_route, require_permission
 from ...schemas.tower_model import (
     TowerModelCreateRequest,
     TowerModelImageUploadResponse,
@@ -28,7 +28,7 @@ from ...services.tower_model_service import (
     upload_tower_model_image,
 )
 
-router = APIRouter(prefix="/tower-models", tags=["tower-models"])
+router = APIRouter(prefix="/tower-models", tags=["tower-models"], dependencies=[Depends(require_enabled_menu_route)])
 
 
 @router.get("", response_model=TowerModelListResponse)

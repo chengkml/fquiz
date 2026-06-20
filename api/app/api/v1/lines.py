@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
-from ...core.dependencies import CurrentUser, require_any_permission, require_permission
+from ...core.dependencies import CurrentUser, require_any_permission, require_enabled_menu_route, require_permission
 from ...schemas.line import (
     LineCreateRequest,
     LineListResponse,
@@ -34,7 +34,7 @@ from ...services.line_service import (
     update_line_tower,
 )
 
-router = APIRouter(prefix="/lines", tags=["lines"])
+router = APIRouter(prefix="/lines", tags=["lines"], dependencies=[Depends(require_enabled_menu_route)])
 
 
 @router.get("", response_model=LineListResponse)

@@ -2,7 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
-from ...core.dependencies import CurrentUser, get_current_user, require_any_permission, require_permission
+from ...core.dependencies import (
+    CurrentUser,
+    get_current_user,
+    require_any_permission,
+    require_enabled_menu_route,
+    require_permission,
+)
 from ...exceptions.menu_exceptions import MenuValidationError
 from ...schemas.admin import (
     AuditLogListResponse,
@@ -44,7 +50,11 @@ from ...services.seed_service import seed_defaults
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-@router.get("/roles", response_model=RoleListResponse)
+@router.get(
+    "/roles",
+    response_model=RoleListResponse,
+    dependencies=[Depends(require_enabled_menu_route)],
+)
 def get_roles(
     keyword: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
@@ -55,7 +65,11 @@ def get_roles(
     return list_roles(db, keyword=keyword, limit=limit, offset=offset)
 
 
-@router.get("/roles-with-menus", response_model=RolesWithMenusResponse)
+@router.get(
+    "/roles-with-menus",
+    response_model=RolesWithMenusResponse,
+    dependencies=[Depends(require_enabled_menu_route)],
+)
 def get_roles_with_menus(
     keyword: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
@@ -66,7 +80,11 @@ def get_roles_with_menus(
     return list_roles_with_menus(db, keyword=keyword, limit=limit, offset=offset)
 
 
-@router.post("/roles", response_model=RolePublic)
+@router.post(
+    "/roles",
+    response_model=RolePublic,
+    dependencies=[Depends(require_enabled_menu_route)],
+)
 def create_role_endpoint(
     payload: RoleCreateRequest,
     current_user: CurrentUser = Depends(require_permission("role.manage")),
@@ -78,7 +96,11 @@ def create_role_endpoint(
     return created
 
 
-@router.patch("/roles/{role_id}", response_model=RolePublic)
+@router.patch(
+    "/roles/{role_id}",
+    response_model=RolePublic,
+    dependencies=[Depends(require_enabled_menu_route)],
+)
 def update_role_endpoint(
     role_id: str,
     payload: RoleUpdateRequest,
@@ -91,7 +113,7 @@ def update_role_endpoint(
     return updated
 
 
-@router.delete("/roles/{role_id}")
+@router.delete("/roles/{role_id}", dependencies=[Depends(require_enabled_menu_route)])
 def delete_role_endpoint(
     role_id: str,
     current_user: CurrentUser = Depends(require_permission("role.manage")),
@@ -103,7 +125,7 @@ def delete_role_endpoint(
     return {"success": True}
 
 
-@router.get("/roles/{role_id}/menus")
+@router.get("/roles/{role_id}/menus", dependencies=[Depends(require_enabled_menu_route)])
 def get_role_menus(
     role_id: str,
     _: CurrentUser = Depends(require_any_permission("role.read", "role.manage")),
@@ -115,7 +137,11 @@ def get_role_menus(
     return {"menu_ids": menu_ids or []}
 
 
-@router.put("/roles/{role_id}/menus", response_model=RolePublic)
+@router.put(
+    "/roles/{role_id}/menus",
+    response_model=RolePublic,
+    dependencies=[Depends(require_enabled_menu_route)],
+)
 def replace_role_menus_endpoint(
     role_id: str,
     payload: RoleMenuUpdateRequest,

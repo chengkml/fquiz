@@ -4,12 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
-from ...core.dependencies import CurrentUser, require_any_permission, require_permission
+from ...core.dependencies import CurrentUser, require_any_permission, require_enabled_menu_route, require_permission
 from ...schemas.tower_profile import TowerProfileDetail, TowerProfileUpsertRequest
 from ...services.tower_profile_service import get_tower_profile_detail, upsert_tower_profile
 from ...services.tower_topology import TowerGeometryValidationError
 
-router = APIRouter(prefix="/tower-profiles", tags=["tower-profiles"])
+router = APIRouter(prefix="/tower-profiles", tags=["tower-profiles"], dependencies=[Depends(require_enabled_menu_route)])
 
 
 @router.get("/{tower_id}", response_model=TowerProfileDetail)

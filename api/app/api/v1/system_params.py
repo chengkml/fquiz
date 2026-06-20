@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
-from ...core.dependencies import CurrentUser, require_any_permission, require_permission
+from ...core.dependencies import CurrentUser, require_any_permission, require_enabled_menu_route, require_permission
 from ...schemas.system_param import (
     SystemParamCreateRequest,
     SystemParamListResponse,
@@ -18,7 +18,11 @@ from ...services.system_param_service import (
     update_system_param,
 )
 
-router = APIRouter(prefix="/admin/system-params", tags=["admin-system-params"])
+router = APIRouter(
+    prefix="/admin/system-params",
+    tags=["admin-system-params"],
+    dependencies=[Depends(require_enabled_menu_route)],
+)
 
 
 @router.get("", response_model=SystemParamListResponse)

@@ -4,12 +4,12 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
-from ...core.dependencies import CurrentUser, require_any_permission, require_permission
+from ...core.dependencies import CurrentUser, require_any_permission, require_enabled_menu_route, require_permission
 from ...schemas.wine import WineRunDetail, WineRunListResponse, WineRunRequest, WineStatusResponse
 from ...services.wine_service import create_run, get_run_detail, get_wine_status, list_runs
 
 
-router = APIRouter(prefix="/wine", tags=["wine"])
+router = APIRouter(prefix="/wine", tags=["wine"], dependencies=[Depends(require_enabled_menu_route)])
 
 
 @router.get("/status", response_model=WineStatusResponse)

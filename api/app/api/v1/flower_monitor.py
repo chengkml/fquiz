@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from ...core.dependencies import CurrentUser, require_any_permission
+from ...core.dependencies import CurrentUser, require_any_permission, require_enabled_menu_route
 from ...schemas.flower_monitor import (
     FlowerWorkerTaskOverviewResponse,
     FlowerWorkersOverviewResponse,
@@ -12,7 +12,7 @@ from ...services.flower_monitor_service import (
     build_workers_overview,
 )
 
-router = APIRouter(prefix="/admin/flower", tags=["admin-flower"])
+router = APIRouter(prefix="/admin/flower", tags=["admin-flower"], dependencies=[Depends(require_enabled_menu_route)])
 
 
 @router.get("/workers", response_model=FlowerWorkersOverviewResponse)

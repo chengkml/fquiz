@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Respon
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
-from ...core.dependencies import CurrentUser, require_any_permission, require_permission
+from ...core.dependencies import CurrentUser, require_any_permission, require_enabled_menu_route, require_permission
 from ...schemas.elevation import (
     ElevationApplyJobCreateRequest,
     ElevationApplyJobCreateResponse,
@@ -75,7 +75,7 @@ from ...services.elevation_file_record_service import (
     update_file_record,
 )
 
-router = APIRouter(prefix="/elevation", tags=["elevation"])
+router = APIRouter(prefix="/elevation", tags=["elevation"], dependencies=[Depends(require_enabled_menu_route)])
 
 
 # ============================================================================

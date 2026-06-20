@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
-from ...core.dependencies import CurrentUser, require_any_permission
+from ...core.dependencies import CurrentUser, require_any_permission, require_enabled_menu_route
 from ...schemas.fault_recurrence import (
     FaultRecurrenceAnalyzeResponse,
     FaultRecurrenceStrokeMode,
@@ -10,7 +10,11 @@ from ...schemas.fault_recurrence import (
 from ...services.fault_recurrence_service import build_fault_recurrence_report
 
 
-router = APIRouter(prefix="/fault-recurrence", tags=["fault-recurrence"])
+router = APIRouter(
+    prefix="/fault-recurrence",
+    tags=["fault-recurrence"],
+    dependencies=[Depends(require_enabled_menu_route)],
+)
 
 
 @router.post("/analyze", response_model=FaultRecurrenceAnalyzeResponse)

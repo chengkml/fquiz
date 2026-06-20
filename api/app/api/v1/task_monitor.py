@@ -1,10 +1,14 @@
 from fastapi import APIRouter, Depends, Query
 
-from ...core.dependencies import CurrentUser, require_any_permission
+from ...core.dependencies import CurrentUser, require_any_permission, require_enabled_menu_route
 from ...schemas.task_monitor import TaskMonitorOverviewResponse
 from ...services.task_monitor_service import build_task_monitor_overview
 
-router = APIRouter(prefix="/admin/task-monitor", tags=["admin-task-monitor"])
+router = APIRouter(
+    prefix="/admin/task-monitor",
+    tags=["admin-task-monitor"],
+    dependencies=[Depends(require_enabled_menu_route)],
+)
 
 
 @router.get("/overview", response_model=TaskMonitorOverviewResponse)

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
-from ...core.dependencies import CurrentUser, get_current_user, require_permission
+from ...core.dependencies import CurrentUser, get_current_user, require_enabled_menu_route, require_permission
 from ...schemas.auth import MessageResponse
 from ...schemas.system_message import (
     SystemMessageCreateRequest,
@@ -22,7 +22,12 @@ from ...services.system_message_service import (
 router = APIRouter(prefix="/system-messages", tags=["system_messages"])
 
 
-@router.post("", response_model=SystemMessagePublic, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=SystemMessagePublic,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_enabled_menu_route)],
+)
 def create_message(
     payload: SystemMessageCreateRequest,
     _: CurrentUser = Depends(require_permission("admin.system_message")),
@@ -79,7 +84,7 @@ def mark_my_messages_read(
     return {"affected": affected}
 
 
-@router.delete("/{message_id}", response_model=MessageResponse)
+@router.delete("/{message_id}", response_model=MessageResponse, dependencies=[Depends(require_enabled_menu_route)])
 def remove_system_message(
     message_id: str,
     _: CurrentUser = Depends(require_permission("admin.system_message")),

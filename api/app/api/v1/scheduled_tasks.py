@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
-from ...core.dependencies import CurrentUser, require_any_permission, require_permission
+from ...core.dependencies import CurrentUser, require_any_permission, require_enabled_menu_route, require_permission
 from ...schemas.scheduled_task import (
     ScheduledTaskCreateRequest,
     ScheduledTaskListResponse,
@@ -19,7 +19,11 @@ from ...services.scheduled_task_service import (
     update_scheduled_task,
 )
 
-router = APIRouter(prefix="/admin/scheduled-tasks", tags=["admin-scheduled-tasks"])
+router = APIRouter(
+    prefix="/admin/scheduled-tasks",
+    tags=["admin-scheduled-tasks"],
+    dependencies=[Depends(require_enabled_menu_route)],
+)
 
 
 @router.get("", response_model=ScheduledTaskListResponse)
