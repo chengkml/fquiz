@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   Card,
+  Col,
   Descriptions,
   Dropdown,
   Empty,
@@ -12,7 +13,10 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
+  Row,
   Space,
+  Spin,
   Table,
   Tag,
   Typography,
@@ -117,6 +121,7 @@ export default function AdminLightningDistributionPage() {
   const [allLoadedEvents, setAllLoadedEvents] = useState<LightningDistributionScatterPoint[]>([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [tableScrollY, setTableScrollY] = useState(LIGHTNING_TABLE_MIN_SCROLL_Y);
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
 
   const canRead = hasPermission("lightning.read") || hasPermission("lightning.manage");
   const canManage = hasPermission("lightning.manage");
@@ -219,6 +224,16 @@ export default function AdminLightningDistributionPage() {
   const openStatsModal = (event: LightningDistributionScatterPoint) => {
     setSelectedEventForModal(event);
     setStatsModalOpen(true);
+  };
+
+  const closeImportModal = () => {
+    setImportModalOpen(false);
+    importForm.resetFields();
+  };
+
+  const closeStatsModal = () => {
+    setStatsModalOpen(false);
+    setSelectedEventForModal(null);
   };
 
   const handleKeywordChange = (value: string) => {
@@ -500,42 +515,37 @@ export default function AdminLightningDistributionPage() {
 
   if (initializing) {
     return (
-      <AdminPageLoading
-        tip="初始化中..."
-        minHeightClassName="min-h-[280px]"
-      />
+      <div className="flex min-h-[240px] items-center justify-center">
+        <Spin tip="初始化中..." />
+      </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <AntCard>
-          <Space direction="vertical" size={12}>
-            <Typography.Text type="secondary">
-              请先登录后再访问地闪密度统计页面。
-            </Typography.Text>
-            <Button>
-              <Link href="/">返回首页</Link>
-            </Button>
-          </Space>
-        </AntCard>
-      </div>
+      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
+        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问地闪密度统计页面。</p>
+        <Link
+          href="/"
+          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
+        >
+          返回首页
+        </Link>
+      </main>
     );
   }
 
   if (!canRead) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <AntCard>
-          <Space direction="vertical" size={12}>
-            <Typography.Text type="secondary">你没有访问该页面的权限（需要 `lightning.read`）。</Typography.Text>
-            <Button>
-              <Link href="/">返回首页</Link>
-            </Button>
-          </Space>
-        </AntCard>
-      </div>
+      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
+        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `lightning.read`）。</p>
+        <Link
+          href="/"
+          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
+        >
+          返回首页
+        </Link>
+      </main>
     );
   }
 
@@ -558,78 +568,154 @@ export default function AdminLightningDistributionPage() {
             基于经纬度与电流幅值展示雷电空间分布，支持按地点、区域等条件筛选。
           </Typography.Text>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <Input
-              value={keywordInput}
-              allowClear
-              onChange={(event) => handleKeywordChange(event.target.value)}
-              placeholder="按地点/标签筛选"
-            />
-            <Input
-              value={regionFilter}
-              allowClear
-              onChange={(event) => {
-                setRegionFilter(event.target.value);
-                setCardViewPage(1);
-                setAllLoadedEvents([]);
-              }}
-              placeholder="按 Region ID 筛选"
-            />
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div>
-              <Typography.Text type="secondary" style={{ fontSize: 14 }}>网格尺寸(km)</Typography.Text>
-              <InputNumber
-                className="w-full"
-                min={0.1}
-                max={100}
-                precision={2}
-                value={distributionFilters.grid_size_km}
-                onChange={(value) => {
-                  if (value !== null) {
-                    setDistributionFilters((prev) => ({ ...prev, grid_size_km: value }));
+          {viewMode === "card" ? (
+            <Form layout="vertical" style={{ marginBottom: 16 }}>
+              <Form.Item label="关键词" style={{ marginBottom: 12 }}>
+                <Input
+                  allowClear
+                  placeholder="按地点/标签筛选"
+                  value={keywordInput}
+                  onChange={(event) => handleKeywordChange(event.target.value)}
+                />
+              </Form.Item>
+              <Form.Item label="Region ID" style={{ marginBottom: 12 }}>
+                <Input
+                  allowClear
+                  placeholder="按 Region ID 筛选"
+                  value={regionFilter}
+                  onChange={(event) => {
+                    setRegionFilter(event.target.value);
                     setCardViewPage(1);
                     setAllLoadedEvents([]);
-                  }
-                }}
-              />
-            </div>
-            <div>
-              <Typography.Text type="secondary" style={{ fontSize: 14 }}>统计年限(可选)</Typography.Text>
-              <InputNumber
-                className="w-full"
-                min={0.01}
-                precision={2}
-                value={distributionFilters.years}
-                onChange={(value) => {
-                  setDistributionFilters((prev) => ({ ...prev, years: value }));
-                  setCardViewPage(1);
-                  setAllLoadedEvents([]);
-                }}
-              />
-            </div>
-          </div>
+                  }}
+                />
+              </Form.Item>
+              <Form.Item label="网格尺寸(km)" style={{ marginBottom: 12 }}>
+                <InputNumber
+                  className="w-full"
+                  min={0.1}
+                  max={100}
+                  precision={2}
+                  value={distributionFilters.grid_size_km}
+                  onChange={(value) => {
+                    if (value !== null) {
+                      setDistributionFilters((prev) => ({ ...prev, grid_size_km: value }));
+                      setCardViewPage(1);
+                      setAllLoadedEvents([]);
+                      setPagination((prev) => ({ ...prev, current: 1 }));
+                    }
+                  }}
+                />
+              </Form.Item>
+              <Form.Item label="统计年限(可选)" style={{ marginBottom: 0 }}>
+                <InputNumber
+                  className="w-full"
+                  min={0.01}
+                  precision={2}
+                  value={distributionFilters.years}
+                  onChange={(value) => {
+                    setDistributionFilters((prev) => ({ ...prev, years: value }));
+                    setCardViewPage(1);
+                    setAllLoadedEvents([]);
+                    setPagination((prev) => ({ ...prev, current: 1 }));
+                  }}
+                />
+              </Form.Item>
+            </Form>
+          ) : (
+            <Form layout="inline" style={{ rowGap: 12 }}>
+              <Form.Item label="关键词" style={{ width: 260 }}>
+                <Input
+                  allowClear
+                  placeholder="按地点/标签筛选"
+                  value={keywordInput}
+                  onChange={(event) => handleKeywordChange(event.target.value)}
+                />
+              </Form.Item>
+              <Form.Item label="Region ID" style={{ width: 200 }}>
+                <Input
+                  allowClear
+                  placeholder="按 Region ID 筛选"
+                  value={regionFilter}
+                  onChange={(event) => {
+                    setRegionFilter(event.target.value);
+                    setCardViewPage(1);
+                    setAllLoadedEvents([]);
+                    setPagination((prev) => ({ ...prev, current: 1 }));
+                  }}
+                />
+              </Form.Item>
+              <Form.Item label="网格尺寸(km)" style={{ width: 160 }}>
+                <InputNumber
+                  className="w-full"
+                  min={0.1}
+                  max={100}
+                  precision={2}
+                  value={distributionFilters.grid_size_km}
+                  onChange={(value) => {
+                    if (value !== null) {
+                      setDistributionFilters((prev) => ({ ...prev, grid_size_km: value }));
+                      setCardViewPage(1);
+                      setAllLoadedEvents([]);
+                      setPagination((prev) => ({ ...prev, current: 1 }));
+                    }
+                  }}
+                />
+              </Form.Item>
+              <Form.Item label="统计年限(可选)" style={{ width: 160 }}>
+                <InputNumber
+                  className="w-full"
+                  min={0.01}
+                  precision={2}
+                  value={distributionFilters.years}
+                  onChange={(value) => {
+                    setDistributionFilters((prev) => ({ ...prev, years: value }));
+                    setCardViewPage(1);
+                    setAllLoadedEvents([]);
+                    setPagination((prev) => ({ ...prev, current: 1 }));
+                  }}
+                />
+              </Form.Item>
+            </Form>
+          )}
 
           {viewMode === "table" ? (
             <div ref={tableScrollAnchorRef} className="admin-lightning-distribution-table-anchor mt-4">
               <Table<LightningDistributionScatterPoint>
-                rowKey={(row) => row.id}
+                rowKey="id"
                 columns={eventColumns}
                 dataSource={scatterPoints}
                 loading={distributionStatsQuery.isFetching}
                 tableLayout="fixed"
-                pagination={{ pageSize: 20, showSizeChanger: true, hideOnSinglePage: false, showTotal: (total) => `共 ${total} 条` }}
+                pagination={{
+                  current: pagination.current,
+                  pageSize: pagination.pageSize,
+                  total: scatterPoints.length,
+                  showSizeChanger: true,
+                  pageSizeOptions: [10, 20, 50, 100],
+                  showTotal: (total) => `共 ${total} 条`,
+                  hideOnSinglePage: false,
+                  style: { marginBottom: 0 },
+                  onChange: (page, pageSize) => {
+                    setPagination({ current: page, pageSize });
+                  },
+                }}
                 scroll={{ x: 1400, y: tableScrollY }}
+                locale={{
+                  emptyText: (
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description="未找到符合筛选条件的事件。"
+                    />
+                  ),
+                }}
               />
             </div>
           ) : (
             <div className="admin-lightning-distribution-card-view">
               {distributionStatsQuery.isLoading && allLoadedEvents.length === 0 ? (
                 <div className="admin-lightning-distribution-card-view-state">
-                  <Space direction="vertical" align="center">
-                    <Typography.Text type="secondary">加载中...</Typography.Text>
-                  </Space>
+                  <Spin tip="加载中..." />
                 </div>
               ) : allLoadedEvents.length === 0 ? (
                 <div className="admin-lightning-distribution-card-view-state">
@@ -640,12 +726,16 @@ export default function AdminLightningDistributionPage() {
                 </div>
               ) : (
                 <div className="admin-lightning-distribution-card-view-content">
-                  <Space direction="vertical" size={12} className="w-full">
-                    {allLoadedEvents.map((event) => renderEventCard(event))}
-                  </Space>
+                  <Row gutter={[12, 12]}>
+                    {allLoadedEvents.map((event) => (
+                      <Col key={event.id} xs={24} sm={24} md={12} lg={8} xl={6}>
+                        {renderEventCard(event)}
+                      </Col>
+                    ))}
+                  </Row>
                   {isLoadingMore && (
                     <div style={{ textAlign: "center", padding: "20px 0" }}>
-                      <Typography.Text type="secondary">加载更多...</Typography.Text>
+                      <Spin tip="加载更多..." />
                     </div>
                   )}
                   {allLoadedEvents.length >= scatterPoints.length && allLoadedEvents.length > 0 && (
@@ -665,10 +755,7 @@ export default function AdminLightningDistributionPage() {
       <Modal
         title="导入地闪密度数据"
         open={importModalOpen}
-        onCancel={() => {
-          setImportModalOpen(false);
-          importForm.resetFields();
-        }}
+        onCancel={closeImportModal}
         footer={null}
         width={800}
         destroyOnClose
@@ -724,10 +811,7 @@ export default function AdminLightningDistributionPage() {
       <Modal
         title={selectedEventForModal ? `统计详情 - ${selectedEventForModal.event_id}` : "统计详情"}
         open={statsModalOpen}
-        onCancel={() => {
-          setStatsModalOpen(false);
-          setSelectedEventForModal(null);
-        }}
+        onCancel={closeStatsModal}
         footer={null}
         width={1200}
         destroyOnClose
