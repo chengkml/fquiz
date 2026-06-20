@@ -97,6 +97,7 @@
 }
 
 :root[data-fquiz-theme="dark"] .admin-users-user-card,
+:root[data-fquiz-theme="dark"] .admin-menus-menu-card,
 :root[data-fquiz-theme="dark"] .admin-workers-worker-card {
   border-color: color-mix(in srgb, var(--fquiz-theme-primary) 35%, var(--ant-color-border-secondary)) !important;
   background:
@@ -109,14 +110,25 @@
 }
 
 :root[data-fquiz-theme="dark"] .admin-users-user-card > .ant-card-head,
+:root[data-fquiz-theme="dark"] .admin-menus-menu-card > .ant-card-head,
 :root[data-fquiz-theme="dark"] .admin-workers-worker-card > .ant-card-head {
   border-bottom-color: color-mix(in srgb, var(--fquiz-theme-primary) 25%, var(--ant-color-border-secondary)) !important;
   background: color-mix(in srgb, var(--fquiz-theme-primary) 10%, transparent) !important;
 }
 
 :root[data-fquiz-theme="dark"] .admin-users-user-card > .ant-card-body,
+:root[data-fquiz-theme="dark"] .admin-menus-menu-card > .ant-card-body,
 :root[data-fquiz-theme="dark"] .admin-workers-worker-card > .ant-card-body {
   background: var(--ant-color-bg-container) !important;
+}
+
+:root[data-fquiz-theme="dark"] .admin-menus-card-view,
+:root[data-fquiz-theme="dark"] .admin-menus-card-view-content {
+  background: transparent !important;
+}
+
+:root[data-fquiz-theme="dark"] .admin-menus-card-view-state {
+  color: var(--ant-color-text-secondary) !important;
 }
 
 :root[data-fquiz-theme="dark"] .admin-system-messages-message-card {
