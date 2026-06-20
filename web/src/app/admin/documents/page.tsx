@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  App,
   Button,
   Card,
   Col,
@@ -34,7 +35,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, 
 import type { DataNode } from "antd/es/tree";
 
 import { useAuth } from "@/components/auth-provider";
-import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { readApiError } from "@/lib/api";
 import type {
@@ -75,7 +75,10 @@ export default function AdminDocumentsPage() {
   const { user, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const isMobile = useMobileDetection();
-  const { showError, showSuccess } = useToastFeedback();
+  const { message } = App.useApp();
+
+  const showSuccess = (msg: string) => message.success(msg);
+  const showError = (msg: string) => message.error(msg);
 
   const [chapterDialogOpen, setChapterDialogOpen] = useState(false);
   const [documentDrawerOpen, setDocumentDrawerOpen] = useState(false);
