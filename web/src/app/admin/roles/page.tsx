@@ -691,6 +691,17 @@ export default function AdminRolesPage() {
   }, [anyError, paginationCurrent, paginationPageSize, roles.length, rolesQuery.isFetching, updateTableScrollY]);
 
   useEffect(() => {
+    return () => {
+      if (keywordDebounceTimeoutRef.current) {
+        clearTimeout(keywordDebounceTimeoutRef.current);
+      }
+      if (roleCodeCheckTimeoutRef.current) {
+        clearTimeout(roleCodeCheckTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
@@ -724,17 +735,6 @@ export default function AdminRolesPage() {
       resizeObserver.disconnect();
     };
   }, [updateTableScrollY]);
-
-  useEffect(() => {
-    return () => {
-      if (keywordDebounceTimeoutRef.current) {
-        clearTimeout(keywordDebounceTimeoutRef.current);
-      }
-      if (roleCodeCheckTimeoutRef.current) {
-        clearTimeout(roleCodeCheckTimeoutRef.current);
-      }
-    };
-  }, []);
 
   if (initializing) {
     return (
@@ -834,8 +834,6 @@ export default function AdminRolesPage() {
                 style: { marginBottom: 0 },
                 onChange: (page, pageSize) => {
                   setPagination({ current: page, pageSize });
-                  setCardViewPage(page);
-                  setAllLoadedRoles([]);
                 },
               }}
               locale={{
