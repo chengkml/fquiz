@@ -1012,14 +1012,25 @@ def _load_role_page(
         limit_clause = "LIMIT :limit"
         params["limit"] = normalized_limit
 
-    if role_source == "legacy":
-        from_clause = """
-            FROM user_role r
-            WHERE (
-                :keyword IS NULL
-                OR LOWER(r.id) LIKE :keyword
-                OR LOWER(r.name) LIKE :keyword
+    trimmed_keyword = keyword.strip() if keyword else ""
+    keyword_clause = ""
+    if trimmed_keyword:
+        keyword_clause = """
+            AND (
+                {role_keyword_predicates}
                 OR EXISTS (
+                    {menu_exists_query}
+                )
+            )
+        """
+        params["keyword"] = f"%{trimmed_keyword.lower()}%"
+
+    if role_source == "legacy":
+        role_keyword_predicates = """
+                LOWER(r.id) LIKE :keyword
+                OR LOWER(r.name) LIKE :keyword
+        """
+        menu_exists_query = """
                     SELECT 1
                     FROM role_menu_rela rmr
                     JOIN menus m ON m.id::text = rmr.menu_id OR m.code = rmr.menu_id
@@ -1029,19 +1040,20 @@ def _load_role_page(
                           LOWER(m.code) LIKE :keyword
                           OR LOWER(m.name) LIKE :keyword
                       )
-                )
-            )
+        """
+        from_clause = """
+            FROM user_role r
+            WHERE 1 = 1
+            {keyword_clause}
         """
         select_clause = "SELECT r.id, r.name"
         order_clause = "ORDER BY r.create_date DESC NULLS LAST, r.id ASC"
     else:
-        from_clause = """
-            FROM roles r
-            WHERE (
-                :keyword IS NULL
-                OR LOWER(r.code) LIKE :keyword
+        role_keyword_predicates = """
+                LOWER(r.code) LIKE :keyword
                 OR LOWER(r.name) LIKE :keyword
-                OR EXISTS (
+        """
+        menu_exists_query = """
                     SELECT 1
                     FROM role_menus rm
                     JOIN menus m ON m.id = rm.menu_id
@@ -1051,21 +1063,35 @@ def _load_role_page(
                           LOWER(m.code) LIKE :keyword
                           OR LOWER(m.name) LIKE :keyword
                       )
-                )
-            )
+        """
+        from_clause = """
+            FROM roles r
+            WHERE 1 = 1
+            {keyword_clause}
         """
         select_clause = "SELECT r.id::text AS id, r.code, r.name"
         order_clause = "ORDER BY r.id ASC"
 
-    trimmed_keyword = keyword.strip() if keyword else ""
-    params["keyword"] = f"%{trimmed_keyword.lower()}%" if trimmed_keyword else None
+    if keyword_clause:
+        keyword_clause = keyword_clause.format(
+            role_keyword_predicates=role_keyword_predicates,
+            menu_exists_query=menu_exists_query,
+        )
+    from_clause = from_clause.format(keyword_clause=keyword_clause)
+    query_params = {**params, "removed_menu_codes": tuple(REMOVED_MENU_CODES)} if trimmed_keyword else params
+
+    def role_page_stmt(sql: str):
+        stmt = text(sql)
+        if trimmed_keyword:
+            return stmt.bindparams(bindparam("removed_menu_codes", expanding=True))
+        return stmt
 
     total = db.scalar(
-        text(f"SELECT COUNT(*) {from_clause}").bindparams(bindparam("removed_menu_codes", expanding=True)),
-        {**params, "removed_menu_codes": tuple(REMOVED_MENU_CODES)},
+        role_page_stmt(f"SELECT COUNT(*) {from_clause}"),
+        query_params,
     ) or 0
     rows = db.execute(
-        text(
+        role_page_stmt(
             f"""
             {select_clause}
             {from_clause}
@@ -1073,8 +1099,8 @@ def _load_role_page(
             {limit_clause}
             OFFSET :offset
             """
-        ).bindparams(bindparam("removed_menu_codes", expanding=True)),
-        {**params, "removed_menu_codes": tuple(REMOVED_MENU_CODES)},
+        ),
+        query_params,
     ).mappings().all()
     return [dict(row) for row in rows], int(total)
 
