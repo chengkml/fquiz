@@ -1,24 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import type { ComponentType } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Button,
-  Card,
+  Card as AntdCard,
   Descriptions,
   Dropdown,
   Form,
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Table,
   Tag,
   Upload,
   message,
+  type CardProps,
   type UploadFile,
 } from "antd";
 import { MoreOutlined, UploadOutlined } from "@ant-design/icons";
@@ -26,7 +27,6 @@ import type { ColumnsType } from "antd/es/table";
 
 import { useAuth } from "@/components/auth-provider";
 import { ElevationPreviewCesiumMap } from "@/components/elevation-preview-cesium-map";
-import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
 
@@ -61,6 +61,89 @@ type FileRecordListResponse = {
   total: number;
 };
 
+type LineSummary = {
+  id: string;
+  code: string | null;
+  name: string | null;
+};
+
+type LineListResponse = {
+  items?: LineSummary[];
+};
+
+type ElevationPreviewPoint = {
+  longitude: number;
+  latitude: number;
+  altitude_m: number;
+};
+
+type ElevationPreviewCell = {
+  min_longitude: number;
+  max_longitude: number;
+  min_latitude: number;
+  max_latitude: number;
+  altitude_m: number;
+};
+
+type ElevationPreviewDiagnostics = {
+  source_crs: string | null;
+  source_bounds_min_x: number | null;
+  source_bounds_max_x: number | null;
+  source_bounds_min_y: number | null;
+  source_bounds_max_y: number | null;
+  wgs84_bounds_min_lon: number | null;
+  wgs84_bounds_max_lon: number | null;
+  wgs84_bounds_min_lat: number | null;
+  wgs84_bounds_max_lat: number | null;
+  raster_width: number | null;
+  raster_height: number | null;
+  target_samples: number | null;
+  sampling_step: number | null;
+  scanned_candidates: number | null;
+  valid_preview_count: number | null;
+  skip_read_error: number;
+  skip_masked: number;
+  skip_nodata: number;
+  skip_nonfinite: number;
+  skip_sample_transform_error: number;
+  sample_tx_first_error: string | null;
+  skip_sample_out_of_range: number;
+  skip_cell_transform_error: number;
+  skip_cell_out_of_range: number;
+};
+
+type ElevationFileRecordPreviewResponse = {
+  record: ElevationFileRecordSummary;
+  preview_mode: "point_cloud" | "terrain_grid";
+  total_points: number;
+  sampled_points: number;
+  points: ElevationPreviewPoint[];
+  cells: ElevationPreviewCell[];
+  diagnostics: ElevationPreviewDiagnostics | null;
+  warnings: string[];
+};
+
+type ElevationFileRecordTaskResponse = {
+  record: ElevationFileRecordSummary;
+  task_id: string | null;
+  queued: boolean;
+  detail: string | null;
+  warnings: string[];
+};
+
+type ElevationFileRecordUploadResponse = {
+  record: ElevationFileRecordSummary;
+  queued: boolean;
+  detail: string | null;
+  warnings: string[];
+};
+
+type UploadFormValues = {
+  source?: string;
+  resolution_m?: number;
+  notes?: string;
+};
+
 type ApplyFormValues = {
   line_id: string;
   file_record_id: string;
@@ -72,6 +155,8 @@ const DEFAULT_APPLY_FORM: ApplyFormValues = {
   file_record_id: "",
   mode: "fill_null_only",
 };
+
+const Card = AntdCard as unknown as ComponentType<CardProps>;
 
 function statusTagColor(status: string): string {
   if (status === "success" || status === "active" || status === "ready") return "green";
@@ -87,8 +172,25 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+async function readJsonResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    throw new Error(await readApiError(response));
+  }
+  return (await response.json()) as T;
+}
+
+async function ensureOkResponse(response: Response): Promise<void> {
+  if (!response.ok) {
+    throw new Error(await readApiError(response));
+  }
+}
+
+function readMutationError(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
 export default function ElevationRecordsPage() {
-  const { api } = useAuth();
+  const { fetchWithAuth } = useAuth();
   const queryClient = useQueryClient();
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
@@ -99,7 +201,7 @@ export default function ElevationRecordsPage() {
   const [applyForm] = Form.useForm<ApplyFormValues>();
   const [selectedRecord, setSelectedRecord] = useState<ElevationFileRecordSummary | null>(null);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
-  const [previewData, setPreviewData] = useState<any>(null);
+  const [previewData, setPreviewData] = useState<ElevationFileRecordPreviewResponse | null>(null);
 
   // Fetch file records
   const { data: recordsData, isLoading } = useQuery<FileRecordListResponse>({
@@ -108,8 +210,9 @@ export default function ElevationRecordsPage() {
       const params = new URLSearchParams();
       if (keyword) params.append("keyword", keyword);
       if (statusFilter) params.append("status", statusFilter);
-      const res = await api.get(`/elevation/records?${params.toString()}`);
-      return res.data;
+      const query = params.toString();
+      const response = await fetchWithAuth(`/api/v1/elevation/records${query ? `?${query}` : ""}`);
+      return readJsonResponse<FileRecordListResponse>(response);
     },
   });
 
@@ -117,8 +220,8 @@ export default function ElevationRecordsPage() {
   const { data: linesData } = useQuery({
     queryKey: ["lines"],
     queryFn: async () => {
-      const res = await api.get("/lines?limit=1000");
-      return res.data;
+      const response = await fetchWithAuth("/api/v1/lines?limit=1000");
+      return readJsonResponse<LineListResponse>(response);
     },
   });
 
@@ -129,7 +232,7 @@ export default function ElevationRecordsPage() {
 
   // Upload mutation
   const uploadMutation = useMutation({
-    mutationFn: async (values: any) => {
+    mutationFn: async (values: UploadFormValues) => {
       const formData = new FormData();
       if (fileList.length === 0) {
         throw new Error("请选择文件");
@@ -140,10 +243,11 @@ export default function ElevationRecordsPage() {
       if (values.notes) formData.append("notes", values.notes);
       formData.append("trigger_analysis", "true");
 
-      const res = await api.post("/elevation/records", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
+      const response = await fetchWithAuth("/api/v1/elevation/records", {
+        method: "POST",
+        body: formData,
       });
-      return res.data;
+      return readJsonResponse<ElevationFileRecordUploadResponse>(response);
     },
     onSuccess: () => {
       message.success("文件上传成功");
@@ -153,59 +257,70 @@ export default function ElevationRecordsPage() {
       queryClient.invalidateQueries({ queryKey: ["elevation-records"] });
     },
     onError: (error) => {
-      message.error(readApiError(error) || "上传失败");
+      message.error(readMutationError(error, "上传失败"));
     },
   });
 
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await api.delete(`/elevation/records/${id}`);
+      const response = await fetchWithAuth(`/api/v1/elevation/records/${id}`, {
+        method: "DELETE",
+      });
+      await ensureOkResponse(response);
     },
     onSuccess: () => {
       message.success("删除成功");
       queryClient.invalidateQueries({ queryKey: ["elevation-records"] });
     },
     onError: (error) => {
-      message.error(readApiError(error) || "删除失败");
+      message.error(readMutationError(error, "删除失败"));
     },
   });
 
   // Analyze mutation
   const analyzeMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await api.post(`/elevation/records/${id}/analyze`);
-      return res.data;
+      const response = await fetchWithAuth(`/api/v1/elevation/records/${id}/analyze`, {
+        method: "POST",
+      });
+      return readJsonResponse<ElevationFileRecordTaskResponse>(response);
     },
     onSuccess: () => {
       message.success("分析任务已提交");
       queryClient.invalidateQueries({ queryKey: ["elevation-records"] });
     },
     onError: (error) => {
-      message.error(readApiError(error) || "分析失败");
+      message.error(readMutationError(error, "分析失败"));
     },
   });
 
   // Terrain build mutation
   const terrainMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await api.post(`/elevation/records/${id}/terrain/build`);
-      return res.data;
+      const response = await fetchWithAuth(`/api/v1/elevation/records/${id}/terrain/build`, {
+        method: "POST",
+      });
+      return readJsonResponse<ElevationFileRecordTaskResponse>(response);
     },
     onSuccess: () => {
       message.success("地形瓦片任务已提交");
       queryClient.invalidateQueries({ queryKey: ["elevation-records"] });
     },
     onError: (error) => {
-      message.error(readApiError(error) || "地形生成失败");
+      message.error(readMutationError(error, "地形生成失败"));
     },
   });
 
   // Apply mutation
   const applyMutation = useMutation({
     mutationFn: async (values: ApplyFormValues) => {
-      const res = await api.post("/elevation/jobs/apply-line", values);
-      return res.data;
+      const response = await fetchWithAuth("/api/v1/elevation/jobs/apply-line", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      return readJsonResponse(response);
     },
     onSuccess: () => {
       message.success("回填任务已创建");
@@ -213,22 +328,22 @@ export default function ElevationRecordsPage() {
       applyForm.resetFields();
     },
     onError: (error) => {
-      message.error(readApiError(error) || "创建任务失败");
+      message.error(readMutationError(error, "创建任务失败"));
     },
   });
 
   // Preview mutation
   const previewMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await api.get(`/elevation/records/${id}/preview?max_points=1500`);
-      return res.data;
+      const response = await fetchWithAuth(`/api/v1/elevation/records/${id}/preview?max_points=1500`);
+      return readJsonResponse<ElevationFileRecordPreviewResponse>(response);
     },
     onSuccess: (data) => {
       setPreviewData(data);
       setPreviewModalOpen(true);
     },
     onError: (error) => {
-      message.error(readApiError(error) || "预览失败");
+      message.error(readMutationError(error, "预览失败"));
     },
   });
 
@@ -490,8 +605,8 @@ export default function ElevationRecordsPage() {
               placeholder="选择线路"
               showSearch
               optionFilterProp="label"
-              options={linesData?.items?.map((line: any) => ({
-                label: `${line.code} - ${line.name}`,
+              options={linesData?.items?.map((line) => ({
+                label: `${line.code ?? "-"} - ${line.name ?? "-"}`,
                 value: line.id,
               }))}
             />
@@ -503,10 +618,12 @@ export default function ElevationRecordsPage() {
             rules={[{ required: true }]}
             initialValue="fill_null_only"
           >
-            <Select>
-              <Select.Option value="fill_null_only">仅填空（只更新空值）</Select.Option>
-              <Select.Option value="overwrite_all">全部覆盖（覆盖所有数据）</Select.Option>
-            </Select>
+            <Select
+              options={[
+                { label: "仅填空（只更新空值）", value: "fill_null_only" },
+                { label: "全部覆盖（覆盖所有数据）", value: "overwrite_all" },
+              ]}
+            />
           </Form.Item>
         </Form>
       </Modal>
@@ -532,7 +649,10 @@ export default function ElevationRecordsPage() {
               <Descriptions.Item label="采样点数">{previewData.sampled_points?.toLocaleString()}</Descriptions.Item>
             </Descriptions>
             <div style={{ height: 600 }}>
-              <ElevationPreviewCesiumMap previewData={previewData} />
+              <ElevationPreviewCesiumMap
+                points={previewData.points}
+                cells={previewData.cells}
+              />
             </div>
           </div>
         )}
