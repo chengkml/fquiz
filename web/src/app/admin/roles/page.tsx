@@ -24,7 +24,7 @@ import {
 } from "antd";
 import { EditOutlined, MoreOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import type { CSSProperties, ComponentType } from "react";
+import type { CSSProperties, ComponentType, RefAttributes } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
@@ -33,7 +33,7 @@ import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { readApiError } from "@/lib/api";
 import type { MenuItem, RoleItem } from "@/types/auth";
 
-const AntCard = Card as unknown as ComponentType<CardProps>;
+const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 type RolesWithMenusResponse = {
   roles: RoleItem[];

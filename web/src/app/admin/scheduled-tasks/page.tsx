@@ -21,7 +21,7 @@ import {
   type CardProps,
   type TableColumnsType,
 } from "antd";
-import type { ComponentType } from "react";
+import type { ComponentType, RefAttributes } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
@@ -67,7 +67,7 @@ const TIMEZONE_OPTIONS = [
   { label: "UTC", value: "UTC" },
 ] as const;
 
-const AntCard = Card as unknown as ComponentType<CardProps>;
+const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 const TABLE_MIN_SCROLL_Y = 180;
 const TABLE_VIEWPORT_GAP = 40;

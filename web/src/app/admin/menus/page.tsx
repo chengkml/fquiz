@@ -27,7 +27,7 @@ import {
   type TableColumnsType,
 } from "antd";
 import { MoreOutlined, EditOutlined } from "@ant-design/icons";
-import type { CSSProperties, ComponentType } from "react";
+import type { CSSProperties, ComponentType, RefAttributes } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
@@ -37,7 +37,7 @@ import { readApiError } from "@/lib/api";
 import { normalizeAppRoutePath } from "@/lib/app-route-path";
 import type { MenuItem, MenuListResponse } from "@/types/auth";
 
-const AntCard = Card as unknown as ComponentType<CardProps>;
+const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 type FilterStatus = "all" | "enabled" | "disabled";
 

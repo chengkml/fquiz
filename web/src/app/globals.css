@@ -974,7 +974,7 @@ body {
 }
 
 .admin-tower-models-table-anchor .ant-table-body {
-  min-height: var(--admin-tower-models-table-body-min-height, 220px);
+  min-height: var(--admin-tower-models-table-body-min-height, 180px);
 }
 
 .admin-tower-models-page-card {
@@ -1038,7 +1038,7 @@ body {
 
 .admin-tower-models-model-card-field {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-columns: 64px minmax(0, 1fr);
   gap: 8px;
   align-items: baseline;
 }

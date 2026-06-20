@@ -74,6 +74,8 @@ def serialize_tower_model(item: TowerModel) -> TowerModelSummary:
 def list_tower_models(
     db: Session,
     *,
+    limit: int,
+    offset: int,
     keyword: str | None,
     enabled: bool | None,
 ) -> TowerModelListResponse:
@@ -98,6 +100,8 @@ def list_tower_models(
     total = int(db.scalar(total_stmt) or 0)
     items = db.execute(
         stmt.order_by(TowerModel.sort_order.asc(), TowerModel.code.asc())
+        .offset(offset)
+        .limit(limit)
     ).scalars().all()
     return TowerModelListResponse(
         items=[serialize_tower_model(item) for item in items],

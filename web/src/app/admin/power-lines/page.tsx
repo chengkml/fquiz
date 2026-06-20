@@ -245,13 +245,6 @@ function parseJsonObjectText(value: string, label: string): Record<string, unkno
   return parsed as Record<string, unknown>;
 }
 
-function formatNumber(value: number | null | undefined, digits = 3): string {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return "-";
-  }
-  return value.toFixed(digits);
-}
-
 type TowerTopologyKind = "single" | "double" | "quad" | "dc";
 type TowerCircuitKey = "I" | "II" | "III" | "IV";
 type TowerPhaseKey = "upper" | "middle" | "lower";
@@ -2224,7 +2217,7 @@ export default function AdminPowerLinesPage() {
                     <Typography.Text>雷电流幅值</Typography.Text>
                     {selectedLinePreparation.lightning_current.ready && (
                       <Typography.Text type="secondary">
-                        (a={selectedLinePreparation.lightning_current.values.current_a ?? "-"}, b={selectedLinePreparation.lightning_current.values.current_b ?? "-"})
+                        (a={String(selectedLinePreparation.lightning_current.values.current_a ?? "-")}, b={String(selectedLinePreparation.lightning_current.values.current_b ?? "-")})
                       </Typography.Text>
                     )}
                     <Typography.Text type="secondary">
@@ -2250,7 +2243,7 @@ export default function AdminPowerLinesPage() {
                     <Typography.Text>地闪密度</Typography.Text>
                     {selectedLinePreparation.lightning_density.ready && (
                       <Typography.Text type="secondary">
-                        (Ng={selectedLinePreparation.lightning_density.values.ng ?? "-"})
+                        (Ng={String(selectedLinePreparation.lightning_density.values.ng ?? "-")})
                       </Typography.Text>
                     )}
                     <Typography.Text type="secondary">

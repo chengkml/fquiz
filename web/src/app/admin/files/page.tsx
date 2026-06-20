@@ -35,7 +35,7 @@ import {
   MoreOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType, type RefAttributes } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui-antd";
@@ -93,7 +93,7 @@ function readXhrError(xhr: XMLHttpRequest): string {
 const FILES_TABLE_MIN_SCROLL_Y = 180;
 const FILES_TABLE_VIEWPORT_GAP = 40;
 const FILES_TABLE_FALLBACK_RESERVE = 220;
-const AntCard = Card as unknown as ComponentType<CardProps>;
+const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 export default function AdminFilesPage() {
   const queryClient = useQueryClient();

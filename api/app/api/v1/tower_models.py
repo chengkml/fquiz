@@ -33,6 +33,8 @@ router = APIRouter(prefix="/tower-models", tags=["tower-models"])
 
 @router.get("", response_model=TowerModelListResponse)
 def get_tower_model_list(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     keyword: str | None = Query(default=None),
     enabled: bool | None = Query(default=None),
     _: CurrentUser = Depends(require_any_permission("tower_model.read", "tower_model.manage", "tower.read", "tower.manage")),
@@ -40,6 +42,8 @@ def get_tower_model_list(
 ) -> TowerModelListResponse:
     return list_tower_models(
         db,
+        limit=limit,
+        offset=offset,
         keyword=keyword,
         enabled=enabled,
     )

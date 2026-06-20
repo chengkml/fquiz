@@ -25,7 +25,7 @@ import {
 } from "antd";
 import { MoreOutlined } from "@ant-design/icons";
 import Link from "next/link";
-import type { ComponentType, CSSProperties, ReactNode } from "react";
+import type { ComponentType, CSSProperties, ReactNode, RefAttributes } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
@@ -41,7 +41,7 @@ type CreateMessageValues = {
   target_user_id?: string;
 };
 
-const AntCard = Card as unknown as ComponentType<CardProps>;
+const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 const MESSAGE_TYPE_OPTIONS: Array<{ label: string; value: SystemMessageType }> = [
   { label: "通知", value: "info" },

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import dayjs from "dayjs";
-import type { ComponentType } from "react";
+import type { ComponentType, RefAttributes } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -38,7 +38,7 @@ import {
 } from "@/lib/task-monitor-display";
 
 const { Text } = Typography;
-const AntCard = Card as unknown as ComponentType<CardProps>;
+const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 const DEFAULT_RECENT_LIMIT = 100;
 const TASK_MONITOR_TABLE_MIN_SCROLL_Y = 180;

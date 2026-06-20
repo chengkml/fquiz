@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  App,
   Button,
   Card,
   Col,
   Dropdown,
   Empty,
   Form,
+  Image as AntImageBase,
   Input,
   InputNumber,
   Modal,
@@ -25,7 +25,7 @@ import {
 } from "antd";
 import { EditOutlined, MoreOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType, type RefAttributes } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
@@ -40,7 +40,15 @@ import type {
   TowerModelSummary,
 } from "@/types/auth";
 
-const AntCard = Card as unknown as ComponentType<CardProps>;
+const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
+const AntImage = AntImageBase as unknown as ComponentType<{
+  alt?: string;
+  height?: number;
+  preview?: boolean;
+  src?: string;
+  style?: CSSProperties;
+  width?: number;
+}>;
 
 type TowerModelFormValues = {
   code: string;
@@ -58,7 +66,7 @@ const EMPTY_FORM: TowerModelFormValues = {
   sort_order: 0,
 };
 
-const TOWER_MODEL_TABLE_MIN_SCROLL_Y = 220;
+const TOWER_MODEL_TABLE_MIN_SCROLL_Y = 180;
 const TOWER_MODEL_VIEWPORT_GAP = 40;
 const TOWER_MODEL_FALLBACK_RESERVE = 220;
 const TOWER_MODEL_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
@@ -171,11 +179,12 @@ function TowerModelImageCell({
   return (
     <Space size={8}>
       {imageUrl ? (
-        <img
+        <AntImage
           src={imageUrl}
           alt={model.name}
           width={56}
           height={56}
+          preview={false}
           style={{ objectFit: "cover", borderRadius: 6, border: "1px solid #ddd" }}
         />
       ) : (
@@ -205,20 +214,22 @@ function TowerModelImageCell({
 export default function AdminTowerModelsPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
-  const { message: messageApi } = App.useApp();
   const [form] = Form.useForm<TowerModelFormValues>();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isMobile = useMobileDetection();
   const [keywordInput, setKeywordInput] = useState("");
-  const [keyword, setKeyword] = useState("");
-  const [enabledFilter, setEnabledFilter] = useState<"all" | "enabled" | "disabled">("all");
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [enabledFilter, setEnabledFilter] = useState<"enabled" | "disabled" | undefined>(undefined);
   const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<TowerModelSummary | null>(null);
   const [uploadModel, setUploadModel] = useState<TowerModelSummary | null>(null);
   const [pagination, setPagination] = useState({ current: 1, pageSize: TOWER_MODEL_DEFAULT_PAGE_SIZE });
   const [cardViewPage, setCardViewPage] = useState(1);
+  const [allLoadedModels, setAllLoadedModels] = useState<TowerModelSummary[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [tableScrollY, setTableScrollY] = useState(TOWER_MODEL_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const pageCardRef = useRef<HTMLDivElement | null>(null);
@@ -230,18 +241,21 @@ export default function AdminTowerModelsPage() {
 
   const canRead = hasPermission("tower_model.read") || hasPermission("tower_model.manage") || hasPermission("tower.read") || hasPermission("tower.manage");
   const canManage = hasPermission("tower_model.manage");
+  const { current: paginationCurrent, pageSize: paginationPageSize } = pagination;
+  const trimmedKeyword = searchKeyword.trim();
 
   const listPath = useMemo(() => {
     const params = new URLSearchParams();
-    if (keyword.trim()) {
-      params.set("keyword", keyword.trim());
+    params.set("limit", String(paginationPageSize));
+    params.set("offset", String((paginationCurrent - 1) * paginationPageSize));
+    if (trimmedKeyword) {
+      params.set("keyword", trimmedKeyword);
     }
-    if (enabledFilter !== "all") {
+    if (enabledFilter) {
       params.set("enabled", enabledFilter === "enabled" ? "true" : "false");
     }
-    const query = params.toString();
-    return `/api/v1/tower-models${query ? `?${query}` : ""}`;
-  }, [keyword, enabledFilter]);
+    return `/api/v1/tower-models?${params.toString()}`;
+  }, [enabledFilter, paginationCurrent, paginationPageSize, trimmedKeyword]);
 
   const mountsQuery = useQuery({
     queryKey: ["/api/v1/admin/files?path=/"],
@@ -271,18 +285,15 @@ export default function AdminTowerModelsPage() {
 
   useToastFeedback({
     errorMessage: error || listError,
+    successMessage: success,
     clearError: () => setError(""),
+    clearSuccess: () => setSuccess(""),
   });
   const listData = towerModelsQuery.data;
   const listItems = useMemo(() => listData?.items ?? [], [listData?.items]);
   const totalItems = listData?.total ?? listItems.length;
-  const { current: paginationCurrent, pageSize: paginationPageSize } = pagination;
   const paginationMaxPage = Math.max(1, Math.ceil(totalItems / paginationPageSize));
   const tableCurrentPage = Math.min(paginationCurrent, paginationMaxPage);
-  const visibleCardModels = useMemo(
-    () => listItems.slice(0, cardViewPage * paginationPageSize),
-    [cardViewPage, listItems, paginationPageSize],
-  );
 
   const refreshList = useCallback(async () => {
     await queryClient.invalidateQueries({
@@ -297,6 +308,32 @@ export default function AdminTowerModelsPage() {
     void refreshList();
   }, [refreshList]));
 
+  useEffect(() => {
+    if (viewMode !== "card" || towerModelsQuery.isLoading) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      if (cardViewPage === 1) {
+        setAllLoadedModels(() => listItems);
+      } else {
+        setAllLoadedModels((previous) => {
+          if (listItems.length === 0) {
+            return previous;
+          }
+          const existingIds = new Set(previous.map((item) => item.id));
+          const newModels = listItems.filter((item) => !existingIds.has(item.id));
+          return [...previous, ...newModels];
+        });
+      }
+      setIsLoadingMore(false);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [cardViewPage, listItems, towerModelsQuery.isLoading, viewMode]);
+
   // Handle infinite scroll for card view
   useEffect(() => {
     if (viewMode !== "card") return;
@@ -308,7 +345,7 @@ export default function AdminTowerModelsPage() {
     if (!cardBody) return;
 
     const handleScroll = () => {
-      if (towerModelsQuery.isLoading) return;
+      if (isLoadingMore || towerModelsQuery.isLoading) return;
 
       const scrollTop = cardBody.scrollTop;
       const scrollHeight = cardBody.scrollHeight;
@@ -316,17 +353,19 @@ export default function AdminTowerModelsPage() {
 
       if (scrollTop + clientHeight >= scrollHeight - 100) {
         const total = totalItems;
-        const loadedCount = visibleCardModels.length;
+        const loadedCount = allLoadedModels.length;
 
         if (loadedCount < total) {
+          setIsLoadingMore(true);
           setCardViewPage((prev) => prev + 1);
+          setPagination((prev) => ({ ...prev, current: prev.current + 1 }));
         }
       }
     };
 
     cardBody.addEventListener("scroll", handleScroll);
     return () => cardBody.removeEventListener("scroll", handleScroll);
-  }, [viewMode, towerModelsQuery.isLoading, totalItems, visibleCardModels.length]);
+  }, [viewMode, isLoadingMore, towerModelsQuery.isLoading, totalItems, allLoadedModels.length]);
 
   const saveMutation = useMutation({
     mutationFn: async (values: TowerModelFormValues) => {
@@ -354,8 +393,8 @@ export default function AdminTowerModelsPage() {
       return "created" as const;
     },
     onSuccess: async (mode) => {
+      setSuccess(mode === "created" ? "杆塔模型已创建" : "杆塔模型已更新");
       setError("");
-      messageApi.success(mode === "created" ? "杆塔模型已创建" : "杆塔模型已更新");
       setDialogOpen(false);
       setEditingModel(null);
       form.resetFields();
@@ -374,8 +413,8 @@ export default function AdminTowerModelsPage() {
       }
     },
     onSuccess: async () => {
+      setSuccess("杆塔模型已删除");
       setError("");
-      messageApi.success("杆塔模型已删除");
       await refreshList();
     },
     onError: (candidate) => {
@@ -398,8 +437,8 @@ export default function AdminTowerModelsPage() {
       return (await response.json()) as TowerModelImageUploadResponse;
     },
     onSuccess: async () => {
+      setSuccess("模型图片上传成功");
       setError("");
-      messageApi.success("模型图片上传成功");
       setUploadModel(null);
       await refreshList();
     },
@@ -409,16 +448,24 @@ export default function AdminTowerModelsPage() {
   });
 
   const openCreate = () => {
+    setError("");
+    setSuccess("");
     setEditingModel(null);
     form.setFieldsValue(EMPTY_FORM);
     setDialogOpen(true);
   };
 
   const openEdit = useCallback((item: TowerModelSummary) => {
+    setError("");
+    setSuccess("");
     setEditingModel(item);
     form.setFieldsValue(toEditValues(item));
     setDialogOpen(true);
   }, [form]);
+  const isDeletingModel = deleteMutation.isPending;
+  const isSavingModel = saveMutation.isPending;
+  const isUploadingImage = uploadImageMutation.isPending;
+  const deleteModelAsync = deleteMutation.mutateAsync;
 
   const handleKeywordChange = (value: string) => {
     setKeywordInput(value);
@@ -428,9 +475,10 @@ export default function AdminTowerModelsPage() {
     }
 
     keywordDebounceTimeoutRef.current = setTimeout(() => {
-      setKeyword(value);
+      setSearchKeyword(value);
       setPagination((previous) => ({ ...previous, current: 1 }));
       setCardViewPage(1);
+      setAllLoadedModels([]);
     }, 500);
   };
 
@@ -481,7 +529,8 @@ export default function AdminTowerModelsPage() {
         title: "状态",
         dataIndex: "is_enabled",
         width: 80,
-        render: (value: boolean) => <Tag color={value ? "success" : "default"}>{value ? "启用" : "禁用"}</Tag>,
+        align: "center",
+        render: (value: boolean) => <Tag color={value ? "green" : "default"}>{value ? "启用" : "禁用"}</Tag>,
       },
       {
         title: "排序",
@@ -491,23 +540,27 @@ export default function AdminTowerModelsPage() {
       {
         title: "操作",
         key: "actions",
-        width: 120,
-        fixed: "right",
+        width: 180,
         render: (_: unknown, row) => {
+          const rowBusy = isDeletingModel || isSavingModel || isUploadingImage;
           const moreMenuItems: MenuProps["items"] = [
             {
               key: "delete",
               label: "删除",
               danger: true,
-              disabled: deleteMutation.isPending,
+              disabled: rowBusy,
             },
           ];
 
           return (
-            <Space size="small" wrap>
-              {canManage && <Button size="small" onClick={() => openEdit(row)}>编辑</Button>}
+            <Space wrap>
               {canManage && (
-                <Button size="small" onClick={() => setUploadModel(row)}>
+                <Button size="small" disabled={rowBusy} onClick={() => openEdit(row)}>
+                  编辑
+                </Button>
+              )}
+              {canManage && (
+                <Button size="small" disabled={rowBusy} onClick={() => setUploadModel(row)}>
                   上传图片
                 </Button>
               )}
@@ -524,7 +577,7 @@ export default function AdminTowerModelsPage() {
                           cancelText: "取消",
                           okButtonProps: { danger: true },
                           onOk: async () => {
-                            await deleteMutation.mutateAsync(row.id);
+                            await deleteModelAsync(row.id);
                           },
                         });
                       }
@@ -532,7 +585,7 @@ export default function AdminTowerModelsPage() {
                   }}
                   trigger={["click"]}
                 >
-                  <Button size="small" icon={<MoreOutlined />} />
+                  <Button size="small" disabled={rowBusy} icon={<MoreOutlined />} />
                 </Dropdown>
               )}
             </Space>
@@ -540,7 +593,7 @@ export default function AdminTowerModelsPage() {
         },
       },
     ],
-    [canManage, deleteMutation, fetchWithAuth, handleImagePreviewError, openEdit],
+    [canManage, deleteModelAsync, fetchWithAuth, handleImagePreviewError, isDeletingModel, isSavingModel, isUploadingImage, openEdit],
   );
 
   const renderDefaultSummary = (row: TowerModelSummary) => (
@@ -552,7 +605,7 @@ export default function AdminTowerModelsPage() {
   );
 
   const renderTowerModelCard = (row: TowerModelSummary) => {
-    const rowBusy = deleteMutation.isPending;
+    const rowBusy = isDeletingModel || isSavingModel || isUploadingImage;
     const moreMenuItems: MenuProps["items"] = [
       {
         key: "upload-image",
@@ -573,7 +626,7 @@ export default function AdminTowerModelsPage() {
             cancelText: "取消",
             okButtonProps: { danger: true },
             onOk: async () => {
-              await deleteMutation.mutateAsync(row.id);
+              await deleteModelAsync(row.id);
             },
           });
         },
@@ -590,7 +643,7 @@ export default function AdminTowerModelsPage() {
             <Typography.Text strong ellipsis={{ tooltip: row.name }}>
               {row.name}
             </Typography.Text>
-            <Tag color={row.is_enabled ? "success" : "default"}>{row.is_enabled ? "启用" : "禁用"}</Tag>
+            <Tag color={row.is_enabled ? "green" : "default"}>{row.is_enabled ? "启用" : "禁用"}</Tag>
           </Space>
         }
         extra={canManage ? (
@@ -671,7 +724,7 @@ export default function AdminTowerModelsPage() {
       return;
     }
     window.requestAnimationFrame(updateTableScrollY);
-  }, [error, listError, listItems.length, paginationCurrent, paginationPageSize, towerModelsQuery.isFetching, updateTableScrollY]);
+  }, [error, listError, listItems.length, paginationCurrent, paginationPageSize, success, towerModelsQuery.isFetching, updateTableScrollY]);
 
   useEffect(() => {
     return () => {
@@ -786,10 +839,11 @@ export default function AdminTowerModelsPage() {
               />
             </Form.Item>
             <Form.Item label="状态" style={{ width: 170 }}>
-              <Select<"all" | "enabled" | "disabled">
+              <Select<"enabled" | "disabled">
                 value={enabledFilter}
+                allowClear
+                placeholder="全部"
                 options={[
-                  { value: "all", label: "全部" },
                   { value: "enabled", label: "已启用" },
                   { value: "disabled", label: "已禁用" },
                 ]}
@@ -797,6 +851,7 @@ export default function AdminTowerModelsPage() {
                   setEnabledFilter(value);
                   setPagination((previous) => ({ ...previous, current: 1 }));
                   setCardViewPage(1);
+                  setAllLoadedModels([]);
                 }}
               />
             </Form.Item>
@@ -814,6 +869,7 @@ export default function AdminTowerModelsPage() {
               columns={tableColumns}
               dataSource={listItems}
               loading={towerModelsQuery.isLoading}
+              tableLayout="fixed"
               pagination={{
                 current: tableCurrentPage,
                 pageSize: pagination.pageSize,
@@ -827,8 +883,7 @@ export default function AdminTowerModelsPage() {
                   setPagination({ current: page, pageSize });
                 },
               }}
-              scroll={{ x: 1450, y: tableScrollY }}
-              tableLayout="fixed"
+              scroll={{ y: tableScrollY }}
               locale={{
                 emptyText: (
                   <Empty
@@ -841,11 +896,11 @@ export default function AdminTowerModelsPage() {
           </div>
         ) : (
           <div className="admin-tower-models-card-view">
-            {towerModelsQuery.isLoading && visibleCardModels.length === 0 ? (
+            {towerModelsQuery.isLoading && allLoadedModels.length === 0 ? (
               <div className="admin-tower-models-card-view-state">
                 <Spin tip="加载中..." />
               </div>
-            ) : visibleCardModels.length === 0 ? (
+            ) : allLoadedModels.length === 0 ? (
               <div className="admin-tower-models-card-view-state">
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -855,21 +910,21 @@ export default function AdminTowerModelsPage() {
             ) : (
               <div className="admin-tower-models-card-view-content">
                 <Row gutter={[12, 12]}>
-                  {visibleCardModels.map((row) => (
+                  {allLoadedModels.map((row) => (
                     <Col key={row.id} xs={24} sm={24} md={12} lg={8} xl={6}>
                       {renderTowerModelCard(row)}
                     </Col>
                   ))}
                 </Row>
-                {towerModelsQuery.isFetching && visibleCardModels.length < totalItems && (
+                {isLoadingMore && (
                   <div style={{ textAlign: "center", padding: "20px 0" }}>
                     <Spin tip="加载更多..." />
                   </div>
                 )}
-                {visibleCardModels.length >= totalItems && visibleCardModels.length > 0 && (
+                {allLoadedModels.length >= totalItems && allLoadedModels.length > 0 && (
                   <div style={{ textAlign: "center", padding: "20px 0" }}>
                     <Typography.Text type="secondary">
-                      已加载全部 {visibleCardModels.length} 条数据
+                      已加载全部 {allLoadedModels.length} 条数据
                     </Typography.Text>
                   </div>
                 )}

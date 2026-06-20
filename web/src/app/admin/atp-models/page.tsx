@@ -23,7 +23,7 @@ import {
 } from "antd";
 import { EditOutlined, MoreOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType, type RefAttributes } from "react";
 
 import { AdminPageLoading } from "@/components/admin-page-loading";
 import { useAuth } from "@/components/auth-provider";
@@ -34,7 +34,7 @@ import { readApiError } from "@/lib/api";
 import { getAtpAssetStatusDisplay } from "@/lib/atp-asset-display";
 import type { AtpAssetListResponse, AtpAssetSummary } from "@/types/auth";
 
-const AntCard = Card as unknown as ComponentType<CardProps>;
+const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 type AssetFormValues = {
   description: string;

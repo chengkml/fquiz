@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Col, Empty, Form, Input, Row, Space, Spin, Table, Tag, Typography, type CardProps } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import type { CSSProperties, ComponentType } from "react";
+import type { CSSProperties, ComponentType, RefAttributes } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
@@ -18,7 +18,7 @@ const PAGE_SIZE = 50;
 const SYSLOG_TABLE_MIN_SCROLL_Y = 180;
 const SYSLOG_TABLE_VIEWPORT_GAP = 40;
 const SYSLOG_TABLE_FALLBACK_RESERVE = 220;
-const AntCard = Card as unknown as ComponentType<CardProps>;
+const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 type Filters = {
   action: string;

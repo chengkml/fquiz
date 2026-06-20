@@ -25,7 +25,7 @@ import {
   type TableColumnsType,
 } from "antd";
 import { EditOutlined, MoreOutlined } from "@ant-design/icons";
-import type { ComponentType } from "react";
+import type { ComponentType, RefAttributes } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
@@ -57,7 +57,7 @@ const PARAM_STATUS_OPTIONS = [
   { label: "已禁用", value: "disabled" },
 ] as const satisfies ReadonlyArray<{ label: string; value: FormState["status"] }>;
 
-const AntCard = Card as unknown as ComponentType<CardProps>;
+const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 const PARAM_TABLE_MIN_SCROLL_Y = 180;
 const PARAM_TABLE_VIEWPORT_GAP = 40;
