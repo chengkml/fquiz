@@ -86,6 +86,7 @@
 
   --fquiz-theme-shadow-card: 0 10px 24px color-mix(in srgb, var(--accent-9) 22%, transparent);
   --fquiz-theme-shadow-soft: 0 2px 8px color-mix(in srgb, var(--accent-9) 12%, transparent);
+  --fquiz-table-border-color: #d4c5ff;
 }
 
 :root[data-fquiz-theme="dark"] {
@@ -95,6 +96,7 @@
   --fquiz-theme-shell-header-bg: color-mix(in srgb, var(--ant-color-bg-container) 82%, black);
   --fquiz-theme-shell-sider-bg: color-mix(in srgb, var(--ant-color-bg-container) 82%, black);
   --fquiz-theme-shadow-card: 0 10px 24px color-mix(in srgb, black 50%, transparent);
+  --fquiz-table-border-color: color-mix(in srgb, var(--ant-color-border-secondary) 80%, var(--accent-9) 20%);
 }
 
 :root[data-fquiz-theme="dark"] .admin-users-user-card,
@@ -1550,4 +1552,40 @@ body {
   .admin-docs-view-content {
     padding: 16px;
   }
+}
+
+/* 表格边框优化 - 确保边框与背景色有明显区分 */
+.ant-table-wrapper .ant-table {
+  border: 1px solid var(--fquiz-table-border-color);
+}
+
+.ant-table-wrapper .ant-table-thead > tr > th {
+  border-bottom: 1px solid var(--fquiz-table-border-color);
+  border-right: 1px solid var(--fquiz-table-border-color);
+}
+
+.ant-table-wrapper .ant-table-thead > tr > th:last-child {
+  border-right: none;
+}
+
+.ant-table-wrapper .ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--fquiz-table-border-color);
+  border-right: 1px solid var(--fquiz-table-border-color);
+}
+
+.ant-table-wrapper .ant-table-tbody > tr > td:last-child {
+  border-right: none;
+}
+
+.ant-table-wrapper .ant-table-tbody > tr:last-child > td {
+  border-bottom: none;
+}
+
+.ant-table-wrapper .ant-table.ant-table-bordered .ant-table-container {
+  border: 1px solid var(--fquiz-table-border-color);
+}
+
+.ant-table-wrapper .ant-table.ant-table-bordered .ant-table-thead > tr > th,
+.ant-table-wrapper .ant-table.ant-table-bordered .ant-table-tbody > tr > td {
+  border-right: 1px solid var(--fquiz-table-border-color);
 }
