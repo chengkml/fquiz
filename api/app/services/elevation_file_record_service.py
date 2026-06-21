@@ -722,10 +722,40 @@ def preview_file_record(
         class TempDataset:
             def __init__(self, record: ElevationFileRecord):
                 self.id = record.id
-                self.file_path = record.file_path
-                self.mount_code = record.mount_code
+                self.code = record.file_name
+                self.name = record.file_name
+                self.source = record.source
                 self.file_format = record.file_format
+                self.mount_code = record.mount_code
+                self.dataset_dir = ""
+                self.file_path = record.file_path
+                self.resolution_m = record.resolution_m
                 self.status = record.status
+                self.usage_status = "active"
+                self.sample_count = record.sample_count
+                self.bbox_min_lon = record.bbox_min_lon
+                self.bbox_max_lon = record.bbox_max_lon
+                self.bbox_min_lat = record.bbox_min_lat
+                self.bbox_max_lat = record.bbox_max_lat
+                self.analysis_task_id = record.analysis_task_id
+                self.analysis_status = record.analysis_status
+                self.analysis_error_message = record.analysis_error_message
+                self.analysis_started_at = record.analysis_started_at
+                self.analysis_finished_at = record.analysis_finished_at
+                self.terrain_status = record.terrain_status
+                self.terrain_task_id = record.terrain_task_id
+                self.terrain_error_message = record.terrain_error_message
+                self.terrain_root_path = record.terrain_root_path
+                self.terrain_url_template = record.terrain_url_template
+                self.terrain_min_zoom = record.terrain_min_zoom
+                self.terrain_max_zoom = record.terrain_max_zoom
+                self.terrain_bounds = record.terrain_bounds
+                self.terrain_metadata = record.terrain_metadata
+                self.notes = record.notes
+                self.create_date = record.create_date
+                self.create_user = record.create_user
+                self.update_date = record.update_date
+                self.update_user = record.update_user
 
         temp_ds = TempDataset(item)
         result = _build_raster_preview(db, dataset=temp_ds, limit=preview_limit)  # type: ignore
