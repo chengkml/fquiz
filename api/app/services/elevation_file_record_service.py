@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import mimetypes
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,7 @@ from ..schemas.elevation import (
 from .elevation_service import (
     ELEVATION_FILE_EXT_FORMAT_MAP,
     IMPORTABLE_ELEVATION_EXTENSIONS,
+    IMPORTABLE_ARCHIVE_EXTENSIONS,
     RASTER_FILE_FORMATS,
     TERRAIN_SUPPORTED_DATASET_FORMATS,
     _build_raster_preview,
@@ -130,23 +132,18 @@ def create_file_record_from_upload(
     *,
     actor: User,
 ) -> ElevationFileRecordUploadResponse:
-    """Create a file record and upload the file in one operation."""
+    """Create a file record and upload the file in one operation. Supports ZIP files with automatic extraction."""
     if not file.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件名不能为空")
 
     filename = file.filename.strip()
     file_ext = Path(filename).suffix.lower()
 
-    if file_ext not in IMPORTABLE_ELEVATION_EXTENSIONS:
+    if file_ext not in IMPORTABLE_ELEVATION_EXTENSIONS and file_ext not in IMPORTABLE_ARCHIVE_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"不支持的文件格式: {file_ext}，仅支持 .csv/.img/.tif/.tiff"
+            detail=f"不支持的文件格式: {file_ext}，仅支持 .csv/.img/.tif/.tiff/.zip"
         )
-
-    file_format = ELEVATION_FILE_EXT_FORMAT_MAP.get(file_ext, "csv")
-
-    if file_format in RASTER_FILE_FORMATS:
-        _require_rasterio_available()
 
     # Read file content
     try:
@@ -165,12 +162,30 @@ def create_file_record_from_upload(
     if not content:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="上传文件为空")
 
-    file_size = len(content)
-
-    # Determine mount and storage path
+    # Determine mount and storage
     mount_code = _resolve_dataset_mount_code(db, requested_mount_code=payload.mount_code)
     mount = _require_mount(db, mount_code)
     driver = _build_driver_or_400(mount)
+
+    # Handle ZIP file extraction
+    if file_ext in IMPORTABLE_ARCHIVE_EXTENSIONS:
+        return _create_file_records_from_zip(
+            db=db,
+            zip_content=content,
+            zip_filename=filename,
+            payload=payload,
+            mount_code=mount_code,
+            driver=driver,
+            actor=actor,
+        )
+
+    # Handle single file upload (original logic)
+    file_format = ELEVATION_FILE_EXT_FORMAT_MAP.get(file_ext, "csv")
+
+    if file_format in RASTER_FILE_FORMATS:
+        _require_rasterio_available()
+
+    file_size = len(content)
 
     # Generate unique storage path
     from uuid import uuid4
@@ -244,6 +259,150 @@ def create_file_record_from_upload(
         record=serialize_file_record(saved),
         queued=payload.trigger_analysis,
         detail="文件已上传并创建记录",
+        warnings=warnings,
+    )
+
+
+def _create_file_records_from_zip(
+    db: Session,
+    zip_content: bytes,
+    zip_filename: str,
+    payload: ElevationFileRecordCreateRequest,
+    mount_code: str,
+    driver: Any,
+    actor: User,
+) -> ElevationFileRecordUploadResponse:
+    """Extract ZIP file and create file records for each contained elevation data file."""
+    warnings: list[str] = []
+    created_records: list[ElevationFileRecord] = []
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_content)) as archive:
+            for member in archive.infolist():
+                if member.is_dir():
+                    continue
+
+                member_name = Path(member.filename).name
+                if not member_name:
+                    warnings.append(f"压缩包条目 {member.filename} 文件名无效，已跳过")
+                    continue
+
+                suffix = Path(member_name).suffix.lower()
+                if suffix not in IMPORTABLE_ELEVATION_EXTENSIONS:
+                    warnings.append(f"压缩包条目 {member_name} 类型不支持，已跳过")
+                    continue
+
+                try:
+                    data = archive.read(member)
+                except Exception as exc:
+                    warnings.append(f"压缩包条目 {member_name} 读取失败：{exc}")
+                    continue
+
+                if not data:
+                    warnings.append(f"压缩包条目 {member_name} 内容为空，已跳过")
+                    continue
+
+                # Determine file format
+                file_format = ELEVATION_FILE_EXT_FORMAT_MAP.get(suffix, "csv")
+
+                if file_format in RASTER_FILE_FORMATS:
+                    try:
+                        _require_rasterio_available()
+                    except HTTPException as exc:
+                        warnings.append(f"压缩包条目 {member_name} 需要栅格处理但rasterio不可用：{exc.detail}")
+                        continue
+
+                file_size = len(data)
+
+                # Generate unique storage path for each file
+                from uuid import uuid4
+                record_id = uuid4().hex
+                storage_dir = f"/elevation/records/{record_id[:2]}/{record_id[2:4]}"
+                storage_path = join_virtual_path(storage_dir, member_name)
+
+                # Ensure directory exists and write file
+                try:
+                    driver.ensure_directory(storage_dir)
+                    driver.write_file(
+                        storage_path,
+                        content=data,
+                        content_type=mimetypes.guess_type(member_name)[0],
+                    )
+                except Exception as exc:
+                    warnings.append(f"压缩包条目 {member_name} 存储失败: {exc}")
+                    continue
+
+                # Create database record
+                now = utcnow()
+                record = ElevationFileRecord(
+                    id=record_id,
+                    file_name=member_name,
+                    file_path=storage_path,
+                    file_format=file_format,
+                    file_size=file_size,
+                    source=_normalize_str(payload.source),
+                    mount_code=mount_code,
+                    resolution_m=payload.resolution_m,
+                    status="active",
+                    terrain_status=_default_terrain_status_for_format(file_format),
+                    notes=_normalize_str(payload.notes),
+                    create_date=now,
+                    create_user=actor.id,
+                    update_date=now,
+                    update_user=actor.id,
+                )
+                db.add(record)
+                created_records.append(record)
+
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"ZIP 文件损坏：{exc}"
+        ) from exc
+
+    if not created_records:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ZIP 文件中没有找到有效的高程数据文件"
+        )
+
+    db.commit()
+
+    # Publish events and trigger analysis for each record
+    for record in created_records:
+        _publish_elevation_change(
+            "elevation.file_record.created",
+            {"action": "file_record_created", "file_record_id": record.id},
+        )
+
+        if payload.trigger_analysis:
+            try:
+                from ..tasks.elevation_tasks import analyze_elevation_file_record_job
+                task = analyze_elevation_file_record_job.delay(record.id, actor.id)
+                record.analysis_task_id = str(task.id)
+                record.analysis_status = "queued"
+                record.update_date = utcnow()
+            except Exception as exc:
+                warnings.append(f"文件 {record.file_name} 自动分析任务派发失败：{exc}")
+
+    db.commit()
+
+    # Return summary of first record (for consistency with existing API)
+    first_record = get_file_record_by_id(db, created_records[0].id)
+    if not first_record:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="文件记录创建失败"
+        )
+
+    detail = f"ZIP 文件已解压：成功创建 {len(created_records)} 个文件记录"
+    if warnings:
+        detail += f"，{len(warnings)} 个警告"
+
+    return ElevationFileRecordUploadResponse(
+        record=serialize_file_record(first_record),
+        queued=payload.trigger_analysis,
+        detail=detail,
         warnings=warnings,
     )
 

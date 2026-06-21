@@ -943,7 +943,7 @@ export default function ElevationRecordsPage() {
       >
         <Alert
           message="上传即创建"
-          description="选择文件后立即上传并创建记录，自动触发分析任务。支持 CSV、IMG、TIF、TIFF 格式。"
+          description="选择文件后立即上传并创建记录，自动触发分析任务。支持 CSV、IMG、TIF、TIFF 格式，也支持 ZIP 压缩包（自动解压）。"
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
@@ -956,7 +956,7 @@ export default function ElevationRecordsPage() {
           <Form.Item
             label="文件"
             required
-            help="支持 .csv, .img, .tif, .tiff 格式"
+            help="支持 .csv, .img, .tif, .tiff, .zip 格式"
           >
             <Upload
               fileList={fileList}
@@ -966,7 +966,7 @@ export default function ElevationRecordsPage() {
               }}
               onRemove={() => setFileList([])}
               maxCount={1}
-              accept=".csv,.img,.tif,.tiff"
+              accept=".csv,.img,.tif,.tiff,.zip"
             >
               <Button icon={<UploadOutlined />}>选择文件</Button>
             </Upload>
