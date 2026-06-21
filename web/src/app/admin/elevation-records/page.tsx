@@ -281,7 +281,11 @@ export default function ElevationRecordsPage() {
       if (fileList.length === 0) {
         throw new Error("请选择文件");
       }
-      formData.append("file", fileList[0].originFileObj as Blob);
+      const file = fileList[0].originFileObj || fileList[0];
+      if (!file || !(file instanceof File || file instanceof Blob)) {
+        throw new Error("无效的文件对象");
+      }
+      formData.append("file", file);
       if (values.source?.trim()) formData.append("source", values.source.trim());
       if (values.resolution_m) formData.append("resolution_m", values.resolution_m.toString());
       if (values.notes?.trim()) formData.append("notes", values.notes.trim());
