@@ -150,6 +150,11 @@ export function ElevationPreviewCesiumMap({
         viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0f172a");
         // Enable lighting to enhance terrain visibility with shadows
         viewer.scene.globe.enableLighting = true;
+        // Increase lighting intensity for better terrain shadow contrast
+        viewer.scene.light = new Cesium.DirectionalLight({
+          direction: new Cesium.Cartesian3(0.2, 0.5, -0.8),
+          intensity: 2.0,
+        });
         viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#020617");
         viewer.scene.screenSpaceCameraController.enableCollisionDetection = true;
         const creditContainer = viewer.cesiumWidget.creditContainer as HTMLElement | null;
@@ -214,8 +219,9 @@ export function ElevationPreviewCesiumMap({
       }
 
       setTerrainError("");
-      // Increase vertical exaggeration to make terrain relief more visible
-      viewer.scene.verticalExaggeration = 2.0;
+      // Significantly increase vertical exaggeration for SRTM data (90m resolution)
+      // SRTM data often has subtle elevation changes that need strong exaggeration
+      viewer.scene.verticalExaggeration = 5.0;
       viewer.scene.verticalExaggerationRelativeHeight = 0.0;
 
       // Remove all existing imagery layers first
@@ -445,7 +451,9 @@ export function ElevationPreviewCesiumMap({
       const boundingSphere = Cesium.BoundingSphere.fromPoints(positions);
       void viewer.camera.flyToBoundingSphere(boundingSphere, {
         duration: 0.8,
-        offset: new Cesium.HeadingPitchRange(0, -0.6, Math.max(1200, boundingSphere.radius * 2.4)),
+        // Use steeper pitch angle (-1.0) to better show terrain relief
+        // Closer distance (2.0x instead of 2.4x) to see more detail
+        offset: new Cesium.HeadingPitchRange(0, -1.0, Math.max(1200, boundingSphere.radius * 2.0)),
       });
     }
   }, [altitudeRange.max, altitudeRange.min, dataset, ready, safeCells, safePoints, terrainError, terrainRenderState]);
@@ -467,7 +475,7 @@ export function ElevationPreviewCesiumMap({
   return (
     <div className="space-y-2">
       <div className="text-xs text-slate-500">
-        颜色由蓝到红表示高程由低到高；地形瓦片就绪时优先加载真实三维地形，失败时自动回退到现有色带/点位预览。
+        颜色由蓝到红表示高程由低到高；地形瓦片就绪时优先加载真实三维地形（垂直夸张5倍以增强可见性），失败时自动回退到现有色带/点位预览。
       </div>
       {terrainError ? (
         <Alert
