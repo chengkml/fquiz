@@ -327,11 +327,59 @@ export function ElevationPreviewCesiumMap({
       }
     }
 
+    // When terrain is ready but no overlay is drawn, add sample reference points for visibility
+    if (!shouldDrawFallbackOverlay && (safeCells.length > 0 || safePoints.length > 0)) {
+      const referencePoints = safeCells.length > 0
+        ? safeCells.slice(0, 10).map(cell => ({
+            lon: (cell.min_longitude + cell.max_longitude) / 2,
+            lat: (cell.min_latitude + cell.max_latitude) / 2,
+            alt: cell.altitude_m,
+          }))
+        : safePoints.slice(0, 10);
+
+      for (let index = 0; index < referencePoints.length; index += 1) {
+        const point = referencePoints[index];
+        const lon = 'lon' in point ? point.lon : point.longitude;
+        const lat = 'lat' in point ? point.lat : point.latitude;
+        const alt = 'alt' in point ? point.alt : point.altitude_m;
+        const position = Cesium.Cartesian3.fromDegrees(lon, lat, alt);
+        positions.push(position);
+
+        viewer.entities.add({
+          id: `elevation-reference-${index}`,
+          position,
+          point: {
+            pixelSize: 8,
+            color: Cesium.Color.YELLOW.withAlpha(0.8),
+            outlineColor: Cesium.Color.WHITE,
+            outlineWidth: 2,
+          },
+          description: `
+            <div style="line-height:1.7;">
+              <div><strong>参考点</strong></div>
+              <div><strong>经度：</strong>${lon.toFixed(6)}</div>
+              <div><strong>纬度：</strong>${lat.toFixed(6)}</div>
+              <div><strong>高程(m)：</strong>${alt.toFixed(2)}</div>
+            </div>
+          `,
+        });
+      }
+    }
+
     const terrainBounds = dataset?.terrain_bounds;
     if (terrainBounds) {
       const centerLon = (terrainBounds.west + terrainBounds.east) / 2;
       const centerLat = (terrainBounds.south + terrainBounds.north) / 2;
-      positions.push(Cesium.Cartesian3.fromDegrees(centerLon, centerLat, 0));
+      // Use average altitude from preview data for better camera positioning
+      const avgAltitude = altitudeRange.min && altitudeRange.max
+        ? (altitudeRange.min + altitudeRange.max) / 2
+        : 0;
+      positions.push(Cesium.Cartesian3.fromDegrees(centerLon, centerLat, avgAltitude));
+
+      // Add corner positions for better bounding sphere calculation
+      positions.push(Cesium.Cartesian3.fromDegrees(terrainBounds.west, terrainBounds.south, avgAltitude));
+      positions.push(Cesium.Cartesian3.fromDegrees(terrainBounds.east, terrainBounds.north, avgAltitude));
+
       viewer.entities.add({
         id: "elevation-dataset-bounds",
         rectangle: {
