@@ -282,9 +282,9 @@ export default function ElevationRecordsPage() {
         throw new Error("请选择文件");
       }
       formData.append("file", fileList[0].originFileObj as Blob);
-      if (values.source) formData.append("source", values.source);
+      if (values.source?.trim()) formData.append("source", values.source.trim());
       if (values.resolution_m) formData.append("resolution_m", values.resolution_m.toString());
-      if (values.notes) formData.append("notes", values.notes);
+      if (values.notes?.trim()) formData.append("notes", values.notes.trim());
       formData.append("trigger_analysis", "true");
 
       const response = await fetchWithAuth("/api/v1/elevation/records", {
