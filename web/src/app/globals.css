@@ -403,6 +403,22 @@ body {
   overflow-y: auto;
 }
 
+.admin-ai-chat-page-card {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.admin-ai-chat-page-card > .ant-card-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 .admin-atp-models-page-card {
   display: flex;
   flex: 1;
