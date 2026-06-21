@@ -19,6 +19,7 @@ import {
   Table,
   Tag,
   Tree,
+  Typography,
   type CardProps,
 } from "antd";
 import {
@@ -43,6 +44,7 @@ import type {
   DocumentListResponse,
   DocumentUpdateRequest,
 } from "@/types/document";
+import Link from "next/link";
 
 const { TextArea } = Input;
 const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
@@ -67,7 +69,7 @@ const DOCUMENTS_TABLE_VIEWPORT_GAP = 40;
 const DOCUMENTS_TABLE_FALLBACK_RESERVE = 220;
 
 export default function AdminDocumentsPage() {
-  const { user, fetchWithAuth, hasPermission } = useAuth();
+  const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const isMobile = useMobileDetection();
 
@@ -83,12 +85,22 @@ export default function AdminDocumentsPage() {
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const pageCardRef = useRef<HTMLDivElement | null>(null);
   const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(null);
+  const [keywordInput, setKeywordInput] = useState("");
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"draft" | "published" | undefined>(undefined);
+  const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
+  const viewMode: "table" | "card" = isMobile ? "card" : "table";
+  const [cardViewPage, setCardViewPage] = useState(1);
+  const [allLoadedDocuments, setAllLoadedDocuments] = useState<Document[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   const [chapterForm] = Form.useForm<ChapterFormValues>();
   const [documentForm] = Form.useForm<DocumentFormValues>();
 
   const canManage = hasPermission("document.manage") || true;
   const canRead = hasPermission("document.read") || true;
+  const { current: paginationCurrent, pageSize: paginationPageSize } = pagination;
 
   const { data: treeData, isLoading: treeLoading } = useQuery({
     queryKey: ["/api/v1/documents/chapters/tree"],
@@ -100,14 +112,22 @@ export default function AdminDocumentsPage() {
     enabled: !!user && canRead,
   });
 
+  const trimmedKeyword = searchKeyword.trim();
   const documentsQueryParams = useMemo(() => {
     const params = new URLSearchParams();
+    params.set("limit", String(paginationPageSize));
+    params.set("offset", String((paginationCurrent - 1) * paginationPageSize));
     if (selectedChapterId !== null) {
       params.set("chapter_id", String(selectedChapterId));
     }
-    params.set("limit", "200");
+    if (trimmedKeyword) {
+      params.set("keyword", trimmedKeyword);
+    }
+    if (statusFilter) {
+      params.set("status", statusFilter);
+    }
     return params.toString();
-  }, [selectedChapterId]);
+  }, [paginationCurrent, paginationPageSize, selectedChapterId, trimmedKeyword, statusFilter]);
 
   const documentsPath = `/api/v1/documents?${documentsQueryParams}`;
 
@@ -344,6 +364,21 @@ export default function AdminDocumentsPage() {
     }
   }, [documentForm, editingDocumentId, updateDocumentMutation, createDocumentMutation]);
 
+  const handleKeywordChange = (value: string) => {
+    setKeywordInput(value);
+
+    if (keywordDebounceTimeoutRef.current) {
+      clearTimeout(keywordDebounceTimeoutRef.current);
+    }
+
+    keywordDebounceTimeoutRef.current = setTimeout(() => {
+      setSearchKeyword(value);
+      setPagination((prev) => ({ ...prev, current: 1 }));
+      setCardViewPage(1);
+      setAllLoadedDocuments([]);
+    }, 500);
+  };
+
   const convertToTreeData = (chapters: DocumentChapterTreeItem[]): DataNode[] => {
     return chapters.map((chapter) => ({
       key: `chapter-${chapter.id}`,
@@ -411,6 +446,66 @@ export default function AdminDocumentsPage() {
     setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
   }, []);
 
+  // Update allLoadedDocuments when documents data changes in card view
+  useEffect(() => {
+    if (viewMode !== "card" || documentsLoading) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      if (cardViewPage === 1) {
+        setAllLoadedDocuments(() => documents);
+      } else {
+        setAllLoadedDocuments((prev) => {
+          if (documents.length === 0) {
+            return prev;
+          }
+          const existingIds = new Set(prev.map(d => d.id));
+          const newDocs = documents.filter(d => !existingIds.has(d.id));
+          return [...prev, ...newDocs];
+        });
+      }
+      setIsLoadingMore(false);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [documents, documentsLoading, viewMode, cardViewPage]);
+
+  // Handle infinite scroll for card view
+  useEffect(() => {
+    if (viewMode !== "card") return;
+
+    const pageCard = pageCardRef.current;
+    if (!pageCard) return;
+
+    const cardBody = pageCard.querySelector<HTMLElement>(".ant-card-body");
+    if (!cardBody) return;
+
+    const handleScroll = () => {
+      if (isLoadingMore || documentsLoading) return;
+
+      const scrollTop = cardBody.scrollTop;
+      const scrollHeight = cardBody.scrollHeight;
+      const clientHeight = cardBody.clientHeight;
+
+      if (scrollTop + clientHeight >= scrollHeight - 100) {
+        const total = documentsData?.total ?? 0;
+        const loadedCount = allLoadedDocuments.length;
+
+        if (loadedCount < total) {
+          setIsLoadingMore(true);
+          setCardViewPage((prev) => prev + 1);
+          setPagination((prev) => ({ ...prev, current: prev.current + 1 }));
+        }
+      }
+    };
+
+    cardBody.addEventListener("scroll", handleScroll);
+    return () => cardBody.removeEventListener("scroll", handleScroll);
+  }, [viewMode, isLoadingMore, documentsLoading, documentsData?.total, allLoadedDocuments.length]);
+
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -452,6 +547,14 @@ export default function AdminDocumentsPage() {
       resizeObserver.disconnect();
     };
   }, [updateTableScrollY]);
+
+  useEffect(() => {
+    return () => {
+      if (keywordDebounceTimeoutRef.current) {
+        clearTimeout(keywordDebounceTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const columns: ColumnsType<Document> = useMemo(() => [
     {
@@ -512,14 +615,108 @@ export default function AdminDocumentsPage() {
     },
   ], [canManage, handleEditDocument, deleteDocumentMutation, deletingDocumentId]);
 
-  if (!user || !canRead) {
+  const renderDocumentCard = (doc: Document) => {
+    const deleteLoading = deletingDocumentId === doc.id;
+    const rowBusy = deleteLoading;
+
+    return (
+      <AntCard
+        key={doc.id}
+        className="admin-documents-document-card"
+        size="small"
+        title={
+          <Space className="min-w-0" size={8}>
+            <Typography.Text strong ellipsis={{ tooltip: doc.title }}>
+              {doc.title}
+            </Typography.Text>
+            <Tag color={doc.status === "published" ? "green" : "orange"}>
+              {doc.status === "published" ? "已发布" : "草稿"}
+            </Tag>
+          </Space>
+        }
+        extra={
+          <Space size={4}>
+            <Button
+              type="text"
+              size="small"
+              disabled={rowBusy || !canManage}
+              onClick={() => handleEditDocument(doc)}
+            >
+              编辑
+            </Button>
+            <Popconfirm
+              title={`确认删除文档 ${doc.title}？`}
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true, loading: deleteLoading }}
+              onConfirm={() => deleteDocumentMutation.mutate(doc.id)}
+              disabled={rowBusy || !canManage}
+            >
+              <Button
+                type="text"
+                size="small"
+                danger
+                disabled={rowBusy || !canManage}
+                loading={deleteLoading}
+              >
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        }
+      >
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <div className="admin-documents-document-card-field">
+            <Typography.Text type="secondary">排序</Typography.Text>
+            <Typography.Text>{doc.sort_order}</Typography.Text>
+          </div>
+          {doc.content && (
+            <div className="admin-documents-document-card-field">
+              <Typography.Text type="secondary">内容</Typography.Text>
+              <Typography.Text ellipsis={{ tooltip: doc.content }}>
+                {doc.content.substring(0, 100)}
+                {doc.content.length > 100 && "..."}
+              </Typography.Text>
+            </div>
+          )}
+        </Space>
+      </AntCard>
+    );
+  };
+
+  if (initializing) {
     return (
       <div className="flex min-h-[240px] items-center justify-center">
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="未找到符合筛选条件的文档。"
-        />
+        <Spin tip="初始化中..." />
       </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
+        <p className="text-sm text-[var(--gray-11)]">请先登录后再访问文档管理页面。</p>
+        <Link
+          href="/"
+          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
+        >
+          返回首页
+        </Link>
+      </main>
+    );
+  }
+
+  if (!canRead) {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col justify-center gap-4 px-6 py-20">
+        <p className="text-sm text-[var(--gray-11)]">你没有访问该页面的权限（需要 `document.read`）。</p>
+        <Link
+          href="/"
+          className="inline-flex w-fit items-center justify-center rounded-md border border-[var(--gray-6)] bg-[var(--gray-a2)] px-4 py-2 text-sm font-medium text-[var(--gray-12)] transition hover:bg-[var(--gray-a3)]"
+        >
+          返回首页
+        </Link>
+      </main>
     );
   }
 
@@ -592,36 +789,122 @@ export default function AdminDocumentsPage() {
               )
             }
           >
-            <div
-              ref={tableScrollAnchorRef}
-              className="admin-documents-table-anchor"
-              style={{ "--admin-documents-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
-            >
-              <Table<Document>
-                rowKey="id"
-                dataSource={documents}
-                columns={columns}
-                loading={documentsLoading}
-                tableLayout="fixed"
-                pagination={{
-                  pageSize: 20,
-                  showSizeChanger: true,
-                  pageSizeOptions: [10, 20, 50, 100],
-                  showTotal: (total) => `共 ${total} 条`,
-                  hideOnSinglePage: false,
-                  style: { marginBottom: 0 },
-                }}
-                scroll={{ y: tableScrollY }}
-                locale={{
-                  emptyText: (
+            {viewMode === "card" ? (
+              <Form layout="vertical" style={{ marginBottom: 16 }}>
+                <Form.Item style={{ marginBottom: 0 }}>
+                  <Input
+                    allowClear
+                    placeholder="按标题/内容搜索"
+                    value={keywordInput}
+                    onChange={(event) => handleKeywordChange(event.target.value)}
+                  />
+                </Form.Item>
+              </Form>
+            ) : (
+              <Form layout="inline" style={{ rowGap: 12, marginBottom: 16 }}>
+                <Form.Item label="关键词" style={{ width: 260 }}>
+                  <Input
+                    allowClear
+                    placeholder="按标题/内容搜索"
+                    value={keywordInput}
+                    onChange={(event) => handleKeywordChange(event.target.value)}
+                  />
+                </Form.Item>
+
+                <Form.Item label="状态" style={{ width: 170 }}>
+                  <Select<"draft" | "published">
+                    value={statusFilter}
+                    allowClear
+                    placeholder="全部"
+                    options={[
+                      { value: "draft", label: "草稿" },
+                      { value: "published", label: "已发布" },
+                    ]}
+                    onChange={(value) => {
+                      setStatusFilter(value);
+                      setPagination((prev) => ({ ...prev, current: 1 }));
+                      setCardViewPage(1);
+                      setAllLoadedDocuments([]);
+                    }}
+                  />
+                </Form.Item>
+              </Form>
+            )}
+
+            {viewMode === "table" ? (
+              <div
+                ref={tableScrollAnchorRef}
+                className="admin-documents-table-anchor"
+                style={{ "--admin-documents-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+              >
+                <Table<Document>
+                  rowKey="id"
+                  dataSource={documents}
+                  columns={columns}
+                  loading={documentsLoading}
+                  tableLayout="fixed"
+                  pagination={{
+                    current: pagination.current,
+                    pageSize: pagination.pageSize,
+                    total: Math.max(documentsData?.total ?? 0, 1),
+                    showSizeChanger: true,
+                    pageSizeOptions: [10, 20, 50, 100],
+                    showTotal: () => `共 ${documentsData?.total ?? 0} 条`,
+                    hideOnSinglePage: false,
+                    style: { marginBottom: 0 },
+                    onChange: (page, pageSize) => {
+                      setPagination({ current: page, pageSize });
+                    },
+                  }}
+                  scroll={{ y: tableScrollY }}
+                  locale={{
+                    emptyText: (
+                      <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description="未找到符合筛选条件的文档。"
+                      />
+                    ),
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="admin-documents-card-view">
+                {documentsLoading && allLoadedDocuments.length === 0 ? (
+                  <div className="admin-documents-card-view-state">
+                    <Spin tip="加载中..." />
+                  </div>
+                ) : allLoadedDocuments.length === 0 ? (
+                  <div className="admin-documents-card-view-state">
                     <Empty
                       image={Empty.PRESENTED_IMAGE_SIMPLE}
                       description="未找到符合筛选条件的文档。"
                     />
-                  ),
-                }}
-              />
-            </div>
+                  </div>
+                ) : (
+                  <div className="admin-documents-card-view-content">
+                    <Row gutter={[12, 12]}>
+                      {allLoadedDocuments.map((doc) => (
+                        <Col key={doc.id} xs={24} sm={24} md={12} lg={8} xl={6}>
+                          {renderDocumentCard(doc)}
+                        </Col>
+                      ))}
+                    </Row>
+                    {isLoadingMore && (
+                      <div style={{ textAlign: "center", padding: "20px 0" }}>
+                        <Spin tip="加载更多..." />
+                      </div>
+                    )}
+                    {allLoadedDocuments.length >= (documentsData?.total ?? 0) && allLoadedDocuments.length > 0 && (
+                      <div style={{ textAlign: "center", padding: "20px 0" }}>
+                        <Typography.Text type="secondary">
+                          已加载全部 {allLoadedDocuments.length} 条数据
+                        </Typography.Text>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </AntCard>
         </Col>
       </Row>
