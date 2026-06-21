@@ -404,6 +404,7 @@ export default function AiChatPage() {
                       />
                       <Button
                         type="primary"
+                        size="small"
                         icon={<SendOutlined />}
                         loading={sendMessageMutation.isPending}
                         onClick={handleSendMessage}
