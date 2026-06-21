@@ -203,6 +203,7 @@ export function ElevationPreviewCesiumMap({
 
   useEffect(() => {
     let cancelled = false;
+    let addedImageryLayer: import("cesium").ImageryLayer | null = null;
 
     async function updateTerrain() {
       const viewer = viewerRef.current;
@@ -214,6 +215,9 @@ export function ElevationPreviewCesiumMap({
       setTerrainError("");
       viewer.scene.verticalExaggeration = 1.0;
       viewer.scene.verticalExaggerationRelativeHeight = 0.0;
+
+      // Remove all existing imagery layers first
+      viewer.imageryLayers.removeAll();
 
       if (terrainRenderState !== "ready" || !dataset) {
         viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
@@ -240,13 +244,14 @@ export function ElevationPreviewCesiumMap({
 
         // Add a solid color imagery layer to make terrain geometry visible
         // Without imagery, terrain is just geometry without surface color
+        // Use a light gray color to show terrain relief clearly
         const imageryProvider = new Cesium.SingleTileImageryProvider({
-          url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+          url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIB6rRJfwAAAABJRU5ErkJggg==',
           rectangle: Cesium.Rectangle.fromDegrees(-180, -90, 180, 90),
           tileWidth: 256,
           tileHeight: 256,
         });
-        viewer.imageryLayers.addImageryProvider(imageryProvider);
+        addedImageryLayer = viewer.imageryLayers.addImageryProvider(imageryProvider);
       } catch (candidate) {
         if (!cancelled) {
           viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
@@ -259,6 +264,10 @@ export function ElevationPreviewCesiumMap({
     void updateTerrain();
     return () => {
       cancelled = true;
+      const viewer = viewerRef.current;
+      if (viewer && addedImageryLayer && !viewer.isDestroyed()) {
+        viewer.imageryLayers.remove(addedImageryLayer, false);
+      }
     };
   }, [accessToken, dataset, ready, terrainRenderState]);
 
