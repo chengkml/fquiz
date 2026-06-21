@@ -731,7 +731,7 @@ def preview_file_record(
                 self.file_path = record.file_path
                 self.resolution_m = record.resolution_m
                 self.status = record.status
-                self.usage_status = "active"
+                self.usage_status = "idle"
                 self.sample_count = record.sample_count
                 self.bbox_min_lon = record.bbox_min_lon
                 self.bbox_max_lon = record.bbox_max_lon
