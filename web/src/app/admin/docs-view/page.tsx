@@ -3,30 +3,33 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   Card,
+  Drawer,
   Empty,
-  Layout,
   Menu,
   Spin,
   Typography,
-  theme,
+  Button,
   type CardProps,
 } from "antd";
 import {
   FolderOutlined,
   FileTextOutlined,
+  MenuOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from "@ant-design/icons";
-import { useCallback, useState, type ComponentType, type RefAttributes } from "react";
+import { useCallback, useEffect, useState, type ComponentType, type RefAttributes } from "react";
 import type { MenuProps } from "antd";
 import ReactMarkdown from "react-markdown";
 
 import { useAuth } from "@/components/auth-provider";
+import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { readApiError } from "@/lib/api";
 import type {
   Document,
   DocumentChapterTreeItem,
 } from "@/types/document";
 
-const { Content, Sider } = Layout;
 const { Title, Paragraph } = Typography;
 const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
@@ -34,9 +37,10 @@ type MenuItem = Required<MenuProps>["items"][number];
 
 export default function DocsViewPage() {
   const { user, fetchWithAuth, hasPermission } = useAuth();
-  const { token } = theme.useToken();
+  const isMobile = useMobileDetection();
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
+  const [siderCollapsed, setSiderCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const canRead = hasPermission("document.read") || true;
 
@@ -95,6 +99,7 @@ export default function DocsViewPage() {
     if (e.key.startsWith("doc-")) {
       const docId = parseInt(e.key.replace("doc-", ""), 10);
       setSelectedDocumentId(docId);
+      setMobileMenuOpen(false);
     }
   }, []);
 
@@ -120,117 +125,143 @@ export default function DocsViewPage() {
     }
   }, [treeData, selectedDocumentId]);
 
-  useState(() => {
+  useEffect(() => {
     selectFirstDocument();
-  });
+  }, [selectFirstDocument]);
 
   if (!user || !canRead) {
     return (
-      <Layout style={{ minHeight: "calc(100vh - 64px)" }}>
-        <Content style={{ padding: "24px" }}>
-          <Empty description="暂无权限访问" />
-        </Content>
-      </Layout>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <AntCard className="admin-docs-view-page-card" title="操作文档">
+          <div className="flex items-center justify-center" style={{ minHeight: 300 }}>
+            <Empty description="暂无权限访问" />
+          </div>
+        </AntCard>
+      </div>
     );
   }
 
-  return (
-    <Layout style={{ minHeight: "calc(100vh - 64px)" }}>
-      <Sider
-        collapsible
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        width={280}
-        style={{
-          background: token.colorBgContainer,
-          borderRight: `1px solid ${token.colorBorderSecondary}`,
-        }}
-      >
-        <div style={{ padding: "16px", borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
-          <Title level={4} style={{ margin: 0 }}>
-            {!collapsed && "操作文档"}
-          </Title>
+  const menuContent = (
+    <>
+      <div className="admin-docs-view-sider-header">
+        {!siderCollapsed && <Title level={4} style={{ margin: 0 }}>操作文档</Title>}
+      </div>
+      {treeLoading ? (
+        <div style={{ padding: "24px", textAlign: "center" }}>
+          <Spin />
         </div>
-        {treeLoading ? (
-          <div style={{ padding: "24px", textAlign: "center" }}>
-            <Spin />
-          </div>
-        ) : treeData && treeData.length > 0 ? (
+      ) : treeData && treeData.length > 0 ? (
+        <div className="admin-docs-view-sider-menu">
           <Menu
             mode="inline"
             items={convertToMenuItems(treeData)}
             onClick={handleMenuClick}
             selectedKeys={selectedDocumentId ? [`doc-${selectedDocumentId}`] : []}
-            style={{ borderRight: 0 }}
+            style={{ borderRight: 0, background: "transparent" }}
+            inlineCollapsed={siderCollapsed && !isMobile}
           />
-        ) : (
-          <div style={{ padding: "24px" }}>
-            <Empty description="暂无文档" />
-          </div>
-        )}
-      </Sider>
-      <Layout>
-        <Content style={{ padding: "24px", background: token.colorBgContainer }}>
-          {documentLoading ? (
-            <div style={{ textAlign: "center", padding: "48px" }}>
-              <Spin size="large" />
-            </div>
-          ) : selectedDocument ? (
-            <AntCard>
-              <Title level={2}>{selectedDocument.title}</Title>
-              <div
-                style={{
-                  marginTop: "24px",
-                  lineHeight: "1.8",
-                  fontSize: "15px",
-                }}
-              >
-                <ReactMarkdown
-                  components={{
-                    h1: ({ children }) => <Title level={2}>{children}</Title>,
-                    h2: ({ children }) => <Title level={3}>{children}</Title>,
-                    h3: ({ children }) => <Title level={4}>{children}</Title>,
-                    h4: ({ children }) => <Title level={5}>{children}</Title>,
-                    p: ({ children }) => <Paragraph>{children}</Paragraph>,
-                    code: ({ children, className }) => {
-                      const isBlock = className?.includes("language-");
-                      return isBlock ? (
-                        <pre
-                          style={{
-                            background: token.colorBgLayout,
-                            padding: "12px",
-                            borderRadius: "4px",
-                            overflow: "auto",
-                          }}
-                        >
-                          <code>{children}</code>
-                        </pre>
-                      ) : (
-                        <code
-                          style={{
-                            background: token.colorBgLayout,
-                            padding: "2px 6px",
-                            borderRadius: "3px",
-                            fontFamily: "monospace",
-                          }}
-                        >
-                          {children}
-                        </code>
-                      );
-                    },
-                  }}
-                >
-                  {selectedDocument.content}
-                </ReactMarkdown>
-              </div>
-            </AntCard>
-          ) : (
-            <div style={{ textAlign: "center", padding: "48px" }}>
-              <Empty description="请从左侧目录选择要查看的文档" />
+        </div>
+      ) : (
+        <div style={{ padding: "24px" }}>
+          <Empty description="暂无文档" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        </div>
+      )}
+      {!isMobile && (
+        <div className="admin-docs-view-sider-footer">
+          <Button
+            aria-label={siderCollapsed ? "展开菜单" : "收起菜单"}
+            icon={siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            type="text"
+            onClick={() => setSiderCollapsed((prev) => !prev)}
+          />
+        </div>
+      )}
+    </>
+  );
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <AntCard
+        className="admin-docs-view-page-card"
+        title="操作文档"
+        extra={
+          isMobile ? (
+            <Button
+              icon={<MenuOutlined />}
+              onClick={() => setMobileMenuOpen(true)}
+            >
+              目录
+            </Button>
+          ) : null
+        }
+      >
+        <div className="admin-docs-view-layout">
+          {!isMobile && (
+            <div className={`admin-docs-view-sider${siderCollapsed ? " collapsed" : ""}`}>
+              {menuContent}
             </div>
           )}
-        </Content>
-      </Layout>
-    </Layout>
+
+          <div className="admin-docs-view-content">
+            {documentLoading ? (
+              <div className="flex items-center justify-center" style={{ minHeight: 300 }}>
+                <div className="flex flex-col items-center gap-3">
+                  <Spin size="large" />
+                  <Typography.Text type="secondary">加载文档中...</Typography.Text>
+                </div>
+              </div>
+            ) : selectedDocument ? (
+              <AntCard className="admin-docs-view-document-card">
+                <Title level={2}>{selectedDocument.title}</Title>
+                <div className="admin-docs-view-markdown-content">
+                  <ReactMarkdown
+                    components={{
+                      h1: ({ children }) => <Title level={2}>{children}</Title>,
+                      h2: ({ children }) => <Title level={3}>{children}</Title>,
+                      h3: ({ children }) => <Title level={4}>{children}</Title>,
+                      h4: ({ children }) => <Title level={5}>{children}</Title>,
+                      p: ({ children }) => <Paragraph>{children}</Paragraph>,
+                      code: ({ children, className }) => {
+                        const isBlock = className?.includes("language-");
+                        return isBlock ? (
+                          <pre><code>{children}</code></pre>
+                        ) : (
+                          <code>{children}</code>
+                        );
+                      },
+                    }}
+                  >
+                    {selectedDocument.content}
+                  </ReactMarkdown>
+                </div>
+              </AntCard>
+            ) : (
+              <div className="flex items-center justify-center" style={{ minHeight: 300 }}>
+                <Empty
+                  description="请从左侧目录选择要查看的文档"
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </AntCard>
+
+      <Drawer
+        title="文档目录"
+        placement="left"
+        open={isMobile && mobileMenuOpen}
+        width={280}
+        onClose={() => setMobileMenuOpen(false)}
+      >
+        <Menu
+          mode="inline"
+          items={convertToMenuItems(treeData || [])}
+          onClick={handleMenuClick}
+          selectedKeys={selectedDocumentId ? [`doc-${selectedDocumentId}`] : []}
+          style={{ borderRight: 0 }}
+        />
+      </Drawer>
+    </div>
   );
 }
