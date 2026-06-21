@@ -148,6 +148,7 @@ export function ElevationPreviewCesiumMap({
         viewer.scene.globe.depthTestAgainstTerrain = false;
         viewer.scene.globe.showGroundAtmosphere = false;
         viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0f172a");
+        viewer.scene.globe.enableLighting = false;
         viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#020617");
         viewer.scene.screenSpaceCameraController.enableCollisionDetection = true;
         const creditContainer = viewer.cesiumWidget.creditContainer as HTMLElement | null;
@@ -235,7 +236,15 @@ export function ElevationPreviewCesiumMap({
           return;
         }
         viewer.terrainProvider = terrainProvider;
-        viewer.scene.globe.depthTestAgainstTerrain = true;
+        viewer.scene.globe.depthTestAgainstTerrain = false;
+
+        // Add a solid color imagery layer to make terrain geometry visible
+        // Without imagery, terrain is just geometry without surface color
+        const imageryProvider = new Cesium.SingleTileImageryProvider({
+          url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+          rectangle: Cesium.Rectangle.fromDegrees(-180, -90, 180, 90),
+        });
+        viewer.imageryLayers.addImageryProvider(imageryProvider);
       } catch (candidate) {
         if (!cancelled) {
           viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
