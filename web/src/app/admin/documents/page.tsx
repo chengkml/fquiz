@@ -2,7 +2,6 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  App,
   Button,
   Card,
   Col,
@@ -20,22 +19,19 @@ import {
   Table,
   Tag,
   Tree,
-  Typography,
   type CardProps,
 } from "antd";
 import {
-  EditOutlined,
-  DeleteOutlined,
   PlusOutlined,
   FolderOutlined,
-  FileTextOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type RefAttributes } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType, type RefAttributes } from "react";
 import type { DataNode } from "antd/es/tree";
 
 import { useAuth } from "@/components/auth-provider";
 import { useMobileDetection } from "@/hooks/use-mobile-detection";
+import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { readApiError } from "@/lib/api";
 import type {
   Document,
@@ -49,7 +45,6 @@ import type {
 } from "@/types/document";
 
 const { TextArea } = Input;
-const { Title } = Typography;
 const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 type ChapterFormValues = {
@@ -75,11 +70,9 @@ export default function AdminDocumentsPage() {
   const { user, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const isMobile = useMobileDetection();
-  const { message } = App.useApp();
 
-  const showSuccess = (msg: string) => message.success(msg);
-  const showError = (msg: string) => message.error(msg);
-
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [chapterDialogOpen, setChapterDialogOpen] = useState(false);
   const [documentDrawerOpen, setDocumentDrawerOpen] = useState(false);
   const [editingChapterId, setEditingChapterId] = useState<number | null>(null);
@@ -88,6 +81,8 @@ export default function AdminDocumentsPage() {
   const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
   const [tableScrollY, setTableScrollY] = useState(DOCUMENTS_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const pageCardRef = useRef<HTMLDivElement | null>(null);
+  const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(null);
 
   const [chapterForm] = Form.useForm<ChapterFormValues>();
   const [documentForm] = Form.useForm<DocumentFormValues>();
@@ -126,6 +121,8 @@ export default function AdminDocumentsPage() {
     enabled: !!user && canRead,
   });
 
+  const documents = useMemo(() => documentsData?.items ?? [], [documentsData?.items]);
+
   const refreshData = useCallback(async () => {
     await queryClient.invalidateQueries({
       predicate: (query) =>
@@ -147,13 +144,15 @@ export default function AdminDocumentsPage() {
       return response.json();
     },
     onSuccess: () => {
-      showSuccess("章节创建成功");
+      setSuccess("章节创建成功");
+      setError("");
       refreshData();
       setChapterDialogOpen(false);
       chapterForm.resetFields();
     },
-    onError: (error: Error) => {
-      showError(`创建失败: ${error.message}`);
+    onError: (candidate: Error) => {
+      setSuccess("");
+      setError(candidate.message || "创建章节失败");
     },
   });
 
@@ -174,14 +173,16 @@ export default function AdminDocumentsPage() {
       return response.json();
     },
     onSuccess: () => {
-      showSuccess("章节更新成功");
+      setSuccess("章节更新成功");
+      setError("");
       refreshData();
       setChapterDialogOpen(false);
       setEditingChapterId(null);
       chapterForm.resetFields();
     },
-    onError: (error: Error) => {
-      showError(`更新失败: ${error.message}`);
+    onError: (candidate: Error) => {
+      setSuccess("");
+      setError(candidate.message || "更新章节失败");
     },
   });
 
@@ -193,11 +194,13 @@ export default function AdminDocumentsPage() {
       if (!response.ok) throw new Error(await readApiError(response));
     },
     onSuccess: () => {
-      showSuccess("章节删除成功");
+      setSuccess("章节删除成功");
+      setError("");
       refreshData();
     },
-    onError: (error: Error) => {
-      showError(`删除失败: ${error.message}`);
+    onError: (candidate: Error) => {
+      setSuccess("");
+      setError(candidate.message || "删除章节失败");
     },
   });
 
@@ -212,13 +215,15 @@ export default function AdminDocumentsPage() {
       return response.json();
     },
     onSuccess: () => {
-      showSuccess("文档创建成功");
+      setSuccess("文档创建成功");
+      setError("");
       refreshData();
       setDocumentDrawerOpen(false);
       documentForm.resetFields();
     },
-    onError: (error: Error) => {
-      showError(`创建失败: ${error.message}`);
+    onError: (candidate: Error) => {
+      setSuccess("");
+      setError(candidate.message || "创建文档失败");
     },
   });
 
@@ -239,14 +244,16 @@ export default function AdminDocumentsPage() {
       return response.json();
     },
     onSuccess: () => {
-      showSuccess("文档更新成功");
+      setSuccess("文档更新成功");
+      setError("");
       refreshData();
       setDocumentDrawerOpen(false);
       setEditingDocumentId(null);
       documentForm.resetFields();
     },
-    onError: (error: Error) => {
-      showError(`更新失败: ${error.message}`);
+    onError: (candidate: Error) => {
+      setSuccess("");
+      setError(candidate.message || "更新文档失败");
     },
   });
 
@@ -257,13 +264,20 @@ export default function AdminDocumentsPage() {
       });
       if (!response.ok) throw new Error(await readApiError(response));
     },
+    onMutate: (id) => {
+      setDeletingDocumentId(id);
+      setError("");
+      setSuccess("");
+    },
     onSuccess: () => {
-      showSuccess("文档删除成功");
+      setSuccess("文档删除成功");
       refreshData();
     },
-    onError: (error: Error) => {
-      showError(`删除失败: ${error.message}`);
+    onError: (candidate: Error) => {
+      setSuccess("");
+      setError(candidate.message || "删除文档失败");
     },
+    onSettled: () => setDeletingDocumentId(null),
   });
 
   const handleCreateChapter = useCallback(() => {
@@ -292,7 +306,7 @@ export default function AdminDocumentsPage() {
         createChapterMutation.mutate(values);
       }
     } catch (error) {
-      console.error("Form validation failed:", error);
+      // Form validation errors are already shown
     }
   }, [chapterForm, editingChapterId, updateChapterMutation, createChapterMutation]);
 
@@ -326,11 +340,11 @@ export default function AdminDocumentsPage() {
         createDocumentMutation.mutate(values);
       }
     } catch (error) {
-      console.error("Form validation failed:", error);
+      // Form validation errors are already shown
     }
   }, [documentForm, editingDocumentId, updateDocumentMutation, createDocumentMutation]);
 
-  const convertToTreeData = useCallback((chapters: DocumentChapterTreeItem[]): DataNode[] => {
+  const convertToTreeData = (chapters: DocumentChapterTreeItem[]): DataNode[] => {
     return chapters.map((chapter) => ({
       key: `chapter-${chapter.id}`,
       title: (
@@ -344,59 +358,7 @@ export default function AdminDocumentsPage() {
       ),
       children: chapter.children ? convertToTreeData(chapter.children) : [],
     }));
-  }, []);
-
-  const columns: ColumnsType<Document> = useMemo(() => [
-    {
-      title: "标题",
-      dataIndex: "title",
-      key: "title",
-    },
-    {
-      title: "状态",
-      dataIndex: "status",
-      key: "status",
-      width: 100,
-      render: (status: string) => (
-        <Tag color={status === "published" ? "green" : "orange"}>
-          {status === "published" ? "已发布" : "草稿"}
-        </Tag>
-      ),
-    },
-    {
-      title: "排序",
-      dataIndex: "sort_order",
-      key: "sort_order",
-      width: 80,
-    },
-    {
-      title: "操作",
-      key: "action",
-      width: 150,
-      render: (_, record) => (
-        <Space>
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => handleEditDocument(record)}
-            disabled={!canManage}
-          >
-            编辑
-          </Button>
-          <Popconfirm
-            title="确认删除？"
-            onConfirm={() => deleteDocumentMutation.mutate(record.id)}
-            disabled={!canManage}
-          >
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} disabled={!canManage}>
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ], [canManage, handleEditDocument, deleteDocumentMutation]);
+  };
 
   const flattenChapters = useCallback((chapters: DocumentChapterTreeItem[]): DocumentChapter[] => {
     const result: DocumentChapter[] = [];
@@ -412,34 +374,158 @@ export default function AdminDocumentsPage() {
     return result;
   }, []);
 
+  const queryError =
+    (documentsData && "error" in documentsData ? String(documentsData) : "");
+  const anyError = error || queryError;
+
+  useToastFeedback({
+    errorMessage: anyError,
+    successMessage: success,
+    clearError: () => setError(""),
+    clearSuccess: () => setSuccess(""),
+  });
+
+  const updateTableScrollY = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - DOCUMENTS_TABLE_FALLBACK_RESERVE);
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? DOCUMENTS_TABLE_MIN_SCROLL_Y;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - DOCUMENTS_TABLE_VIEWPORT_GAP);
+    }
+
+    const clampedHeight = Math.max(DOCUMENTS_TABLE_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, []);
+
   useEffect(() => {
-    const updateScrollY = () => {
-      if (!tableScrollAnchorRef.current) {
-        setTableScrollY(DOCUMENTS_TABLE_MIN_SCROLL_Y);
-        return;
-      }
-      const rect = tableScrollAnchorRef.current.getBoundingClientRect();
-      const availableHeight = window.innerHeight - rect.top - DOCUMENTS_TABLE_VIEWPORT_GAP;
-      const computedY = Math.max(availableHeight, DOCUMENTS_TABLE_MIN_SCROLL_Y);
-      setTableScrollY(computedY);
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.requestAnimationFrame(updateTableScrollY);
+  }, [anyError, documents.length, documentsLoading, updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updateTableScrollY);
     };
 
-    updateScrollY();
-    window.addEventListener("resize", updateScrollY);
-    return () => window.removeEventListener("resize", updateScrollY);
-  }, []);
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateTableScrollY);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTableScrollY]);
+
+  const columns: ColumnsType<Document> = useMemo(() => [
+    {
+      title: "标题",
+      dataIndex: "title",
+      width: 200,
+    },
+    {
+      title: "状态",
+      dataIndex: "status",
+      width: 100,
+      align: "center",
+      render: (status: string) => (
+        <Tag color={status === "published" ? "green" : "orange"}>
+          {status === "published" ? "已发布" : "草稿"}
+        </Tag>
+      ),
+    },
+    {
+      title: "排序",
+      dataIndex: "sort_order",
+      width: 80,
+      align: "center",
+    },
+    {
+      title: "操作",
+      key: "actions",
+      width: 180,
+      render: (_value, record) => {
+        const deleteLoading = deletingDocumentId === record.id;
+        const rowBusy = deleteLoading;
+
+        return (
+          <Space wrap>
+            <Button
+              size="small"
+              disabled={rowBusy || !canManage}
+              onClick={() => handleEditDocument(record)}
+            >
+              编辑
+            </Button>
+
+            <Popconfirm
+              title={`确认删除文档 ${record.title}？`}
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true, loading: deleteLoading }}
+              onConfirm={() => deleteDocumentMutation.mutate(record.id)}
+              disabled={rowBusy || !canManage}
+            >
+              <Button danger size="small" loading={deleteLoading} disabled={rowBusy || !canManage}>
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        );
+      },
+    },
+  ], [canManage, handleEditDocument, deleteDocumentMutation, deletingDocumentId]);
 
   if (!user || !canRead) {
     return (
-      <div style={{ padding: "24px" }}>
-        <Empty description="暂无权限访问" />
+      <div className="flex min-h-[240px] items-center justify-center">
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description="未找到符合筛选条件的文档。"
+        />
       </div>
     );
   }
 
   return (
-    <div style={{ padding: "24px" }}>
-      <Row gutter={16}>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <Row gutter={16} style={{ flex: 1, minHeight: 0 }}>
         <Col span={6}>
           <AntCard
             title="章节目录"
@@ -455,7 +541,8 @@ export default function AdminDocumentsPage() {
                 </Button>
               )
             }
-            style={{ height: "calc(100vh - 140px)", overflow: "auto" }}
+            style={{ height: "100%", display: "flex", flexDirection: "column" }}
+            bodyStyle={{ flex: 1, overflow: "auto" }}
           >
             {treeLoading ? (
               <div style={{ textAlign: "center", padding: "24px" }}>
@@ -481,12 +568,17 @@ export default function AdminDocumentsPage() {
                 }}
               />
             ) : (
-              <Empty description="暂无章节" />
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="未找到符合筛选条件的章节。"
+              />
             )}
           </AntCard>
         </Col>
         <Col span={18}>
           <AntCard
+            ref={pageCardRef}
+            className="admin-documents-page-card"
             title={selectedChapterId ? "章节文档" : "全部文档"}
             extra={
               canManage && (
@@ -500,14 +592,34 @@ export default function AdminDocumentsPage() {
               )
             }
           >
-            <div ref={tableScrollAnchorRef}>
-              <Table
-                dataSource={documentsData?.items || []}
-                columns={columns}
+            <div
+              ref={tableScrollAnchorRef}
+              className="admin-documents-table-anchor"
+              style={{ "--admin-documents-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+            >
+              <Table<Document>
                 rowKey="id"
+                dataSource={documents}
+                columns={columns}
                 loading={documentsLoading}
-                pagination={{ pageSize: 20 }}
+                tableLayout="fixed"
+                pagination={{
+                  pageSize: 20,
+                  showSizeChanger: true,
+                  pageSizeOptions: [10, 20, 50, 100],
+                  showTotal: (total) => `共 ${total} 条`,
+                  hideOnSinglePage: false,
+                  style: { marginBottom: 0 },
+                }}
                 scroll={{ y: tableScrollY }}
+                locale={{
+                  emptyText: (
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description="未找到符合筛选条件的文档。"
+                    />
+                  ),
+                }}
               />
             </div>
           </AntCard>
@@ -523,6 +635,8 @@ export default function AdminDocumentsPage() {
           setEditingChapterId(null);
           chapterForm.resetFields();
         }}
+        okText="保存"
+        cancelText="取消"
         confirmLoading={
           createChapterMutation.isPending || updateChapterMutation.isPending
         }

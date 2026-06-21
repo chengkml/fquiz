@@ -561,6 +561,26 @@ body {
   padding-top: 12px;
 }
 
+.admin-documents-page-card {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.admin-documents-page-card > .ant-card-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.admin-documents-table-anchor .ant-table-body {
+  min-height: var(--admin-documents-table-body-min-height, 180px);
+}
+
 .admin-menus-card-view {
   display: flex;
   min-height: 0;
