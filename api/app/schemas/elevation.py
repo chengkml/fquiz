@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 ElevationDatasetStatus = Literal["active", "disabled"]
@@ -62,12 +62,26 @@ class ElevationFileRecordCreateRequest(BaseModel):
     notes: str | None = Field(default=None, max_length=2000)
     trigger_analysis: bool = Field(default=True)
 
+    @field_validator("source", "mount_code", "notes", mode="before")
+    @classmethod
+    def empty_str_to_none(cls, v: Any) -> Any:
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
+
 
 class ElevationFileRecordUpdateRequest(BaseModel):
     source: str | None = Field(default=None, max_length=512)
     resolution_m: float | None = Field(default=None, gt=0)
     status: ElevationDatasetStatus | None = None
     notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("source", "notes", mode="before")
+    @classmethod
+    def empty_str_to_none(cls, v: Any) -> Any:
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
 
 
 class ElevationFileRecordAnalyzeResponse(BaseModel):
@@ -165,6 +179,13 @@ class ElevationDatasetCreateRequest(BaseModel):
     resolution_m: float | None = Field(default=None, gt=0)
     notes: str | None = Field(default=None, max_length=2000)
 
+    @field_validator("source", "mount_code", "file_name", "notes", mode="before")
+    @classmethod
+    def empty_str_to_none(cls, v: Any) -> Any:
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
+
 
 class ElevationDatasetUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=255)
@@ -172,6 +193,13 @@ class ElevationDatasetUpdateRequest(BaseModel):
     resolution_m: float | None = Field(default=None, gt=0)
     status: ElevationDatasetStatus | None = None
     notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("name", "source", "notes", mode="before")
+    @classmethod
+    def empty_str_to_none(cls, v: Any) -> Any:
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
 
 
 class ElevationDatasetAnalyzeResponse(BaseModel):
