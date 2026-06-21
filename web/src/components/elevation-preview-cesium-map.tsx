@@ -148,7 +148,8 @@ export function ElevationPreviewCesiumMap({
         viewer.scene.globe.depthTestAgainstTerrain = false;
         viewer.scene.globe.showGroundAtmosphere = false;
         viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#0f172a");
-        viewer.scene.globe.enableLighting = false;
+        // Enable lighting to enhance terrain visibility with shadows
+        viewer.scene.globe.enableLighting = true;
         viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#020617");
         viewer.scene.screenSpaceCameraController.enableCollisionDetection = true;
         const creditContainer = viewer.cesiumWidget.creditContainer as HTMLElement | null;
@@ -213,7 +214,8 @@ export function ElevationPreviewCesiumMap({
       }
 
       setTerrainError("");
-      viewer.scene.verticalExaggeration = 1.0;
+      // Increase vertical exaggeration to make terrain relief more visible
+      viewer.scene.verticalExaggeration = 2.0;
       viewer.scene.verticalExaggerationRelativeHeight = 0.0;
 
       // Remove all existing imagery layers first
@@ -244,14 +246,30 @@ export function ElevationPreviewCesiumMap({
 
         // Add a solid color imagery layer to make terrain geometry visible
         // Without imagery, terrain is just geometry without surface color
-        // Use a light gray color to show terrain relief clearly
+        // Use a brighter beige/tan color to clearly show terrain relief
+        // Create a canvas with a solid color instead of using base64 PNG
+        const canvas = document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          // Use a light beige/tan color (#d4c4a8) for better terrain visibility
+          ctx.fillStyle = '#d4c4a8';
+          ctx.fillRect(0, 0, 1, 1);
+        }
         const imageryProvider = new Cesium.SingleTileImageryProvider({
-          url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIB6rRJfwAAAABJRU5ErkJggg==',
+          url: canvas.toDataURL(),
           rectangle: Cesium.Rectangle.fromDegrees(-180, -90, 180, 90),
           tileWidth: 256,
           tileHeight: 256,
         });
         addedImageryLayer = viewer.imageryLayers.addImageryProvider(imageryProvider);
+
+        // Ensure the imagery layer is fully opaque
+        if (addedImageryLayer) {
+          addedImageryLayer.alpha = 1.0;
+          addedImageryLayer.brightness = 1.0;
+        }
       } catch (candidate) {
         if (!cancelled) {
           viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
