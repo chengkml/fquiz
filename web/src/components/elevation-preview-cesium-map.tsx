@@ -243,6 +243,8 @@ export function ElevationPreviewCesiumMap({
         const imageryProvider = new Cesium.SingleTileImageryProvider({
           url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
           rectangle: Cesium.Rectangle.fromDegrees(-180, -90, 180, 90),
+          tileWidth: 256,
+          tileHeight: 256,
         });
         viewer.imageryLayers.addImageryProvider(imageryProvider);
       } catch (candidate) {
