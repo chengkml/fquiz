@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
+  Card,
+  Col,
   Descriptions,
   Dropdown,
   Empty,
@@ -12,23 +14,25 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
+  Row,
   Space,
   Table,
   Tag,
   Tooltip as AntTooltip,
   Typography,
+  type CardProps,
   type MenuProps,
 } from "antd";
-import { MoreOutlined, QuestionCircleOutlined } from "@ant-design/icons";
+import { MoreOutlined, QuestionCircleOutlined, EditOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType, type RefAttributes } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 import { useAuth } from "@/components/auth-provider";
 import { AdminPageLoading } from "@/components/admin-page-loading";
-import { Card } from "@/components/ui-antd";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
+import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { readApiError } from "@/lib/api";
 import type {
   LightningCurrentEventListResponse,
@@ -39,7 +43,8 @@ import type {
   LightningCurrentSampleItem,
   LightningPolarity,
 } from "@/types/auth";
-import type { CSSProperties } from "react";
+
+const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 type ImportFormValues = {
   sample_interval_us: number;
@@ -87,9 +92,12 @@ const LIGHTNING_TABLE_FALLBACK_RESERVE = 220;
 export default function AdminLightningCurrentsPage() {
   const { user, initializing, hasPermission, fetchWithAuth } = useAuth();
   const queryClient = useQueryClient();
+  const isMobile = useMobileDetection();
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [importForm] = Form.useForm<ImportFormValues>();
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const pageCardRef = useRef<HTMLDivElement | null>(null);
+  const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -103,20 +111,26 @@ export default function AdminLightningCurrentsPage() {
   const [samplePageSize, setSamplePageSize] = useState(50);
   const [keywordInput, setKeywordInput] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
+  const viewMode: "table" | "card" = isMobile ? "card" : "table";
+  const [cardViewPage, setCardViewPage] = useState(1);
+  const [allLoadedEvents, setAllLoadedEvents] = useState<LightningCurrentEventSummary[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   const canRead = hasPermission("lightning.read") || hasPermission("lightning.manage");
   const canManage = hasPermission("lightning.manage");
+  const { current: paginationCurrent, pageSize: paginationPageSize } = pagination;
 
   const trimmedKeyword = searchKeyword.trim();
   const eventListParams = useMemo(() => {
     const params = new URLSearchParams();
-    params.set("limit", "200");
-    params.set("offset", "0");
+    params.set("limit", String(paginationPageSize));
+    params.set("offset", String((paginationCurrent - 1) * paginationPageSize));
     if (trimmedKeyword) {
       params.set("keyword", trimmedKeyword);
     }
     return params.toString();
-  }, [trimmedKeyword]);
+  }, [paginationCurrent, paginationPageSize, trimmedKeyword]);
   const eventListPath = `/api/v1/lightning-currents?${eventListParams}`;
 
   const eventsQuery = useQuery({
@@ -230,6 +244,72 @@ export default function AdminLightningCurrentsPage() {
     }
     window.requestAnimationFrame(updateTableScrollY);
   }, [error, listError, sampleError, statsError, events.length, eventsQuery.isFetching, updateTableScrollY]);
+
+  useEffect(() => {
+    return () => {
+      if (keywordDebounceTimeoutRef.current) {
+        clearTimeout(keywordDebounceTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (viewMode !== "card" || eventsQuery.isLoading) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      if (cardViewPage === 1) {
+        setAllLoadedEvents(() => events);
+      } else {
+        setAllLoadedEvents((prev) => {
+          if (events.length === 0) {
+            return prev;
+          }
+          const existingIds = new Set(prev.map(e => e.id));
+          const newEvents = events.filter(e => !existingIds.has(e.id));
+          return [...prev, ...newEvents];
+        });
+      }
+      setIsLoadingMore(false);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [events, eventsQuery.isLoading, viewMode, cardViewPage]);
+
+  useEffect(() => {
+    if (viewMode !== "card") return;
+
+    const pageCard = pageCardRef.current;
+    if (!pageCard) return;
+
+    const cardBody = pageCard.querySelector<HTMLElement>(".ant-card-body");
+    if (!cardBody) return;
+
+    const handleScroll = () => {
+      if (isLoadingMore || eventsQuery.isLoading) return;
+
+      const scrollTop = cardBody.scrollTop;
+      const scrollHeight = cardBody.scrollHeight;
+      const clientHeight = cardBody.clientHeight;
+
+      if (scrollTop + clientHeight >= scrollHeight - 100) {
+        const total = eventsQuery.data?.total ?? 0;
+        const loadedCount = allLoadedEvents.length;
+
+        if (loadedCount < total) {
+          setIsLoadingMore(true);
+          setCardViewPage((prev) => prev + 1);
+          setPagination((prev) => ({ ...prev, current: prev.current + 1 }));
+        }
+      }
+    };
+
+    cardBody.addEventListener("scroll", handleScroll);
+    return () => cardBody.removeEventListener("scroll", handleScroll);
+  }, [viewMode, isLoadingMore, eventsQuery.isLoading, eventsQuery.data?.total, allLoadedEvents.length]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -346,13 +426,103 @@ export default function AdminLightningCurrentsPage() {
     setSampleModalOpen(true);
   };
 
-  const handleSearch = () => {
-    setSearchKeyword(keywordInput);
+  const handleKeywordChange = (value: string) => {
+    setKeywordInput(value);
+
+    if (keywordDebounceTimeoutRef.current) {
+      clearTimeout(keywordDebounceTimeoutRef.current);
+    }
+
+    keywordDebounceTimeoutRef.current = setTimeout(() => {
+      setSearchKeyword(value);
+      setPagination((prev) => ({ ...prev, current: 1 }));
+      setCardViewPage(1);
+      setAllLoadedEvents([]);
+    }, 500);
   };
 
-  const handleResetSearch = () => {
-    setKeywordInput("");
-    setSearchKeyword("");
+  const renderLightningEventCard = (event: LightningCurrentEventSummary) => {
+    const moreMenuItems: MenuProps["items"] = [
+      {
+        key: "sample",
+        label: "采样预览",
+        onClick: () => openSampleModal(event),
+      },
+      {
+        type: "divider",
+      },
+      {
+        key: "delete",
+        label: "删除",
+        danger: true,
+        disabled: !canManage,
+        onClick: () => {
+          Modal.confirm({
+            title: "删除事件",
+            content: `确认删除事件 ${event.event_id} 吗？`,
+            okText: "删除",
+            cancelText: "取消",
+            okButtonProps: { danger: true },
+            onOk: async () => {
+              await deleteMutation.mutateAsync(event.id);
+            },
+          });
+        },
+      },
+    ];
+
+    return (
+      <AntCard
+        key={event.id}
+        className="admin-lightning-events-card"
+        size="small"
+        title={
+          <Space className="min-w-0" size={8}>
+            <Typography.Text strong ellipsis>
+              {event.source_file_name || "-"}
+            </Typography.Text>
+          </Space>
+        }
+        extra={
+          <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+            <Button type="text" size="small" icon={<MoreOutlined />} />
+          </Dropdown>
+        }
+      >
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <div className="admin-lightning-events-card-field">
+            <Typography.Text type="secondary">城市</Typography.Text>
+            <Typography.Text>{event.city || "-"}</Typography.Text>
+          </div>
+          <div className="admin-lightning-events-card-field">
+            <Typography.Text type="secondary">安装位置</Typography.Text>
+            <Typography.Text>{event.install_position || "-"}</Typography.Text>
+          </div>
+          <div className="admin-lightning-events-card-field">
+            <Typography.Text type="secondary">传感器型号</Typography.Text>
+            <Typography.Text>{event.sensor_model || "-"}</Typography.Text>
+          </div>
+          <div className="admin-lightning-events-card-field">
+            <Typography.Text type="secondary">采样点数</Typography.Text>
+            <Typography.Text>{event.sample_count}</Typography.Text>
+          </div>
+          <Space wrap style={{ width: "100%", justifyContent: "flex-start" }}>
+            <Button
+              size="small"
+              onClick={() => openExceedanceModal(event)}
+            >
+              峰值超越概率
+            </Button>
+            <Button
+              size="small"
+              onClick={() => openDetailModal(event)}
+            >
+              事件详情
+            </Button>
+          </Space>
+        </Space>
+      </AntCard>
+    );
   };
 
   const eventColumns = useMemo<ColumnsType<LightningCurrentEventSummary>>(
@@ -511,8 +681,10 @@ export default function AdminLightningCurrentsPage() {
   }));
 
   return (
-    <Space direction="vertical" size={16} className="w-full h-full">
-      <Card
+    <div className="flex min-h-0 flex-1 flex-col">
+      <AntCard
+        ref={pageCardRef}
+        className="admin-lightning-currents-page-card"
         title="雷电流幅值统计"
         extra={
           canManage && (
@@ -522,43 +694,96 @@ export default function AdminLightningCurrentsPage() {
           )
         }
       >
-        <Form layout="inline" style={{ rowGap: 12, marginBottom: 16 }}>
-          <Form.Item label="文件名关键词" className="min-w-[240px]">
-            <Input
-              allowClear
-              placeholder="按文件名搜索"
-              value={keywordInput}
-              onChange={(event) => setKeywordInput(event.target.value)}
-              onPressEnter={handleSearch}
+        {viewMode === "card" ? (
+          <Form layout="vertical" style={{ marginBottom: 16 }}>
+            <Form.Item style={{ marginBottom: 0 }}>
+              <Input
+                allowClear
+                placeholder="按文件名搜索"
+                value={keywordInput}
+                onChange={(event) => handleKeywordChange(event.target.value)}
+              />
+            </Form.Item>
+          </Form>
+        ) : (
+          <Form layout="inline" style={{ rowGap: 12, marginBottom: 16 }}>
+            <Form.Item label="关键词" style={{ width: 260 }}>
+              <Input
+                allowClear
+                placeholder="按文件名搜索"
+                value={keywordInput}
+                onChange={(event) => handleKeywordChange(event.target.value)}
+              />
+            </Form.Item>
+          </Form>
+        )}
+
+        {viewMode === "table" ? (
+          <div
+            ref={tableScrollAnchorRef}
+            className="lightning-table-anchor"
+            style={{ "--lightning-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+          >
+            <Table<LightningCurrentEventSummary>
+              rowKey={(row) => row.id}
+              columns={eventColumns}
+              dataSource={events}
+              loading={eventsQuery.isFetching}
+              tableLayout="fixed"
+              pagination={{
+                current: pagination.current,
+                pageSize: pagination.pageSize,
+                total: eventsQuery.data?.total ?? 0,
+                showSizeChanger: true,
+                pageSizeOptions: [10, 20, 50, 100],
+                showTotal: (total) => `共 ${total} 条`,
+                hideOnSinglePage: false,
+                onChange: (page, pageSize) => {
+                  setPagination({ current: page, pageSize });
+                },
+              }}
+              scroll={{ x: 1200, y: tableScrollY }}
             />
-          </Form.Item>
-
-          <Form.Item>
-            <Button type="primary" onClick={handleSearch}>
-              搜索
-            </Button>
-          </Form.Item>
-
-          <Form.Item>
-            <Button onClick={handleResetSearch}>重置筛选</Button>
-          </Form.Item>
-        </Form>
-
-        <div
-          ref={tableScrollAnchorRef}
-          className="lightning-table-anchor"
-          style={{ "--lightning-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
-        >
-          <Table<LightningCurrentEventSummary>
-            rowKey={(row) => row.id}
-            columns={eventColumns}
-            dataSource={events}
-            loading={eventsQuery.isFetching}
-            pagination={{ pageSize: 20, showSizeChanger: true, hideOnSinglePage: false, showTotal: (total) => `共 ${total} 条` }}
-            scroll={{ x: 1200, y: tableScrollY }}
-          />
-        </div>
-      </Card>
+          </div>
+        ) : (
+          <div className="admin-lightning-events-card-view">
+            {eventsQuery.isLoading && allLoadedEvents.length === 0 ? (
+              <div className="admin-lightning-events-card-view-state">
+                <AdminPageLoading tip="加载中..." minHeightClassName="min-h-[180px]" />
+              </div>
+            ) : allLoadedEvents.length === 0 ? (
+              <div className="admin-lightning-events-card-view-state">
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="未找到符合筛选条件的事件。"
+                />
+              </div>
+            ) : (
+              <div className="admin-lightning-events-card-view-content">
+                <Row gutter={[12, 12]}>
+                  {allLoadedEvents.map((eventItem) => (
+                    <Col key={eventItem.id} xs={24} sm={24} md={12} lg={8} xl={6}>
+                      {renderLightningEventCard(eventItem)}
+                    </Col>
+                  ))}
+                </Row>
+                {isLoadingMore && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <AdminPageLoading tip="加载更多..." minHeightClassName="min-h-[60px]" />
+                  </div>
+                )}
+                {allLoadedEvents.length >= (eventsQuery.data?.total ?? 0) && allLoadedEvents.length > 0 && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Typography.Text type="secondary">
+                      已加载全部 {allLoadedEvents.length} 条数据
+                    </Typography.Text>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </AntCard>
 
       <Modal
         title="导入雷电流数据"
@@ -941,6 +1166,6 @@ export default function AdminLightningCurrentsPage() {
           )}
         </Space>
       </Modal>
-    </Space>
+    </div>
   );
 }
