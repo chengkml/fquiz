@@ -66,33 +66,36 @@ export default function DocsViewPage() {
   });
 
   const convertToMenuItems = useCallback((chapters: DocumentChapterTreeItem[]): MenuItem[] => {
-    return chapters
-      .filter((chapter) => {
-        const hasPublishedDocs = chapter.documents?.some((doc) => doc.status === "published");
-        const hasPublishedChildren = chapter.children?.some((child) =>
-          child.documents?.some((doc) => doc.status === "published")
-        );
-        return hasPublishedDocs || hasPublishedChildren;
-      })
-      .map((chapter) => {
-        const hasChildren = chapter.children && chapter.children.length > 0;
-        const publishedDocs = chapter.documents?.filter((doc) => doc.status === "published") || [];
+    const convert = (chapters: DocumentChapterTreeItem[]): MenuItem[] => {
+      return chapters
+        .filter((chapter) => {
+          const hasPublishedDocs = chapter.documents?.some((doc) => doc.status === "published");
+          const hasPublishedChildren = chapter.children?.some((child) =>
+            child.documents?.some((doc) => doc.status === "published")
+          );
+          return hasPublishedDocs || hasPublishedChildren;
+        })
+        .map((chapter) => {
+          const hasChildren = chapter.children && chapter.children.length > 0;
+          const publishedDocs = chapter.documents?.filter((doc) => doc.status === "published") || [];
 
-        const docItems: MenuItem[] = publishedDocs.map((doc) => ({
-          key: `doc-${doc.id}`,
-          icon: <FileTextOutlined />,
-          label: doc.title,
-        }));
+          const docItems: MenuItem[] = publishedDocs.map((doc) => ({
+            key: `doc-${doc.id}`,
+            icon: <FileTextOutlined />,
+            label: doc.title,
+          }));
 
-        const childItems = hasChildren ? convertToMenuItems(chapter.children) : [];
+          const childItems = hasChildren ? convert(chapter.children) : [];
 
-        return {
-          key: `chapter-${chapter.id}`,
-          icon: <FolderOutlined />,
-          label: chapter.name,
-          children: [...docItems, ...childItems],
-        };
-      });
+          return {
+            key: `chapter-${chapter.id}`,
+            icon: <FolderOutlined />,
+            label: chapter.name,
+            children: [...docItems, ...childItems],
+          };
+        });
+    };
+    return convert(chapters);
   }, []);
 
   const handleMenuClick: MenuProps["onClick"] = useCallback((e) => {
@@ -144,10 +147,14 @@ export default function DocsViewPage() {
   const menuContent = (
     <>
       <div className="admin-docs-view-sider-header">
-        {!siderCollapsed && <Title level={4} style={{ margin: 0 }}>操作文档</Title>}
+        {!siderCollapsed && (
+          <Title level={4} style={{ margin: 0, fontSize: '16px', fontWeight: 600 }}>
+            操作文档
+          </Title>
+        )}
       </div>
       {treeLoading ? (
-        <div style={{ padding: "24px", textAlign: "center" }}>
+        <div className="admin-docs-view-sider-loading">
           <Spin />
         </div>
       ) : treeData && treeData.length > 0 ? (
@@ -162,7 +169,7 @@ export default function DocsViewPage() {
           />
         </div>
       ) : (
-        <div style={{ padding: "24px" }}>
+        <div className="admin-docs-view-sider-empty">
           <Empty description="暂无文档" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         </div>
       )}
@@ -204,31 +211,82 @@ export default function DocsViewPage() {
 
           <div className="admin-docs-view-content">
             {documentLoading ? (
-              <div className="flex items-center justify-center" style={{ minHeight: 300 }}>
-                <div className="flex flex-col items-center gap-3">
-                  <Spin size="large" />
-                  <Typography.Text type="secondary">加载文档中...</Typography.Text>
-                </div>
+              <div className="admin-docs-view-loading">
+                <Spin size="large" />
+                <Typography.Text type="secondary">加载文档中...</Typography.Text>
               </div>
             ) : selectedDocument ? (
-              <AntCard className="admin-docs-view-document-card">
-                <Title level={2}>{selectedDocument.title}</Title>
+              <AntCard className="admin-docs-view-document-card" bordered={false}>
+                <div className="admin-docs-view-document-header">
+                  <Title level={2} style={{ marginBottom: 8 }}>
+                    {selectedDocument.title}
+                  </Title>
+                </div>
                 <div className="admin-docs-view-markdown-content">
                   <ReactMarkdown
                     components={{
-                      h1: ({ children }) => <Title level={2}>{children}</Title>,
-                      h2: ({ children }) => <Title level={3}>{children}</Title>,
-                      h3: ({ children }) => <Title level={4}>{children}</Title>,
-                      h4: ({ children }) => <Title level={5}>{children}</Title>,
-                      p: ({ children }) => <Paragraph>{children}</Paragraph>,
+                      h1: ({ children }) => (
+                        <Title level={2} style={{ marginTop: 32, marginBottom: 16 }}>
+                          {children}
+                        </Title>
+                      ),
+                      h2: ({ children }) => (
+                        <Title level={3} style={{ marginTop: 28, marginBottom: 14 }}>
+                          {children}
+                        </Title>
+                      ),
+                      h3: ({ children }) => (
+                        <Title level={4} style={{ marginTop: 24, marginBottom: 12 }}>
+                          {children}
+                        </Title>
+                      ),
+                      h4: ({ children }) => (
+                        <Title level={5} style={{ marginTop: 20, marginBottom: 10 }}>
+                          {children}
+                        </Title>
+                      ),
+                      p: ({ children }) => (
+                        <Paragraph style={{ marginBottom: 16 }}>
+                          {children}
+                        </Paragraph>
+                      ),
+                      ul: ({ children }) => (
+                        <ul style={{ marginBottom: 16, paddingLeft: 24 }}>
+                          {children}
+                        </ul>
+                      ),
+                      ol: ({ children }) => (
+                        <ol style={{ marginBottom: 16, paddingLeft: 24 }}>
+                          {children}
+                        </ol>
+                      ),
+                      li: ({ children }) => (
+                        <li style={{ marginBottom: 8 }}>
+                          {children}
+                        </li>
+                      ),
+                      blockquote: ({ children }) => (
+                        <blockquote className="admin-docs-view-blockquote">
+                          {children}
+                        </blockquote>
+                      ),
                       code: ({ children, className }) => {
                         const isBlock = className?.includes("language-");
                         return isBlock ? (
-                          <pre><code>{children}</code></pre>
+                          <pre className="admin-docs-view-code-block">
+                            <code>{children}</code>
+                          </pre>
                         ) : (
-                          <code>{children}</code>
+                          <code className="admin-docs-view-inline-code">{children}</code>
                         );
                       },
+                      table: ({ children }) => (
+                        <div className="admin-docs-view-table-wrapper">
+                          <table className="admin-docs-view-table">
+                            {children}
+                          </table>
+                        </div>
+                      ),
                     }}
                   >
                     {selectedDocument.content}
@@ -236,7 +294,7 @@ export default function DocsViewPage() {
                 </div>
               </AntCard>
             ) : (
-              <div className="flex items-center justify-center" style={{ minHeight: 300 }}>
+              <div className="admin-docs-view-empty">
                 <Empty
                   description="请从左侧目录选择要查看的文档"
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
