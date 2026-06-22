@@ -202,21 +202,28 @@ export default function AiChatPage() {
           </Button>
         }
       >
-        <Row gutter={[16, 16]}>
-          <Col xs={24} md={8}>
+        <Row gutter={[24, 24]} style={{ height: "100%" }}>
+          <Col xs={24} lg={7} xl={6}>
             <AntCard
               title="对话列表"
               size="small"
-              styles={{ body: { padding: 0, maxHeight: 600, overflowY: "auto" } }}
+              styles={{
+                body: {
+                  padding: 0,
+                  maxHeight: "calc(100vh - 280px)",
+                  minHeight: 500,
+                  overflowY: "auto"
+                }
+              }}
             >
               {convLoading ? (
-                <div style={{ textAlign: "center", padding: 40 }}>
+                <div style={{ textAlign: "center", padding: "60px 20px" }}>
                   <Spin />
                 </div>
               ) : conversations?.items.length === 0 ? (
                 <Empty
                   description="暂无对话"
-                  style={{ padding: 40 }}
+                  style={{ padding: "60px 20px" }}
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                 />
               ) : (
@@ -232,7 +239,9 @@ export default function AiChatPage() {
                           selectedConvId === conv.id
                             ? "var(--ant-color-primary-bg)"
                             : "transparent",
-                        padding: "12px 16px",
+                        padding: "16px",
+                        transition: "all 0.2s ease",
+                        borderLeft: selectedConvId === conv.id ? "3px solid var(--ant-color-primary)" : "3px solid transparent",
                       }}
                       actions={[
                         <Popconfirm
@@ -257,10 +266,10 @@ export default function AiChatPage() {
                       ]}
                     >
                       <List.Item.Meta
-                        title={conv.title}
+                        title={<span style={{ fontSize: 14, fontWeight: 500 }}>{conv.title}</span>}
                         description={
-                          <Space size={4}>
-                            <Tag color="blue">{conv.message_count || 0} 条消息</Tag>
+                          <Space size={6}>
+                            <Tag color="blue" style={{ fontSize: 12 }}>{conv.message_count || 0} 条消息</Tag>
                             <Text type="secondary" style={{ fontSize: 12 }}>
                               {new Date(conv.updated_at).toLocaleString("zh-CN", {
                                 month: "numeric",
@@ -279,7 +288,7 @@ export default function AiChatPage() {
             </AntCard>
           </Col>
 
-          <Col xs={24} md={16}>
+          <Col xs={24} lg={17} xl={18}>
             <AntCard
               title={currentConv ? currentConv.title : "AI 对话"}
               size="small"
@@ -288,7 +297,8 @@ export default function AiChatPage() {
                   padding: 0,
                   display: "flex",
                   flexDirection: "column",
-                  height: 600,
+                  height: "calc(100vh - 280px)",
+                  minHeight: 500,
                 },
               }}
             >
@@ -304,7 +314,7 @@ export default function AiChatPage() {
                     style={{
                       flex: 1,
                       overflowY: "auto",
-                      padding: 16,
+                      padding: "20px 16px",
                       background: "var(--ant-color-bg-layout)",
                     }}
                   >
@@ -313,19 +323,20 @@ export default function AiChatPage() {
                         <Spin />
                       </div>
                     ) : (
-                      <Space direction="vertical" style={{ width: "100%" }} size={12}>
+                      <Space direction="vertical" style={{ width: "100%" }} size={16}>
                         {currentConv?.messages?.map((msg) => (
                           <div
                             key={msg.id}
                             style={{
                               display: "flex",
                               justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
+                              gap: 8,
                             }}
                           >
                             <Card
                               size="small"
                               style={{
-                                maxWidth: "80%",
+                                maxWidth: "75%",
                                 background:
                                   msg.role === "user"
                                     ? "var(--ant-color-primary)"
@@ -333,10 +344,19 @@ export default function AiChatPage() {
                                 border:
                                   msg.role === "user"
                                     ? "1px solid var(--ant-color-primary)"
-                                    : undefined,
+                                    : "1px solid var(--ant-color-border)",
+                                borderRadius: 12,
+                                boxShadow: msg.role === "user"
+                                  ? "0 2px 8px rgba(139, 92, 246, 0.15)"
+                                  : "0 2px 8px rgba(0, 0, 0, 0.06)",
+                              }}
+                              styles={{
+                                body: {
+                                  padding: "12px 16px",
+                                }
                               }}
                             >
-                              <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                              <Space direction="vertical" size={6} style={{ width: "100%" }}>
                                 <Text
                                   strong
                                   style={{
@@ -344,6 +364,7 @@ export default function AiChatPage() {
                                       msg.role === "user"
                                         ? "var(--ant-color-white)"
                                         : "var(--ant-color-text)",
+                                    fontSize: 13,
                                   }}
                                 >
                                   {msg.role === "user" ? "我" : "AI 助手"}
@@ -356,6 +377,8 @@ export default function AiChatPage() {
                                       msg.role === "user"
                                         ? "var(--ant-color-white)"
                                         : "var(--ant-color-text)",
+                                    lineHeight: 1.6,
+                                    fontSize: 14,
                                   }}
                                 >
                                   {msg.content}
@@ -366,8 +389,8 @@ export default function AiChatPage() {
                                     fontSize: 12,
                                     color:
                                       msg.role === "user"
-                                        ? "rgba(255, 255, 255, 0.65)"
-                                        : undefined,
+                                        ? "rgba(255, 255, 255, 0.75)"
+                                        : "var(--ant-color-text-secondary)",
                                   }}
                                 >
                                   {new Date(msg.created_at).toLocaleTimeString("zh-CN")}
@@ -383,12 +406,12 @@ export default function AiChatPage() {
 
                   <div
                     style={{
-                      padding: 16,
+                      padding: "16px 20px",
                       borderTop: "1px solid var(--ant-color-border)",
                       background: "var(--ant-color-bg-container)",
                     }}
                   >
-                    <Space.Compact style={{ width: "100%" }}>
+                    <Space.Compact style={{ width: "100%", gap: 8 }}>
                       <TextArea
                         value={messageInput}
                         onChange={(e) => setMessageInput(e.target.value)}
@@ -401,14 +424,15 @@ export default function AiChatPage() {
                           }
                         }}
                         disabled={sendMessageMutation.isPending}
+                        style={{ flex: 1 }}
                       />
                       <Button
                         type="primary"
-                        size="small"
                         icon={<SendOutlined />}
                         loading={sendMessageMutation.isPending}
                         onClick={handleSendMessage}
                         disabled={!messageInput.trim()}
+                        style={{ height: "auto", minHeight: 32 }}
                       >
                         发送
                       </Button>
