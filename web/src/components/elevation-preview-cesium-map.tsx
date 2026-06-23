@@ -6,7 +6,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getApiBaseUrl } from "@/lib/api";
 import { withBasePath } from "@/lib/base-path";
 import { reloadOnceOnChunkError } from "@/lib/chunk-error";
-import { getElevationTerrainLayerUrl, getElevationTerrainRenderState } from "@/lib/elevation-terrain";
+import {
+  getElevationTerrainLayerUrl,
+  getElevationTerrainRenderState,
+  shouldDrawElevationGridOverlay,
+  shouldUseElevationTerrainTiles,
+  type ElevationPreviewDisplayMode,
+} from "@/lib/elevation-terrain";
 import type { ElevationDatasetPreviewCell, ElevationDatasetPreviewPoint, ElevationDatasetSummary } from "@/types/auth";
 
 type ElevationPreviewCesiumMapProps = {
@@ -18,6 +24,8 @@ type ElevationPreviewCesiumMapProps = {
   points: ElevationDatasetPreviewPoint[];
   cells?: ElevationDatasetPreviewCell[];
   loading?: boolean;
+  previewMode?: ElevationPreviewDisplayMode;
+  height?: number | string;
 };
 
 type CesiumNamespace = typeof import("cesium");
@@ -59,6 +67,8 @@ export function ElevationPreviewCesiumMap({
   points,
   cells = [],
   loading = false,
+  previewMode = "auto",
+  height = 520,
 }: ElevationPreviewCesiumMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<import("cesium").Viewer | null>(null);
@@ -72,6 +82,28 @@ export function ElevationPreviewCesiumMap({
     () => (dataset ? getElevationTerrainRenderState(dataset) : "fallback"),
     [dataset],
   );
+  const shouldLoadTerrain = useMemo(
+    () => shouldUseElevationTerrainTiles(previewMode, terrainRenderState),
+    [previewMode, terrainRenderState],
+  );
+  const previewHint = useMemo(() => {
+    if (previewMode === "grid") {
+      return "格栅模式固定显示采样格网/点位，颜色由蓝到红表示高程由低到高。";
+    }
+    if (previewMode === "terrain") {
+      return "地形模式加载真实三维瓦片，并保留少量参考点用于定位。";
+    }
+    return "颜色由蓝到红表示高程由低到高；地形瓦片就绪时优先加载真实三维地形，失败时自动回退到现有色带/点位预览。";
+  }, [previewMode]);
+  const terrainErrorMessage = useMemo(() => {
+    if (!terrainError) {
+      return "";
+    }
+    if (previewMode === "terrain") {
+      return `地形瓦片加载失败，已切换到椭球底面参考点：${terrainError}`;
+    }
+    return `地形瓦片加载失败，已回退到抽样预览：${terrainError}`;
+  }, [previewMode, terrainError]);
 
   const safePoints = useMemo(
     () =>
@@ -227,7 +259,7 @@ export function ElevationPreviewCesiumMap({
       // Remove all existing imagery layers first
       viewer.imageryLayers.removeAll();
 
-      if (terrainRenderState !== "ready" || !dataset) {
+      if (!shouldLoadTerrain || !dataset) {
         viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
         viewer.scene.globe.depthTestAgainstTerrain = false;
         return;
@@ -293,7 +325,7 @@ export function ElevationPreviewCesiumMap({
         viewer.imageryLayers.remove(addedImageryLayer, false);
       }
     };
-  }, [accessToken, dataset, ready, terrainRenderState]);
+  }, [accessToken, dataset, ready, shouldLoadTerrain]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -309,8 +341,8 @@ export function ElevationPreviewCesiumMap({
     }
 
     const positions: import("cesium").Cartesian3[] = [];
-    const shouldDrawFallbackOverlay = terrainRenderState !== "ready" || !!terrainError;
-    if (shouldDrawFallbackOverlay && safeCells.length > 0) {
+    const shouldDrawGridOverlay = shouldDrawElevationGridOverlay(previewMode, terrainRenderState, !!terrainError);
+    if (shouldDrawGridOverlay && safeCells.length > 0) {
       for (let index = 0; index < safeCells.length; index += 1) {
         const cell = safeCells[index];
         const centerLon = (cell.min_longitude + cell.max_longitude) / 2;
@@ -343,7 +375,7 @@ export function ElevationPreviewCesiumMap({
           `,
         });
       }
-    } else if (shouldDrawFallbackOverlay) {
+    } else if (shouldDrawGridOverlay) {
       for (let index = 0; index < safePoints.length; index += 1) {
         const point = safePoints[index];
         const position = Cesium.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude_m);
@@ -372,7 +404,7 @@ export function ElevationPreviewCesiumMap({
     }
 
     // When terrain is ready but no overlay is drawn, add sample reference points for visibility
-    if (!shouldDrawFallbackOverlay && (safeCells.length > 0 || safePoints.length > 0)) {
+    if (!shouldDrawGridOverlay && (safeCells.length > 0 || safePoints.length > 0)) {
       const referencePoints = safeCells.length > 0
         ? safeCells.slice(0, 10).map(cell => ({
             lon: (cell.min_longitude + cell.max_longitude) / 2,
@@ -456,7 +488,7 @@ export function ElevationPreviewCesiumMap({
         offset: new Cesium.HeadingPitchRange(0, -1.0, Math.max(1200, boundingSphere.radius * 2.0)),
       });
     }
-  }, [altitudeRange.max, altitudeRange.min, dataset, ready, safeCells, safePoints, terrainError, terrainRenderState]);
+  }, [altitudeRange.max, altitudeRange.min, dataset, previewMode, ready, safeCells, safePoints, terrainError, terrainRenderState]);
 
   if (error) {
     return (
@@ -475,16 +507,27 @@ export function ElevationPreviewCesiumMap({
   return (
     <div className="space-y-2">
       <div className="text-xs text-slate-500">
-        颜色由蓝到红表示高程由低到高；地形瓦片就绪时优先加载真实三维地形（垂直夸张5倍以增强可见性），失败时自动回退到现有色带/点位预览。
+        {previewHint}
       </div>
+      {previewMode === "terrain" && terrainRenderState !== "ready" ? (
+        <Alert
+          type={terrainRenderState === "failed" ? "warning" : "info"}
+          showIcon
+          message={`地形瓦片状态：${terrainRenderState}，暂以椭球底面显示参考点。`}
+        />
+      ) : null}
       {terrainError ? (
         <Alert
           type="warning"
           showIcon
-          message={`地形瓦片加载失败，已回退到抽样预览：${terrainError}`}
+          message={terrainErrorMessage}
         />
       ) : null}
-      <div ref={containerRef} className="h-[520px] w-full overflow-hidden rounded-md border border-slate-200 bg-slate-100" />
+      <div
+        ref={containerRef}
+        className="w-full overflow-hidden rounded-md border border-slate-200 bg-slate-100"
+        style={{ height }}
+      />
       {pointerInfo ? <div className="text-xs text-slate-500">{pointerInfo}</div> : null}
       {loading && (
         <div className="flex items-center gap-2 text-xs text-slate-500">

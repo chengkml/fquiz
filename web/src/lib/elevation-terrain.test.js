@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { countLineTowersOutsideTerrainBounds, getElevationTerrainRenderState } from "./elevation-terrain.ts";
+import {
+  countLineTowersOutsideTerrainBounds,
+  getElevationTerrainRenderState,
+  shouldDrawElevationGridOverlay,
+  shouldUseElevationTerrainTiles,
+} from "./elevation-terrain.ts";
 
 test("getElevationTerrainRenderState reports ready only when terrain url is available", () => {
   assert.equal(
@@ -32,4 +37,17 @@ test("countLineTowersOutsideTerrainBounds ignores towers without coordinates and
 
   assert.equal(countLineTowersOutsideTerrainBounds(towers, bounds), 2);
   assert.equal(countLineTowersOutsideTerrainBounds(towers, null), 0);
+});
+
+test("elevation preview display mode separates grid and terrain rendering", () => {
+  assert.equal(shouldUseElevationTerrainTiles("grid", "ready"), false);
+  assert.equal(shouldUseElevationTerrainTiles("terrain", "ready"), true);
+  assert.equal(shouldUseElevationTerrainTiles("auto", "ready"), true);
+  assert.equal(shouldUseElevationTerrainTiles("terrain", "processing"), false);
+
+  assert.equal(shouldDrawElevationGridOverlay("grid", "ready", false), true);
+  assert.equal(shouldDrawElevationGridOverlay("terrain", "failed", true), false);
+  assert.equal(shouldDrawElevationGridOverlay("auto", "ready", false), false);
+  assert.equal(shouldDrawElevationGridOverlay("auto", "ready", true), true);
+  assert.equal(shouldDrawElevationGridOverlay("auto", "processing", false), true);
 });

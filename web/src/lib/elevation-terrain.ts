@@ -1,6 +1,7 @@
 import type { ElevationDatasetSummary, ElevationTerrainBounds, LineTowerSummary } from "@/types/auth";
 
 export type ElevationTerrainRenderState = "ready" | "processing" | "failed" | "fallback";
+export type ElevationPreviewDisplayMode = "auto" | "grid" | "terrain";
 
 export function getElevationTerrainRenderState(dataset: Pick<
   ElevationDatasetSummary,
@@ -61,4 +62,25 @@ export function getElevationTerrainLayerUrl(dataset: Pick<
     }
   }
   return `/api/v1/elevation/datasets/${dataset.id}/terrain`;
+}
+
+export function shouldUseElevationTerrainTiles(
+  previewMode: ElevationPreviewDisplayMode,
+  terrainRenderState: ElevationTerrainRenderState,
+): boolean {
+  return previewMode !== "grid" && terrainRenderState === "ready";
+}
+
+export function shouldDrawElevationGridOverlay(
+  previewMode: ElevationPreviewDisplayMode,
+  terrainRenderState: ElevationTerrainRenderState,
+  hasTerrainError: boolean,
+): boolean {
+  if (previewMode === "grid") {
+    return true;
+  }
+  if (previewMode === "terrain") {
+    return false;
+  }
+  return terrainRenderState !== "ready" || hasTerrainError;
 }

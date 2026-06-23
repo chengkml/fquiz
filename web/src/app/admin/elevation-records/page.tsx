@@ -1062,21 +1062,52 @@ export default function ElevationRecordsPage() {
               <Descriptions.Item label="格式">{previewData.record?.file_format}</Descriptions.Item>
               <Descriptions.Item label="总点数">{previewData.total_points?.toLocaleString()}</Descriptions.Item>
               <Descriptions.Item label="采样点数">{previewData.sampled_points?.toLocaleString()}</Descriptions.Item>
+              <Descriptions.Item label="预览数据">{previewData.preview_mode === "terrain_grid" ? "格栅" : "点云"}</Descriptions.Item>
+              <Descriptions.Item label="地形状态">{previewData.record?.terrain_status}</Descriptions.Item>
             </Descriptions>
-            <div style={{ height: 600 }}>
-              <ElevationPreviewCesiumMap
-                dataset={{
-                  id: previewData.record.id,
-                  name: previewData.record.file_name,
-                  terrain_status: previewData.record.terrain_status,
-                  terrain_url_template: previewData.record.terrain_url_template,
-                  terrain_bounds: previewData.record.terrain_bounds,
-                  terrain_metadata: previewData.record.terrain_metadata,
-                }}
-                accessToken={getAccessToken()}
-                points={previewData.points}
-                cells={previewData.cells}
-              />
+            <div className="grid gap-4 xl:grid-cols-2">
+              <div className="min-w-0 rounded-md border border-slate-200 p-3">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <Typography.Text strong>格栅预览</Typography.Text>
+                  <Tag color="blue">{previewData.preview_mode === "terrain_grid" ? "格栅数据" : "点位数据"}</Tag>
+                </div>
+                <ElevationPreviewCesiumMap
+                  dataset={{
+                    id: previewData.record.id,
+                    name: previewData.record.file_name,
+                    terrain_status: previewData.record.terrain_status,
+                    terrain_url_template: previewData.record.terrain_url_template,
+                    terrain_bounds: previewData.record.terrain_bounds,
+                    terrain_metadata: previewData.record.terrain_metadata,
+                  }}
+                  accessToken={getAccessToken()}
+                  points={previewData.points}
+                  cells={previewData.cells}
+                  previewMode="grid"
+                  height={430}
+                />
+              </div>
+              <div className="min-w-0 rounded-md border border-slate-200 p-3">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <Typography.Text strong>地形预览</Typography.Text>
+                  <Tag color={statusTagColor(previewData.record.terrain_status)}>{previewData.record.terrain_status}</Tag>
+                </div>
+                <ElevationPreviewCesiumMap
+                  dataset={{
+                    id: previewData.record.id,
+                    name: previewData.record.file_name,
+                    terrain_status: previewData.record.terrain_status,
+                    terrain_url_template: previewData.record.terrain_url_template,
+                    terrain_bounds: previewData.record.terrain_bounds,
+                    terrain_metadata: previewData.record.terrain_metadata,
+                  }}
+                  accessToken={getAccessToken()}
+                  points={previewData.points}
+                  cells={previewData.cells}
+                  previewMode="terrain"
+                  height={430}
+                />
+              </div>
             </div>
           </div>
         )}
