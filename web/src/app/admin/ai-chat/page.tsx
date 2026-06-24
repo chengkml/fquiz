@@ -3,27 +3,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
-  Card,
-  Col,
   Empty,
-  Form,
   Input,
   List,
-  Modal,
   Popconfirm,
-  Row,
   Space,
   Spin,
-  Tag,
   Typography,
-  type CardProps,
 } from "antd";
 import {
   PlusOutlined,
   SendOutlined,
   DeleteOutlined,
 } from "@ant-design/icons";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type RefAttributes } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
@@ -36,7 +29,6 @@ import type {
 
 const { TextArea } = Input;
 const { Text } = Typography;
-const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 type ChatStreamEvent =
   | { type: "message"; message: AiChatMessage }
@@ -49,12 +41,11 @@ export default function AiChatPage() {
 
   const [selectedConvId, setSelectedConvId] = useState<number | null>(null);
   const [messageInput, setMessageInput] = useState("");
-  const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [newConvTitle, setNewConvTitle] = useState("新对话");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [streamingMessageId, setStreamingMessageId] = useState<number | null>(null);
   const [optimisticMessages, setOptimisticMessages] = useState<Record<number, AiChatMessage[]>>({});
+  const [autoCreating, setAutoCreating] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useToastFeedback({
@@ -112,12 +103,12 @@ export default function AiChatPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["ai-chat-conversations"] });
       setSelectedConvId(data.id);
-      setCreateModalOpen(false);
-      setNewConvTitle("新对话");
       setSuccess("创建对话成功");
+      setAutoCreating(false);
     },
     onError: (err: Error) => {
       setError(`创建对话失败: ${err.message}`);
+      setAutoCreating(false);
     },
   });
 
@@ -289,6 +280,21 @@ export default function AiChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentMessages]);
 
+  // Auto-select first conversation when conversations load
+  useEffect(() => {
+    if (!convLoading && conversations?.items && conversations.items.length > 0 && !selectedConvId) {
+      setSelectedConvId(conversations.items[0].id);
+    }
+  }, [convLoading, conversations?.items, selectedConvId]);
+
+  // Auto-create conversation if none exist
+  useEffect(() => {
+    if (!convLoading && conversations?.items && conversations.items.length === 0 && !autoCreating && !createConvMutation.isPending) {
+      setAutoCreating(true);
+      createConvMutation.mutate("新对话");
+    }
+  }, [convLoading, conversations?.items, autoCreating, createConvMutation]);
+
   if (initializing) {
     return (
       <div className="flex min-h-[240px] items-center justify-center">
@@ -298,287 +304,278 @@ export default function AiChatPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <AntCard
-        className="admin-ai-chat-page-card"
-        title="AI 问答助手"
-        extra={
+    <div style={{ display: "flex", height: "calc(100vh - 64px)", overflow: "hidden" }}>
+      {/* Left Sidebar - Conversation List */}
+      <div
+        style={{
+          width: 280,
+          background: "#171717",
+          color: "#ffffff",
+          display: "flex",
+          flexDirection: "column",
+          borderRight: "1px solid #2a2a2a",
+        }}
+      >
+        {/* Header */}
+        <div style={{ padding: "16px", borderBottom: "1px solid #2a2a2a" }}>
+          <Text strong style={{ color: "#ffffff", fontSize: 16 }}>
+            AI 问答助手
+          </Text>
+        </div>
+
+        {/* Conversation List */}
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {convLoading ? (
+            <div style={{ textAlign: "center", padding: "60px 20px" }}>
+              <Spin />
+            </div>
+          ) : conversations?.items.length === 0 ? (
+            <div style={{ padding: "60px 20px", textAlign: "center" }}>
+              <Text style={{ color: "rgba(255, 255, 255, 0.6)", fontSize: 14 }}>
+                {autoCreating ? "正在创建对话..." : "暂无对话"}
+              </Text>
+            </div>
+          ) : (
+            <List
+              dataSource={conversations?.items || []}
+              renderItem={(conv) => (
+                <div
+                  key={conv.id}
+                  onClick={() => setSelectedConvId(conv.id)}
+                  style={{
+                    cursor: "pointer",
+                    background:
+                      selectedConvId === conv.id
+                        ? "rgba(255, 255, 255, 0.12)"
+                        : "transparent",
+                    padding: "12px 16px",
+                    transition: "background 0.2s ease",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    borderLeft: selectedConvId === conv.id ? "3px solid #C8853F" : "3px solid transparent",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (selectedConvId !== conv.id) {
+                      e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (selectedConvId !== conv.id) {
+                      e.currentTarget.style.background = "transparent";
+                    }
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 500,
+                        color: "#ffffff",
+                        marginBottom: 4,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {conv.title}
+                    </div>
+                    <div style={{ fontSize: 12, color: "rgba(255, 255, 255, 0.6)" }}>
+                      {conv.message_count || 0} 条消息
+                    </div>
+                  </div>
+                  <Popconfirm
+                    title="确认删除"
+                    description="删除后将无法恢复，确定删除此对话吗？"
+                    onConfirm={(e) => {
+                      e?.stopPropagation();
+                      deleteConvMutation.mutate(conv.id);
+                    }}
+                    okText="确定"
+                    cancelText="取消"
+                  >
+                    <Button
+                      danger
+                      size="small"
+                      type="text"
+                      icon={<DeleteOutlined />}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        color: "rgba(255, 255, 255, 0.6)",
+                      }}
+                    />
+                  </Popconfirm>
+                </div>
+              )}
+            />
+          )}
+        </div>
+
+        {/* New Conversation Button */}
+        <div style={{ padding: "16px", borderTop: "1px solid #2a2a2a" }}>
           <Button
-            type="primary"
-            size="small"
+            type="default"
+            block
             icon={<PlusOutlined />}
-            onClick={() => setCreateModalOpen(true)}
+            onClick={() => createConvMutation.mutate("新对话")}
+            loading={createConvMutation.isPending}
+            style={{
+              background: "rgba(255, 255, 255, 0.08)",
+              color: "#ffffff",
+              border: "1px solid rgba(255, 255, 255, 0.12)",
+              height: 40,
+              borderRadius: 8,
+            }}
           >
             新建对话
           </Button>
-        }
+        </div>
+      </div>
+
+      {/* Right Side - Chat Area */}
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          background: "#ffffff",
+          overflow: "hidden",
+        }}
       >
-        <Row gutter={[24, 24]} style={{ height: "100%" }}>
-          <Col xs={24} lg={7} xl={6}>
-            <AntCard
-              title="对话列表"
-              size="small"
-              styles={{
-                body: {
-                  padding: 0,
-                  maxHeight: "calc(100vh - 280px)",
-                  minHeight: 500,
-                  overflowY: "auto"
-                }
+        {!selectedConvId ? (
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Empty
+              description="请选择或创建一个对话开始聊天"
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            />
+          </div>
+        ) : (
+          <>
+            {/* Chat Header */}
+            <div
+              style={{
+                padding: "16px 24px",
+                borderBottom: "1px solid #e5e5e5",
+                background: "#ffffff",
               }}
             >
-              {convLoading ? (
-                <div style={{ textAlign: "center", padding: "60px 20px" }}>
+              <Text strong style={{ fontSize: 16 }}>
+                {currentConv ? currentConv.title : "AI 对话"}
+              </Text>
+            </div>
+
+            {/* Messages Area */}
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "24px",
+                background: "#f9f9f9",
+              }}
+            >
+              {convDetailLoading ? (
+                <div style={{ textAlign: "center", padding: 40 }}>
                   <Spin />
                 </div>
-              ) : conversations?.items.length === 0 ? (
-                <Empty
-                  description="暂无对话"
-                  style={{ padding: "60px 20px" }}
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                />
               ) : (
-                <List
-                  dataSource={conversations?.items || []}
-                  renderItem={(conv) => (
-                    <List.Item
-                      key={conv.id}
-                      onClick={() => setSelectedConvId(conv.id)}
+                <Space direction="vertical" style={{ width: "100%" }} size={16}>
+                  {currentMessages.map((msg) => (
+                    <div
+                      key={msg.id}
                       style={{
-                        cursor: "pointer",
-                        background:
-                          selectedConvId === conv.id
-                            ? "var(--ant-color-primary-bg)"
-                            : "transparent",
-                        padding: "16px",
-                        transition: "all 0.2s ease",
-                        borderLeft: selectedConvId === conv.id ? "3px solid var(--ant-color-primary)" : "3px solid transparent",
+                        display: "flex",
+                        justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
                       }}
-                      actions={[
-                        <Popconfirm
-                          key="delete"
-                          title="确认删除"
-                          description="删除后将无法恢复，确定删除此对话吗？"
-                          onConfirm={(e) => {
-                            e?.stopPropagation();
-                            deleteConvMutation.mutate(conv.id);
-                          }}
-                          okText="确定"
-                          cancelText="取消"
-                        >
-                          <Button
-                            danger
-                            size="small"
-                            type="text"
-                            icon={<DeleteOutlined />}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        </Popconfirm>,
-                      ]}
                     >
-                      <List.Item.Meta
-                        title={<span style={{ fontSize: 14, fontWeight: 500 }}>{conv.title}</span>}
-                        description={
-                          <Space size={6}>
-                            <Tag color="blue" style={{ fontSize: 12 }}>{conv.message_count || 0} 条消息</Tag>
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                              {new Date(conv.updated_at).toLocaleString("zh-CN", {
-                                month: "numeric",
-                                day: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </Text>
-                          </Space>
-                        }
-                      />
-                    </List.Item>
-                  )}
-                />
+                      <div
+                        style={{
+                          maxWidth: "70%",
+                          background: msg.role === "user" ? "#2f2f2f" : "#f4f4f4",
+                          color: msg.role === "user" ? "#ffffff" : "#1a1a1a",
+                          padding: "12px 16px",
+                          borderRadius: 18,
+                          boxShadow: "0 1px 2px rgba(0, 0, 0, 0.08)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                            lineHeight: 1.6,
+                            fontSize: 14,
+                          }}
+                        >
+                          {msg.content || (msg.id === streamingMessageId ? "正在回复..." : "")}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            marginTop: 6,
+                            opacity: 0.6,
+                          }}
+                        >
+                          {new Date(msg.created_at).toLocaleTimeString("zh-CN")}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div ref={messagesEndRef} />
+                </Space>
               )}
-            </AntCard>
-          </Col>
+            </div>
 
-          <Col xs={24} lg={17} xl={18}>
-            <AntCard
-              title={currentConv ? currentConv.title : "AI 对话"}
-              size="small"
-              styles={{
-                body: {
-                  padding: 0,
-                  display: "flex",
-                  flexDirection: "column",
-                  height: "calc(100vh - 280px)",
-                  minHeight: 500,
-                },
+            {/* Input Area */}
+            <div
+              style={{
+                padding: "16px 24px",
+                borderTop: "1px solid #e5e5e5",
+                background: "#ffffff",
               }}
             >
-              {!selectedConvId ? (
-                <Empty
-                  description="请选择或创建一个对话开始聊天"
-                  style={{ margin: "auto" }}
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+              <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
+                <TextArea
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  placeholder="输入消息...（Shift + Enter 换行，Enter 发送）"
+                  autoSize={{ minRows: 1, maxRows: 4 }}
+                  onPressEnter={(e) => {
+                    if (!e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  disabled={sendMessageMutation.isPending}
+                  style={{
+                    flex: 1,
+                    borderRadius: 12,
+                    background: "#f4f4f4",
+                    border: "1px solid #e5e5e5",
+                    padding: "10px 14px",
+                  }}
                 />
-              ) : (
-                <>
-                  <div
-                    style={{
-                      flex: 1,
-                      overflowY: "auto",
-                      padding: "20px 16px",
-                      background: "var(--ant-color-bg-layout)",
-                    }}
-                  >
-                    {convDetailLoading ? (
-                      <div style={{ textAlign: "center", padding: 40 }}>
-                        <Spin />
-                      </div>
-                    ) : (
-                      <Space direction="vertical" style={{ width: "100%" }} size={16}>
-                        {currentMessages.map((msg) => (
-                          <div
-                            key={msg.id}
-                            style={{
-                              display: "flex",
-                              justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
-                              gap: 8,
-                            }}
-                          >
-                            <Card
-                              size="small"
-                              style={{
-                                maxWidth: "75%",
-                                background:
-                                  msg.role === "user"
-                                    ? "var(--ant-color-primary)"
-                                    : "var(--ant-color-bg-container)",
-                                border:
-                                  msg.role === "user"
-                                    ? "1px solid var(--ant-color-primary)"
-                                    : "1px solid var(--ant-color-border)",
-                                borderRadius: 12,
-                                boxShadow: msg.role === "user"
-                                  ? "0 2px 8px rgba(139, 92, 246, 0.15)"
-                                  : "0 2px 8px rgba(0, 0, 0, 0.06)",
-                              }}
-                              styles={{
-                                body: {
-                                  padding: "12px 16px",
-                                }
-                              }}
-                            >
-                              <Space direction="vertical" size={6} style={{ width: "100%" }}>
-                                <Text
-                                  strong
-                                  style={{
-                                    color:
-                                      msg.role === "user"
-                                        ? "var(--ant-color-white)"
-                                        : "var(--ant-color-text)",
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  {msg.role === "user" ? "我" : "AI 助手"}
-                                </Text>
-                                <div
-                                  style={{
-                                    whiteSpace: "pre-wrap",
-                                    wordBreak: "break-word",
-                                    color:
-                                      msg.role === "user"
-                                        ? "var(--ant-color-white)"
-                                        : "var(--ant-color-text)",
-                                    lineHeight: 1.6,
-                                    fontSize: 14,
-                                  }}
-                                >
-                                  {msg.content || (msg.id === streamingMessageId ? "正在回复..." : "")}
-                                </div>
-                                <Text
-                                  type="secondary"
-                                  style={{
-                                    fontSize: 12,
-                                    color:
-                                      msg.role === "user"
-                                        ? "rgba(255, 255, 255, 0.75)"
-                                        : "var(--ant-color-text-secondary)",
-                                  }}
-                                >
-                                  {new Date(msg.created_at).toLocaleTimeString("zh-CN")}
-                                </Text>
-                              </Space>
-                            </Card>
-                          </div>
-                        ))}
-                        <div ref={messagesEndRef} />
-                      </Space>
-                    )}
-                  </div>
-
-                  <div
-                    style={{
-                      padding: "16px 20px",
-                      borderTop: "1px solid var(--ant-color-border)",
-                      background: "var(--ant-color-bg-container)",
-                    }}
-                  >
-                    <Space.Compact style={{ width: "100%", gap: 8 }}>
-                      <TextArea
-                        value={messageInput}
-                        onChange={(e) => setMessageInput(e.target.value)}
-                        placeholder="输入消息...（Shift + Enter 换行，Enter 发送）"
-                        autoSize={{ minRows: 1, maxRows: 4 }}
-                        onPressEnter={(e) => {
-                          if (!e.shiftKey) {
-                            e.preventDefault();
-                            handleSendMessage();
-                          }
-                        }}
-                        disabled={sendMessageMutation.isPending}
-                        style={{ flex: 1 }}
-                      />
-                      <Button
-                        type="primary"
-                        icon={<SendOutlined />}
-                        loading={sendMessageMutation.isPending}
-                        onClick={handleSendMessage}
-                        disabled={!messageInput.trim()}
-                        style={{ height: "auto", minHeight: 32 }}
-                      >
-                        发送
-                      </Button>
-                    </Space.Compact>
-                  </div>
-                </>
-              )}
-            </AntCard>
-          </Col>
-        </Row>
-      </AntCard>
-
-      <Modal
-        title="新建对话"
-        open={createModalOpen}
-        destroyOnClose
-        onCancel={() => {
-          setCreateModalOpen(false);
-          setNewConvTitle("新对话");
-        }}
-        onOk={() => createConvMutation.mutate(newConvTitle)}
-        okText="创建"
-        cancelText="取消"
-        confirmLoading={createConvMutation.isPending}
-      >
-        <Form layout="vertical">
-          <Form.Item label="对话标题">
-            <Input
-              placeholder="请输入对话标题"
-              value={newConvTitle}
-              onChange={(e) => setNewConvTitle(e.target.value)}
-            />
-          </Form.Item>
-        </Form>
-      </Modal>
+                <Button
+                  type="primary"
+                  icon={<SendOutlined />}
+                  loading={sendMessageMutation.isPending}
+                  onClick={handleSendMessage}
+                  disabled={!messageInput.trim()}
+                  style={{
+                    height: "auto",
+                    minHeight: 40,
+                    borderRadius: 12,
+                    paddingLeft: 20,
+                    paddingRight: 20,
+                    background: "#C8853F",
+                    borderColor: "#C8853F",
+                  }}
+                >
+                  发送
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
