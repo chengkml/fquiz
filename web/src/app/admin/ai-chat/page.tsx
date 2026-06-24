@@ -45,8 +45,8 @@ export default function AiChatPage() {
   const [success, setSuccess] = useState("");
   const [streamingMessageId, setStreamingMessageId] = useState<number | null>(null);
   const [optimisticMessages, setOptimisticMessages] = useState<Record<number, AiChatMessage[]>>({});
-  const [autoCreating, setAutoCreating] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const hasAttemptedAutoCreate = useRef(false);
 
   useToastFeedback({
     errorMessage: error,
@@ -104,11 +104,11 @@ export default function AiChatPage() {
       queryClient.invalidateQueries({ queryKey: ["ai-chat-conversations"] });
       setSelectedConvId(data.id);
       setSuccess("创建对话成功");
-      setAutoCreating(false);
+      hasAttemptedAutoCreate.current = false;
     },
     onError: (err: Error) => {
       setError(`创建对话失败: ${err.message}`);
-      setAutoCreating(false);
+      hasAttemptedAutoCreate.current = false;
     },
   });
 
@@ -122,9 +122,12 @@ export default function AiChatPage() {
         throw new Error(await readApiError(response));
       }
     },
-    onSuccess: () => {
+    onSuccess: (_, deletedId) => {
       queryClient.invalidateQueries({ queryKey: ["ai-chat-conversations"] });
-      setSelectedConvId(null);
+      // Only clear selection if we deleted the currently selected conversation
+      if (selectedConvId === deletedId) {
+        setSelectedConvId(null);
+      }
       setSuccess("删除对话成功");
     },
     onError: (err: Error) => {
@@ -282,18 +285,18 @@ export default function AiChatPage() {
 
   // Auto-select first conversation when conversations load
   useEffect(() => {
-    if (!convLoading && conversations?.items && conversations.items.length > 0 && !selectedConvId) {
+    if (!convLoading && conversations?.items && conversations.items.length > 0 && !selectedConvId && !createConvMutation.isPending) {
       setSelectedConvId(conversations.items[0].id);
     }
-  }, [convLoading, conversations?.items, selectedConvId]);
+  }, [convLoading, conversations?.items, selectedConvId, createConvMutation.isPending]);
 
-  // Auto-create conversation if none exist
+  // Auto-create conversation if none exist (only on initial load, not after deletions)
   useEffect(() => {
-    if (!convLoading && conversations?.items && conversations.items.length === 0 && !autoCreating && !createConvMutation.isPending) {
-      setAutoCreating(true);
+    if (!convLoading && conversations?.items && conversations.items.length === 0 && !hasAttemptedAutoCreate.current && !createConvMutation.isPending) {
+      hasAttemptedAutoCreate.current = true;
       createConvMutation.mutate("新对话");
     }
-  }, [convLoading, conversations?.items, autoCreating, createConvMutation]);
+  }, [convLoading, conversations?.items, createConvMutation]);
 
   if (initializing) {
     return (
@@ -331,7 +334,7 @@ export default function AiChatPage() {
           ) : conversations?.items.length === 0 ? (
             <div style={{ padding: "60px 20px", textAlign: "center" }}>
               <Text style={{ color: "var(--ant-color-text-secondary)", fontSize: 14 }}>
-                {autoCreating ? "正在创建对话..." : "暂无对话"}
+                {createConvMutation.isPending ? "正在创建对话..." : "暂无对话"}
               </Text>
             </div>
           ) : (
