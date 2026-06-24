@@ -309,16 +309,15 @@ export default function AiChatPage() {
       <div
         style={{
           width: 280,
-          background: "#171717",
-          color: "#ffffff",
+          background: "var(--fquiz-theme-bg-elevated)",
           display: "flex",
           flexDirection: "column",
-          borderRight: "1px solid #2a2a2a",
+          borderRight: "1px solid var(--ant-color-border-secondary)",
         }}
       >
         {/* Header */}
-        <div style={{ padding: "16px", borderBottom: "1px solid #2a2a2a" }}>
-          <Text strong style={{ color: "#ffffff", fontSize: 16 }}>
+        <div style={{ padding: "16px", borderBottom: "1px solid var(--ant-color-border-secondary)" }}>
+          <Text strong style={{ fontSize: 16 }}>
             AI 问答助手
           </Text>
         </div>
@@ -331,7 +330,7 @@ export default function AiChatPage() {
             </div>
           ) : conversations?.items.length === 0 ? (
             <div style={{ padding: "60px 20px", textAlign: "center" }}>
-              <Text style={{ color: "rgba(255, 255, 255, 0.6)", fontSize: 14 }}>
+              <Text style={{ color: "var(--ant-color-text-secondary)", fontSize: 14 }}>
                 {autoCreating ? "正在创建对话..." : "暂无对话"}
               </Text>
             </div>
@@ -346,18 +345,18 @@ export default function AiChatPage() {
                     cursor: "pointer",
                     background:
                       selectedConvId === conv.id
-                        ? "rgba(255, 255, 255, 0.12)"
+                        ? "var(--fquiz-theme-bg-active)"
                         : "transparent",
                     padding: "12px 16px",
                     transition: "background 0.2s ease",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    borderLeft: selectedConvId === conv.id ? "3px solid #C8853F" : "3px solid transparent",
+                    borderLeft: selectedConvId === conv.id ? "3px solid var(--ant-color-primary)" : "3px solid transparent",
                   }}
                   onMouseEnter={(e) => {
                     if (selectedConvId !== conv.id) {
-                      e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
+                      e.currentTarget.style.background = "var(--fquiz-theme-bg-soft)";
                     }
                   }}
                   onMouseLeave={(e) => {
@@ -371,7 +370,6 @@ export default function AiChatPage() {
                       style={{
                         fontSize: 14,
                         fontWeight: 500,
-                        color: "#ffffff",
                         marginBottom: 4,
                         overflow: "hidden",
                         textOverflow: "ellipsis",
@@ -380,7 +378,7 @@ export default function AiChatPage() {
                     >
                       {conv.title}
                     </div>
-                    <div style={{ fontSize: 12, color: "rgba(255, 255, 255, 0.6)" }}>
+                    <div style={{ fontSize: 12, color: "var(--ant-color-text-secondary)" }}>
                       {conv.message_count || 0} 条消息
                     </div>
                   </div>
@@ -400,9 +398,6 @@ export default function AiChatPage() {
                       type="text"
                       icon={<DeleteOutlined />}
                       onClick={(e) => e.stopPropagation()}
-                      style={{
-                        color: "rgba(255, 255, 255, 0.6)",
-                      }}
                     />
                   </Popconfirm>
                 </div>
@@ -412,7 +407,7 @@ export default function AiChatPage() {
         </div>
 
         {/* New Conversation Button */}
-        <div style={{ padding: "16px", borderTop: "1px solid #2a2a2a" }}>
+        <div style={{ padding: "16px", borderTop: "1px solid var(--ant-color-border-secondary)" }}>
           <Button
             type="default"
             block
@@ -420,9 +415,6 @@ export default function AiChatPage() {
             onClick={() => createConvMutation.mutate("新对话")}
             loading={createConvMutation.isPending}
             style={{
-              background: "rgba(255, 255, 255, 0.08)",
-              color: "#ffffff",
-              border: "1px solid rgba(255, 255, 255, 0.12)",
               height: 40,
               borderRadius: 8,
             }}
@@ -438,7 +430,7 @@ export default function AiChatPage() {
           flex: 1,
           display: "flex",
           flexDirection: "column",
-          background: "#ffffff",
+          background: "var(--fquiz-theme-bg-layout)",
           overflow: "hidden",
         }}
       >
@@ -455,8 +447,8 @@ export default function AiChatPage() {
             <div
               style={{
                 padding: "16px 24px",
-                borderBottom: "1px solid #e5e5e5",
-                background: "#ffffff",
+                borderBottom: "1px solid var(--ant-color-border-secondary)",
+                background: "var(--fquiz-theme-bg-container)",
               }}
             >
               <Text strong style={{ fontSize: 16 }}>
@@ -470,7 +462,7 @@ export default function AiChatPage() {
                 flex: 1,
                 overflowY: "auto",
                 padding: "24px",
-                background: "#f9f9f9",
+                background: "var(--fquiz-theme-bg-layout)",
               }}
             >
               {convDetailLoading ? (
@@ -490,8 +482,8 @@ export default function AiChatPage() {
                       <div
                         style={{
                           maxWidth: "70%",
-                          background: msg.role === "user" ? "#2f2f2f" : "#f4f4f4",
-                          color: msg.role === "user" ? "#ffffff" : "#1a1a1a",
+                          background: msg.role === "user" ? "var(--ant-color-primary)" : "var(--fquiz-theme-bg-container)",
+                          color: msg.role === "user" ? "var(--accent-contrast)" : "var(--ant-color-text)",
                           padding: "12px 16px",
                           borderRadius: 18,
                           boxShadow: "0 1px 2px rgba(0, 0, 0, 0.08)",
@@ -528,8 +520,8 @@ export default function AiChatPage() {
             <div
               style={{
                 padding: "16px 24px",
-                borderTop: "1px solid #e5e5e5",
-                background: "#ffffff",
+                borderTop: "1px solid var(--ant-color-border-secondary)",
+                background: "var(--fquiz-theme-bg-container)",
               }}
             >
               <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
@@ -548,8 +540,6 @@ export default function AiChatPage() {
                   style={{
                     flex: 1,
                     borderRadius: 12,
-                    background: "#f4f4f4",
-                    border: "1px solid #e5e5e5",
                     padding: "10px 14px",
                   }}
                 />
@@ -565,8 +555,6 @@ export default function AiChatPage() {
                     borderRadius: 12,
                     paddingLeft: 20,
                     paddingRight: 20,
-                    background: "#C8853F",
-                    borderColor: "#C8853F",
                   }}
                 >
                   发送
