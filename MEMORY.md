@@ -128,7 +128,7 @@
 - 聊天模型选择规则固定为：`CAPABILITY: chat.default` 优先，未命中时回退 `GLOBAL: __global__`。
 - 仅允许 `ENABLED` 且具备激活密钥记录的模型参与路由命中；若不满足，接口返回 400。
 - 运行时真实 Provider Key 不从数据库反解，统一从环境变量 `LLM_PROVIDER_API_KEYS` 注入（支持 `openai=sk-...` 或 JSON 字典字符串）。
-- 一期模型调用采用非流式 OpenAI-compatible `POST /chat/completions`，后续如需流式再扩展 SSE/WS。
+- AI 问答发送接口 `POST /api/v1/ai-chat/conversations/{id}/messages` 已改为 `application/x-ndjson` 流式响应，前端通过 `fetch` + `ReadableStream` 读取增量并实时刷新助手消息；如需旧同步行为，可用 `/messages/sync` 兼容接口。
 
 ## Celery 监控口径（2026-05-01）
 

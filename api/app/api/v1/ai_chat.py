@@ -1,4 +1,8 @@
+import json
+from collections.abc import Iterator
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
@@ -19,6 +23,7 @@ from ...services.ai_chat_service import (
     list_conversations,
     send_message,
     serialize_conversation_detail,
+    stream_message,
     update_conversation,
 )
 
@@ -85,8 +90,33 @@ def delete_conversation_endpoint(
     return {"success": True}
 
 
-@router.post("/conversations/{conversation_id}/messages", response_model=AiChatMessageResponse)
+def _encode_stream_events(events: Iterator[dict]) -> Iterator[str]:
+    for event in events:
+        yield json.dumps(event, ensure_ascii=False, default=str) + "\n"
+
+
+@router.post("/conversations/{conversation_id}/messages")
 def send_message_endpoint(
+    conversation_id: int,
+    payload: AiChatMessageSendRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    events = stream_message(db, conversation_id, payload.content, user_id=current_user.user.id)
+    if events is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    return StreamingResponse(
+        _encode_stream_events(events),
+        media_type="application/x-ndjson",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/conversations/{conversation_id}/messages/sync", response_model=AiChatMessageResponse)
+def send_message_sync_endpoint(
     conversation_id: int,
     payload: AiChatMessageSendRequest,
     current_user: CurrentUser = Depends(get_current_user),

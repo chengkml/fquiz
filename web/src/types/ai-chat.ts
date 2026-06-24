@@ -1,8 +1,10 @@
 export interface AiChatMessage {
   id: number;
   conversation_id: number;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool";
   content: string;
+  tool_calls?: Record<string, unknown> | null;
+  tool_call_id?: string | null;
   created_at: string;
 }
 

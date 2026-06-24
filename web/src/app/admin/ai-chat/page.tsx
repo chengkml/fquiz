@@ -23,7 +23,7 @@ import {
   SendOutlined,
   DeleteOutlined,
 } from "@ant-design/icons";
-import { useCallback, useEffect, useRef, useState, type ComponentType, type RefAttributes } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type RefAttributes } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
@@ -31,12 +31,17 @@ import { readApiError, API_BASE_URL } from "@/lib/api";
 import type {
   AiChatConversation,
   AiChatConversationListResponse,
-  AiChatMessageResponse,
+  AiChatMessage,
 } from "@/types/ai-chat";
 
 const { TextArea } = Input;
 const { Text } = Typography;
 const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
+
+type ChatStreamEvent =
+  | { type: "message"; message: AiChatMessage }
+  | { type: "delta"; content: string }
+  | { type: "done"; reply: AiChatMessage };
 
 export default function AiChatPage() {
   const { user, initializing, fetchWithAuth } = useAuth();
@@ -48,6 +53,8 @@ export default function AiChatPage() {
   const [newConvTitle, setNewConvTitle] = useState("新对话");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [streamingMessageId, setStreamingMessageId] = useState<number | null>(null);
+  const [optimisticMessages, setOptimisticMessages] = useState<Record<number, AiChatMessage[]>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useToastFeedback({
@@ -134,34 +141,138 @@ export default function AiChatPage() {
     },
   });
 
-  const sendMessageMutation = useMutation({
-    mutationFn: async ({
-      convId,
-      content,
-    }: {
-      convId: number;
-      content: string;
-    }) => {
+  const currentMessages = useMemo(
+    () => (selectedConvId ? optimisticMessages[selectedConvId] ?? currentConv?.messages ?? [] : []),
+    [currentConv?.messages, optimisticMessages, selectedConvId],
+  );
+
+  const updateOptimisticMessages = useCallback(
+    (convId: number, updater: (messages: AiChatMessage[]) => AiChatMessage[]) => {
+      setOptimisticMessages((current) => ({
+        ...current,
+        [convId]: updater(current[convId] ?? currentConv?.messages ?? []),
+      }));
+    },
+    [currentConv?.messages],
+  );
+
+  const readChatStream = useCallback(
+    async (convId: number, content: string) => {
+      const now = new Date().toISOString();
+      const assistantTempId = -Date.now();
+      const userTempId = assistantTempId - 1;
+      const userMessage: AiChatMessage = {
+        id: userTempId,
+        conversation_id: convId,
+        role: "user",
+        content,
+        created_at: now,
+      };
+      const assistantMessage: AiChatMessage = {
+        id: assistantTempId,
+        conversation_id: convId,
+        role: "assistant",
+        content: "",
+        created_at: now,
+      };
+
+      setStreamingMessageId(assistantTempId);
+      updateOptimisticMessages(convId, (messages) => [...messages, userMessage, assistantMessage]);
+
       const response = await fetchWithAuth(
         `${API_BASE_URL}/api/v1/ai-chat/conversations/${convId}/messages`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content }),
-        }
+        },
       );
       if (!response.ok) {
         throw new Error(await readApiError(response));
       }
-      return (await response.json()) as AiChatMessageResponse;
+      if (!response.body) {
+        throw new Error("浏览器未返回流式响应体");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      const applyStreamEvent = (event: ChatStreamEvent) => {
+        if (event.type === "message") {
+          updateOptimisticMessages(convId, (messages) =>
+            messages.map((msg) => (msg.id === userTempId ? event.message : msg)),
+          );
+          return;
+        }
+
+        if (event.type === "delta") {
+          updateOptimisticMessages(convId, (messages) =>
+            messages.map((msg) =>
+              msg.id === assistantTempId
+                ? { ...msg, content: `${msg.content}${event.content}` }
+                : msg,
+            ),
+          );
+          return;
+        }
+
+        updateOptimisticMessages(convId, (messages) =>
+          messages.map((msg) => (msg.id === assistantTempId ? event.reply : msg)),
+        );
+      };
+
+      const parseBufferedEvents = () => {
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          applyStreamEvent(JSON.parse(trimmed) as ChatStreamEvent);
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        parseBufferedEvents();
+      }
+
+      buffer += decoder.decode();
+      if (buffer.trim()) {
+        applyStreamEvent(JSON.parse(buffer.trim()) as ChatStreamEvent);
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ["ai-chat-conversations"] });
+      await queryClient.invalidateQueries({ queryKey: ["ai-chat-conversation", convId] });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["ai-chat-conversation", selectedConvId],
-      });
+    [fetchWithAuth, queryClient, updateOptimisticMessages],
+  );
+
+  const sendMessageMutation = useMutation({
+    mutationFn: async ({ convId, content }: { convId: number; content: string }) => {
+      await readChatStream(convId, content);
+    },
+    onSuccess: (_, variables) => {
       setMessageInput("");
+      setStreamingMessageId(null);
+      setOptimisticMessages((current) => {
+        const next = { ...current };
+        delete next[variables.convId];
+        return next;
+      });
     },
-    onError: (err: Error) => {
+    onError: (err: Error, variables) => {
+      setStreamingMessageId(null);
+      setOptimisticMessages((current) => {
+        const next = { ...current };
+        delete next[variables.convId];
+        return next;
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["ai-chat-conversation", variables.convId],
+      });
       setError(`发送消息失败: ${err.message}`);
     },
   });
@@ -176,7 +287,7 @@ export default function AiChatPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [currentConv?.messages]);
+  }, [currentMessages]);
 
   if (initializing) {
     return (
@@ -324,7 +435,7 @@ export default function AiChatPage() {
                       </div>
                     ) : (
                       <Space direction="vertical" style={{ width: "100%" }} size={16}>
-                        {currentConv?.messages?.map((msg) => (
+                        {currentMessages.map((msg) => (
                           <div
                             key={msg.id}
                             style={{
@@ -381,7 +492,7 @@ export default function AiChatPage() {
                                     fontSize: 14,
                                   }}
                                 >
-                                  {msg.content}
+                                  {msg.content || (msg.id === streamingMessageId ? "正在回复..." : "")}
                                 </div>
                                 <Text
                                   type="secondary"
