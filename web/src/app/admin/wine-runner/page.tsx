@@ -62,8 +62,8 @@ type WineRunDetail = {
 };
 
 const DEFAULT_FORM_VALUES: WineRunFormValues = {
-  exe_path: "",
-  arguments_text: "",
+  exe_path: "ATP/tpbig.exe",
+  arguments_text: "templates/fanji/work.atp",
   working_dir: "",
   timeout_seconds: 300,
 };
@@ -278,7 +278,7 @@ export default function AdminWineRunnerPage() {
               <Row gutter={12}>
                 <Col xs={24} md={16}>
                   <Form.Item name="exe_path" label="EXE 路径" rules={[{ required: true, message: "请输入 EXE 路径" }]}>
-                    <Input placeholder="demo/app.exe" />
+                    <Input placeholder="ATP/tpbig.exe （相对 wine_allowed_root 的路径）" />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={8}>
