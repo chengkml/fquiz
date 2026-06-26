@@ -310,6 +310,7 @@ export default function AiChatPage() {
     <div style={{ display: "flex", height: "calc(100vh - 64px)", overflow: "hidden" }}>
       {/* Left Sidebar - Conversation List */}
       <div
+        className="ai-chat-sidebar"
         style={{
           width: 280,
           background: "var(--fquiz-theme-bg-elevated)",
@@ -319,7 +320,7 @@ export default function AiChatPage() {
         }}
       >
         {/* Header */}
-        <div style={{ padding: "16px", borderBottom: "1px solid var(--ant-color-border-secondary)" }}>
+        <div className="ai-chat-sidebar-header" style={{ padding: "16px", borderBottom: "1px solid var(--ant-color-border-secondary)" }}>
           <Text strong style={{ fontSize: 16 }}>
             AI 问答助手
           </Text>
@@ -343,6 +344,7 @@ export default function AiChatPage() {
               renderItem={(conv) => (
                 <div
                   key={conv.id}
+                  className={`ai-chat-conversation-item ${selectedConvId === conv.id ? "ai-chat-conversation-item-active" : ""}`}
                   onClick={() => setSelectedConvId(conv.id)}
                   style={{
                     cursor: "pointer",
@@ -410,7 +412,7 @@ export default function AiChatPage() {
         </div>
 
         {/* New Conversation Button */}
-        <div style={{ padding: "16px", borderTop: "1px solid var(--ant-color-border-secondary)" }}>
+        <div className="ai-chat-new-conversation-button-container" style={{ padding: "16px", borderTop: "1px solid var(--ant-color-border-secondary)" }}>
           <Button
             type="default"
             block
@@ -429,6 +431,7 @@ export default function AiChatPage() {
 
       {/* Right Side - Chat Area */}
       <div
+        className="ai-chat-main-area"
         style={{
           flex: 1,
           display: "flex",
@@ -448,6 +451,7 @@ export default function AiChatPage() {
           <>
             {/* Chat Header */}
             <div
+              className="ai-chat-header"
               style={{
                 padding: "16px 24px",
                 borderBottom: "1px solid var(--ant-color-border-secondary)",
@@ -461,6 +465,7 @@ export default function AiChatPage() {
 
             {/* Messages Area */}
             <div
+              className="ai-chat-messages-area"
               style={{
                 flex: 1,
                 overflowY: "auto",
@@ -483,6 +488,7 @@ export default function AiChatPage() {
                       }}
                     >
                       <div
+                        className={msg.role === "user" ? "ai-chat-message-bubble-user" : "ai-chat-message-bubble-assistant"}
                         style={{
                           maxWidth: "70%",
                           background: msg.role === "user" ? "var(--ant-color-primary)" : "var(--fquiz-theme-bg-container)",
@@ -503,6 +509,7 @@ export default function AiChatPage() {
                           {msg.content || (msg.id === streamingMessageId ? "正在回复..." : "")}
                         </div>
                         <div
+                          className="ai-chat-message-timestamp"
                           style={{
                             fontSize: 11,
                             marginTop: 6,
@@ -521,6 +528,7 @@ export default function AiChatPage() {
 
             {/* Input Area */}
             <div
+              className="ai-chat-input-area"
               style={{
                 padding: "16px 24px",
                 borderTop: "1px solid var(--ant-color-border-secondary)",
@@ -529,6 +537,7 @@ export default function AiChatPage() {
             >
               <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
                 <TextArea
+                  className="ai-chat-textarea"
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
                   placeholder="输入消息...（Shift + Enter 换行，Enter 发送）"
@@ -547,6 +556,7 @@ export default function AiChatPage() {
                   }}
                 />
                 <Button
+                  className="ai-chat-send-button"
                   type="primary"
                   icon={<SendOutlined />}
                   loading={sendMessageMutation.isPending}

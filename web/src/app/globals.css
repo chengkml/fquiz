@@ -1723,3 +1723,89 @@ body {
   border: 1px solid var(--fquiz-table-border-color);
   border-radius: var(--ant-border-radius-lg);
 }
+
+/* AI 问答页面暗黑主题适配 */
+:root[data-fquiz-theme="dark"] .ai-chat-sidebar {
+  background: color-mix(in srgb, var(--ant-color-bg-container) 82%, black) !important;
+  border-right-color: color-mix(in srgb, var(--ant-color-border-secondary) 70%, transparent) !important;
+}
+
+:root[data-fquiz-theme="dark"] .ai-chat-sidebar-header {
+  border-bottom-color: color-mix(in srgb, var(--ant-color-border-secondary) 70%, transparent) !important;
+}
+
+:root[data-fquiz-theme="dark"] .ai-chat-conversation-item {
+  transition: background 0.2s ease;
+}
+
+:root[data-fquiz-theme="dark"] .ai-chat-conversation-item:hover {
+  background: color-mix(in srgb, var(--ant-color-bg-container) 70%, var(--ant-color-primary) 10%) !important;
+}
+
+:root[data-fquiz-theme="dark"] .ai-chat-conversation-item-active {
+  background: color-mix(in srgb, var(--ant-color-bg-container) 65%, var(--ant-color-primary) 15%) !important;
+  border-left-color: var(--ant-color-primary) !important;
+}
+
+:root[data-fquiz-theme="dark"] .ai-chat-new-conversation-button-container {
+  border-top-color: color-mix(in srgb, var(--ant-color-border-secondary) 70%, transparent) !important;
+}
+
+:root[data-fquiz-theme="dark"] .ai-chat-main-area {
+  background: color-mix(in srgb, var(--ant-color-bg-container) 90%, black) !important;
+}
+
+:root[data-fquiz-theme="dark"] .ai-chat-header {
+  background: color-mix(in srgb, var(--ant-color-bg-container) 85%, black) !important;
+  border-bottom-color: color-mix(in srgb, var(--ant-color-border-secondary) 70%, transparent) !important;
+}
+
+:root[data-fquiz-theme="dark"] .ai-chat-messages-area {
+  background: color-mix(in srgb, var(--ant-color-bg-container) 90%, black) !important;
+}
+
+:root[data-fquiz-theme="dark"] .ai-chat-message-bubble-user {
+  background: var(--ant-color-primary) !important;
+  color: var(--accent-contrast) !important;
+  box-shadow: 0 1px 3px color-mix(in srgb, black 35%, transparent) !important;
+}
+
+:root[data-fquiz-theme="dark"] .ai-chat-message-bubble-assistant {
+  background: color-mix(in srgb, var(--ant-color-bg-container) 75%, black) !important;
+  color: var(--ant-color-text) !important;
+  border: 1px solid color-mix(in srgb, var(--ant-color-border-secondary) 50%, transparent);
+  box-shadow: 0 1px 3px color-mix(in srgb, black 40%, transparent) !important;
+}
+
+:root[data-fquiz-theme="dark"] .ai-chat-message-timestamp {
+  opacity: 0.5;
+}
+
+:root[data-fquiz-theme="dark"] .ai-chat-input-area {
+  background: color-mix(in srgb, var(--ant-color-bg-container) 85%, black) !important;
+  border-top-color: color-mix(in srgb, var(--ant-color-border-secondary) 70%, transparent) !important;
+}
+
+:root[data-fquiz-theme="dark"] .ai-chat-textarea {
+  background: color-mix(in srgb, var(--ant-color-bg-container) 70%, black) !important;
+  border-color: color-mix(in srgb, var(--ant-color-border-secondary) 60%, transparent) !important;
+  color: var(--ant-color-text) !important;
+}
+
+:root[data-fquiz-theme="dark"] .ai-chat-textarea:hover {
+  border-color: color-mix(in srgb, var(--ant-color-primary) 60%, var(--ant-color-border-secondary) 40%) !important;
+}
+
+:root[data-fquiz-theme="dark"] .ai-chat-textarea:focus {
+  background: color-mix(in srgb, var(--ant-color-bg-container) 65%, black) !important;
+  border-color: var(--ant-color-primary) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ant-color-primary) 20%, transparent) !important;
+}
+
+:root[data-fquiz-theme="dark"] .ai-chat-send-button {
+  box-shadow: 0 2px 4px color-mix(in srgb, black 30%, transparent) !important;
+}
+
+:root[data-fquiz-theme="dark"] .ai-chat-send-button:hover:not(:disabled) {
+  box-shadow: 0 4px 8px color-mix(in srgb, black 40%, transparent) !important;
+}
