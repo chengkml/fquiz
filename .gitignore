@@ -42,6 +42,8 @@ deploy/dev-deploy/data/**
 !deploy/dev-deploy/data/.gitkeep
 !deploy/dev-deploy/data/app/.gitkeep
 !deploy/dev-deploy/data/app/celery/.gitkeep
+!deploy/dev-deploy/data/app/wine/
+!deploy/dev-deploy/data/app/wine/**
 !deploy/dev-deploy/data/minio/.gitkeep
 !deploy/dev-deploy/data/postgres/.gitkeep
 !deploy/dev-deploy/data/redis/.gitkeep
