@@ -26,6 +26,10 @@ from ...schemas.lightning import (
     LightningTowerTerrainComputeResponse,
     LightningTowerBufferStatsResponse,
 )
+from ...schemas.lightning_import import (
+    LightningImportBatchListResponse,
+    LightningImportBatchEventsResponse,
+)
 from ...services.lightning_service import (
     build_lightning_distribution_report,
     compare_measured_and_synthetic_distribution,
@@ -43,6 +47,8 @@ from ...services.lightning_service import (
     prepare_line_lightning_density,
     serialize_lightning_event,
     update_lightning_event,
+    list_lightning_import_batches,
+    get_lightning_import_batch_events,
 )
 
 router = APIRouter(
@@ -403,4 +409,42 @@ def get_lightning_distribution_report(
         city=city,
         location_tag=location_tag,
         is_synthetic=is_synthetic,
+    )
+
+
+@router.get("/import-batches", response_model=LightningImportBatchListResponse)
+def get_lightning_import_batches(
+    keyword: str | None = Query(default=None),
+    region_id: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    _: CurrentUser = Depends(require_any_permission("lightning.read", "lightning.manage")),
+    db: Session = Depends(get_db),
+) -> LightningImportBatchListResponse:
+    return list_lightning_import_batches(
+        db,
+        keyword=keyword,
+        region_id=region_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/import-batches/events", response_model=LightningImportBatchEventsResponse)
+def get_import_batch_events(
+    source_file_name: str | None = Query(default=None),
+    import_time: datetime = Query(...),
+    region_id: str | None = Query(default=None),
+    location_tag: str | None = Query(default=None),
+    city: str | None = Query(default=None),
+    _: CurrentUser = Depends(require_any_permission("lightning.read", "lightning.manage")),
+    db: Session = Depends(get_db),
+) -> LightningImportBatchEventsResponse:
+    return get_lightning_import_batch_events(
+        db,
+        source_file_name=source_file_name,
+        import_time=import_time,
+        region_id=region_id,
+        location_tag=location_tag,
+        city=city,
     )

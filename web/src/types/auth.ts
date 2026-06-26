@@ -1208,6 +1208,50 @@ export type LightningDistributionStatsResponse = {
   p_curve: LightningCurrentExceedancePoint[];
 };
 
+export type LightningImportBatchSummary = {
+  batch_id: string;
+  source_file_name: string | null;
+  import_time: string;
+  event_count: number;
+  region_id: string | null;
+  location_tag: string | null;
+  city: string | null;
+  event_year: number | null;
+  is_synthetic: boolean;
+  notes: string | null;
+  max_abs_current_ka: number | null;
+  avg_abs_current_ka: number | null;
+  positive_count: number;
+  negative_count: number;
+  create_user: string | null;
+};
+
+export type LightningImportBatchListResponse = {
+  items: LightningImportBatchSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type LightningImportBatchEventItem = {
+  id: string;
+  event_id: string;
+  longitude: number | null;
+  latitude: number | null;
+  current_ka: number | null;
+  abs_current_ka: number | null;
+  polarity: LightningPolarity;
+  event_time: string | null;
+};
+
+export type LightningImportBatchEventsResponse = {
+  batch_id: string;
+  source_file_name: string | null;
+  import_time: string;
+  events: LightningImportBatchEventItem[];
+  total: number;
+};
+
 export type LightningTowerBufferEventItem = {
   id: string;
   event_id: string;

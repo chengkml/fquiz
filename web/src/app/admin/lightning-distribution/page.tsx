@@ -42,6 +42,9 @@ import type {
   LightningDistributionStatsResponse,
   LightningPolarity,
   LightningTowerBufferStatsResponse,
+  LightningImportBatchSummary,
+  LightningImportBatchListResponse,
+  LightningImportBatchEventsResponse,
 } from "@/types/auth";
 
 type ImportFormValues = {
@@ -112,13 +115,16 @@ export default function AdminLightningDistributionPage() {
   const [keywordInput, setKeywordInput] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
   const [regionFilter, setRegionFilter] = useState("");
-  const [selectedEventForModal, setSelectedEventForModal] = useState<LightningDistributionScatterPoint | null>(null);
+  const [selectedBatchForEvents, setSelectedBatchForEvents] = useState<LightningImportBatchSummary | null>(null);
+  const [selectedBatchForScatter, setSelectedBatchForScatter] = useState<LightningImportBatchSummary | null>(null);
+  const [eventsModalOpen, setEventsModalOpen] = useState(false);
+  const [scatterModalOpen, setScatterModalOpen] = useState(false);
   const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pageCardRef = useRef<HTMLDivElement | null>(null);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const viewMode: "table" | "card" = isMobile ? "card" : "table";
   const [cardViewPage, setCardViewPage] = useState(1);
-  const [allLoadedEvents, setAllLoadedEvents] = useState<LightningDistributionScatterPoint[]>([]);
+  const [allLoadedBatches, setAllLoadedBatches] = useState<LightningImportBatchSummary[]>([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [tableScrollY, setTableScrollY] = useState(LIGHTNING_TABLE_MIN_SCROLL_Y);
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
@@ -127,36 +133,32 @@ export default function AdminLightningDistributionPage() {
   const canManage = hasPermission("lightning.manage");
 
   const trimmedKeyword = searchKeyword.trim();
-  const distributionStatsPath = useMemo(() => {
+  const importBatchesPath = useMemo(() => {
     const params = new URLSearchParams();
+    if (trimmedKeyword) params.set("keyword", trimmedKeyword);
     if (regionFilter.trim()) params.set("region_id", regionFilter.trim());
-    if (trimmedKeyword) params.set("location_tag", trimmedKeyword);
-    if (distributionFilters.years !== null) params.set("years", String(distributionFilters.years));
-    params.set("grid_size_km", String(distributionFilters.grid_size_km));
-    params.set("grid_limit", "1000");
-    params.set("scatter_limit", "2000");
-    return `/api/v1/lightning-currents/stats/distribution?${params.toString()}`;
-  }, [distributionFilters, trimmedKeyword, regionFilter]);
+    params.set("limit", "100");
+    params.set("offset", "0");
+    return `/api/v1/lightning-currents/import-batches?${params.toString()}`;
+  }, [trimmedKeyword, regionFilter]);
 
-  const distributionStatsQuery = useQuery({
-    queryKey: [distributionStatsPath],
+  const importBatchesQuery = useQuery({
+    queryKey: [importBatchesPath],
     enabled: !!user && canRead,
     queryFn: async () => {
-      const response = await fetchWithAuth(distributionStatsPath);
+      const response = await fetchWithAuth(importBatchesPath);
       if (!response.ok) {
         throw new Error(await readApiError(response));
       }
-      return (await response.json()) as LightningDistributionStatsResponse;
+      return (await response.json()) as LightningImportBatchListResponse;
     },
   });
 
-  const distributionStats = distributionStatsQuery.data;
-  const scatterPoints = useMemo(() => distributionStats?.scatter_points ?? [], [distributionStats?.scatter_points]);
-
-  const distributionError = distributionStatsQuery.error instanceof Error ? distributionStatsQuery.error.message : "";
+  const importBatches = useMemo(() => importBatchesQuery.data?.items ?? [], [importBatchesQuery.data?.items]);
+  const batchesError = importBatchesQuery.error instanceof Error ? importBatchesQuery.error.message : "";
 
   useToastFeedback({
-    errorMessage: error || distributionError,
+    errorMessage: error || batchesError,
     successMessage: success,
     clearError: () => setError(""),
     clearSuccess: () => setSuccess(""),
@@ -221,9 +223,14 @@ export default function AdminLightningDistributionPage() {
     },
   });
 
-  const openStatsModal = (event: LightningDistributionScatterPoint) => {
-    setSelectedEventForModal(event);
-    setStatsModalOpen(true);
+  const openEventsModal = (batch: LightningImportBatchSummary) => {
+    setSelectedBatchForEvents(batch);
+    setEventsModalOpen(true);
+  };
+
+  const openScatterModal = (batch: LightningImportBatchSummary) => {
+    setSelectedBatchForScatter(batch);
+    setScatterModalOpen(true);
   };
 
   const closeImportModal = () => {
@@ -231,9 +238,14 @@ export default function AdminLightningDistributionPage() {
     importForm.resetFields();
   };
 
-  const closeStatsModal = () => {
-    setStatsModalOpen(false);
-    setSelectedEventForModal(null);
+  const closeEventsModal = () => {
+    setEventsModalOpen(false);
+    setSelectedBatchForEvents(null);
+  };
+
+  const closeScatterModal = () => {
+    setScatterModalOpen(false);
+    setSelectedBatchForScatter(null);
   };
 
   const handleKeywordChange = (value: string) => {
@@ -246,7 +258,7 @@ export default function AdminLightningDistributionPage() {
     keywordDebounceTimeoutRef.current = setTimeout(() => {
       setSearchKeyword(value);
       setCardViewPage(1);
-      setAllLoadedEvents([]);
+      setAllLoadedBatches([]);
     }, 500);
   };
 
@@ -285,21 +297,21 @@ export default function AdminLightningDistributionPage() {
   }, []);
 
   useEffect(() => {
-    if (viewMode !== "card" || distributionStatsQuery.isLoading) {
+    if (viewMode !== "card" || importBatchesQuery.isLoading) {
       return;
     }
 
     const frameId = window.requestAnimationFrame(() => {
       if (cardViewPage === 1) {
-        setAllLoadedEvents(() => scatterPoints);
+        setAllLoadedBatches(() => importBatches);
       } else {
-        setAllLoadedEvents((prev) => {
-          if (scatterPoints.length === 0) {
+        setAllLoadedBatches((prev) => {
+          if (importBatches.length === 0) {
             return prev;
           }
-          const existingIds = new Set(prev.map(e => e.id));
-          const newEvents = scatterPoints.filter(e => !existingIds.has(e.id));
-          return [...prev, ...newEvents];
+          const existingIds = new Set(prev.map(b => b.batch_id));
+          const newBatches = importBatches.filter(b => !existingIds.has(b.batch_id));
+          return [...prev, ...newBatches];
         });
       }
       setIsLoadingMore(false);
@@ -308,7 +320,7 @@ export default function AdminLightningDistributionPage() {
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [scatterPoints, distributionStatsQuery.isLoading, viewMode, cardViewPage]);
+  }, [importBatches, importBatchesQuery.isLoading, viewMode, cardViewPage]);
 
   useEffect(() => {
     if (viewMode !== "card") return;
@@ -320,15 +332,15 @@ export default function AdminLightningDistributionPage() {
     if (!cardBody) return;
 
     const handleScroll = () => {
-      if (isLoadingMore || distributionStatsQuery.isLoading) return;
+      if (isLoadingMore || importBatchesQuery.isLoading) return;
 
       const scrollTop = cardBody.scrollTop;
       const scrollHeight = cardBody.scrollHeight;
       const clientHeight = cardBody.clientHeight;
 
       if (scrollTop + clientHeight >= scrollHeight - 100) {
-        const loadedCount = allLoadedEvents.length;
-        const totalCount = scatterPoints.length;
+        const loadedCount = allLoadedBatches.length;
+        const totalCount = importBatches.length;
 
         if (loadedCount < totalCount) {
           setIsLoadingMore(true);
@@ -339,14 +351,14 @@ export default function AdminLightningDistributionPage() {
 
     cardBody.addEventListener("scroll", handleScroll);
     return () => cardBody.removeEventListener("scroll", handleScroll);
-  }, [viewMode, isLoadingMore, distributionStatsQuery.isLoading, allLoadedEvents.length, scatterPoints.length]);
+  }, [viewMode, isLoadingMore, importBatchesQuery.isLoading, allLoadedBatches.length, importBatches.length]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
     window.requestAnimationFrame(updateTableScrollY);
-  }, [error, distributionError, scatterPoints.length, distributionStatsQuery.isFetching, updateTableScrollY]);
+  }, [error, batchesError, importBatches.length, importBatchesQuery.isFetching, updateTableScrollY]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -383,13 +395,25 @@ export default function AdminLightningDistributionPage() {
     };
   }, [updateTableScrollY]);
 
-  const eventColumns = useMemo<ColumnsType<LightningDistributionScatterPoint>>(
+  const batchColumns = useMemo<ColumnsType<LightningImportBatchSummary>>(
     () => [
       {
-        title: "事件编号",
-        dataIndex: "event_id",
+        title: "文件名",
+        dataIndex: "source_file_name",
+        width: 200,
+        render: (value: string | null) => value || "-",
+      },
+      {
+        title: "导入时间",
+        dataIndex: "import_time",
         width: 180,
-        render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
+        render: (value: string) => new Date(value).toLocaleString("zh-CN", { hour12: false }),
+      },
+      {
+        title: "事件数",
+        dataIndex: "event_count",
+        width: 100,
+        render: (value: number) => value,
       },
       {
         title: "城市",
@@ -404,51 +428,29 @@ export default function AdminLightningDistributionPage() {
         render: (value: string | null) => value || "-",
       },
       {
-        title: "经度",
-        dataIndex: "longitude",
-        width: 120,
-        render: (value: number) => formatNumber(value, 5),
-      },
-      {
-        title: "纬度",
-        dataIndex: "latitude",
-        width: 120,
-        render: (value: number) => formatNumber(value, 5),
-      },
-
-      {
-        title: "电流(kA)",
-        dataIndex: "current_ka",
+        title: "最大电流(kA)",
+        dataIndex: "max_abs_current_ka",
         width: 120,
         render: (value: number | null) => formatNumber(value, 2),
       },
       {
-        title: "绝对值(kA)",
-        dataIndex: "abs_current_ka",
+        title: "平均电流(kA)",
+        dataIndex: "avg_abs_current_ka",
         width: 120,
         render: (value: number | null) => formatNumber(value, 2),
-      },
-      {
-        title: "极性",
-        dataIndex: "polarity",
-        width: 100,
-        render: (value: LightningPolarity) => formatPolarity(value),
-      },
-      {
-        title: "事件时间",
-        dataIndex: "event_time",
-        width: 180,
-        render: (value: string | null) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "-",
       },
       {
         title: "操作",
         key: "actions",
-        width: 150,
+        width: 200,
         fixed: "right",
         render: (_: unknown, row) => (
           <Space wrap>
-            <Button size="small" onClick={() => openStatsModal(row)}>
-              统计详情
+            <Button size="small" onClick={() => openEventsModal(row)}>
+              事件明细
+            </Button>
+            <Button size="small" onClick={() => openScatterModal(row)}>
+              散点图
             </Button>
           </Space>
         ),
@@ -457,57 +459,63 @@ export default function AdminLightningDistributionPage() {
     [],
   );
 
-  const renderEventCard = (event: LightningDistributionScatterPoint) => {
+  const renderBatchCard = (batch: LightningImportBatchSummary) => {
     return (
       <AntCard
-        key={event.id}
-        className="admin-lightning-distribution-event-card"
+        key={batch.batch_id}
+        className="admin-lightning-distribution-batch-card"
         size="small"
         title={
           <Space className="min-w-0" size={8}>
-            <Typography.Text strong code>{event.event_id}</Typography.Text>
+            <Typography.Text strong>{batch.source_file_name || "未命名文件"}</Typography.Text>
           </Space>
         }
         extra={
-          <Button
-            type="text"
-            size="small"
-            onClick={() => openStatsModal(event)}
+          <Dropdown
+            menu={{
+              items: [
+                {
+                  key: "events",
+                  label: "事件明细",
+                  onClick: () => openEventsModal(batch),
+                },
+                {
+                  key: "scatter",
+                  label: "散点图",
+                  onClick: () => openScatterModal(batch),
+                },
+              ],
+            }}
           >
-            详情
-          </Button>
+            <Button type="text" size="small" icon={<MoreOutlined />} />
+          </Dropdown>
         }
       >
         <Space direction="vertical" size={10} style={{ width: "100%" }}>
-          <div className="admin-lightning-distribution-event-card-field">
-            <Typography.Text type="secondary">城市</Typography.Text>
-            <Typography.Text>{event.city || "-"}</Typography.Text>
-          </div>
-          <div className="admin-lightning-distribution-event-card-field">
-            <Typography.Text type="secondary">地点标签</Typography.Text>
-            <Typography.Text>{event.location_tag || "-"}</Typography.Text>
-          </div>
-          <div className="admin-lightning-distribution-event-card-field">
-            <Typography.Text type="secondary">坐标</Typography.Text>
+          <div className="admin-lightning-distribution-batch-card-field">
+            <Typography.Text type="secondary">导入时间</Typography.Text>
             <Typography.Text>
-              {formatNumber(event.longitude, 5)}, {formatNumber(event.latitude, 5)}
+              {new Date(batch.import_time).toLocaleString("zh-CN", { hour12: false })}
             </Typography.Text>
           </div>
-          <div className="admin-lightning-distribution-event-card-field">
-            <Typography.Text type="secondary">电流/极性</Typography.Text>
-            <Space size={4}>
-              <Typography.Text>{formatNumber(event.current_ka, 2)} kA</Typography.Text>
-              <Tag>{formatPolarity(event.polarity)}</Tag>
-            </Space>
+          <div className="admin-lightning-distribution-batch-card-field">
+            <Typography.Text type="secondary">事件数</Typography.Text>
+            <Typography.Text>{batch.event_count}</Typography.Text>
           </div>
-          {event.event_time && (
-            <div className="admin-lightning-distribution-event-card-field">
-              <Typography.Text type="secondary">事件时间</Typography.Text>
-              <Typography.Text>
-                {new Date(event.event_time).toLocaleString("zh-CN", { hour12: false })}
-              </Typography.Text>
-            </div>
-          )}
+          <div className="admin-lightning-distribution-batch-card-field">
+            <Typography.Text type="secondary">城市</Typography.Text>
+            <Typography.Text>{batch.city || "-"}</Typography.Text>
+          </div>
+          <div className="admin-lightning-distribution-batch-card-field">
+            <Typography.Text type="secondary">地点标签</Typography.Text>
+            <Typography.Text>{batch.location_tag || "-"}</Typography.Text>
+          </div>
+          <div className="admin-lightning-distribution-batch-card-field">
+            <Typography.Text type="secondary">电流范围</Typography.Text>
+            <Typography.Text>
+              {formatNumber(batch.max_abs_current_ka, 2)} kA (最大)
+            </Typography.Text>
+          </div>
         </Space>
       </AntCard>
     );
@@ -573,12 +581,12 @@ export default function AdminLightningDistributionPage() {
               <Form.Item label="关键词" style={{ marginBottom: 12 }}>
                 <Input
                   allowClear
-                  placeholder="按地点/标签筛选"
+                  placeholder="按地点/标签/文件名筛选"
                   value={keywordInput}
                   onChange={(event) => handleKeywordChange(event.target.value)}
                 />
               </Form.Item>
-              <Form.Item label="Region ID" style={{ marginBottom: 12 }}>
+              <Form.Item label="Region ID" style={{ marginBottom: 0 }}>
                 <Input
                   allowClear
                   placeholder="按 Region ID 筛选"
@@ -586,38 +594,7 @@ export default function AdminLightningDistributionPage() {
                   onChange={(event) => {
                     setRegionFilter(event.target.value);
                     setCardViewPage(1);
-                    setAllLoadedEvents([]);
-                  }}
-                />
-              </Form.Item>
-              <Form.Item label="网格尺寸(km)" style={{ marginBottom: 12 }}>
-                <InputNumber
-                  className="w-full"
-                  min={0.1}
-                  max={100}
-                  precision={2}
-                  value={distributionFilters.grid_size_km}
-                  onChange={(value) => {
-                    if (value !== null) {
-                      setDistributionFilters((prev) => ({ ...prev, grid_size_km: value }));
-                      setCardViewPage(1);
-                      setAllLoadedEvents([]);
-                      setPagination((prev) => ({ ...prev, current: 1 }));
-                    }
-                  }}
-                />
-              </Form.Item>
-              <Form.Item label="统计年限(可选)" style={{ marginBottom: 0 }}>
-                <InputNumber
-                  className="w-full"
-                  min={0.01}
-                  precision={2}
-                  value={distributionFilters.years}
-                  onChange={(value) => {
-                    setDistributionFilters((prev) => ({ ...prev, years: value }));
-                    setCardViewPage(1);
-                    setAllLoadedEvents([]);
-                    setPagination((prev) => ({ ...prev, current: 1 }));
+                    setAllLoadedBatches([]);
                   }}
                 />
               </Form.Item>
@@ -627,7 +604,7 @@ export default function AdminLightningDistributionPage() {
               <Form.Item label="关键词" style={{ width: 260 }}>
                 <Input
                   allowClear
-                  placeholder="按地点/标签筛选"
+                  placeholder="按地点/标签/文件名筛选"
                   value={keywordInput}
                   onChange={(event) => handleKeywordChange(event.target.value)}
                 />
@@ -640,38 +617,7 @@ export default function AdminLightningDistributionPage() {
                   onChange={(event) => {
                     setRegionFilter(event.target.value);
                     setCardViewPage(1);
-                    setAllLoadedEvents([]);
-                    setPagination((prev) => ({ ...prev, current: 1 }));
-                  }}
-                />
-              </Form.Item>
-              <Form.Item label="网格尺寸(km)" style={{ width: 160 }}>
-                <InputNumber
-                  className="w-full"
-                  min={0.1}
-                  max={100}
-                  precision={2}
-                  value={distributionFilters.grid_size_km}
-                  onChange={(value) => {
-                    if (value !== null) {
-                      setDistributionFilters((prev) => ({ ...prev, grid_size_km: value }));
-                      setCardViewPage(1);
-                      setAllLoadedEvents([]);
-                      setPagination((prev) => ({ ...prev, current: 1 }));
-                    }
-                  }}
-                />
-              </Form.Item>
-              <Form.Item label="统计年限(可选)" style={{ width: 160 }}>
-                <InputNumber
-                  className="w-full"
-                  min={0.01}
-                  precision={2}
-                  value={distributionFilters.years}
-                  onChange={(value) => {
-                    setDistributionFilters((prev) => ({ ...prev, years: value }));
-                    setCardViewPage(1);
-                    setAllLoadedEvents([]);
+                    setAllLoadedBatches([]);
                     setPagination((prev) => ({ ...prev, current: 1 }));
                   }}
                 />
@@ -681,16 +627,16 @@ export default function AdminLightningDistributionPage() {
 
           {viewMode === "table" ? (
             <div ref={tableScrollAnchorRef} className="admin-lightning-distribution-table-anchor mt-4">
-              <Table<LightningDistributionScatterPoint>
-                rowKey="id"
-                columns={eventColumns}
-                dataSource={scatterPoints}
-                loading={distributionStatsQuery.isFetching}
+              <Table<LightningImportBatchSummary>
+                rowKey="batch_id"
+                columns={batchColumns}
+                dataSource={importBatches}
+                loading={importBatchesQuery.isFetching}
                 tableLayout="fixed"
                 pagination={{
                   current: pagination.current,
                   pageSize: pagination.pageSize,
-                  total: scatterPoints.length,
+                  total: importBatches.length,
                   showSizeChanger: true,
                   pageSizeOptions: [10, 20, 50, 100],
                   showTotal: (total) => `共 ${total} 条`,
@@ -705,7 +651,7 @@ export default function AdminLightningDistributionPage() {
                   emptyText: (
                     <Empty
                       image={Empty.PRESENTED_IMAGE_SIMPLE}
-                      description="未找到符合筛选条件的事件。"
+                      description="未找到符合筛选条件的导入记录。"
                     />
                   ),
                 }}
@@ -713,23 +659,23 @@ export default function AdminLightningDistributionPage() {
             </div>
           ) : (
             <div className="admin-lightning-distribution-card-view">
-              {distributionStatsQuery.isLoading && allLoadedEvents.length === 0 ? (
+              {importBatchesQuery.isLoading && allLoadedBatches.length === 0 ? (
                 <div className="admin-lightning-distribution-card-view-state">
                   <Spin tip="加载中..." />
                 </div>
-              ) : allLoadedEvents.length === 0 ? (
+              ) : allLoadedBatches.length === 0 ? (
                 <div className="admin-lightning-distribution-card-view-state">
                   <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="未找到符合筛选条件的事件。"
+                    description="未找到符合筛选条件的导入记录。"
                   />
                 </div>
               ) : (
                 <div className="admin-lightning-distribution-card-view-content">
                   <Row gutter={[12, 12]}>
-                    {allLoadedEvents.map((event) => (
-                      <Col key={event.id} xs={24} sm={24} md={12} lg={8} xl={6}>
-                        {renderEventCard(event)}
+                    {allLoadedBatches.map((batch) => (
+                      <Col key={batch.batch_id} xs={24} sm={24} md={12} lg={8} xl={6}>
+                        {renderBatchCard(batch)}
                       </Col>
                     ))}
                   </Row>
@@ -738,10 +684,10 @@ export default function AdminLightningDistributionPage() {
                       <Spin tip="加载更多..." />
                     </div>
                   )}
-                  {allLoadedEvents.length >= scatterPoints.length && allLoadedEvents.length > 0 && (
+                  {allLoadedBatches.length >= importBatches.length && allLoadedBatches.length > 0 && (
                     <div style={{ textAlign: "center", padding: "20px 0" }}>
                       <Typography.Text type="secondary">
-                        已加载全部 {allLoadedEvents.length} 条数据
+                        已加载全部 {allLoadedBatches.length} 条数据
                       </Typography.Text>
                     </div>
                   )}
@@ -808,69 +754,239 @@ export default function AdminLightningDistributionPage() {
         </Form>
       </Modal>
 
-      <Modal
-        title={selectedEventForModal ? `统计详情 - ${selectedEventForModal.event_id}` : "统计详情"}
-        open={statsModalOpen}
-        onCancel={closeStatsModal}
-        footer={null}
-        width={1200}
-        destroyOnClose
-      >
-        {selectedEventForModal && distributionStats && (
-          <Space direction="vertical" size={16} className="w-full">
-            <div>
-              <Typography.Title level={5}>区域统计摘要</Typography.Title>
-              <Descriptions bordered size="small" column={4}>
-                <Descriptions.Item label="记录总数">{distributionStats.summary.total_records}</Descriptions.Item>
-                <Descriptions.Item label="统计面积(km²)">{formatNumber(distributionStats.summary.area_km2, 3)}</Descriptions.Item>
-                <Descriptions.Item label="统计年限">{formatNumber(distributionStats.summary.data_years, 3)}</Descriptions.Item>
-                <Descriptions.Item label="整体 Ng">{formatNumber(distributionStats.summary.overall_ng_per_km2_year, 4)}</Descriptions.Item>
-                <Descriptions.Item label="Imax(kA)">{formatNumber(distributionStats.summary.max_abs_current_ka, 2)}</Descriptions.Item>
-                <Descriptions.Item label="Iavg(kA)">{formatNumber(distributionStats.summary.avg_abs_current_ka, 2)}</Descriptions.Item>
-                <Descriptions.Item label="正极占比">
-                  {`${(distributionStats.polarity.positive_ratio * 100).toFixed(2)}%`}
-                </Descriptions.Item>
-                <Descriptions.Item label="负极占比">
-                  {`${(distributionStats.polarity.negative_ratio * 100).toFixed(2)}%`}
-                </Descriptions.Item>
+      <EventsModal
+        batch={selectedBatchForEvents}
+        open={eventsModalOpen}
+        onClose={closeEventsModal}
+        fetchWithAuth={fetchWithAuth}
+      />
 
-                <Descriptions.Item label="实测条数">{distributionStats.sources.measured_count}</Descriptions.Item>
-                <Descriptions.Item label="合成条数">{distributionStats.sources.synthetic_count}</Descriptions.Item>
-                <Descriptions.Item label="网格数">{distributionStats.grid_cells.length}</Descriptions.Item>
-                <Descriptions.Item label="散点数">{distributionStats.scatter_points.length}</Descriptions.Item>
-              </Descriptions>
-            </div>
-
-            <div>
-              <Typography.Title level={5}>空间分布地图</Typography.Title>
-              <LightningDistributionMap
-                points={distributionStats.scatter_points}
-                grids={distributionStats.grid_cells}
-                loading={distributionStatsQuery.isFetching}
-              />
-            </div>
-
-            <div>
-              <Typography.Title level={5}>当前事件信息</Typography.Title>
-              <Descriptions bordered size="small" column={2}>
-                <Descriptions.Item label="事件编号">{selectedEventForModal.event_id}</Descriptions.Item>
-                <Descriptions.Item label="城市">{formatNullable(selectedEventForModal.city)}</Descriptions.Item>
-                <Descriptions.Item label="地点标签">{formatNullable(selectedEventForModal.location_tag)}</Descriptions.Item>
-                <Descriptions.Item label="区域ID">{formatNullable(selectedEventForModal.region_id)}</Descriptions.Item>
-                <Descriptions.Item label="经度">{formatNumber(selectedEventForModal.longitude, 5)}</Descriptions.Item>
-                <Descriptions.Item label="纬度">{formatNumber(selectedEventForModal.latitude, 5)}</Descriptions.Item>
-                <Descriptions.Item label="电流(kA)">{formatNumber(selectedEventForModal.current_ka, 2)}</Descriptions.Item>
-                <Descriptions.Item label="绝对值(kA)">{formatNumber(selectedEventForModal.abs_current_ka, 2)}</Descriptions.Item>
-                <Descriptions.Item label="极性">{formatPolarity(selectedEventForModal.polarity)}</Descriptions.Item>
-                <Descriptions.Item label="事件时间">
-                  {selectedEventForModal.event_time ? new Date(selectedEventForModal.event_time).toLocaleString("zh-CN", { hour12: false }) : "-"}
-                </Descriptions.Item>
-              </Descriptions>
-            </div>
-          </Space>
-        )}
-      </Modal>
+      <ScatterModal
+        batch={selectedBatchForScatter}
+        open={scatterModalOpen}
+        onClose={closeScatterModal}
+        fetchWithAuth={fetchWithAuth}
+        distributionFilters={distributionFilters}
+      />
     </div>
+  );
+}
+
+function EventsModal({
+  batch,
+  open,
+  onClose,
+  fetchWithAuth,
+}: {
+  batch: LightningImportBatchSummary | null;
+  open: boolean;
+  onClose: () => void;
+  fetchWithAuth: (input: RequestInfo, init?: RequestInit) => Promise<Response>;
+}) {
+  const eventsQuery = useQuery({
+    queryKey: [
+      "/api/v1/lightning-currents/import-batches/events",
+      batch?.source_file_name,
+      batch?.import_time,
+      batch?.region_id,
+      batch?.location_tag,
+      batch?.city,
+    ],
+    enabled: open && !!batch,
+    queryFn: async () => {
+      if (!batch) return null;
+      const params = new URLSearchParams();
+      if (batch.source_file_name) params.set("source_file_name", batch.source_file_name);
+      params.set("import_time", batch.import_time);
+      if (batch.region_id) params.set("region_id", batch.region_id);
+      if (batch.location_tag) params.set("location_tag", batch.location_tag);
+      if (batch.city) params.set("city", batch.city);
+
+      const response = await fetchWithAuth(
+        `/api/v1/lightning-currents/import-batches/events?${params.toString()}`
+      );
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as LightningImportBatchEventsResponse;
+    },
+  });
+
+  const events = eventsQuery.data?.events ?? [];
+
+  const eventColumns: ColumnsType<LightningImportBatchEventItem> = [
+    {
+      title: "事件编号",
+      dataIndex: "event_id",
+      width: 180,
+      render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
+    },
+    {
+      title: "经度",
+      dataIndex: "longitude",
+      width: 120,
+      render: (value: number | null) => formatNumber(value, 5),
+    },
+    {
+      title: "纬度",
+      dataIndex: "latitude",
+      width: 120,
+      render: (value: number | null) => formatNumber(value, 5),
+    },
+    {
+      title: "电流(kA)",
+      dataIndex: "current_ka",
+      width: 120,
+      render: (value: number | null) => formatNumber(value, 2),
+    },
+    {
+      title: "绝对值(kA)",
+      dataIndex: "abs_current_ka",
+      width: 120,
+      render: (value: number | null) => formatNumber(value, 2),
+    },
+    {
+      title: "极性",
+      dataIndex: "polarity",
+      width: 100,
+      render: (value: LightningPolarity) => formatPolarity(value),
+    },
+    {
+      title: "事件时间",
+      dataIndex: "event_time",
+      width: 180,
+      render: (value: string | null) =>
+        value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "-",
+    },
+  ];
+
+  return (
+    <Modal
+      title={batch ? `事件明细 - ${batch.source_file_name || "未命名"}` : "事件明细"}
+      open={open}
+      onCancel={onClose}
+      footer={null}
+      width={1200}
+      destroyOnClose
+    >
+      {batch && (
+        <Space direction="vertical" size={16} className="w-full">
+          <Descriptions bordered size="small" column={2}>
+            <Descriptions.Item label="文件名">{batch.source_file_name || "-"}</Descriptions.Item>
+            <Descriptions.Item label="导入时间">
+              {new Date(batch.import_time).toLocaleString("zh-CN", { hour12: false })}
+            </Descriptions.Item>
+            <Descriptions.Item label="事件总数">{batch.event_count}</Descriptions.Item>
+            <Descriptions.Item label="城市">{batch.city || "-"}</Descriptions.Item>
+            <Descriptions.Item label="地点标签">{batch.location_tag || "-"}</Descriptions.Item>
+            <Descriptions.Item label="Region ID">{batch.region_id || "-"}</Descriptions.Item>
+          </Descriptions>
+
+          <Table
+            rowKey="id"
+            columns={eventColumns}
+            dataSource={events}
+            loading={eventsQuery.isLoading}
+            pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
+            scroll={{ x: 1000, y: 400 }}
+            locale={{
+              emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无事件数据" />,
+            }}
+          />
+        </Space>
+      )}
+    </Modal>
+  );
+}
+
+function ScatterModal({
+  batch,
+  open,
+  onClose,
+  fetchWithAuth,
+  distributionFilters,
+}: {
+  batch: LightningImportBatchSummary | null;
+  open: boolean;
+  onClose: () => void;
+  fetchWithAuth: (input: RequestInfo, init?: RequestInit) => Promise<Response>;
+  distributionFilters: DistributionFilterValues;
+}) {
+  const distributionStatsPath = useMemo(() => {
+    if (!batch || !open) return null;
+    const params = new URLSearchParams();
+    if (batch.region_id) params.set("region_id", batch.region_id);
+    if (batch.location_tag) params.set("location_tag", batch.location_tag);
+    if (batch.city) params.set("city", batch.city);
+    if (distributionFilters.years !== null) params.set("years", String(distributionFilters.years));
+    params.set("grid_size_km", String(distributionFilters.grid_size_km));
+    params.set("grid_limit", "1000");
+    params.set("scatter_limit", "2000");
+    return `/api/v1/lightning-currents/stats/distribution?${params.toString()}`;
+  }, [batch, open, distributionFilters]);
+
+  const distributionQuery = useQuery({
+    queryKey: [distributionStatsPath],
+    enabled: !!distributionStatsPath,
+    queryFn: async () => {
+      if (!distributionStatsPath) return null;
+      const response = await fetchWithAuth(distributionStatsPath);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as LightningDistributionStatsResponse;
+    },
+  });
+
+  const distributionStats = distributionQuery.data;
+
+  return (
+    <Modal
+      title={batch ? `散点图 - ${batch.source_file_name || "未命名"}` : "散点图"}
+      open={open}
+      onCancel={onClose}
+      footer={null}
+      width={1200}
+      destroyOnClose
+    >
+      {batch && distributionStats && (
+        <Space direction="vertical" size={16} className="w-full">
+          <Descriptions bordered size="small" column={4}>
+            <Descriptions.Item label="记录总数">{distributionStats.summary.total_records}</Descriptions.Item>
+            <Descriptions.Item label="统计面积(km²)">
+              {formatNumber(distributionStats.summary.area_km2, 3)}
+            </Descriptions.Item>
+            <Descriptions.Item label="统计年限">
+              {formatNumber(distributionStats.summary.data_years, 3)}
+            </Descriptions.Item>
+            <Descriptions.Item label="整体 Ng">
+              {formatNumber(distributionStats.summary.overall_ng_per_km2_year, 4)}
+            </Descriptions.Item>
+            <Descriptions.Item label="Imax(kA)">
+              {formatNumber(distributionStats.summary.max_abs_current_ka, 2)}
+            </Descriptions.Item>
+            <Descriptions.Item label="Iavg(kA)">
+              {formatNumber(distributionStats.summary.avg_abs_current_ka, 2)}
+            </Descriptions.Item>
+            <Descriptions.Item label="正极占比">
+              {`${(distributionStats.polarity.positive_ratio * 100).toFixed(2)}%`}
+            </Descriptions.Item>
+            <Descriptions.Item label="负极占比">
+              {`${(distributionStats.polarity.negative_ratio * 100).toFixed(2)}%`}
+            </Descriptions.Item>
+          </Descriptions>
+
+          <div>
+            <Typography.Title level={5}>空间分布地图</Typography.Title>
+            <LightningDistributionMap
+              points={distributionStats.scatter_points}
+              grids={distributionStats.grid_cells}
+              loading={distributionQuery.isFetching}
+            />
+          </div>
+        </Space>
+      )}
+    </Modal>
   );
 }
 

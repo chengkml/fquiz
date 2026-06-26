@@ -9,7 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import and_, case, func, insert, or_, select
+from sqlalchemy import and_, case, func, insert, or_, select, String
 from sqlalchemy.orm import Session
 
 from ..models.base import utcnow
@@ -48,6 +48,12 @@ from ..schemas.lightning import (
     LightningTowerTerrainComputeRequest,
     LightningTowerTerrainComputeResponse,
     LightningTowerTerrainMetrics,
+)
+from ..schemas.lightning_import import (
+    LightningImportBatchSummary,
+    LightningImportBatchListResponse,
+    LightningImportBatchEventItem,
+    LightningImportBatchEventsResponse,
 )
 from .line_preparation_service import record_line_preparation_source, summarize_line_preparation
 from .line_service import serialize_line
@@ -2530,3 +2536,198 @@ def _fire_and_forget(coro: object) -> None:
     except RuntimeError:
         return
     loop.create_task(coro)
+
+
+def list_lightning_import_batches(
+    db: Session,
+    *,
+    keyword: str | None = None,
+    region_id: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> LightningImportBatchListResponse:
+    """
+    列出文件导入批次记录，按导入时间分组
+    """
+    # 构建过滤条件
+    filters = []
+
+    if keyword:
+        keyword_pattern = f"%{keyword}%"
+        filters.append(
+            or_(
+                LightningCurrentEvent.source_file_name.ilike(keyword_pattern),
+                LightningCurrentEvent.location_tag.ilike(keyword_pattern),
+                LightningCurrentEvent.city.ilike(keyword_pattern),
+            )
+        )
+
+    if region_id:
+        filters.append(LightningCurrentEvent.region_id == region_id)
+
+    # 按 source_file_name + create_date (精确到秒) + region_id + location_tag + city 分组
+    # 使用 create_date 的日期和小时作为分组依据
+    batch_key = func.concat(
+        func.coalesce(LightningCurrentEvent.source_file_name, ""),
+        "|",
+        func.date_trunc("second", LightningCurrentEvent.create_date).cast(String),
+        "|",
+        func.coalesce(LightningCurrentEvent.region_id, ""),
+        "|",
+        func.coalesce(LightningCurrentEvent.location_tag, ""),
+        "|",
+        func.coalesce(LightningCurrentEvent.city, ""),
+    )
+
+    # 获取总数
+    total_query = (
+        select(func.count(func.distinct(batch_key)))
+        .where(*filters)
+    )
+    total = db.execute(total_query).scalar() or 0
+
+    # 查询批次数据
+    batch_query = (
+        select(
+            batch_key.label("batch_key"),
+            LightningCurrentEvent.source_file_name,
+            func.min(LightningCurrentEvent.create_date).label("import_time"),
+            func.count().label("event_count"),
+            LightningCurrentEvent.region_id,
+            LightningCurrentEvent.location_tag,
+            LightningCurrentEvent.city,
+            func.extract("year", func.min(LightningCurrentEvent.event_time)).label("event_year"),
+            func.bool_or(LightningCurrentEvent.is_synthetic).label("is_synthetic"),
+            func.max(LightningCurrentEvent.notes).label("notes"),
+            func.max(LightningCurrentEvent.peak_abs_current_ka).label("max_abs_current_ka"),
+            func.avg(LightningCurrentEvent.peak_abs_current_ka).label("avg_abs_current_ka"),
+            func.sum(case((LightningCurrentEvent.polarity == "positive", 1), else_=0)).label("positive_count"),
+            func.sum(case((LightningCurrentEvent.polarity == "negative", 1), else_=0)).label("negative_count"),
+            func.max(LightningCurrentEvent.create_user).label("create_user"),
+        )
+        .where(*filters)
+        .group_by(
+            batch_key,
+            LightningCurrentEvent.source_file_name,
+            LightningCurrentEvent.region_id,
+            LightningCurrentEvent.location_tag,
+            LightningCurrentEvent.city,
+        )
+        .order_by(func.min(LightningCurrentEvent.create_date).desc())
+        .limit(limit)
+        .offset(offset)
+    )
+
+    rows = db.execute(batch_query).all()
+
+    items = []
+    for row in rows:
+        # 使用批次key的哈希作为batch_id
+        import hashlib
+        batch_id = hashlib.md5(row.batch_key.encode()).hexdigest()[:16]
+
+        items.append(
+            LightningImportBatchSummary(
+                batch_id=batch_id,
+                source_file_name=row.source_file_name,
+                import_time=row.import_time,
+                event_count=row.event_count,
+                region_id=row.region_id,
+                location_tag=row.location_tag,
+                city=row.city,
+                event_year=int(row.event_year) if row.event_year else None,
+                is_synthetic=row.is_synthetic or False,
+                notes=row.notes,
+                max_abs_current_ka=float(row.max_abs_current_ka) if row.max_abs_current_ka else None,
+                avg_abs_current_ka=float(row.avg_abs_current_ka) if row.avg_abs_current_ka else None,
+                positive_count=int(row.positive_count or 0),
+                negative_count=int(row.negative_count or 0),
+                create_user=row.create_user,
+            )
+        )
+
+    return LightningImportBatchListResponse(
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def get_lightning_import_batch_events(
+    db: Session,
+    *,
+    source_file_name: str | None,
+    import_time: datetime,
+    region_id: str | None,
+    location_tag: str | None,
+    city: str | None,
+) -> LightningImportBatchEventsResponse:
+    """
+    获取某个导入批次的所有事件
+    """
+    import hashlib
+
+    # 构建批次key
+    batch_key_str = "|".join([
+        source_file_name or "",
+        import_time.isoformat(),
+        region_id or "",
+        location_tag or "",
+        city or "",
+    ])
+    batch_id = hashlib.md5(batch_key_str.encode()).hexdigest()[:16]
+
+    # 查询该批次的所有事件
+    # 允许 create_date 有 5 秒误差
+    time_tolerance = timedelta(seconds=5)
+    filters = [
+        LightningCurrentEvent.create_date >= import_time - time_tolerance,
+        LightningCurrentEvent.create_date <= import_time + time_tolerance,
+    ]
+
+    if source_file_name:
+        filters.append(LightningCurrentEvent.source_file_name == source_file_name)
+    else:
+        filters.append(LightningCurrentEvent.source_file_name.is_(None))
+
+    if region_id:
+        filters.append(LightningCurrentEvent.region_id == region_id)
+    else:
+        filters.append(LightningCurrentEvent.region_id.is_(None))
+
+    if location_tag:
+        filters.append(LightningCurrentEvent.location_tag == location_tag)
+    else:
+        filters.append(LightningCurrentEvent.location_tag.is_(None))
+
+    if city:
+        filters.append(LightningCurrentEvent.city == city)
+    else:
+        filters.append(LightningCurrentEvent.city.is_(None))
+
+    query = select(LightningCurrentEvent).where(*filters).order_by(LightningCurrentEvent.event_time)
+
+    events_db = db.execute(query).scalars().all()
+
+    events = [
+        LightningImportBatchEventItem(
+            id=event.id,
+            event_id=event.event_id,
+            longitude=event.longitude,
+            latitude=event.latitude,
+            current_ka=event.peak_current_ka,
+            abs_current_ka=event.peak_abs_current_ka,
+            polarity=event.polarity,
+            event_time=event.event_time,
+        )
+        for event in events_db
+    ]
+
+    return LightningImportBatchEventsResponse(
+        batch_id=batch_id,
+        source_file_name=source_file_name,
+        import_time=import_time,
+        events=events,
+        total=len(events),
+    )
