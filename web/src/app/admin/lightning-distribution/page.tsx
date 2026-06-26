@@ -45,6 +45,7 @@ import type {
   LightningImportBatchSummary,
   LightningImportBatchListResponse,
   LightningImportBatchEventsResponse,
+  LightningImportBatchEventItem,
 } from "@/types/auth";
 
 type ImportFormValues = {
@@ -781,7 +782,7 @@ function EventsModal({
   batch: LightningImportBatchSummary | null;
   open: boolean;
   onClose: () => void;
-  fetchWithAuth: (input: RequestInfo, init?: RequestInit) => Promise<Response>;
+  fetchWithAuth: (path: string, init?: RequestInit, retryOnUnauthorized?: boolean) => Promise<Response>;
 }) {
   const eventsQuery = useQuery({
     queryKey: [
@@ -909,7 +910,7 @@ function ScatterModal({
   batch: LightningImportBatchSummary | null;
   open: boolean;
   onClose: () => void;
-  fetchWithAuth: (input: RequestInfo, init?: RequestInit) => Promise<Response>;
+  fetchWithAuth: (path: string, init?: RequestInit, retryOnUnauthorized?: boolean) => Promise<Response>;
   distributionFilters: DistributionFilterValues;
 }) {
   const distributionStatsPath = useMemo(() => {
