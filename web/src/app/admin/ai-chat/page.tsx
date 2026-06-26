@@ -46,7 +46,6 @@ export default function AiChatPage() {
   const [streamingMessageId, setStreamingMessageId] = useState<number | null>(null);
   const [optimisticMessages, setOptimisticMessages] = useState<Record<number, AiChatMessage[]>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const hasAttemptedAutoCreate = useRef(false);
 
   useToastFeedback({
     errorMessage: error,
@@ -104,11 +103,9 @@ export default function AiChatPage() {
       queryClient.invalidateQueries({ queryKey: ["ai-chat-conversations"] });
       setSelectedConvId(data.id);
       setSuccess("创建对话成功");
-      hasAttemptedAutoCreate.current = false;
     },
     onError: (err: Error) => {
       setError(`创建对话失败: ${err.message}`);
-      hasAttemptedAutoCreate.current = false;
     },
   });
 
@@ -271,13 +268,36 @@ export default function AiChatPage() {
     },
   });
 
-  const handleSendMessage = useCallback(() => {
-    if (!selectedConvId || !messageInput.trim()) return;
-    sendMessageMutation.mutate({
-      convId: selectedConvId,
-      content: messageInput.trim(),
-    });
-  }, [selectedConvId, messageInput, sendMessageMutation]);
+  const handleSendMessage = useCallback(async () => {
+    const content = messageInput.trim();
+    if (!content) return;
+
+    // If no conversation is selected, create one with a title based on the message
+    if (!selectedConvId) {
+      try {
+        // Generate title from the first message (take first 20 chars or up to first newline)
+        const title = content.length > 20
+          ? content.substring(0, 20) + "..."
+          : content.split('\n')[0] || "新对话";
+
+        const newConv = await createConvMutation.mutateAsync(title);
+        // Send the message to the newly created conversation
+        sendMessageMutation.mutate({
+          convId: newConv.id,
+          content,
+        });
+      } catch (err) {
+        // Error already handled by createConvMutation
+        return;
+      }
+    } else {
+      // Send to existing conversation
+      sendMessageMutation.mutate({
+        convId: selectedConvId,
+        content,
+      });
+    }
+  }, [selectedConvId, messageInput, sendMessageMutation, createConvMutation]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -289,14 +309,6 @@ export default function AiChatPage() {
       setSelectedConvId(conversations.items[0].id);
     }
   }, [convLoading, conversations?.items, selectedConvId, createConvMutation.isPending]);
-
-  // Auto-create conversation if none exist (only on initial load, not after deletions)
-  useEffect(() => {
-    if (!convLoading && conversations?.items && conversations.items.length === 0 && !hasAttemptedAutoCreate.current && !createConvMutation.isPending) {
-      hasAttemptedAutoCreate.current = true;
-      createConvMutation.mutate("新对话");
-    }
-  }, [convLoading, conversations?.items, createConvMutation]);
 
   if (initializing) {
     return (
@@ -335,7 +347,7 @@ export default function AiChatPage() {
           ) : conversations?.items.length === 0 ? (
             <div style={{ padding: "60px 20px", textAlign: "center" }}>
               <Text style={{ color: "var(--ant-color-text-secondary)", fontSize: 14 }}>
-                {createConvMutation.isPending ? "正在创建对话..." : "暂无对话"}
+                暂无对话
               </Text>
             </div>
           ) : (
@@ -441,12 +453,74 @@ export default function AiChatPage() {
         }}
       >
         {!selectedConvId ? (
-          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Empty
-              description="请选择或创建一个对话开始聊天"
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-            />
-          </div>
+          <>
+            {/* Welcome Area */}
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ textAlign: "center", maxWidth: 480 }}>
+                <Empty
+                  description={
+                    <div>
+                      <Text style={{ fontSize: 16, display: "block", marginBottom: 8 }}>
+                        欢迎使用 AI 问答助手
+                      </Text>
+                      <Text style={{ color: "var(--ant-color-text-secondary)", fontSize: 14 }}>
+                        {conversations?.items && conversations.items.length > 0
+                          ? "选择左侧对话继续，或直接输入问题开始新对话"
+                          : "输入您的问题，开始第一个对话"}
+                      </Text>
+                    </div>
+                  }
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                />
+              </div>
+            </div>
+
+            {/* Input Area for new conversation */}
+            <div
+              style={{
+                padding: "16px 24px",
+                borderTop: "1px solid var(--ant-color-border-secondary)",
+                background: "var(--fquiz-theme-bg-container)",
+              }}
+            >
+              <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
+                <TextArea
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  placeholder="输入您的问题...（Shift + Enter 换行，Enter 发送）"
+                  autoSize={{ minRows: 1, maxRows: 4 }}
+                  onPressEnter={(e) => {
+                    if (!e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  disabled={sendMessageMutation.isPending || createConvMutation.isPending}
+                  style={{
+                    flex: 1,
+                    borderRadius: 12,
+                    padding: "10px 14px",
+                  }}
+                />
+                <Button
+                  type="primary"
+                  icon={<SendOutlined />}
+                  loading={sendMessageMutation.isPending || createConvMutation.isPending}
+                  onClick={handleSendMessage}
+                  disabled={!messageInput.trim()}
+                  style={{
+                    height: "auto",
+                    minHeight: 40,
+                    borderRadius: 12,
+                    paddingLeft: 20,
+                    paddingRight: 20,
+                  }}
+                >
+                  发送
+                </Button>
+              </div>
+            </div>
+          </>
         ) : (
           <>
             {/* Chat Header */}
