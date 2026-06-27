@@ -490,19 +490,6 @@ export default function AtpModelsPage() {
         ),
       },
       {
-        title: "当前版本",
-        key: "release",
-        width: 160,
-        render: (_, item) => (
-          <Space direction="vertical" size={0}>
-            <Typography.Text>{item.active_release_tag || (item.active_release_no ? `r${item.active_release_no}` : "-")}</Typography.Text>
-            <Typography.Text type="secondary">
-              {item.release_count} 个版本 / {item.run_count} 次运行
-            </Typography.Text>
-          </Space>
-        ),
-      },
-      {
         title: "更新时间",
         key: "update_date",
         width: 170,
@@ -627,15 +614,6 @@ export default function AtpModelsPage() {
               <Tag>{item.tower_type || "未设置塔型"}</Tag>
               <Tag>{item.scene_type || "未设置场景"}</Tag>
               <Tag>{item.arrester_config || "未设置避雷器"}</Tag>
-            </Space>
-          </div>
-          <div className="admin-atp-models-model-card-field">
-            <Typography.Text type="secondary">版本信息</Typography.Text>
-            <Space direction="vertical" size={0}>
-              <Typography.Text>{item.active_release_tag || (item.active_release_no ? `r${item.active_release_no}` : "-")}</Typography.Text>
-              <Typography.Text type="secondary">
-                {item.release_count} 个版本 / {item.run_count} 次运行
-              </Typography.Text>
             </Space>
           </div>
           <div className="admin-atp-models-model-card-field">
