@@ -2582,6 +2582,7 @@ def list_lightning_import_batches(
     # 获取总数
     total_query = (
         select(func.count(func.distinct(batch_key)))
+        .select_from(LightningCurrentEvent)
         .where(*filters)
     )
     total = db.execute(total_query).scalar() or 0
