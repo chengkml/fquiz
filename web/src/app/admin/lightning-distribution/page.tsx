@@ -50,7 +50,6 @@ import type {
 
 type ImportFormValues = {
   event_year: number | null;
-  region_id: string;
   location_tag: string;
   city: string;
   notes: string;
@@ -63,7 +62,6 @@ type DistributionFilterValues = {
 
 const INITIAL_IMPORT_VALUES: ImportFormValues = {
   event_year: null,
-  region_id: "",
   location_tag: "",
   city: "",
   notes: "",
@@ -115,7 +113,6 @@ export default function AdminLightningDistributionPage() {
   const [distributionFilters, setDistributionFilters] = useState<DistributionFilterValues>(INITIAL_DISTRIBUTION_FILTERS);
   const [keywordInput, setKeywordInput] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
-  const [regionFilter, setRegionFilter] = useState("");
   const [selectedBatchForEvents, setSelectedBatchForEvents] = useState<LightningImportBatchSummary | null>(null);
   const [selectedBatchForScatter, setSelectedBatchForScatter] = useState<LightningImportBatchSummary | null>(null);
   const [eventsModalOpen, setEventsModalOpen] = useState(false);
@@ -138,11 +135,10 @@ export default function AdminLightningDistributionPage() {
   const importBatchesPath = useMemo(() => {
     const params = new URLSearchParams();
     if (trimmedKeyword) params.set("keyword", trimmedKeyword);
-    if (regionFilter.trim()) params.set("region_id", regionFilter.trim());
     params.set("limit", "100");
     params.set("offset", "0");
     return `/api/v1/lightning-currents/import-batches?${params.toString()}`;
-  }, [trimmedKeyword, regionFilter]);
+  }, [trimmedKeyword]);
 
   const importBatchesQuery = useQuery({
     queryKey: [importBatchesPath],
@@ -193,7 +189,6 @@ export default function AdminLightningDistributionPage() {
       if (values.event_year !== null && values.event_year !== undefined) {
         formData.append("event_year", String(values.event_year));
       }
-      if (values.region_id?.trim()) formData.append("region_id", values.region_id.trim());
       if (values.location_tag?.trim()) formData.append("location_tag", values.location_tag.trim());
       if (values.city?.trim()) formData.append("city", values.city.trim());
       if (values.notes?.trim()) formData.append("notes", values.notes.trim());
@@ -408,6 +403,18 @@ export default function AdminLightningDistributionPage() {
   const batchColumns = useMemo<ColumnsType<LightningImportBatchSummary>>(
     () => [
       {
+        title: "城市",
+        dataIndex: "city",
+        width: 120,
+        render: (value: string | null) => value || "-",
+      },
+      {
+        title: "地点标签",
+        dataIndex: "location_tag",
+        width: 150,
+        render: (value: string | null) => value || "-",
+      },
+      {
         title: "文件名",
         dataIndex: "source_file_name",
         width: 200,
@@ -424,18 +431,6 @@ export default function AdminLightningDistributionPage() {
         dataIndex: "event_count",
         width: 100,
         render: (value: number) => value,
-      },
-      {
-        title: "城市",
-        dataIndex: "city",
-        width: 120,
-        render: (value: string | null) => value || "-",
-      },
-      {
-        title: "地点标签",
-        dataIndex: "location_tag",
-        width: 150,
-        render: (value: string | null) => value || "-",
       },
       {
         title: "最大电流(kA)",
@@ -503,6 +498,14 @@ export default function AdminLightningDistributionPage() {
       >
         <Space direction="vertical" size={10} style={{ width: "100%" }}>
           <div className="admin-lightning-distribution-batch-card-field">
+            <Typography.Text type="secondary">城市</Typography.Text>
+            <Typography.Text>{batch.city || "-"}</Typography.Text>
+          </div>
+          <div className="admin-lightning-distribution-batch-card-field">
+            <Typography.Text type="secondary">地点标签</Typography.Text>
+            <Typography.Text>{batch.location_tag || "-"}</Typography.Text>
+          </div>
+          <div className="admin-lightning-distribution-batch-card-field">
             <Typography.Text type="secondary">导入时间</Typography.Text>
             <Typography.Text>
               {new Date(batch.import_time).toLocaleString("zh-CN", { hour12: false })}
@@ -511,14 +514,6 @@ export default function AdminLightningDistributionPage() {
           <div className="admin-lightning-distribution-batch-card-field">
             <Typography.Text type="secondary">事件数</Typography.Text>
             <Typography.Text>{batch.event_count}</Typography.Text>
-          </div>
-          <div className="admin-lightning-distribution-batch-card-field">
-            <Typography.Text type="secondary">城市</Typography.Text>
-            <Typography.Text>{batch.city || "-"}</Typography.Text>
-          </div>
-          <div className="admin-lightning-distribution-batch-card-field">
-            <Typography.Text type="secondary">地点标签</Typography.Text>
-            <Typography.Text>{batch.location_tag || "-"}</Typography.Text>
           </div>
           <div className="admin-lightning-distribution-batch-card-field">
             <Typography.Text type="secondary">电流范围</Typography.Text>
@@ -582,10 +577,6 @@ export default function AdminLightningDistributionPage() {
         }
       >
         <Space direction="vertical" size={12} className="w-full">
-          <Typography.Text type="secondary">
-            基于经纬度与电流幅值展示雷电空间分布，支持按地点、区域等条件筛选。
-          </Typography.Text>
-
           {viewMode === "card" ? (
             <Form layout="vertical" style={{ marginBottom: 16 }}>
               <Form.Item label="关键词" style={{ marginBottom: 12 }}>
@@ -594,22 +585,6 @@ export default function AdminLightningDistributionPage() {
                   placeholder="按地点/标签/文件名筛选"
                   value={keywordInput}
                   onChange={(event) => handleKeywordChange(event.target.value)}
-                />
-              </Form.Item>
-              <Form.Item label="Region ID" style={{ marginBottom: 12 }}>
-                <Input
-                  allowClear
-                  placeholder="按 Region ID 筛选"
-                  value={regionFilter}
-                  onChange={(event) => {
-                    setRegionFilter(event.target.value);
-                    setCardViewPage(1);
-                    setAllLoadedBatches([]);
-                    if (shouldLoadData) {
-                      setShouldLoadData(false);
-                      setTimeout(() => setShouldLoadData(true), 0);
-                    }
-                  }}
                 />
               </Form.Item>
               <Form.Item style={{ marginBottom: 0 }}>
@@ -628,20 +603,13 @@ export default function AdminLightningDistributionPage() {
                   onChange={(event) => handleKeywordChange(event.target.value)}
                 />
               </Form.Item>
-              <Form.Item label="Region ID" style={{ width: 200 }}>
-                <Input
-                  allowClear
-                  placeholder="按 Region ID 筛选"
-                  value={regionFilter}
-                  onChange={(event) => {
-                    setRegionFilter(event.target.value);
-                    setCardViewPage(1);
-                    setAllLoadedBatches([]);
-                    setPagination((prev) => ({ ...prev, current: 1 }));
-                    if (shouldLoadData) {
-                      setShouldLoadData(false);
-                      setTimeout(() => setShouldLoadData(true), 0);
-                    }
+              <Form.Item>
+                <Button type="primary" onClick={handleSearch}>
+                  查询
+                </Button>
+              </Form.Item>
+            </Form>
+          )}
                   }}
                 />
               </Form.Item>
@@ -664,10 +632,10 @@ export default function AdminLightningDistributionPage() {
                 pagination={{
                   current: pagination.current,
                   pageSize: pagination.pageSize,
-                  total: importBatches.length,
+                  total: Math.max(importBatches.length, 1),
                   showSizeChanger: true,
                   pageSizeOptions: [10, 20, 50, 100],
-                  showTotal: (total) => `共 ${total} 条`,
+                  showTotal: (total) => `共 ${importBatches.length} 条`,
                   hideOnSinglePage: false,
                   style: { marginBottom: 0 },
                   onChange: (page, pageSize) => {
@@ -736,22 +704,19 @@ export default function AdminLightningDistributionPage() {
       >
         <Form<ImportFormValues> form={importForm} layout="vertical" initialValues={INITIAL_IMPORT_VALUES}>
           <div className="grid gap-3 md:grid-cols-2">
-            <Form.Item name="event_year" label="事件年份">
-              <InputNumber className="w-full" min={1900} max={2100} />
-            </Form.Item>
-            <Form.Item name="region_id" label="区域ID">
-              <Input placeholder="例如 region-001" />
+            <Form.Item name="city" label="城市">
+              <Input placeholder="例如 上海" />
             </Form.Item>
             <Form.Item name="location_tag" label="地点标签">
               <Input placeholder="例如 某变电站" />
             </Form.Item>
-            <Form.Item name="city" label="城市">
-              <Input placeholder="例如 上海" />
+            <Form.Item name="event_year" label="事件年份">
+              <InputNumber className="w-full" min={1900} max={2100} />
+            </Form.Item>
+            <Form.Item name="notes" label="备注">
+              <Input placeholder="可填写数据来源、采集说明等" />
             </Form.Item>
           </div>
-          <Form.Item name="notes" label="备注">
-            <Input.TextArea rows={2} placeholder="可填写数据来源、采集说明等" />
-          </Form.Item>
           <Space>
             <Button type="primary" onClick={() => uploadInputRef.current?.click()} loading={importMutation.isPending}>
               选择文件并导入
@@ -904,10 +869,9 @@ function EventsModal({
             <Descriptions.Item label="导入时间">
               {new Date(batch.import_time).toLocaleString("zh-CN", { hour12: false })}
             </Descriptions.Item>
-            <Descriptions.Item label="事件总数">{batch.event_count}</Descriptions.Item>
             <Descriptions.Item label="城市">{batch.city || "-"}</Descriptions.Item>
             <Descriptions.Item label="地点标签">{batch.location_tag || "-"}</Descriptions.Item>
-            <Descriptions.Item label="Region ID">{batch.region_id || "-"}</Descriptions.Item>
+            <Descriptions.Item label="事件总数">{batch.event_count}</Descriptions.Item>
           </Descriptions>
 
           <Table
