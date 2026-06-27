@@ -230,3 +230,21 @@ jobs:
               exit 1
             fi
             compose_run ps
+
+      - name: 重启 nginx 清 DNS 缓存
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || vars.DEPLOY_PATH }}
+        with:
+          host: ${{ secrets.SERVER_HOST || vars.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER || vars.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT || vars.SERVER_PORT || 22 }}
+          timeout: 60s
+          command_timeout: 30s
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          envs: DEPLOY_PATH
+          script: |
+            DEPLOY_DIR="${DEPLOY_PATH:-/opt/fquiz}"
+            cd "${DEPLOY_DIR}"
+            docker compose -p "$(awk -F= '/^COMPOSE_PROJECT_NAME=/{print $2; exit}' deploy/pro-deploy/.env | tr -d '[:space:]')" -f deploy/pro-deploy/compose.yml restart proxy
