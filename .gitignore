@@ -56,6 +56,8 @@ deploy/pro-deploy/data/**
 !deploy/pro-deploy/data/.gitkeep
 !deploy/pro-deploy/data/app/.gitkeep
 !deploy/pro-deploy/data/app/celery/.gitkeep
+!deploy/pro-deploy/data/app/wine/
+!deploy/pro-deploy/data/app/wine/**
 !deploy/pro-deploy/data/minio/.gitkeep
 !deploy/pro-deploy/data/postgres/.gitkeep
 !deploy/pro-deploy/data/redis/.gitkeep
