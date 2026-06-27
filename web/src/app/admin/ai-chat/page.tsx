@@ -3,7 +3,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
-  Empty,
   Input,
   List,
   Popconfirm,
@@ -15,12 +14,19 @@ import {
   PlusOutlined,
   SendOutlined,
   DeleteOutlined,
+  BulbOutlined,
+  MessageOutlined,
 } from "@ant-design/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { readApiError, API_BASE_URL } from "@/lib/api";
+import {
+  AI_CHAT_EXAMPLE_PROMPTS,
+  generateConversationTitle,
+  shouldShowAiChatGuide,
+} from "@/lib/ai-chat";
 import type {
   AiChatConversation,
   AiChatConversationListResponse,
@@ -68,6 +74,7 @@ export default function AiChatPage() {
     },
     enabled: !!user,
   });
+  const hasConversations = (conversations?.items?.length ?? 0) > 0;
 
   const { data: currentConv, isLoading: convDetailLoading } = useQuery({
     queryKey: ["ai-chat-conversation", selectedConvId],
@@ -136,6 +143,7 @@ export default function AiChatPage() {
     () => (selectedConvId ? optimisticMessages[selectedConvId] ?? currentConv?.messages ?? [] : []),
     [currentConv?.messages, optimisticMessages, selectedConvId],
   );
+  const showGuide = shouldShowAiChatGuide(selectedConvId, convDetailLoading, currentMessages.length);
 
   const updateOptimisticMessages = useCallback(
     (convId: number, updater: (messages: AiChatMessage[]) => AiChatMessage[]) => {
@@ -272,21 +280,14 @@ export default function AiChatPage() {
     const content = messageInput.trim();
     if (!content) return;
 
-    // If no conversation is selected, create one with a title based on the message
     if (!selectedConvId) {
       try {
-        // Generate title from the first message (take first 20 chars or up to first newline)
-        const title = content.length > 20
-          ? content.substring(0, 20) + "..."
-          : content.split('\n')[0] || "新对话";
-
-        const newConv = await createConvMutation.mutateAsync(title);
-        // Send the message to the newly created conversation
+        const newConv = await createConvMutation.mutateAsync(generateConversationTitle(content));
         sendMessageMutation.mutate({
           convId: newConv.id,
           content,
         });
-      } catch (err) {
+      } catch {
         // Error already handled by createConvMutation
         return;
       }
@@ -303,12 +304,31 @@ export default function AiChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentMessages]);
 
-  // Auto-select first conversation when conversations load
-  useEffect(() => {
-    if (!convLoading && conversations?.items && conversations.items.length > 0 && !selectedConvId && !createConvMutation.isPending) {
-      setSelectedConvId(conversations.items[0].id);
-    }
-  }, [convLoading, conversations?.items, selectedConvId, createConvMutation.isPending]);
+  const handleExamplePromptClick = useCallback(
+    (prompt: string) => {
+      setMessageInput(prompt);
+      void (async () => {
+        if (selectedConvId) {
+          sendMessageMutation.mutate({
+            convId: selectedConvId,
+            content: prompt,
+          });
+          return;
+        }
+
+        try {
+          const newConv = await createConvMutation.mutateAsync(generateConversationTitle(prompt));
+          sendMessageMutation.mutate({
+            convId: newConv.id,
+            content: prompt,
+          });
+        } catch {
+          return;
+        }
+      })();
+    },
+    [createConvMutation, selectedConvId, sendMessageMutation],
+  );
 
   if (initializing) {
     return (
@@ -452,26 +472,81 @@ export default function AiChatPage() {
           overflow: "hidden",
         }}
       >
-        {!selectedConvId ? (
+        {showGuide ? (
           <>
-            {/* Welcome Area */}
-            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <div style={{ textAlign: "center", maxWidth: 480 }}>
-                <Empty
-                  description={
-                    <div>
-                      <Text style={{ fontSize: 16, display: "block", marginBottom: 8 }}>
-                        欢迎使用 AI 问答助手
-                      </Text>
-                      <Text style={{ color: "var(--ant-color-text-secondary)", fontSize: 14 }}>
-                        {conversations?.items && conversations.items.length > 0
-                          ? "选择左侧对话继续，或直接输入问题开始新对话"
-                          : "输入您的问题，开始第一个对话"}
-                      </Text>
-                    </div>
-                  }
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                />
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "32px 24px",
+              }}
+            >
+              <div style={{ width: "min(720px, 100%)" }}>
+                <div style={{ marginBottom: 24 }}>
+                  <Text style={{ display: "block", fontSize: 14, color: "var(--ant-color-text-secondary)", marginBottom: 8 }}>
+                    AI 问答助手
+                  </Text>
+                  <Text strong style={{ display: "block", fontSize: 28, lineHeight: 1.2, marginBottom: 12 }}>
+                    欢迎开始提问
+                  </Text>
+                  <Text style={{ display: "block", fontSize: 14, color: "var(--ant-color-text-secondary)", lineHeight: 1.8 }}>
+                    {hasConversations
+                      ? "选择左侧对话继续，或点击下方示例问题快速开始。"
+                      : "左侧列表保持可用。点击示例问题即可自动创建会话并发送，也可以直接输入你的问题。"}
+                  </Text>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: 12,
+                    marginBottom: 20,
+                  }}
+                >
+                  {AI_CHAT_EXAMPLE_PROMPTS.map((prompt) => (
+                    <Button
+                      key={prompt}
+                      icon={<MessageOutlined />}
+                      onClick={() => handleExamplePromptClick(prompt)}
+                      loading={sendMessageMutation.isPending || createConvMutation.isPending}
+                      style={{
+                        height: "auto",
+                        minHeight: 56,
+                        padding: "12px 16px",
+                        borderRadius: 12,
+                        justifyContent: "flex-start",
+                        textAlign: "left",
+                        whiteSpace: "normal",
+                      }}
+                    >
+                      {prompt}
+                    </Button>
+                  ))}
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 12,
+                    padding: 16,
+                    border: "1px solid var(--ant-color-border-secondary)",
+                    borderRadius: 12,
+                    background: "var(--fquiz-theme-bg-container)",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <BulbOutlined />
+                    <Text strong style={{ fontSize: 14 }}>
+                      你可以这样开始
+                    </Text>
+                  </div>
+                  <Text style={{ color: "var(--ant-color-text-secondary)", lineHeight: 1.8 }}>
+                    输入问题后直接发送，系统会在首次问答时创建会话并保留上下文。
+                  </Text>
+                </div>
               </div>
             </div>
 
