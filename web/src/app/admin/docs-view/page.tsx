@@ -190,7 +190,6 @@ export default function DocsViewPage() {
     <div className="flex min-h-0 flex-1 flex-col">
       <AntCard
         className="admin-docs-view-page-card"
-        title="操作文档"
         extra={
           isMobile ? (
             <Button
