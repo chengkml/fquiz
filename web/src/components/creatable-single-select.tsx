@@ -19,6 +19,8 @@ export function CreatableSingleSelect({
   value,
   onChange,
 }: CreatableSingleSelectProps) {
+  const normalizedValue = value !== null && value !== undefined && value !== "" ? [value] : [];
+
   return (
     <Select
       allowClear={allowClear}
@@ -27,8 +29,17 @@ export function CreatableSingleSelect({
       maxCount={1}
       options={options}
       placeholder={placeholder}
-      value={value !== null && value !== undefined ? [value] : []}
-      onChange={(nextValue) => onChange?.(Array.isArray(nextValue) ? (nextValue.at(-1) ?? "") : "")}
+      value={normalizedValue}
+      onChange={(nextValue) => {
+        if (Array.isArray(nextValue)) {
+          if (nextValue.length === 0) {
+            onChange?.("");
+          } else {
+            onChange?.(nextValue[nextValue.length - 1] ?? "");
+          }
+        }
+      }}
+      tokenSeparators={[","]}
     />
   );
 }
