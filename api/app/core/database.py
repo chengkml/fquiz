@@ -558,7 +558,6 @@ def init_db() -> None:
     # Import models so metadata includes every table before create_all.
     from ..models import (
         atp_asset,
-        atp_model,
         audit_log,
         auth_session,
         elevation,
