@@ -610,16 +610,6 @@ export default function AdminLightningDistributionPage() {
               </Form.Item>
             </Form>
           )}
-                  }}
-                />
-              </Form.Item>
-              <Form.Item>
-                <Button type="primary" onClick={handleSearch}>
-                  查询
-                </Button>
-              </Form.Item>
-            </Form>
-          )}
 
           {viewMode === "table" ? (
             <div ref={tableScrollAnchorRef} className="admin-lightning-distribution-table-anchor mt-4">
