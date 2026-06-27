@@ -129,6 +129,7 @@ export default function AdminLightningDistributionPage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [tableScrollY, setTableScrollY] = useState(LIGHTNING_TABLE_MIN_SCROLL_Y);
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
+  const [shouldLoadData, setShouldLoadData] = useState(false);
 
   const canRead = hasPermission("lightning.read") || hasPermission("lightning.manage");
   const canManage = hasPermission("lightning.manage");
@@ -145,7 +146,7 @@ export default function AdminLightningDistributionPage() {
 
   const importBatchesQuery = useQuery({
     queryKey: [importBatchesPath],
-    enabled: !!user && canRead,
+    enabled: !!user && canRead && shouldLoadData,
     queryFn: async () => {
       const response = await fetchWithAuth(importBatchesPath);
       if (!response.ok) {
@@ -260,7 +261,15 @@ export default function AdminLightningDistributionPage() {
       setSearchKeyword(value);
       setCardViewPage(1);
       setAllLoadedBatches([]);
+      if (shouldLoadData) {
+        setShouldLoadData(false);
+        setTimeout(() => setShouldLoadData(true), 0);
+      }
     }, 500);
+  };
+
+  const handleSearch = () => {
+    setShouldLoadData(true);
   };
 
   const updateTableScrollY = useCallback(() => {
@@ -587,7 +596,7 @@ export default function AdminLightningDistributionPage() {
                   onChange={(event) => handleKeywordChange(event.target.value)}
                 />
               </Form.Item>
-              <Form.Item label="Region ID" style={{ marginBottom: 0 }}>
+              <Form.Item label="Region ID" style={{ marginBottom: 12 }}>
                 <Input
                   allowClear
                   placeholder="按 Region ID 筛选"
@@ -596,8 +605,17 @@ export default function AdminLightningDistributionPage() {
                     setRegionFilter(event.target.value);
                     setCardViewPage(1);
                     setAllLoadedBatches([]);
+                    if (shouldLoadData) {
+                      setShouldLoadData(false);
+                      setTimeout(() => setShouldLoadData(true), 0);
+                    }
                   }}
                 />
+              </Form.Item>
+              <Form.Item style={{ marginBottom: 0 }}>
+                <Button type="primary" onClick={handleSearch}>
+                  查询
+                </Button>
               </Form.Item>
             </Form>
           ) : (
@@ -620,8 +638,17 @@ export default function AdminLightningDistributionPage() {
                     setCardViewPage(1);
                     setAllLoadedBatches([]);
                     setPagination((prev) => ({ ...prev, current: 1 }));
+                    if (shouldLoadData) {
+                      setShouldLoadData(false);
+                      setTimeout(() => setShouldLoadData(true), 0);
+                    }
                   }}
                 />
+              </Form.Item>
+              <Form.Item>
+                <Button type="primary" onClick={handleSearch}>
+                  查询
+                </Button>
               </Form.Item>
             </Form>
           )}
