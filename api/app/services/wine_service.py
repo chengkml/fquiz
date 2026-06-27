@@ -236,12 +236,51 @@ def create_run(
     return serialize_run_detail(saved)
 
 
+def _ensure_wine_drive_mapping() -> None:
+    """Set up wine D: drive mapping for ATP $INCLUDE path compatibility.
+
+    ATP templates reference library files via absolute DOS paths like
+    ``D:\\ATP\\110\\ganzi\\fanji\\noM\\short.lib``. This function creates a
+    wine dosdevices symlink so that ``D:\\`` resolves to the ATP legacy root,
+    and ensures the required subdirectory structure exists.
+    """
+    allowed_root = _allowed_root()
+    dosdevices = Path(os.path.expanduser("~/.wine/dosdevices"))
+    dosdevices.mkdir(parents=True, exist_ok=True)
+    d_link = dosdevices / "d::"
+    target = str(allowed_root / "ATP")
+
+    if d_link.is_symlink():
+        existing = os.readlink(str(d_link))
+        if existing == target:
+            return
+        d_link.unlink()
+    elif d_link.exists():
+        d_link.unlink()
+
+    d_link.symlink_to(target)
+
+    # Ensure the expected library subdirectory exists
+    lib_dir = allowed_root / "ATP" / "ATP" / "110" / "ganzi" / "fanji" / "noM"
+    lib_dir.mkdir(parents=True, exist_ok=True)
+
+    # Copy template .lib files into the DOS path location if missing
+    template_lib_dir = allowed_root / "ATP" / "templates" / "fanji"
+    if template_lib_dir.is_dir():
+        for lib_file in template_lib_dir.glob("*.lib"):
+            dest = lib_dir / lib_file.name
+            if not dest.exists():
+                shutil.copy2(str(lib_file), str(dest))
+
+
 def execute_run_job(*, run_id: str, actor_user_id: str | None) -> None:
     db = SessionLocal()
     try:
         run = get_run_by_id(db, run_id)
         if not run or run.status in {"success", "failed"}:
             return
+
+        _ensure_wine_drive_mapping()
 
         resolved_binary = run.resolved_binary or _resolve_binary()
         if not resolved_binary:
