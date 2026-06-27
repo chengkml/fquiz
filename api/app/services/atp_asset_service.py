@@ -41,8 +41,11 @@ from ..schemas.atp_asset import (
     AtpAssetRunSummary,
     AtpAssetSummary,
     AtpAssetUpdateRequest,
+    AtpEngineStatusResponse,
 )
+from .legacy_atp_adapter import build_legacy_atp_status_checks
 from .push_service import publish_topic
+from .wine_probe import probe_wine_binary
 from .storage_driver import (
     StorageDriver,
     StorageDriverError,
@@ -162,6 +165,85 @@ def _resolve_binary(raw_path: str) -> str | None:
     if candidate.exists() and candidate.is_file() and os.access(candidate, os.X_OK):
         return str(candidate.resolve())
     return None
+
+
+def _resolve_storage_root() -> Path:
+    root = Path(settings.atp_storage_root).expanduser()
+    return root.resolve(strict=False)
+
+
+def _resolve_engine_workdir() -> Path:
+    configured = Path(settings.atp_engine_workdir).expanduser()
+    if configured.is_absolute():
+        return configured.resolve(strict=False)
+    return (_resolve_storage_root() / configured).resolve(strict=False)
+
+
+def _resolve_wine_engine_executable() -> tuple[str | None, str | None, str | None]:
+    wine_binary = _resolve_binary(settings.wine_binary_path)
+    if not wine_binary:
+        return None, None, "Wine binary not found"
+
+    allowed_root = Path(settings.wine_allowed_root).expanduser().resolve(strict=False)
+    configured = Path(settings.atp_engine_executable).expanduser()
+    if not configured.is_absolute():
+        configured = (allowed_root / configured).resolve(strict=False)
+    else:
+        configured = configured.resolve(strict=False)
+
+    if not configured.is_relative_to(allowed_root):
+        return wine_binary, None, f"ATP engine executable must be inside {allowed_root}"
+    if not configured.exists() or not configured.is_file():
+        return wine_binary, None, f"ATP engine executable not found: {configured}"
+
+    probe = probe_wine_binary(wine_binary)
+    return wine_binary, str(configured), None if probe.available else (probe.error or "Wine binary unavailable")
+
+
+def _resolve_native_engine_executable() -> tuple[str | None, str | None]:
+    resolved = _resolve_binary(settings.atp_engine_executable)
+    if not resolved:
+        return None, "ATP engine executable not found"
+    return resolved, None
+
+
+def get_engine_status() -> AtpEngineStatusResponse:
+    mode = _resolve_engine_mode()
+    storage_root = str(_resolve_storage_root())
+    workdir = str(_resolve_engine_workdir())
+    checks = build_legacy_atp_status_checks()
+
+    if mode == "wine":
+        wine_binary, resolved_engine, error = _resolve_wine_engine_executable()
+        available = error is None
+        executable_path = settings.atp_engine_executable.strip()
+        resolved_binary = f"{wine_binary} -> {resolved_engine}" if wine_binary and resolved_engine else wine_binary
+        return AtpEngineStatusResponse(
+            mode="wine",
+            available=available,
+            executable_path=executable_path,
+            resolved_executable=resolved_binary,
+            storage_root=storage_root,
+            workdir=workdir,
+            default_timeout_seconds=settings.atp_engine_default_timeout_seconds,
+            max_timeout_seconds=settings.atp_engine_max_timeout_seconds,
+            checks=checks,
+            error=error,
+        )
+
+    resolved_engine, error = _resolve_native_engine_executable()
+    return AtpEngineStatusResponse(
+        mode="native",
+        available=error is None,
+        executable_path=settings.atp_engine_executable.strip(),
+        resolved_executable=resolved_engine,
+        storage_root=storage_root,
+        workdir=workdir,
+        default_timeout_seconds=settings.atp_engine_default_timeout_seconds,
+        max_timeout_seconds=settings.atp_engine_max_timeout_seconds,
+        checks=checks,
+        error=error,
+    )
 
 
 def _resolve_mount(db: Session, mount_code: str) -> FileStorageMount:

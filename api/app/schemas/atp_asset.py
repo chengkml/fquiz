@@ -209,3 +209,16 @@ class AtpAssetRunRequest(BaseModel):
 class AtpAssetReleaseUploadResponse(BaseModel):
     task_id: str
     status: str
+
+
+class AtpEngineStatusResponse(BaseModel):
+    mode: AtpAssetEngineMode
+    available: bool
+    executable_path: str
+    resolved_executable: str | None = None
+    storage_root: str
+    workdir: str
+    default_timeout_seconds: int
+    max_timeout_seconds: int
+    checks: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    error: str | None = None

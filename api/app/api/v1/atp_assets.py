@@ -19,8 +19,8 @@ from ...schemas.atp_asset import (
     AtpAssetRunListResponse,
     AtpAssetRunRequest,
     AtpAssetUpdateRequest,
+    AtpEngineStatusResponse,
 )
-from ...schemas.atp_model import AtpEngineStatusResponse
 from ...services.atp_asset_service import (
     activate_release,
     create_asset,
@@ -28,6 +28,7 @@ from ...services.atp_asset_service import (
     create_release_from_archive,
     delete_asset,
     get_asset_by_id,
+    get_engine_status,
     get_release_by_id,
     get_run_detail,
     list_assets,
@@ -40,7 +41,6 @@ from ...services.atp_asset_service import (
     update_asset,
     update_release,
 )
-from ...services.atp_model_service import get_engine_status
 
 router = APIRouter(prefix="/atp", tags=["atp-assets"], dependencies=[Depends(require_enabled_menu_route)])
 

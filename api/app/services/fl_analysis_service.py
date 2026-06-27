@@ -31,7 +31,7 @@ from ..schemas.fl_analysis import (
     FlAnalysisTowerResultListResponse,
     FlAnalysisTowerResultSummary,
 )
-from .atp_model_service import _truncate_output
+from .atp_asset_service import _truncate_output
 from .fl_analysis_external import execute_external_waveform_tower_analysis, resolve_external_waveform_job
 from .legacy_atp_adapter import execute_legacy_atp_tower_analysis, resolve_legacy_atp_job
 from .fl_analysis_report import build_report_document, build_report_summary_payload
