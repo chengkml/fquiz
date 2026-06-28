@@ -36,7 +36,7 @@ import type { DimensionItem, DimensionItemListResponse } from "@/types/dimension
 const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 type CreateDimensionValues = {
-  dimension_type: string;
+  dimension_type: string | string[];
   code: string;
   name: string;
   parent_id?: string;
@@ -285,7 +285,16 @@ export default function AdminDimensionsPage() {
   const handleCreateDimension = async (values: CreateDimensionValues) => {
     setError("");
     setSuccess("");
-    createDimensionMutation.mutate(values);
+
+    // Handle dimension_type from tags mode Select (returns array)
+    const payload = {
+      ...values,
+      dimension_type: Array.isArray(values.dimension_type)
+        ? values.dimension_type[0]
+        : values.dimension_type
+    };
+
+    createDimensionMutation.mutate(payload);
   };
 
   const openEditModal = (item: DimensionItem) => {
@@ -794,9 +803,16 @@ export default function AdminDimensionsPage() {
           <Form.Item
             label="维度类型"
             name="dimension_type"
-            rules={[{ required: true, message: "请输入维度类型" }]}
+            rules={[{ required: true, message: "请选择或输入维度类型" }]}
           >
-            <Input placeholder="例如 电压等级" />
+            <Select
+              placeholder="请选择或输入维度类型"
+              showSearch
+              allowClear
+              mode="tags"
+              maxCount={1}
+              options={uniqueDimensionTypes.map((type) => ({ value: type, label: type }))}
+            />
           </Form.Item>
 
           <Form.Item
