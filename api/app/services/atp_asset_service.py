@@ -888,6 +888,17 @@ def delete_asset(db: Session, asset_id: str) -> bool:
     item = get_asset_by_id(db, asset_id)
     if not item:
         return False
+
+    # Delete physical files for all releases before deleting database records
+    for release in item.releases:
+        try:
+            mount = _resolve_mount(db, release.storage_mount_code)
+            driver = _build_driver_or_400(mount)
+            driver.delete_path(release.storage_root_path, is_dir=True, recursive=True)
+        except Exception:
+            # Log error but continue deletion - don't let file deletion failure block database cleanup
+            pass
+
     db.delete(item)
     db.commit()
     _publish_change("asset.deleted", {"action": "deleted", "asset_id": asset_id})

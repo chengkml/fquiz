@@ -330,3 +330,51 @@ def test_run_release_dry_run_materializes_directory(tmp_path, monkeypatch) -> No
         assert result.output_manifest_json["file_count"] >= 2
     finally:
         session.close()
+
+
+def test_delete_asset_removes_storage_files(tmp_path) -> None:
+    testing_session = _build_sessionmaker()
+    session: Session = testing_session()
+    try:
+        _seed_vfs_mount(session, root_dir=tmp_path / "vfs")
+        asset = atp_asset_service.create_asset(
+            session,
+            AtpAssetCreateRequest(
+                code="ATP-ASSET-DELETE-TEST",
+                name="删除测试模型",
+                voltage_level="500",
+                tower_type="danhuita",
+                scene_type="raoji3",
+            ),
+            actor_user_id="tester",
+        )
+        assert asset is not None
+
+        # Create a release with files
+        release = atp_asset_service.create_release_from_archive(
+            session,
+            asset_id=asset.id,
+            release_tag="v1",
+            archive_filename="release.zip",
+            archive_content=_build_zip({
+                "work.atp": b"ATP INPUT",
+                "README.txt": b"documentation",
+            }),
+            actor_user_id="tester",
+        )
+        assert release.storage_root_path == "/atp-library/500/danhuita/r1"
+
+        # Verify files exist before deletion
+        storage_path = tmp_path / "vfs" / "atp-library" / "500" / "danhuita" / "r1"
+        assert storage_path.exists()
+        assert (storage_path / "work.atp").exists()
+        assert (storage_path / "README.txt").exists()
+
+        # Delete the asset
+        deleted = atp_asset_service.delete_asset(session, asset.id)
+        assert deleted is True
+
+        # Verify files are deleted
+        assert not storage_path.exists()
+    finally:
+        session.close()
