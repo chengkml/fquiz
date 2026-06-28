@@ -357,7 +357,7 @@ export default function AdminTaskMonitorPage() {
       rows.push(...toTaskRows(overview.worker, "SCHEDULED", overview.scheduled_tasks));
       rows.push(...toTaskRows(overview.worker, "RECENT", overview.recent_tasks));
     }
-    return rows;
+    return rows.filter((task) => task.name !== "app.tasks.worker_registry_tasks.sweep_worker_registry_offline");
   }, [allTasksQuery.data]);
 
   const filteredTaskRows = useMemo(() => {
