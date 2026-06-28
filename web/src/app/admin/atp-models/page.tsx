@@ -31,7 +31,7 @@ import { useAuth } from "@/components/auth-provider";
 import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { readApiError } from "@/lib/api";
-import type { AtpAssetListResponse, AtpAssetSummary } from "@/types/auth";
+import type { AtpAssetListResponse, AtpAssetSummary, AtpAssetFileEntry } from "@/types/auth";
 
 const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
@@ -528,7 +528,27 @@ export default function AtpModelsPage() {
     displayName: string;
     value: string;
     item?: AtpAssetSummary;
+    isDir?: boolean;
   };
+
+  const [selectedAssetForFiles, setSelectedAssetForFiles] = useState<string | null>(null);
+  const [currentFilePath, setCurrentFilePath] = useState<string>("");
+
+  const filesQuery = useQuery({
+    queryKey: ["atp-asset-files", selectedAssetForFiles],
+    enabled: Boolean(user && canRead && selectedAssetForFiles && fileViewPath.length >= 5),
+    queryFn: async () => {
+      if (!selectedAssetForFiles) return null;
+      const asset = assetItems.find((item) => item.id === selectedAssetForFiles);
+      if (!asset || !asset.active_release_id) return null;
+
+      const response = await fetchWithAuth(`/api/v1/atp/assets/${selectedAssetForFiles}/releases/${asset.active_release_id}/files`);
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+      return (await response.json()) as { items: Array<{ relative_path: string; name: string; is_dir: boolean }> };
+    },
+  });
 
   const getFileViewItems = useCallback((): FileViewItem[] => {
     const currentLevel = fileViewPath.length;
@@ -596,12 +616,40 @@ export default function AtpModelsPage() {
       const voltage = fileViewPath[0];
       const tower = fileViewPath[1];
       const scene = fileViewPath[2];
-      return assetItems
+      const arresterSet = new Set<string>();
+      assetItems
         .filter(
           (item) =>
             (item.voltage_level || "未分类") === voltage &&
             (item.tower_type || "未分类") === tower &&
             (item.scene_type || "未分类") === scene
+        )
+        .forEach((item) => {
+          const arrester = item.arrester_config || "未分类";
+          arresterSet.add(arrester);
+        });
+      return Array.from(arresterSet)
+        .sort((a, b) => a.localeCompare(b, "zh-CN"))
+        .map((arrester) => ({
+          type: "folder" as const,
+          name: arrester,
+          displayName: formatDimensionValue(arrester, DEFAULT_ARRESTER_CONFIGS),
+          value: arrester,
+        }));
+    }
+
+    if (currentLevel === 4) {
+      const voltage = fileViewPath[0];
+      const tower = fileViewPath[1];
+      const scene = fileViewPath[2];
+      const arrester = fileViewPath[3];
+      return assetItems
+        .filter(
+          (item) =>
+            (item.voltage_level || "未分类") === voltage &&
+            (item.tower_type || "未分类") === tower &&
+            (item.scene_type || "未分类") === scene &&
+            (item.arrester_config || "未分类") === arrester
         )
         .map((item) => ({
           type: "folder" as const,
@@ -612,14 +660,53 @@ export default function AtpModelsPage() {
         }));
     }
 
+    if (currentLevel >= 5) {
+      const assetId = fileViewPath[4];
+      if (selectedAssetForFiles !== assetId) {
+        setSelectedAssetForFiles(assetId);
+        return [];
+      }
+
+      if (filesQuery.isLoading || !filesQuery.data) {
+        return [];
+      }
+
+      const pathInAsset = fileViewPath.slice(5).join("/");
+      const items = filesQuery.data.items || [];
+
+      return items
+        .filter((file) => {
+          if (pathInAsset === "") {
+            return !file.relative_path.includes("/") || file.relative_path.split("/").length === 1;
+          }
+          const prefix = pathInAsset + "/";
+          if (!file.relative_path.startsWith(prefix)) {
+            return false;
+          }
+          const remainder = file.relative_path.substring(prefix.length);
+          return !remainder.includes("/") || remainder.split("/").length === 1;
+        })
+        .map((file) => ({
+          type: file.is_dir ? ("folder" as const) : ("file" as const),
+          name: file.name,
+          displayName: file.name,
+          value: file.relative_path,
+          isDir: file.is_dir,
+        }));
+    }
+
     return [];
-  }, [assetItems, fileViewPath]);
+  }, [assetItems, fileViewPath, selectedAssetForFiles, filesQuery.data, filesQuery.isLoading]);
 
   const fileViewItems = useMemo(() => getFileViewItems(), [getFileViewItems]);
 
   const handleFileViewItemClick = (item: FileViewItem) => {
     if (item.type === "folder") {
-      setFileViewPath([...fileViewPath, item.value]);
+      if (fileViewPath.length >= 5 && item.isDir) {
+        setFileViewPath([...fileViewPath, item.name]);
+      } else {
+        setFileViewPath([...fileViewPath, item.value]);
+      }
     }
   };
 
@@ -635,10 +722,14 @@ export default function AtpModelsPage() {
     if (index === 0) return formatDimensionValue(fileViewPath[0], DEFAULT_VOLTAGE_LEVELS);
     if (index === 1) return formatDimensionValue(fileViewPath[1], DEFAULT_TOWER_TYPES);
     if (index === 2) return formatDimensionValue(fileViewPath[2], DEFAULT_SCENE_TYPES);
-    if (index === 3) {
-      const modelId = fileViewPath[3];
+    if (index === 3) return formatDimensionValue(fileViewPath[3], DEFAULT_ARRESTER_CONFIGS);
+    if (index === 4) {
+      const modelId = fileViewPath[4];
       const model = assetItems.find((item) => item.id === modelId);
-      return model ? model.name : fileViewPath[3];
+      return model ? model.name : fileViewPath[4];
+    }
+    if (index >= 5) {
+      return fileViewPath[index];
     }
     return "";
   };
