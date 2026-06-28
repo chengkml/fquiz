@@ -38,6 +38,7 @@ import {
   getQueueDisplayName,
   getTaskSourceDisplay,
   getTaskStateDisplay,
+  normalizeQueueNames,
 } from "@/lib/task-monitor-display";
 
 const { Text } = Typography;
@@ -131,9 +132,10 @@ function renderWorkerStatusTag(status: string) {
 }
 
 function renderQueueTags(queueNames: string[]) {
-  return queueNames.length > 0 ? (
+  const normalized = normalizeQueueNames(queueNames);
+  return normalized.length > 0 ? (
     <Space wrap size={[4, 4]}>
-      {queueNames.map((queueName) => (
+      {normalized.map((queueName) => (
         <Tag key={queueName} color="blue" bordered={false}>
           {getQueueDisplayName(queueName)}
         </Tag>
@@ -163,7 +165,6 @@ export default function AdminWorkersPage() {
   const isMobile = useMobileDetection();
   const canRead = hasPermission("celery.read") || hasPermission("celery.manage");
 
-  const [autoRefresh, setAutoRefresh] = useState(true);
   const [workerKeyword, setWorkerKeyword] = useState("");
   const [queueKeyword, setQueueKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "online" | "offline">("all");
@@ -182,7 +183,7 @@ export default function AdminWorkersPage() {
       }
       return (await response.json()) as WorkerMonitorOverviewResponse;
     },
-    refetchInterval: autoRefresh ? 5_000 : false,
+    refetchInterval: false,
     staleTime: 15_000,
   });
 
@@ -210,7 +211,7 @@ export default function AdminWorkersPage() {
       }
       return (await response.json()) as WorkerMonitorTaskOverviewResponse;
     },
-    refetchInterval: autoRefresh ? 5_000 : false,
+    refetchInterval: false,
     staleTime: 15_000,
   });
 
@@ -221,6 +222,9 @@ export default function AdminWorkersPage() {
         dataIndex: "worker",
         key: "worker",
         width: 220,
+        ellipsis: {
+          showTitle: false,
+        },
         render: (value: string) => (
           <Typography.Text ellipsis={{ tooltip: value || "-" }}>
             {value || "-"}
@@ -255,6 +259,7 @@ export default function AdminWorkersPage() {
         key: "prefetch_count",
         width: 70,
         align: "center",
+        render: () => 1,
       },
       {
         title: "任务统计",
@@ -586,7 +591,7 @@ export default function AdminWorkersPage() {
         </div>
         <div className="admin-workers-worker-card-field">
           <Typography.Text type="secondary">并发/预取</Typography.Text>
-          <Typography.Text>{workerItem.concurrency}/{workerItem.prefetch_count}</Typography.Text>
+          <Typography.Text>{workerItem.concurrency}/1</Typography.Text>
         </div>
         <div className="admin-workers-worker-card-field">
           <Typography.Text type="secondary">任务</Typography.Text>
@@ -616,11 +621,7 @@ export default function AdminWorkersPage() {
         extra={(
           <Space size={8} wrap>
             {overviewQuery.isFetching && <Spin size="small" />}
-            <Space size={8}>
-              <Text type="secondary">自动刷新</Text>
-              <Switch size="small" checked={autoRefresh} onChange={setAutoRefresh} />
-            </Space>
-            <Button onClick={() => void overviewQuery.refetch()} loading={overviewQuery.isFetching}>
+            <Button type="primary" onClick={() => void overviewQuery.refetch()} loading={overviewQuery.isFetching}>
               刷新
             </Button>
           </Space>
@@ -691,13 +692,6 @@ export default function AdminWorkersPage() {
             </Form.Item>
           </Form>
         )}
-
-        <Space className="mt-4" size={[16, 8]} wrap>
-          <Text type="secondary">生成时间：{formatDateTime(overview?.generated_at)}</Text>
-          <Text type="secondary">执行节点：{filteredWorkers.length}/{overview?.summary.total ?? 0}</Text>
-          <Text type="secondary">在线：{overview?.summary.online ?? 0}</Text>
-          <Text type="secondary">离线：{overview?.summary.offline ?? 0}</Text>
-        </Space>
 
         {viewMode === "table" ? (
           <div

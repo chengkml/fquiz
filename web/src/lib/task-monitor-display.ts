@@ -71,6 +71,21 @@ export function getQueueDisplayName(queueName: string | null | undefined): strin
   return normalized;
 }
 
+export function normalizeQueueNames(queueNames: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const queueName of queueNames) {
+    const displayName = getQueueDisplayName(queueName);
+    if (!seen.has(displayName)) {
+      seen.add(displayName);
+      result.push(queueName);
+    }
+  }
+
+  return result;
+}
+
 export function formatTaskMonitorDuration(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return "-";
