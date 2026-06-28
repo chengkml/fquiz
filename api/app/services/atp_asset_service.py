@@ -350,10 +350,9 @@ def _sanitize_storage_segment(value: str, *, fallback: str) -> str:
 
 
 def _build_release_storage_root(asset_code: str, release_no: int, voltage_level: str, tower_type: str) -> str:
-    asset_segment = _sanitize_storage_segment(asset_code, fallback="asset")
     voltage_segment = _sanitize_storage_segment(voltage_level, fallback="unknown-voltage")
     tower_segment = _sanitize_storage_segment(tower_type, fallback="unknown-tower")
-    return normalize_virtual_path(f"{ATP_ASSET_RELEASES_ROOT}/{voltage_segment}/{tower_segment}/{asset_segment}/r{release_no}")
+    return normalize_virtual_path(f"{ATP_ASSET_RELEASES_ROOT}/{voltage_segment}/{tower_segment}/r{release_no}")
 
 
 def _write_archive_to_storage(
@@ -970,6 +969,9 @@ def create_release(
     )
     next_release_no = max_release_no + 1
 
+    # Check for storage path conflict before preparing payload
+    _check_storage_path_conflict(db, payload.storage_root_path, asset_id)
+
     prepared = _prepare_release_payload(
         db,
         storage_mount_code=payload.storage_mount_code,
@@ -1030,6 +1032,29 @@ def create_release(
     return serialize_release_detail(saved)
 
 
+def _check_storage_path_conflict(db: Session, storage_root_path: str, current_asset_id: str) -> None:
+    """
+    Check if the storage path is already used by a different asset.
+    Raises HTTPException if conflict detected.
+    """
+    existing_release = db.execute(
+        select(AtpAssetRelease)
+        .where(
+            AtpAssetRelease.storage_root_path == storage_root_path,
+            AtpAssetRelease.asset_id != current_asset_id,
+        )
+    ).scalar_one_or_none()
+
+    if existing_release:
+        conflicting_asset = get_asset_by_id(db, existing_release.asset_id)
+        conflict_info = f"模型 {conflicting_asset.code} ({conflicting_asset.name})" if conflicting_asset else "其他模型"
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"存储路径冲突：该路径已被{conflict_info}的 Release #{existing_release.release_no} 占用。"
+            f"无法上传，可能会覆盖现有文件。请检查电压等级、塔型和版本号配置。",
+        )
+
+
 def create_release_from_archive(
     db: Session,
     *,
@@ -1048,6 +1073,9 @@ def create_release_from_archive(
         db.scalar(select(func.max(AtpAssetRelease.release_no)).where(AtpAssetRelease.asset_id == asset_id)) or 0
     ) + 1
     storage_root_path = _build_release_storage_root(asset.code, next_release_no, voltage_level, tower_type)
+
+    # Check for storage path conflict before writing
+    _check_storage_path_conflict(db, storage_root_path, asset_id)
 
     mount = _resolve_mount(db, "main")
     driver = _build_driver_or_400(mount)

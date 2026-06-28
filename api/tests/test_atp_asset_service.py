@@ -140,14 +140,14 @@ def test_create_release_from_archive_extracts_zip_and_inherits_asset_dimensions(
 
         assert created.release_no == 1
         assert created.release_tag == "首版"
-        assert created.storage_root_path == "/atp-library/220/sihuita/ATP-ASSET-UPLOAD/r1"
+        assert created.storage_root_path == "/atp-library/220/sihuita/r1"
         assert created.entry_file == "work.atp"
         assert created.runner_kind == "hybrid"
         assert created.voltage_level == "220"
         assert created.tower_type == "sihuita"
         assert created.scene_type == "raoji3"
-        assert (tmp_path / "vfs" / "atp-library" / "220" / "sihuita" / "ATP-ASSET-UPLOAD" / "r1" / "work.atp").exists()
-        assert (tmp_path / "vfs" / "atp-library" / "220" / "sihuita" / "ATP-ASSET-UPLOAD" / "r1" / "EGM" / "config.txt").exists()
+        assert (tmp_path / "vfs" / "atp-library" / "220" / "sihuita" / "r1" / "work.atp").exists()
+        assert (tmp_path / "vfs" / "atp-library" / "220" / "sihuita" / "r1" / "EGM" / "config.txt").exists()
     finally:
         session.close()
 
@@ -171,6 +171,64 @@ def test_create_release_from_archive_requires_asset_dimensions(tmp_path) -> None
                 release_tag="r1",
                 archive_filename="release.zip",
                 archive_content=_build_zip({"work.atp": b"ATP INPUT"}),
+                actor_user_id="tester",
+            )
+    finally:
+        session.close()
+
+
+def test_create_release_from_archive_detects_storage_path_conflict(tmp_path) -> None:
+    testing_session = _build_sessionmaker()
+    session: Session = testing_session()
+    try:
+        _seed_vfs_mount(session, root_dir=tmp_path / "vfs")
+
+        # Create first asset and upload a release
+        asset1 = atp_asset_service.create_asset(
+            session,
+            AtpAssetCreateRequest(
+                code="ATP-ASSET-001",
+                name="模型1",
+                voltage_level="220",
+                tower_type="sihuita",
+                scene_type="raoji3",
+            ),
+            actor_user_id="tester",
+        )
+        assert asset1 is not None
+
+        release1 = atp_asset_service.create_release_from_archive(
+            session,
+            asset_id=asset1.id,
+            release_tag="v1",
+            archive_filename="release.zip",
+            archive_content=_build_zip({"work.atp": b"ATP INPUT 1"}),
+            actor_user_id="tester",
+        )
+        assert release1.storage_root_path == "/atp-library/220/sihuita/r1"
+
+        # Create second asset with same voltage_level and tower_type
+        asset2 = atp_asset_service.create_asset(
+            session,
+            AtpAssetCreateRequest(
+                code="ATP-ASSET-002",
+                name="模型2",
+                voltage_level="220",
+                tower_type="sihuita",
+                scene_type="raoji3",
+            ),
+            actor_user_id="tester",
+        )
+        assert asset2 is not None
+
+        # Try to upload a release for asset2 - should conflict because path is same
+        with pytest.raises(HTTPException, match="存储路径冲突"):
+            atp_asset_service.create_release_from_archive(
+                session,
+                asset_id=asset2.id,
+                release_tag="v1",
+                archive_filename="release.zip",
+                archive_content=_build_zip({"work.atp": b"ATP INPUT 2"}),
                 actor_user_id="tester",
             )
     finally:
