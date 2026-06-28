@@ -16,15 +16,14 @@ import {
   Space,
   Spin,
   Table,
-  Tree,
+  Breadcrumb,
   Typography,
   Upload,
   message,
   type CardProps,
 } from "antd";
-import { UploadOutlined, FolderOutlined, FileOutlined, TableOutlined, ApartmentOutlined } from "@ant-design/icons";
+import { UploadOutlined, FolderOutlined, FileOutlined, TableOutlined, FolderOpenOutlined, HomeOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import type { DataNode } from "antd/es/tree";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType, type RefAttributes } from "react";
 
 import { AdminPageLoading } from "@/components/admin-page-loading";
@@ -168,8 +167,8 @@ export default function AtpModelsPage() {
   const [tableScrollY, setTableScrollY] = useState(ATP_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const viewMode: "table" | "card" = isMobile ? "card" : "table";
-  const [displayMode, setDisplayMode] = useState<"list" | "tree">("list");
-  const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
+  const [displayMode, setDisplayMode] = useState<"list" | "file">("list");
+  const [fileViewPath, setFileViewPath] = useState<string[]>([]);
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [cardViewPage, setCardViewPage] = useState(1);
   const [allLoadedAssets, setAllLoadedAssets] = useState<AtpAssetSummary[]>([]);
@@ -523,101 +522,150 @@ export default function AtpModelsPage() {
     [canManage, deleteMutation],
   );
 
-  const buildTreeData = useCallback(() => {
-    const treeMap = new Map<string, DataNode>();
+  type FileViewItem = {
+    type: "folder" | "file";
+    name: string;
+    displayName: string;
+    value: string;
+    item?: AtpAssetSummary;
+  };
 
-    assetItems.forEach((item) => {
-      const voltage = item.voltage_level || "未分类";
-      const tower = item.tower_type || "未分类";
-      const scene = item.scene_type || "未分类";
-      const arrester = item.arrester_config || "未分类";
+  const getFileViewItems = useCallback((): FileViewItem[] => {
+    const currentLevel = fileViewPath.length;
 
-      const voltageKey = `voltage-${voltage}`;
-      const towerKey = `${voltageKey}-tower-${tower}`;
-      const sceneKey = `${towerKey}-scene-${scene}`;
-      const arresterKey = `${sceneKey}-arrester-${arrester}`;
-      const itemKey = `${arresterKey}-item-${item.id}`;
+    if (currentLevel === 0) {
+      const voltageSet = new Set<string>();
+      assetItems.forEach((item) => {
+        const voltage = item.voltage_level || "未分类";
+        voltageSet.add(voltage);
+      });
+      return Array.from(voltageSet)
+        .sort((a, b) => a.localeCompare(b, "zh-CN"))
+        .map((voltage) => ({
+          type: "folder" as const,
+          name: voltage,
+          displayName: formatDimensionValue(voltage, DEFAULT_VOLTAGE_LEVELS),
+          value: voltage,
+        }));
+    }
 
-      if (!treeMap.has(voltageKey)) {
-        treeMap.set(voltageKey, {
-          key: voltageKey,
-          title: formatDimensionValue(voltage, DEFAULT_VOLTAGE_LEVELS),
-          icon: <FolderOutlined />,
-          children: [],
+    if (currentLevel === 1) {
+      const voltage = fileViewPath[0];
+      const towerSet = new Set<string>();
+      assetItems
+        .filter((item) => (item.voltage_level || "未分类") === voltage)
+        .forEach((item) => {
+          const tower = item.tower_type || "未分类";
+          towerSet.add(tower);
         });
-      }
+      return Array.from(towerSet)
+        .sort((a, b) => a.localeCompare(b, "zh-CN"))
+        .map((tower) => ({
+          type: "folder" as const,
+          name: tower,
+          displayName: formatDimensionValue(tower, DEFAULT_TOWER_TYPES),
+          value: tower,
+        }));
+    }
 
-      const voltageNode = treeMap.get(voltageKey)!;
-      let towerNode = voltageNode.children?.find((n) => n.key === towerKey);
-      if (!towerNode) {
-        towerNode = {
-          key: towerKey,
-          title: formatDimensionValue(tower, DEFAULT_TOWER_TYPES),
-          icon: <FolderOutlined />,
-          children: [],
-        };
-        voltageNode.children = [...(voltageNode.children || []), towerNode];
-      }
+    if (currentLevel === 2) {
+      const voltage = fileViewPath[0];
+      const tower = fileViewPath[1];
+      const sceneSet = new Set<string>();
+      assetItems
+        .filter(
+          (item) =>
+            (item.voltage_level || "未分类") === voltage &&
+            (item.tower_type || "未分类") === tower
+        )
+        .forEach((item) => {
+          const scene = item.scene_type || "未分类";
+          sceneSet.add(scene);
+        });
+      return Array.from(sceneSet)
+        .sort((a, b) => a.localeCompare(b, "zh-CN"))
+        .map((scene) => ({
+          type: "folder" as const,
+          name: scene,
+          displayName: formatDimensionValue(scene, DEFAULT_SCENE_TYPES),
+          value: scene,
+        }));
+    }
 
-      let sceneNode = towerNode.children?.find((n) => n.key === sceneKey);
-      if (!sceneNode) {
-        sceneNode = {
-          key: sceneKey,
-          title: formatDimensionValue(scene, DEFAULT_SCENE_TYPES),
-          icon: <FolderOutlined />,
-          children: [],
-        };
-        towerNode.children = [...(towerNode.children || []), sceneNode];
-      }
+    if (currentLevel === 3) {
+      const voltage = fileViewPath[0];
+      const tower = fileViewPath[1];
+      const scene = fileViewPath[2];
+      const arresterSet = new Set<string>();
+      assetItems
+        .filter(
+          (item) =>
+            (item.voltage_level || "未分类") === voltage &&
+            (item.tower_type || "未分类") === tower &&
+            (item.scene_type || "未分类") === scene
+        )
+        .forEach((item) => {
+          const arrester = item.arrester_config || "未分类";
+          arresterSet.add(arrester);
+        });
+      return Array.from(arresterSet)
+        .sort((a, b) => a.localeCompare(b, "zh-CN"))
+        .map((arrester) => ({
+          type: "folder" as const,
+          name: arrester,
+          displayName: formatDimensionValue(arrester, DEFAULT_ARRESTER_CONFIGS),
+          value: arrester,
+        }));
+    }
 
-      let arresterNode = sceneNode.children?.find((n) => n.key === arresterKey);
-      if (!arresterNode) {
-        arresterNode = {
-          key: arresterKey,
-          title: formatDimensionValue(arrester, DEFAULT_ARRESTER_CONFIGS),
-          icon: <FolderOutlined />,
-          children: [],
-        };
-        sceneNode.children = [...(sceneNode.children || []), arresterNode];
-      }
+    if (currentLevel === 4) {
+      const voltage = fileViewPath[0];
+      const tower = fileViewPath[1];
+      const scene = fileViewPath[2];
+      const arrester = fileViewPath[3];
+      return assetItems
+        .filter(
+          (item) =>
+            (item.voltage_level || "未分类") === voltage &&
+            (item.tower_type || "未分类") === tower &&
+            (item.scene_type || "未分类") === scene &&
+            (item.arrester_config || "未分类") === arrester
+        )
+        .map((item) => ({
+          type: "file" as const,
+          name: item.name,
+          displayName: item.name,
+          value: item.id,
+          item,
+        }));
+    }
 
-      const deleteLoading = deleteMutation.isPending;
-      const itemNode: DataNode = {
-        key: itemKey,
-        title: (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span>{item.name}</span>
-            <Space size="small">
-              <Typography.Text type="secondary" style={{ fontSize: "12px" }}>
-                {formatDateTime(item.update_date)}
-              </Typography.Text>
-              <Popconfirm
-                title="删除模型"
-                description="这会同时删除其版本与运行记录。"
-                okText="删除"
-                cancelText="取消"
-                okButtonProps={{ danger: true, loading: deleteLoading }}
-                onConfirm={() => deleteMutation.mutate(item.id)}
-                disabled={!canManage || deleteLoading}
-              >
-                <Button danger size="small" loading={deleteLoading} disabled={!canManage || deleteLoading} onClick={(e) => e.stopPropagation()}>
-                  删除
-                </Button>
-              </Popconfirm>
-            </Space>
-          </div>
-        ),
-        icon: <FileOutlined />,
-        isLeaf: true,
-      };
+    return [];
+  }, [assetItems, fileViewPath]);
 
-      arresterNode.children = [...(arresterNode.children || []), itemNode];
-    });
+  const fileViewItems = useMemo(() => getFileViewItems(), [getFileViewItems]);
 
-    return Array.from(treeMap.values());
-  }, [assetItems, canManage, deleteMutation]);
+  const handleFileViewItemClick = (item: FileViewItem) => {
+    if (item.type === "folder") {
+      setFileViewPath([...fileViewPath, item.value]);
+    }
+  };
 
-  const treeData = useMemo(() => buildTreeData(), [buildTreeData]);
+  const handleBreadcrumbClick = (index: number) => {
+    if (index === -1) {
+      setFileViewPath([]);
+    } else {
+      setFileViewPath(fileViewPath.slice(0, index + 1));
+    }
+  };
+
+  const getBreadcrumbLabel = (index: number): string => {
+    if (index === 0) return formatDimensionValue(fileViewPath[0], DEFAULT_VOLTAGE_LEVELS);
+    if (index === 1) return formatDimensionValue(fileViewPath[1], DEFAULT_TOWER_TYPES);
+    if (index === 2) return formatDimensionValue(fileViewPath[2], DEFAULT_SCENE_TYPES);
+    if (index === 3) return formatDimensionValue(fileViewPath[3], DEFAULT_ARRESTER_CONFIGS);
+    return "";
+  };
 
   const renderAtpModelCard = (item: AtpAssetSummary) => {
     const deleteLoading = deleteMutation.isPending;
@@ -705,10 +753,15 @@ export default function AtpModelsPage() {
             {!isMobile && (
               <Segmented
                 value={displayMode}
-                onChange={(value) => setDisplayMode(value as "list" | "tree")}
+                onChange={(value) => {
+                  setDisplayMode(value as "list" | "file");
+                  if (value === "list") {
+                    setFileViewPath([]);
+                  }
+                }}
                 options={[
                   { label: "列表视图", value: "list", icon: <TableOutlined /> },
-                  { label: "树形视图", value: "tree", icon: <ApartmentOutlined /> },
+                  { label: "文件视图", value: "file", icon: <FolderOpenOutlined /> },
                 ]}
               />
             )}
@@ -746,27 +799,91 @@ export default function AtpModelsPage() {
           </Form>
         )}
 
-        {displayMode === "tree" && viewMode === "table" ? (
-          <div className="admin-atp-models-tree-view mt-4" style={{ maxHeight: `${tableScrollY}px`, overflow: "auto" }}>
-            {assetsQuery.isLoading || assetsQuery.isFetching ? (
-              <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <Spin tip="加载中..." />
-              </div>
-            ) : treeData.length === 0 ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="未找到符合筛选条件的 ATP 模型。"
+        {displayMode === "file" && viewMode === "table" ? (
+          <div className="admin-atp-models-file-view mt-4">
+            <div style={{ marginBottom: 16 }}>
+              <Breadcrumb
+                items={[
+                  {
+                    title: (
+                      <a onClick={() => handleBreadcrumbClick(-1)}>
+                        <HomeOutlined /> ATP模型
+                      </a>
+                    ),
+                  },
+                  ...fileViewPath.map((_, index) => ({
+                    title: (
+                      <a onClick={() => handleBreadcrumbClick(index)}>
+                        {getBreadcrumbLabel(index)}
+                      </a>
+                    ),
+                  })),
+                ]}
               />
-            ) : (
-              <Tree
-                showIcon
-                expandedKeys={expandedKeys}
-                onExpand={(keys) => setExpandedKeys(keys)}
-                treeData={treeData}
-                blockNode
-                style={{ backgroundColor: "#fff" }}
-              />
-            )}
+            </div>
+            <div style={{ maxHeight: `${tableScrollY}px`, overflow: "auto" }}>
+              {assetsQuery.isLoading || assetsQuery.isFetching ? (
+                <div style={{ textAlign: "center", padding: "40px 0" }}>
+                  <Spin tip="加载中..." />
+                </div>
+              ) : fileViewItems.length === 0 ? (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="当前目录为空"
+                />
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "16px" }}>
+                  {fileViewItems.map((item, index) =>
+                    item.type === "folder" ? (
+                      <Card
+                        key={index}
+                        hoverable
+                        onClick={() => handleFileViewItemClick(item)}
+                        style={{ cursor: "pointer" }}
+                        bodyStyle={{ padding: "16px" }}
+                      >
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                          <FolderOutlined style={{ fontSize: "48px", color: "#faad14" }} />
+                          <Typography.Text ellipsis={{ tooltip: item.displayName }} style={{ width: "100%", textAlign: "center" }}>
+                            {item.displayName}
+                          </Typography.Text>
+                        </div>
+                      </Card>
+                    ) : (
+                      <Card
+                        key={index}
+                        bodyStyle={{ padding: "16px" }}
+                      >
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                          <FileOutlined style={{ fontSize: "48px", color: "#1890ff" }} />
+                          <Typography.Text ellipsis={{ tooltip: item.displayName }} style={{ width: "100%", textAlign: "center" }}>
+                            {item.displayName}
+                          </Typography.Text>
+                          <Typography.Text type="secondary" style={{ fontSize: "12px" }}>
+                            {item.item && formatDateTime(item.item.update_date)}
+                          </Typography.Text>
+                          {item.item && (
+                            <Popconfirm
+                              title="删除模型"
+                              description="这会同时删除其版本与运行记录。"
+                              okText="删除"
+                              cancelText="取消"
+                              okButtonProps={{ danger: true }}
+                              onConfirm={() => item.item && deleteMutation.mutate(item.item.id)}
+                              disabled={!canManage}
+                            >
+                              <Button danger size="small" disabled={!canManage}>
+                                删除
+                              </Button>
+                            </Popconfirm>
+                          )}
+                        </div>
+                      </Card>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         ) : viewMode === "table" ? (
           <div
