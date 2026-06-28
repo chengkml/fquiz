@@ -478,12 +478,6 @@ export default function AtpModelsPage() {
         render: (value: string | null) => value || "-",
       },
       {
-        title: "描述",
-        dataIndex: "description",
-        ellipsis: true,
-        render: (value: string) => value || "-",
-      },
-      {
         title: "更新时间",
         dataIndex: "update_date",
         width: 170,
@@ -571,12 +565,6 @@ export default function AtpModelsPage() {
             <Typography.Text>{item.arrester_config || "-"}</Typography.Text>
           </div>
           <div className="admin-atp-models-model-card-field">
-            <Typography.Text type="secondary">描述</Typography.Text>
-            <Typography.Text ellipsis={{ tooltip: item.description }}>
-              {item.description || "-"}
-            </Typography.Text>
-          </div>
-          <div className="admin-atp-models-model-card-field">
             <Typography.Text type="secondary">更新时间</Typography.Text>
             <Typography.Text>{formatDateTime(item.update_date)}</Typography.Text>
           </div>
@@ -625,7 +613,7 @@ export default function AtpModelsPage() {
                 allowClear
                 value={keywordInput}
                 onChange={(event) => handleKeywordChange(event.target.value)}
-                placeholder="按编码/名称/描述搜索"
+                placeholder="按编码/名称搜索"
               />
             </Form.Item>
           </Form>
@@ -636,7 +624,7 @@ export default function AtpModelsPage() {
                 allowClear
                 value={keywordInput}
                 onChange={(event) => handleKeywordChange(event.target.value)}
-                placeholder="按编码/名称/描述搜索"
+                placeholder="按编码/名称搜索"
               />
             </Form.Item>
           </Form>
