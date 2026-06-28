@@ -876,10 +876,6 @@ export default function AdminSystemMessagesPage() {
               }}
             />
           </Form.Item>
-
-          <Form.Item>
-            <Button onClick={() => void listQuery.refetch()}>刷新</Button>
-          </Form.Item>
         </Form>
 
         {viewMode === "table" ? (
