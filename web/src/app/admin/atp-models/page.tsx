@@ -600,16 +600,13 @@ export default function AtpModelsPage() {
         className="admin-atp-models-page-card"
         title="ATP 模型管理"
         extra={
-          <Space>
-            {assetsQuery.isFetching && <Spin size="small" />}
-            <Button
-              type="primary"
-              disabled={!canManage}
-              onClick={openCreateModal}
-            >
-              新建模型
-            </Button>
-          </Space>
+          <Button
+            type="primary"
+            disabled={!canManage}
+            onClick={openCreateModal}
+          >
+            新建模型
+          </Button>
         }
       >
         {viewMode === "card" ? (
@@ -644,7 +641,7 @@ export default function AtpModelsPage() {
           >
             <Table<AtpAssetSummary>
               rowKey="id"
-              loading={assetsQuery.isLoading}
+              loading={assetsQuery.isLoading || assetsQuery.isFetching}
               columns={columns}
               dataSource={assetItems}
               tableLayout="fixed"
