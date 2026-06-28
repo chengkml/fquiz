@@ -467,7 +467,7 @@ export default function AdminDimensionsPage() {
     {
       title: "操作",
       key: "actions",
-      width: 160,
+      width: 180,
       render: (_value, row) => {
         const deleteLoading = deletingId === row.id;
         const rowBusy = deleteLoading;
