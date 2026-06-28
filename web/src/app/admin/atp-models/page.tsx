@@ -20,7 +20,7 @@ import {
   message,
   type CardProps,
 } from "antd";
-import { UploadOutlined, InboxOutlined } from "@ant-design/icons";
+import { UploadOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType, type RefAttributes } from "react";
 
@@ -808,30 +808,48 @@ export default function AtpModelsPage() {
             <Input.TextArea rows={3} />
           </Form.Item>
           <Form.Item label="上传模型文件" required>
-            <Upload.Dragger
-              beforeUpload={(file) => {
-                setFileList((prev) => [...prev, file]);
-                return false;
-              }}
-              onRemove={(uploadFile) => {
-                setFileList((prev) => prev.filter((f) => f.name !== uploadFile.name));
-              }}
-              fileList={fileList.map((file) => ({
-                uid: file.name,
-                name: (file as any).webkitRelativePath || file.name,
-                status: "done" as const,
-              }))}
-              directory
-              multiple
-            >
-              <p className="ant-upload-drag-icon">
-                <InboxOutlined />
-              </p>
-              <p className="ant-upload-text">点击或拖拽文件夹到此处上传</p>
-              <p className="ant-upload-hint">
-                支持上传整个目录，将保留原始目录结构
-              </p>
-            </Upload.Dragger>
+            <div>
+              <Upload
+                beforeUpload={(file) => {
+                  setFileList((prev) => [...prev, file]);
+                  return false;
+                }}
+                directory
+                multiple
+                showUploadList={false}
+              >
+                <Button icon={<UploadOutlined />}>选择文件夹</Button>
+              </Upload>
+              {fileList.length > 0 && (
+                <div style={{
+                  marginTop: 8,
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                  border: '1px solid #d9d9d9',
+                  borderRadius: '4px',
+                  padding: '8px',
+                  backgroundColor: '#fafafa'
+                }}>
+                  <div style={{ marginBottom: 8, fontWeight: 500, color: '#666' }}>
+                    已选择 {fileList.length} 个文件
+                  </div>
+                  {fileList.map((file, index) => (
+                    <div key={index} style={{
+                      padding: '4px 0',
+                      fontSize: '13px',
+                      color: '#595959',
+                      borderBottom: index < fileList.length - 1 ? '1px solid #f0f0f0' : 'none',
+                      wordBreak: 'break-all'
+                    }}>
+                      {(file as any).webkitRelativePath || file.name}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ marginTop: 8, color: '#999', fontSize: '12px' }}>
+                支持选择整个目录，将保留原始目录结构
+              </div>
+            </div>
           </Form.Item>
         </Form>
       </Modal>
