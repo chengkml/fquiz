@@ -15,21 +15,19 @@ import {
   Spin,
   Table,
   Tag,
-  Tree,
   Typography,
   type MenuProps,
 } from "antd";
-import { MoreOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
+import { MoreOutlined, PlusOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import type { DataNode } from "antd/es/tree";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { readApiError } from "@/lib/api";
-import type { DimensionItem, DimensionItemListResponse, DimensionItemTreeNode } from "@/types/dimension";
+import type { DimensionItem, DimensionItemListResponse } from "@/types/dimension";
 
 type CreateDimensionValues = {
   dimension_type: string;
@@ -79,7 +77,6 @@ export default function AdminDimensionsPage() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<DimensionItem | null>(null);
   const [selectedDimensionType, setSelectedDimensionType] = useState<string | undefined>(undefined);
-  const [viewMode, setViewMode] = useState<"table" | "tree">("tree");
   const [pagination, setPagination] = useState({ current: 1, pageSize: 50 });
   const [tableScrollY, setTableScrollY] = useState(DIMENSIONS_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -102,8 +99,6 @@ export default function AdminDimensionsPage() {
   }, [paginationCurrent, paginationPageSize, selectedDimensionType]);
 
   const dimensionsPath = `/api/v1/dimensions?${dimensionsQueryParams}`;
-  const treeQueryParams = selectedDimensionType ? `?dimension_type=${selectedDimensionType}` : "";
-  const treePath = `/api/v1/dimensions/tree${treeQueryParams}`;
 
   const loadDimensions = useCallback(async () => {
     const response = await fetchWithAuth(dimensionsPath);
@@ -111,22 +106,10 @@ export default function AdminDimensionsPage() {
     return (await response.json()) as DimensionItemListResponse;
   }, [fetchWithAuth, dimensionsPath]);
 
-  const loadTree = useCallback(async () => {
-    const response = await fetchWithAuth(treePath);
-    if (!response.ok) throw new Error(await readApiError(response));
-    return (await response.json()) as DimensionItemTreeNode[];
-  }, [fetchWithAuth, treePath]);
-
   const dimensionsQuery = useQuery({
     queryKey: ["admin.dimensions", dimensionsQueryParams],
     queryFn: loadDimensions,
-    enabled: !!user && canRead && viewMode === "table",
-  });
-
-  const treeQuery = useQuery({
-    queryKey: ["admin.dimensions.tree", treeQueryParams],
-    queryFn: loadTree,
-    enabled: !!user && canRead && viewMode === "tree",
+    enabled: !!user && canRead,
   });
 
   useTopicSubscription(
@@ -134,16 +117,13 @@ export default function AdminDimensionsPage() {
     useCallback(() => {
       if (!user || !canRead) return;
       void queryClient.invalidateQueries({ queryKey: ["admin.dimensions"] });
-      void queryClient.invalidateQueries({ queryKey: ["admin.dimensions.tree"] });
     }, [canRead, queryClient, user]),
   );
 
   const dimensions = useMemo(() => dimensionsQuery.data?.items ?? [], [dimensionsQuery.data?.items]);
-  const treeData = useMemo(() => treeQuery.data ?? [], [treeQuery.data]);
 
   const refreshData = async () => {
     await queryClient.refetchQueries({ queryKey: ["admin.dimensions"] });
-    await queryClient.refetchQueries({ queryKey: ["admin.dimensions.tree"] });
   };
 
   const createDimensionMutation = useMutation({
@@ -260,8 +240,7 @@ export default function AdminDimensionsPage() {
     createForm.resetFields();
   };
 
-  const queryError = (dimensionsQuery.error instanceof Error ? dimensionsQuery.error.message : "") ||
-    (treeQuery.error instanceof Error ? treeQuery.error.message : "");
+  const queryError = dimensionsQuery.error instanceof Error ? dimensionsQuery.error.message : "";
   const anyError = error || queryError;
 
   useToastFeedback({
@@ -270,20 +249,6 @@ export default function AdminDimensionsPage() {
     clearError: () => setError(""),
     clearSuccess: () => setSuccess(""),
   });
-
-  const buildTreeData = (nodes: DimensionItemTreeNode[]): DataNode[] => {
-    return nodes.map((node) => ({
-      key: node.id,
-      title: (
-        <Space>
-          <Typography.Text strong>{node.name}</Typography.Text>
-          <Typography.Text type="secondary">({node.code})</Typography.Text>
-          <Tag color={node.is_enabled ? "green" : "default"}>{statusLabel(node.is_enabled)}</Tag>
-        </Space>
-      ),
-      children: node.children ? buildTreeData(node.children) : [],
-    }));
-  };
 
   const columns: ColumnsType<DimensionItem> = [
     {
@@ -431,22 +396,11 @@ export default function AdminDimensionsPage() {
       <Card
         title="维度管理"
         extra={
-          <Space>
-            <Select
-              value={viewMode}
-              onChange={setViewMode}
-              options={[
-                { value: "tree", label: "树形视图" },
-                { value: "table", label: "表格视图" },
-              ]}
-              style={{ width: 120 }}
-            />
-            {canManage && (
-              <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
-                新增维度项
-              </Button>
-            )}
-          </Space>
+          canManage && (
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
+              新增维度项
+            </Button>
+          )
         }
       >
         <Form layout="inline" style={{ marginBottom: 16 }}>
@@ -465,58 +419,37 @@ export default function AdminDimensionsPage() {
           </Form.Item>
         </Form>
 
-        {viewMode === "tree" ? (
-          <div style={{ minHeight: 300 }}>
-            {treeQuery.isLoading ? (
-              <div className="flex min-h-[240px] items-center justify-center">
-                <Spin tip="加载中..." />
-              </div>
-            ) : treeData.length === 0 ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="未找到符合筛选条件的维度项。"
-              />
-            ) : (
-              <Tree
-                treeData={buildTreeData(treeData)}
-                defaultExpandAll
-                showLine
-              />
-            )}
-          </div>
-        ) : (
-          <div ref={tableScrollAnchorRef}>
-            <Table<DimensionItem>
-              rowKey="id"
-              dataSource={dimensions}
-              columns={columns}
-              loading={dimensionsQuery.isLoading}
-              tableLayout="fixed"
-              pagination={{
-                current: pagination.current,
-                pageSize: pagination.pageSize,
-                total: Math.max(dimensionsQuery.data?.total ?? 0, 1),
-                showSizeChanger: true,
-                pageSizeOptions: [20, 50, 100, 200],
-                showTotal: () => `共 ${dimensionsQuery.data?.total ?? 0} 条`,
-                hideOnSinglePage: false,
-                style: { marginBottom: 0 },
-                onChange: (page, pageSize) => {
-                  setPagination({ current: page, pageSize });
-                },
-              }}
-              scroll={{ y: tableScrollY }}
-              locale={{
-                emptyText: (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="未找到符合筛选条件的维度项。"
-                  />
-                ),
-              }}
-            />
-          </div>
-        )}
+        <div ref={tableScrollAnchorRef}>
+          <Table<DimensionItem>
+            rowKey="id"
+            dataSource={dimensions}
+            columns={columns}
+            loading={dimensionsQuery.isLoading}
+            tableLayout="fixed"
+            pagination={{
+              current: pagination.current,
+              pageSize: pagination.pageSize,
+              total: Math.max(dimensionsQuery.data?.total ?? 0, 1),
+              showSizeChanger: true,
+              pageSizeOptions: [20, 50, 100, 200],
+              showTotal: () => `共 ${dimensionsQuery.data?.total ?? 0} 条`,
+              hideOnSinglePage: false,
+              style: { marginBottom: 0 },
+              onChange: (page, pageSize) => {
+                setPagination({ current: page, pageSize });
+              },
+            }}
+            scroll={{ y: tableScrollY }}
+            locale={{
+              emptyText: (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="未找到符合筛选条件的维度项。"
+                />
+              ),
+            }}
+          />
+        </div>
       </Card>
 
       <Modal
