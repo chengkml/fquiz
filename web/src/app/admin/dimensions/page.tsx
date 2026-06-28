@@ -48,16 +48,8 @@ type EditDimensionValues = {
   sort_order: number;
 };
 
-const DIMENSION_TYPES = [
-  { value: "voltage_level", label: "电压等级" },
-  { value: "tower_type", label: "塔型" },
-  { value: "scenario", label: "场景" },
-  { value: "arrester_combination", label: "避雷器组合" },
-];
-
 function dimensionTypeLabel(type: string): string {
-  const found = DIMENSION_TYPES.find((t) => t.value === type);
-  return found ? found.label : type;
+  return type;
 }
 
 function statusLabel(enabled: boolean): string {
@@ -121,6 +113,27 @@ export default function AdminDimensionsPage() {
   );
 
   const dimensions = useMemo(() => dimensionsQuery.data?.items ?? [], [dimensionsQuery.data?.items]);
+
+  const uniqueDimensionTypes = useMemo(() => {
+    const types = new Set(dimensions.map((d) => d.dimension_type));
+    return Array.from(types).sort();
+  }, [dimensions]);
+
+  const getAvailableParents = useCallback((currentItemId?: string) => {
+    return dimensions.filter((d) => {
+      if (currentItemId && d.id === currentItemId) return false;
+      if (currentItemId) {
+        const isDescendant = (itemId: string, ancestorId: string): boolean => {
+          const item = dimensions.find((dim) => dim.id === itemId);
+          if (!item || !item.parent_id) return false;
+          if (item.parent_id === ancestorId) return true;
+          return isDescendant(item.parent_id, ancestorId);
+        };
+        if (isDescendant(d.id, currentItemId)) return false;
+      }
+      return true;
+    });
+  }, [dimensions]);
 
   const refreshData = async () => {
     await queryClient.refetchQueries({ queryKey: ["admin.dimensions"] });
@@ -258,20 +271,24 @@ export default function AdminDimensionsPage() {
       render: (value: string) => dimensionTypeLabel(value),
     },
     {
-      title: "编码",
+      title: "维度编码",
       dataIndex: "code",
       width: 140,
     },
     {
-      title: "名称",
+      title: "维度名称",
       dataIndex: "name",
       width: 180,
     },
     {
-      title: "父节点ID",
+      title: "父维度",
       dataIndex: "parent_id",
-      width: 120,
-      render: (value: string | null) => value || "-",
+      width: 180,
+      render: (value: string | null) => {
+        if (!value) return "-";
+        const parent = dimensions.find((d) => d.id === value);
+        return parent ? `${parent.name} (${parent.code})` : value;
+      },
     },
     {
       title: "描述",
@@ -409,7 +426,7 @@ export default function AdminDimensionsPage() {
               value={selectedDimensionType}
               allowClear
               placeholder="全部"
-              options={DIMENSION_TYPES}
+              options={uniqueDimensionTypes.map((type) => ({ value: type, label: type }))}
               onChange={(value) => {
                 setSelectedDimensionType(value);
                 setPagination((prev) => ({ ...prev, current: 1 }));
@@ -472,40 +489,48 @@ export default function AdminDimensionsPage() {
           <Form.Item
             label="维度类型"
             name="dimension_type"
-            rules={[{ required: true, message: "请选择维度类型" }]}
+            rules={[{ required: true, message: "请输入维度类型" }]}
           >
-            <Select
-              placeholder="请选择维度类型"
-              options={DIMENSION_TYPES}
-            />
+            <Input placeholder="例如 电压等级" />
           </Form.Item>
 
           <Form.Item
-            label="编码"
+            label="维度编码"
             name="code"
             rules={[
-              { required: true, message: "请输入编码" },
-              { min: 1, message: "编码至少 1 位" },
-              { max: 128, message: "编码不能超过 128 位" },
+              { required: true, message: "请输入维度编码" },
+              { min: 1, message: "维度编码至少 1 位" },
+              { max: 128, message: "维度编码不能超过 128 位" },
             ]}
           >
             <Input placeholder="例如 110kv" />
           </Form.Item>
 
           <Form.Item
-            label="名称"
+            label="维度名称"
             name="name"
             rules={[
-              { required: true, message: "请输入名称" },
-              { min: 1, message: "名称至少 1 位" },
-              { max: 255, message: "名称不能超过 255 位" },
+              { required: true, message: "请输入维度名称" },
+              { min: 1, message: "维度名称至少 1 位" },
+              { max: 255, message: "维度名称不能超过 255 位" },
             ]}
           >
             <Input placeholder="例如 110千伏" />
           </Form.Item>
 
-          <Form.Item label="父节点ID" name="parent_id">
-            <Input placeholder="留空表示顶级节点" />
+          <Form.Item label="父维度" name="parent_id">
+            <Select
+              placeholder="留空表示顶级节点"
+              allowClear
+              showSearch
+              filterOption={(input, option) =>
+                (option?.label ?? "").toLowerCase().includes(input.toLowerCase())
+              }
+              options={getAvailableParents().map((d) => ({
+                value: d.id,
+                label: `${d.name} (${d.code})`,
+              }))}
+            />
           </Form.Item>
 
           <Form.Item label="描述" name="description">
@@ -548,31 +573,42 @@ export default function AdminDimensionsPage() {
           autoComplete="off"
         >
           <Form.Item
-            label="编码"
+            label="维度编码"
             name="code"
             rules={[
-              { required: true, message: "请输入编码" },
-              { min: 1, message: "编码至少 1 位" },
-              { max: 128, message: "编码不能超过 128 位" },
+              { required: true, message: "请输入维度编码" },
+              { min: 1, message: "维度编码至少 1 位" },
+              { max: 128, message: "维度编码不能超过 128 位" },
             ]}
           >
             <Input placeholder="例如 110kv" />
           </Form.Item>
 
           <Form.Item
-            label="名称"
+            label="维度名称"
             name="name"
             rules={[
-              { required: true, message: "请输入名称" },
-              { min: 1, message: "名称至少 1 位" },
-              { max: 255, message: "名称不能超过 255 位" },
+              { required: true, message: "请输入维度名称" },
+              { min: 1, message: "维度名称至少 1 位" },
+              { max: 255, message: "维度名称不能超过 255 位" },
             ]}
           >
             <Input placeholder="例如 110千伏" />
           </Form.Item>
 
-          <Form.Item label="父节点ID" name="parent_id">
-            <Input placeholder="留空表示顶级节点" />
+          <Form.Item label="父维度" name="parent_id">
+            <Select
+              placeholder="留空表示顶级节点"
+              allowClear
+              showSearch
+              filterOption={(input, option) =>
+                (option?.label ?? "").toLowerCase().includes(input.toLowerCase())
+              }
+              options={getAvailableParents(editingItem?.id).map((d) => ({
+                value: d.id,
+                label: `${d.name} (${d.code})`,
+              }))}
+            />
           </Form.Item>
 
           <Form.Item label="描述" name="description">
