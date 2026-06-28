@@ -241,8 +241,13 @@ export default function AtpModelsPage() {
         const JSZip = (await import("jszip")).default;
         const zip = new JSZip();
         for (const file of values.files) {
-          const path = (file as any).webkitRelativePath || file.name;
-          zip.file(path, file);
+          const fullPath = (file as any).webkitRelativePath || file.name;
+          // Strip the outermost directory level
+          const pathParts = fullPath.split('/');
+          const strippedPath = pathParts.length > 1 ? pathParts.slice(1).join('/') : fullPath;
+          if (strippedPath) {
+            zip.file(strippedPath, file);
+          }
         }
         const zipBlob = await zip.generateAsync({ type: "blob" });
         formData.append("files", zipBlob, "model.zip");
