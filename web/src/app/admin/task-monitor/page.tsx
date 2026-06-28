@@ -156,7 +156,7 @@ export default function AdminTaskMonitorPage() {
   const isMobile = useMobileDetection();
   const canRead = hasPermission("celery.read") || hasPermission("celery.manage");
 
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(false);
   const [workerKeyword, setWorkerKeyword] = useState("");
   const [queueKeyword, setQueueKeyword] = useState("");
   const [taskKeyword, setTaskKeyword] = useState("");
@@ -174,6 +174,10 @@ export default function AdminTaskMonitorPage() {
   const [logModalContent, setLogModalContent] = useState("");
   const [logModalTaskId, setLogModalTaskId] = useState("");
   const [logModalLoading, setLogModalLoading] = useState(false);
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [detailModalTask, setDetailModalTask] = useState<TaskTableRow | null>(null);
+  const [exceptionModalVisible, setExceptionModalVisible] = useState(false);
+  const [exceptionModalTask, setExceptionModalTask] = useState<TaskTableRow | null>(null);
 
   const resetTaskListPagination = useCallback(() => {
     setPagination((prev) => ({ ...prev, current: 1 }));
@@ -208,6 +212,26 @@ export default function AdminTaskMonitorPage() {
     setLogModalVisible(false);
     setLogModalTaskId("");
     setLogModalContent("");
+  };
+
+  const handleViewDetail = (task: TaskTableRow) => {
+    setDetailModalTask(task);
+    setDetailModalVisible(true);
+  };
+
+  const handleCloseDetailModal = () => {
+    setDetailModalVisible(false);
+    setDetailModalTask(null);
+  };
+
+  const handleViewException = (task: TaskTableRow) => {
+    setExceptionModalTask(task);
+    setExceptionModalVisible(true);
+  };
+
+  const handleCloseExceptionModal = () => {
+    setExceptionModalVisible(false);
+    setExceptionModalTask(null);
   };
 
   const workersOverviewQuery = useQuery({
@@ -275,13 +299,6 @@ export default function AdminTaskMonitorPage() {
         render: (value: string) => renderTaskStateTag(value),
       },
       {
-        title: "监控分组",
-        dataIndex: "source",
-        key: "source",
-        width: 120,
-        render: (value: string) => renderTaskSourceTag(value),
-      },
-      {
         title: "队列",
         dataIndex: "queue_name",
         key: "queue_name",
@@ -294,13 +311,6 @@ export default function AdminTaskMonitorPage() {
         key: "worker",
         width: 220,
         render: (value: string) => value || "-",
-      },
-      {
-        title: "接收时间",
-        dataIndex: "received_at",
-        key: "received_at",
-        width: 170,
-        render: (value: string | null) => formatDateTime(value),
       },
       {
         title: "开始时间",
@@ -324,42 +334,22 @@ export default function AdminTaskMonitorPage() {
         render: (value: number | null) => formatTaskMonitorDuration(value),
       },
       {
-        title: "位置参数",
-        dataIndex: "args_text",
-        key: "args_text",
-        width: 220,
-        render: (value: string | null) => (value ? <Text ellipsis={{ tooltip: value }}>{value}</Text> : "-"),
-      },
-      {
-        title: "关键字参数",
-        dataIndex: "kwargs_text",
-        key: "kwargs_text",
-        width: 220,
-        render: (value: string | null) => (value ? <Text ellipsis={{ tooltip: value }}>{value}</Text> : "-"),
-      },
-      {
-        title: "异常信息",
-        dataIndex: "exception_text",
-        key: "exception_text",
-        width: 220,
-        render: (value: string | null) =>
-          value ? (
-            <Text type="danger" ellipsis={{ tooltip: value }}>
-              {value}
-            </Text>
-          ) : (
-            "-"
-          ),
-      },
-      {
         title: "操作",
         key: "actions",
-        width: 100,
+        width: 180,
         fixed: "right",
         render: (_: unknown, record: TaskTableRow) => (
-          <Button size="small" onClick={() => handleViewLog(record.task_id)}>
-            查看日志
-          </Button>
+          <Space size={4}>
+            <Button size="small" onClick={() => handleViewLog(record.task_id)}>
+              日志
+            </Button>
+            <Button size="small" onClick={() => handleViewDetail(record)}>
+              详情
+            </Button>
+            <Button size="small" onClick={() => handleViewException(record)} disabled={!record.exception_text}>
+              异常
+            </Button>
+          </Space>
         ),
       },
     ],
@@ -401,7 +391,10 @@ export default function AdminTaskMonitorPage() {
       rows.push(...toTaskRows(overview.worker, "SCHEDULED", overview.scheduled_tasks));
       rows.push(...toTaskRows(overview.worker, "RECENT", overview.recent_tasks));
     }
-    return rows.filter((task) => task.name !== "app.tasks.worker_registry_tasks.sweep_worker_registry_offline");
+    return rows.filter((task) =>
+      task.name !== "app.tasks.worker_registry_tasks.sweep_worker_registry_offline" &&
+      task.name !== "app.tasks.scheduled_task_tasks.dispatch_due_scheduled_tasks"
+    );
   }, [allTasksQuery.data]);
 
   const filteredTaskRows = useMemo(() => {
@@ -620,7 +613,6 @@ export default function AdminTaskMonitorPage() {
           {renderTaskStateTag(task.state)}
         </Space>
       }
-      extra={renderTaskSourceTag(task.source)}
     >
       <Space direction="vertical" size={10} style={{ width: "100%" }}>
         <div className="admin-task-monitor-task-card-field">
@@ -640,8 +632,8 @@ export default function AdminTaskMonitorPage() {
           </Typography.Text>
         </div>
         <div className="admin-task-monitor-task-card-field">
-          <Typography.Text type="secondary">接收</Typography.Text>
-          <Typography.Text>{formatDateTime(task.received_at)}</Typography.Text>
+          <Typography.Text type="secondary">开始</Typography.Text>
+          <Typography.Text>{formatDateTime(task.started_at)}</Typography.Text>
         </div>
         <div className="admin-task-monitor-task-card-field">
           <Typography.Text type="secondary">完成</Typography.Text>
@@ -651,18 +643,18 @@ export default function AdminTaskMonitorPage() {
           <Typography.Text type="secondary">时长</Typography.Text>
           <Typography.Text>{formatTaskMonitorDuration(task.runtime_seconds)}</Typography.Text>
         </div>
-        {task.exception_text && (
-          <div className="admin-task-monitor-task-card-field">
-            <Typography.Text type="secondary">异常</Typography.Text>
-            <Typography.Text type="danger" ellipsis={{ tooltip: task.exception_text }}>
-              {task.exception_text}
-            </Typography.Text>
-          </div>
-        )}
         <div style={{ marginTop: 8 }}>
-          <Button size="small" block onClick={() => handleViewLog(task.task_id)}>
-            查看日志
-          </Button>
+          <Space direction="vertical" size={8} style={{ width: "100%" }}>
+            <Button size="small" block onClick={() => handleViewLog(task.task_id)}>
+              日志
+            </Button>
+            <Button size="small" block onClick={() => handleViewDetail(task)}>
+              详情
+            </Button>
+            <Button size="small" block onClick={() => handleViewException(task)} disabled={!task.exception_text}>
+              异常
+            </Button>
+          </Space>
         </div>
       </Space>
     </AntCard>
@@ -713,15 +705,6 @@ export default function AdminTaskMonitorPage() {
         extra={(
           <Space>
             {(workersOverviewQuery.isFetching || allTasksQuery.isFetching) && <Spin size="small" />}
-            <Button
-              onClick={() => {
-                void workersOverviewQuery.refetch();
-                void allTasksQuery.refetch();
-              }}
-              loading={workersOverviewQuery.isFetching || allTasksQuery.isFetching}
-            >
-              刷新监控数据
-            </Button>
           </Space>
         )}
       >
@@ -779,13 +762,7 @@ export default function AdminTaskMonitorPage() {
             </Form.Item>
 
             <Form.Item style={{ marginBottom: 0 }}>
-              <Space size={12} wrap>
-                <Space size={8}>
-                  <Text>自动刷新</Text>
-                  <Switch checked={autoRefresh} onChange={setAutoRefresh} />
-                </Space>
-                <Button onClick={handleResetFilters}>重置筛选</Button>
-              </Space>
+              <Button onClick={handleResetFilters}>重置筛选</Button>
             </Form.Item>
           </Form>
         ) : (
@@ -842,25 +819,11 @@ export default function AdminTaskMonitorPage() {
             </Form.Item>
 
             <Form.Item>
-              <Space size={8}>
-                <Text>自动刷新</Text>
-                <Switch checked={autoRefresh} onChange={setAutoRefresh} />
-              </Space>
-            </Form.Item>
-
-            <Form.Item>
               <Button onClick={handleResetFilters}>重置筛选</Button>
             </Form.Item>
           </Form>
         )}
 
-        <Space className="mt-4" size={[16, 8]} wrap>
-          <Text type="secondary">生成时间：{formatDateTime(workersOverview?.generated_at)}</Text>
-          <Text type="secondary">执行节点：{filteredWorkers.length}/{workersOverview?.summary.total ?? 0}</Text>
-          <Text type="secondary">在线：{workersOverview?.summary.online ?? 0}</Text>
-          <Text type="secondary">离线：{workersOverview?.summary.offline ?? 0}</Text>
-          <Text type="secondary">任务：{filteredTaskRows.length} 条</Text>
-        </Space>
 
         {!workersOverview && !workersOverviewQuery.isFetching && (
           <div className="mt-4">
@@ -980,6 +943,94 @@ export default function AdminTaskMonitorPage() {
             {logModalContent}
           </pre>
         )}
+      </Modal>
+
+      <Modal
+        title={`任务参数详情 - ${detailModalTask?.task_id || ""}`}
+        open={detailModalVisible}
+        onCancel={handleCloseDetailModal}
+        footer={[
+          <Button key="close" onClick={handleCloseDetailModal}>
+            关闭
+          </Button>,
+        ]}
+        width={800}
+        style={{ top: 20 }}
+      >
+        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          <div>
+            <Typography.Text strong>任务名称：</Typography.Text>
+            <Typography.Text>{getTaskDisplayName(detailModalTask?.name)}</Typography.Text>
+          </div>
+          <div>
+            <Typography.Text strong>位置参数：</Typography.Text>
+            <pre
+              style={{
+                marginTop: "8px",
+                padding: "12px",
+                backgroundColor: "#f5f5f5",
+                borderRadius: "4px",
+                fontSize: "12px",
+                lineHeight: "1.5",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                maxHeight: "30vh",
+                overflow: "auto",
+              }}
+            >
+              {detailModalTask?.args_text || "无"}
+            </pre>
+          </div>
+          <div>
+            <Typography.Text strong>关键字参数：</Typography.Text>
+            <pre
+              style={{
+                marginTop: "8px",
+                padding: "12px",
+                backgroundColor: "#f5f5f5",
+                borderRadius: "4px",
+                fontSize: "12px",
+                lineHeight: "1.5",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                maxHeight: "30vh",
+                overflow: "auto",
+              }}
+            >
+              {detailModalTask?.kwargs_text || "无"}
+            </pre>
+          </div>
+        </Space>
+      </Modal>
+
+      <Modal
+        title={`任务异常信息 - ${exceptionModalTask?.task_id || ""}`}
+        open={exceptionModalVisible}
+        onCancel={handleCloseExceptionModal}
+        footer={[
+          <Button key="close" onClick={handleCloseExceptionModal}>
+            关闭
+          </Button>,
+        ]}
+        width={800}
+        style={{ top: 20 }}
+      >
+        <pre
+          style={{
+            maxHeight: "60vh",
+            overflow: "auto",
+            padding: "16px",
+            backgroundColor: "#fff2f0",
+            borderRadius: "4px",
+            fontSize: "12px",
+            lineHeight: "1.5",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            color: "#cf1322",
+          }}
+        >
+          {exceptionModalTask?.exception_text || "无异常信息"}
+        </pre>
       </Modal>
     </div>
   );
