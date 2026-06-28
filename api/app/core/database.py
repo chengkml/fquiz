@@ -560,6 +560,7 @@ def init_db() -> None:
         atp_asset,
         audit_log,
         auth_session,
+        dimension_item,
         elevation,
         file_storage,
         fl_analysis,
