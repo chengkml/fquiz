@@ -5,8 +5,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Button,
-  Drawer,
   Form,
+  Modal,
   Space,
   Typography,
   message,
@@ -49,7 +49,7 @@ export default function AdminFlAnalysisPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
-  const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
   const [detailRow, setDetailRow] = useState<FlAnalysisTowerResultSummary | null>(null);
   const [mitigationModalOpen, setMitigationModalOpen] = useState(false);
   const [scenarioModalOpen, setScenarioModalOpen] = useState(false);
@@ -318,7 +318,7 @@ export default function AdminFlAnalysisPage() {
     onSuccess: async (job) => {
       await invalidateFlAnalysisQueries();
       setSelectedJobId(job.id);
-      setCreateDrawerOpen(false);
+      setCreateModalOpen(false);
       messageApi.success(`${formatJobType(job.job_type, mitigationMode(job))}任务已创建并启动`);
       createJobForm.setFieldsValue({ job_name: "" });
     },
@@ -570,7 +570,7 @@ export default function AdminFlAnalysisPage() {
               <Button
                 type="primary"
                 onClick={() => {
-                  setCreateDrawerOpen(true);
+                  setCreateModalOpen(true);
                 }}
               >
                 新建任务
@@ -649,17 +649,21 @@ export default function AdminFlAnalysisPage() {
         ) : null}
       </Space>
 
-      <Drawer
+      <Modal
         title="新建防雷任务"
-        open={createDrawerOpen}
-        width={900}
-        onClose={() => {
+        open={createModalOpen}
+        width={800}
+        onCancel={() => {
           if (createJobMutation.isPending) {
             return;
           }
-          setCreateDrawerOpen(false);
+          setCreateModalOpen(false);
         }}
-        destroyOnHidden={false}
+        onOk={() => createJobForm.submit()}
+        okText="创建并启动任务"
+        cancelText="取消"
+        confirmLoading={createJobMutation.isPending}
+        destroyOnClose={false}
       >
         <CreateJobForm
           form={createJobForm}
@@ -675,12 +679,11 @@ export default function AdminFlAnalysisPage() {
           selectedAtpModel={selectedAtpModel}
           engineQueryData={engineQuery.data}
           workflowExecutionMessage={workflowExecutionMessage}
-          submitting={createJobMutation.isPending}
           onSubmit={(values) => {
             createJobMutation.mutate(values);
           }}
         />
-      </Drawer>
+      </Modal>
 
       <DetailModal
         open={detailModalOpen}

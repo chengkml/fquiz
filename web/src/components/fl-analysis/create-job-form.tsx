@@ -42,7 +42,6 @@ type CreateJobFormProps = {
   selectedAtpModel: AtpModelSummary | null;
   engineQueryData: AtpEngineStatusResponse | undefined;
   workflowExecutionMessage: string;
-  submitting: boolean;
   onSubmit: (values: CreateJobFormValues) => void;
 };
 
@@ -60,7 +59,6 @@ export function CreateJobForm({
   selectedAtpModel,
   engineQueryData,
   workflowExecutionMessage,
-  submitting,
   onSubmit,
 }: CreateJobFormProps) {
   const selectedLinePreparation = readLinePreparation(selectedLine);
@@ -73,60 +71,50 @@ export function CreateJobForm({
       initialValues={CREATE_JOB_DEFAULTS}
       onFinish={onSubmit}
     >
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <Form.Item name="job_name" label="任务名">
+        <Input
+          placeholder={selectedLine
+            ? `${selectedLine.name || selectedLine.code}-${formatJobType(selectedJobType)}`
+            : `${formatJobType(selectedJobType)}任务`}
+        />
+      </Form.Item>
+
+      <Form.Item name="job_type" label="任务类型" rules={[{ required: true, message: "请选择任务类型" }]}>
+        <Select
+          options={[
+            { value: "normal", label: "普通计算" },
+            { value: "tongtiao", label: "同跳计算" },
+            { value: "risk", label: "风险评估" },
+          ]}
+        />
+      </Form.Item>
+
+      <Form.Item
+        name="line_id"
+        label="线路"
+        rules={[{ required: true, message: "请选择线路" }]}
+      >
+        <Select
+          showSearch
+          optionFilterProp="label"
+          placeholder="选择线路"
+          loading={linesLoading}
+          options={lines.map((item) => ({
+            value: item.id,
+            label: `${item.name || item.code} / ${item.code}`,
+          }))}
+        />
+      </Form.Item>
+
+      {selectedJobType === "normal" || selectedJobType === "tongtiao" ? (
         <Form.Item
-          name="line_id"
-          label="线路"
-          rules={[{ required: true, message: "请选择线路" }]}
+          name="external_adapter"
+          label="执行适配器"
+          rules={[{ required: true, message: "请选择执行适配器" }]}
         >
-          <Select
-            showSearch
-            optionFilterProp="label"
-            placeholder="选择线路"
-            loading={linesLoading}
-            options={lines.map((item) => ({
-              value: item.id,
-              label: `${item.name || item.code} / ${item.code}`,
-            }))}
-          />
+          <Select options={adapterOptions.map((item) => ({ ...item }))} />
         </Form.Item>
-        <Form.Item name="job_type" label="任务类型" rules={[{ required: true, message: "请选择任务类型" }]}>
-          <Select
-            options={[
-              { value: "normal", label: "普通计算" },
-              { value: "tongtiao", label: "同跳计算" },
-              { value: "risk", label: "风险评估" },
-            ]}
-          />
-        </Form.Item>
-        {selectedJobType === "normal" || selectedJobType === "tongtiao" ? (
-          <Form.Item
-            name="external_adapter"
-            label="执行适配器"
-            rules={[{ required: true, message: "请选择执行适配器" }]}
-          >
-            <Select options={adapterOptions.map((item) => ({ ...item }))} />
-          </Form.Item>
-        ) : null}
-        <Form.Item name="job_name" label="任务名">
-          <Input
-            placeholder={selectedLine
-              ? `${selectedLine.name || selectedLine.code}-${formatJobType(selectedJobType)}`
-              : `${formatJobType(selectedJobType)}任务`}
-          />
-        </Form.Item>
-        <Form.Item label=" ">
-          <Button
-            type="primary"
-            htmlType="submit"
-            loading={submitting}
-            disabled={!selectedLine || !selectedLinePreparation.all_ready}
-            className="w-full"
-          >
-            创建并启动{formatJobType(selectedJobType)}任务
-          </Button>
-        </Form.Item>
-      </div>
+      ) : null}
 
       {selectedLine ? (
         <Alert
@@ -173,7 +161,7 @@ export function CreateJobForm({
             />
           ) : null}
           {externalAdapterActive ? (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <>
               <Form.Item
                 name="atp_model_id"
                 label="ATP模型"
@@ -195,11 +183,10 @@ export function CreateJobForm({
                 showIcon
                 message={`执行模式：${engineQueryData ? formatExternalAdapter(engineQueryData.mode === "wine" ? "wine" : "atp") : "-"}`}
                 description={selectedAtpModel ? `当前模型：${selectedAtpModel.name} / ${selectedAtpModel.code}。执行时默认使用该模型的当前模板。` : "从 ATP 模型管理中选择可用模板。"}
-                className="md:col-span-1 xl:col-span-2"
               />
-            </div>
+            </>
           ) : null}
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-2">
             <Form.Item name="current_waveform" label="雷电流波形">
               <Select
                 options={[
