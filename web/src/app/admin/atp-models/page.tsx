@@ -11,6 +11,7 @@ import {
   Modal,
   Popconfirm,
   Row,
+  Select,
   Space,
   Spin,
   Table,
@@ -25,7 +26,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 
 import { AdminPageLoading } from "@/components/admin-page-loading";
 import { useAuth } from "@/components/auth-provider";
-import { CreatableSingleSelect } from "@/components/creatable-single-select";
 import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { readApiError } from "@/lib/api";
@@ -741,16 +741,68 @@ export default function AtpModelsPage() {
           autoComplete="off"
         >
           <Form.Item name="voltage_level" label="电压等级" rules={[{ required: true, message: "请选择或新建电压等级" }]}>
-            <CreatableSingleSelect options={voltageLevelOptions} placeholder="请选择或新建电压等级" />
+            <Select
+              showSearch
+              allowClear
+              placeholder="请选择或新建电压等级"
+              options={voltageLevelOptions}
+              dropdownRender={(menu) => (
+                <>
+                  {menu}
+                  <div style={{ padding: '8px 12px', color: '#999', fontSize: '12px' }}>
+                    可直接输入新建选项
+                  </div>
+                </>
+              )}
+            />
           </Form.Item>
           <Form.Item name="tower_type" label="塔型" rules={[{ required: true, message: "请选择或新建塔型" }]}>
-            <CreatableSingleSelect options={towerTypeOptions} placeholder="请选择或新建塔型" />
+            <Select
+              showSearch
+              allowClear
+              placeholder="请选择或新建塔型"
+              options={towerTypeOptions}
+              dropdownRender={(menu) => (
+                <>
+                  {menu}
+                  <div style={{ padding: '8px 12px', color: '#999', fontSize: '12px' }}>
+                    可直接输入新建选项
+                  </div>
+                </>
+              )}
+            />
           </Form.Item>
           <Form.Item name="scene_type" label="场景" rules={[{ required: true, message: "请选择或新建场景" }]}>
-            <CreatableSingleSelect options={sceneTypeOptions} placeholder="请选择或新建场景" />
+            <Select
+              showSearch
+              allowClear
+              placeholder="请选择或新建场景"
+              options={sceneTypeOptions}
+              dropdownRender={(menu) => (
+                <>
+                  {menu}
+                  <div style={{ padding: '8px 12px', color: '#999', fontSize: '12px' }}>
+                    可直接输入新建选项
+                  </div>
+                </>
+              )}
+            />
           </Form.Item>
           <Form.Item name="arrester_config" label="避雷器装设组合" rules={[{ required: true, message: "请选择或新建避雷器装设组合" }]}>
-            <CreatableSingleSelect options={arresterConfigOptions} placeholder="请选择或新建避雷器装设组合" />
+            <Select
+              showSearch
+              allowClear
+              placeholder="请选择或新建避雷器装设组合"
+              options={arresterConfigOptions}
+              dropdownRender={(menu) => (
+                <>
+                  {menu}
+                  <div style={{ padding: '8px 12px', color: '#999', fontSize: '12px' }}>
+                    可直接输入新建选项
+                  </div>
+                </>
+              )}
+            />
           </Form.Item>
           <Form.Item name="description" label="描述">
             <Input.TextArea rows={3} />
