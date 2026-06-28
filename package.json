@@ -14,5 +14,8 @@
     "docker:up": "docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml up --build -d",
     "docker:down": "docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml down",
     "docker:logs": "docker compose --env-file deploy/dev-deploy/.env -f deploy/dev-deploy/compose.yml logs -f"
+  },
+  "dependencies": {
+    "react-markdown": "^10.1.0"
   }
 }
