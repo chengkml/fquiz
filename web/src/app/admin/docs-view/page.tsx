@@ -5,10 +5,13 @@ import {
   Card,
   Drawer,
   Empty,
+  Input,
   Menu,
-  Spin,
+  Skeleton,
   Typography,
   Button,
+  Image,
+  Tooltip,
   type CardProps,
 } from "antd";
 import {
@@ -17,10 +20,23 @@ import {
   MenuOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  SearchOutlined,
+  CopyOutlined,
+  LinkOutlined,
 } from "@ant-design/icons";
-import { useCallback, useEffect, useState, type ComponentType, type RefAttributes } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  useRef,
+  useMemo,
+  type ComponentType,
+  type RefAttributes,
+} from "react";
 import type { MenuProps } from "antd";
 import ReactMarkdown from "react-markdown";
+import rehypeHighlight from "rehype-highlight";
+import rehypeSlug from "rehype-slug";
 
 import { useAuth } from "@/components/auth-provider";
 import { useMobileDetection } from "@/hooks/use-mobile-detection";
@@ -30,10 +46,25 @@ import type {
   DocumentChapterTreeItem,
 } from "@/types/document";
 
-const { Title, Paragraph } = Typography;
+const { Title, Paragraph, Text } = Typography;
 const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 type MenuItem = Required<MenuProps>["items"][number];
+
+function flattenDocuments(chapters: DocumentChapterTreeItem[]): { id: number; title: string; chapterPath: string }[] {
+  const result: { id: number; title: string; chapterPath: string }[] = [];
+  const walk = (items: DocumentChapterTreeItem[], path: string) => {
+    for (const chapter of items) {
+      const currentPath = path ? `${path} / ${chapter.name}` : chapter.name;
+      for (const doc of chapter.documents?.filter((d) => d.status === "published") ?? []) {
+        result.push({ id: doc.id, title: doc.title, chapterPath: currentPath });
+      }
+      if (chapter.children) walk(chapter.children, currentPath);
+    }
+  };
+  walk(chapters, "");
+  return result;
+}
 
 export default function DocsViewPage() {
   const { user, fetchWithAuth, hasPermission } = useAuth();
@@ -41,6 +72,9 @@ export default function DocsViewPage() {
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
   const [siderCollapsed, setSiderCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [copiedCodeBlockId, setCopiedCodeBlockId] = useState<string | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const canRead = hasPermission("document.read") || true;
 
@@ -65,46 +99,89 @@ export default function DocsViewPage() {
     enabled: !!selectedDocumentId && !!user && canRead,
   });
 
-  const convertToMenuItems = useCallback((chapters: DocumentChapterTreeItem[]): MenuItem[] => {
-    const convert = (chapters: DocumentChapterTreeItem[]): MenuItem[] => {
+  const documentIndex = useMemo(() => (treeData ? flattenDocuments(treeData) : []), [treeData]);
+
+  const filteredMenuItems = useMemo(() => {
+    if (!treeData) return [];
+
+    const filterTree = (chapters: DocumentChapterTreeItem[]): MenuItem[] => {
       return chapters
         .filter((chapter) => {
           const hasPublishedDocs = chapter.documents?.some((doc) => doc.status === "published");
           const hasPublishedChildren = chapter.children?.some((child) =>
-            child.documents?.some((doc) => doc.status === "published")
+            child.documents?.some((doc) => doc.status === "published"),
           );
           return hasPublishedDocs || hasPublishedChildren;
         })
         .map((chapter) => {
-          const hasChildren = chapter.children && chapter.children.length > 0;
           const publishedDocs = chapter.documents?.filter((doc) => doc.status === "published") || [];
 
-          const docItems: MenuItem[] = publishedDocs.map((doc) => ({
+          const matchedDocs = searchQuery
+            ? publishedDocs.filter(
+                (doc) =>
+                  doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  chapter.name.toLowerCase().includes(searchQuery.toLowerCase()),
+              )
+            : publishedDocs;
+
+          const childItems = chapter.children ? filterTree(chapter.children) : [];
+
+          if (searchQuery && matchedDocs.length === 0 && childItems.length === 0) {
+            return null;
+          }
+
+          const docItems: MenuItem[] = matchedDocs.map((doc) => ({
             key: `doc-${doc.id}`,
             icon: <FileTextOutlined />,
-            label: doc.title,
+            label: (
+              <span className="admin-docs-view-menu-doc-title" data-searching={!!searchQuery}>
+                {searchQuery ? highlightMatch(doc.title, searchQuery) : doc.title}
+              </span>
+            ),
           }));
-
-          const childItems = hasChildren ? convert(chapter.children) : [];
 
           return {
             key: `chapter-${chapter.id}`,
             icon: <FolderOutlined />,
-            label: chapter.name,
+            label: (
+              <span className="admin-docs-view-menu-chapter-name" data-searching={!!searchQuery}>
+                {searchQuery ? highlightMatch(chapter.name, searchQuery) : chapter.name}
+              </span>
+            ),
             children: [...docItems, ...childItems],
           };
-        });
+        })
+        .filter(Boolean) as MenuItem[];
     };
-    return convert(chapters);
-  }, []);
 
-  const handleMenuClick: MenuProps["onClick"] = useCallback((e) => {
-    if (e.key.startsWith("doc-")) {
-      const docId = parseInt(e.key.replace("doc-", ""), 10);
-      setSelectedDocumentId(docId);
-      setMobileMenuOpen(false);
-    }
-  }, []);
+    return filterTree(treeData);
+  }, [treeData, searchQuery]);
+
+  function highlightMatch(text: string, query: string): React.ReactNode {
+    const lower = text.toLowerCase();
+    const q = query.toLowerCase();
+    const idx = lower.indexOf(q);
+    if (idx === -1) return text;
+    return (
+      <>
+        {text.slice(0, idx)}
+        <mark className="admin-docs-view-search-highlight">{text.slice(idx, idx + q.length)}</mark>
+        {text.slice(idx + q.length)}
+      </>
+    );
+  }
+
+  const handleMenuClick: MenuProps["onClick"] = useCallback(
+    (e) => {
+      if (e.key.startsWith("doc-")) {
+        const docId = parseInt(e.key.replace("doc-", ""), 10);
+        setSelectedDocumentId(docId);
+        setMobileMenuOpen(false);
+        contentRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    },
+    [],
+  );
 
   const selectFirstDocument = useCallback(() => {
     if (!treeData || treeData.length === 0 || selectedDocumentId) return;
@@ -132,6 +209,16 @@ export default function DocsViewPage() {
     selectFirstDocument();
   }, [selectFirstDocument]);
 
+  const handleCopyCode = async (code: string, blockId: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedCodeBlockId(blockId);
+      setTimeout(() => setCopiedCodeBlockId(null), 2000);
+    } catch {
+      // silent
+    }
+  };
+
   if (!user || !canRead) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
@@ -144,30 +231,64 @@ export default function DocsViewPage() {
     );
   }
 
+  const skeletonMenu = (
+    <div className="admin-docs-view-skeleton-menu">
+      {[0, 1, 2, 3, 4, 5].map((i) => (
+        <div
+          key={i}
+          className="admin-docs-view-skeleton-item"
+          style={i % 3 === 0 ? {} : { paddingLeft: 20 }}
+        >
+          <Skeleton.Input active size="small" block style={{ width: `${50 + (i % 3) * 15}%` }} />
+        </div>
+      ))}
+    </div>
+  );
+
   const menuContent = (
     <>
       <div className="admin-docs-view-sider-header">
         {!siderCollapsed && (
-          <Title level={4} style={{ margin: 0, fontSize: '16px', fontWeight: 600 }}>
-            操作文档
-          </Title>
+          <>
+            <Title level={4} style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>
+              操作文档
+            </Title>
+            {!treeLoading && treeData && treeData.length > 0 && (
+              <div className="admin-docs-view-search-wrapper">
+                <Input
+                  className="admin-docs-view-search-input"
+                  placeholder="搜索文档..."
+                  prefix={<SearchOutlined />}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  allowClear
+                  size="small"
+                />
+              </div>
+            )}
+          </>
         )}
       </div>
       {treeLoading ? (
-        <div className="admin-docs-view-sider-loading">
-          <Spin />
-        </div>
+        skeletonMenu
       ) : treeData && treeData.length > 0 ? (
-        <div className="admin-docs-view-sider-menu">
-          <Menu
-            mode="inline"
-            items={convertToMenuItems(treeData)}
-            onClick={handleMenuClick}
-            selectedKeys={selectedDocumentId ? [`doc-${selectedDocumentId}`] : []}
-            style={{ borderRight: 0, background: "transparent" }}
-            inlineCollapsed={siderCollapsed && !isMobile}
-          />
-        </div>
+        <>
+          {searchQuery && (
+            <div className="admin-docs-view-search-results-count">
+              {`找到 ${documentIndex.filter((d) => d.title.toLowerCase().includes(searchQuery.toLowerCase())).length} 个结果`}
+            </div>
+          )}
+          <div className="admin-docs-view-sider-menu">
+            <Menu
+              mode="inline"
+              items={filteredMenuItems}
+              onClick={handleMenuClick}
+              selectedKeys={selectedDocumentId ? [`doc-${selectedDocumentId}`] : []}
+              style={{ borderRight: 0, background: "transparent" }}
+              inlineCollapsed={siderCollapsed && !isMobile}
+            />
+          </div>
+        </>
       ) : (
         <div className="admin-docs-view-sider-empty">
           <Empty description="暂无文档" image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -175,15 +296,32 @@ export default function DocsViewPage() {
       )}
       {!isMobile && (
         <div className="admin-docs-view-sider-footer">
-          <Button
-            aria-label={siderCollapsed ? "展开菜单" : "收起菜单"}
-            icon={siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            type="text"
-            onClick={() => setSiderCollapsed((prev) => !prev)}
-          />
+          <Tooltip title={siderCollapsed ? "展开菜单" : "收起菜单"}>
+            <Button
+              aria-label={siderCollapsed ? "展开菜单" : "收起菜单"}
+              icon={siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              type="text"
+              onClick={() => setSiderCollapsed((prev) => !prev)}
+            />
+          </Tooltip>
         </div>
       )}
     </>
+  );
+
+  const skeletonContent = (
+    <div className="admin-docs-view-skeleton-content">
+      <Skeleton active paragraph={{ rows: 1 }} title={{ width: "60%" }} />
+      <div style={{ marginTop: 24 }}>
+        <Skeleton active paragraph={{ rows: 3 }} />
+      </div>
+      <div style={{ marginTop: 24 }}>
+        <Skeleton active paragraph={{ rows: 5 }} />
+      </div>
+      <div style={{ marginTop: 24 }}>
+        <Skeleton active paragraph={{ rows: 4 }} />
+      </div>
+    </div>
   );
 
   return (
@@ -192,10 +330,7 @@ export default function DocsViewPage() {
         className="admin-docs-view-page-card"
         extra={
           isMobile ? (
-            <Button
-              icon={<MenuOutlined />}
-              onClick={() => setMobileMenuOpen(true)}
-            >
+            <Button icon={<MenuOutlined />} onClick={() => setMobileMenuOpen(true)}>
               目录
             </Button>
           ) : null
@@ -208,12 +343,9 @@ export default function DocsViewPage() {
             </div>
           )}
 
-          <div className="admin-docs-view-content">
+          <div className="admin-docs-view-content" ref={contentRef}>
             {documentLoading ? (
-              <div className="admin-docs-view-loading">
-                <Spin size="large" />
-                <Typography.Text type="secondary">加载文档中...</Typography.Text>
-              </div>
+              skeletonContent
             ) : selectedDocument ? (
               <AntCard className="admin-docs-view-document-card" bordered={false}>
                 <div className="admin-docs-view-document-header">
@@ -223,67 +355,106 @@ export default function DocsViewPage() {
                 </div>
                 <div className="admin-docs-view-markdown-content">
                   <ReactMarkdown
+                    rehypePlugins={[rehypeSlug, rehypeHighlight]}
                     components={{
-                      h1: ({ children }) => (
-                        <Title level={2} style={{ marginTop: 32, marginBottom: 16 }}>
+                      h1: ({ children, id }) => (
+                        <Title level={2} className="admin-docs-view-heading-anchor" id={id}>
+                          <a href={`#${id}`} className="admin-docs-view-heading-link" aria-label="Heading anchor">
+                            <LinkOutlined />
+                          </a>
                           {children}
                         </Title>
                       ),
-                      h2: ({ children }) => (
-                        <Title level={3} style={{ marginTop: 28, marginBottom: 14 }}>
+                      h2: ({ children, id }) => (
+                        <Title level={3} className="admin-docs-view-heading-anchor" id={id}>
+                          <a href={`#${id}`} className="admin-docs-view-heading-link" aria-label="Heading anchor">
+                            <LinkOutlined />
+                          </a>
                           {children}
                         </Title>
                       ),
-                      h3: ({ children }) => (
-                        <Title level={4} style={{ marginTop: 24, marginBottom: 12 }}>
+                      h3: ({ children, id }) => (
+                        <Title level={4} className="admin-docs-view-heading-anchor" id={id}>
+                          <a href={`#${id}`} className="admin-docs-view-heading-link" aria-label="Heading anchor">
+                            <LinkOutlined />
+                          </a>
                           {children}
                         </Title>
                       ),
-                      h4: ({ children }) => (
-                        <Title level={5} style={{ marginTop: 20, marginBottom: 10 }}>
+                      h4: ({ children, id }) => (
+                        <Title level={5} className="admin-docs-view-heading-anchor" id={id}>
+                          <a href={`#${id}`} className="admin-docs-view-heading-link" aria-label="Heading anchor">
+                            <LinkOutlined />
+                          </a>
                           {children}
                         </Title>
                       ),
                       p: ({ children }) => (
-                        <Paragraph style={{ marginBottom: 16 }}>
-                          {children}
-                        </Paragraph>
+                        <Paragraph style={{ marginBottom: 16, lineHeight: 1.8 }}>{children}</Paragraph>
                       ),
                       ul: ({ children }) => (
-                        <ul style={{ marginBottom: 16, paddingLeft: 24 }}>
-                          {children}
-                        </ul>
+                        <ul style={{ marginBottom: 16, paddingLeft: 24, lineHeight: 1.8 }}>{children}</ul>
                       ),
                       ol: ({ children }) => (
-                        <ol style={{ marginBottom: 16, paddingLeft: 24 }}>
-                          {children}
-                        </ol>
+                        <ol style={{ marginBottom: 16, paddingLeft: 24, lineHeight: 1.8 }}>{children}</ol>
                       ),
-                      li: ({ children }) => (
-                        <li style={{ marginBottom: 8 }}>
-                          {children}
-                        </li>
-                      ),
+                      li: ({ children }) => <li style={{ marginBottom: 8 }}>{children}</li>,
                       blockquote: ({ children }) => (
-                        <blockquote className="admin-docs-view-blockquote">
-                          {children}
-                        </blockquote>
+                        <blockquote className="admin-docs-view-blockquote">{children}</blockquote>
                       ),
                       code: ({ children, className }) => {
                         const isBlock = className?.includes("language-");
+                        const codeText = String(children).replace(/\n$/, "");
+                        const blockId = `code-${Math.random().toString(36).slice(2, 8)}`;
                         return isBlock ? (
-                          <pre className="admin-docs-view-code-block">
-                            <code>{children}</code>
-                          </pre>
+                          <div className="admin-docs-view-code-block-wrapper">
+                            <div className="admin-docs-view-code-block-header">
+                              <span className="admin-docs-view-code-lang">
+                                {className?.replace("language-", "") || "code"}
+                              </span>
+                              <Button
+                                type="text"
+                                size="small"
+                                className="admin-docs-view-copy-btn"
+                                icon={<CopyOutlined />}
+                                onClick={() => handleCopyCode(codeText, blockId)}
+                              >
+                                {copiedCodeBlockId === blockId ? "已复制" : "复制"}
+                              </Button>
+                            </div>
+                            <pre className="admin-docs-view-code-block">
+                              <code className={className}>{children}</code>
+                            </pre>
+                          </div>
                         ) : (
                           <code className="admin-docs-view-inline-code">{children}</code>
                         );
                       },
                       table: ({ children }) => (
                         <div className="admin-docs-view-table-wrapper">
-                          <table className="admin-docs-view-table">
-                            {children}
-                          </table>
+                          <table className="admin-docs-view-table">{children}</table>
+                        </div>
+                      ),
+                      img: ({ src, alt }) => (
+                        <div className="admin-docs-view-image-wrapper">
+                          <Image
+                            src={src as string}
+                            alt={alt || ""}
+                            className="admin-docs-view-content-image"
+                            placeholder={
+                              <div className="admin-docs-view-image-placeholder">
+                                <Skeleton.Image active />
+                              </div>
+                            }
+                            preview={{
+                              mask: <div className="admin-docs-view-image-preview-mask">点击预览</div>,
+                            }}
+                          />
+                          {alt && (
+                            <Text type="secondary" className="admin-docs-view-image-caption">
+                              {alt}
+                            </Text>
+                          )}
                         </div>
                       ),
                     }}
@@ -308,16 +479,30 @@ export default function DocsViewPage() {
         title="文档目录"
         placement="left"
         open={isMobile && mobileMenuOpen}
-        width={280}
+        width={300}
         onClose={() => setMobileMenuOpen(false)}
+        styles={{ body: { padding: 0 } }}
       >
-        <Menu
-          mode="inline"
-          items={convertToMenuItems(treeData || [])}
-          onClick={handleMenuClick}
-          selectedKeys={selectedDocumentId ? [`doc-${selectedDocumentId}`] : []}
-          style={{ borderRight: 0 }}
-        />
+        <div className="admin-docs-view-mobile-drawer-content">
+          {!treeLoading && treeData && treeData.length > 0 && (
+            <div className="admin-docs-view-search-wrapper" style={{ padding: "12px 16px" }}>
+              <Input
+                placeholder="搜索文档..."
+                prefix={<SearchOutlined />}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                allowClear
+              />
+            </div>
+          )}
+          <Menu
+            mode="inline"
+            items={filteredMenuItems}
+            onClick={handleMenuClick}
+            selectedKeys={selectedDocumentId ? [`doc-${selectedDocumentId}`] : []}
+            style={{ borderRight: 0 }}
+          />
+        </div>
       </Drawer>
     </div>
   );
