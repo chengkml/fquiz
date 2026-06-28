@@ -923,6 +923,8 @@ export type AtpAssetSummary = {
   active_release_no: number | null;
   active_release_id: string | null;
   active_release_tag: string | null;
+  storage_mount_code: string | null;
+  storage_root_path: string | null;
   release_count: number;
   run_count: number;
   last_run_status: AtpAssetRunStatus | null;
@@ -987,11 +989,20 @@ export type AtpAssetFileEntry = {
 };
 
 export type AtpAssetFileListResponse = {
-  release_id: string;
+  asset_id: string;
+  release_id: string | null;
   storage_mount_code: string;
   storage_root_path: string;
   items: AtpAssetFileEntry[];
   total: number;
+};
+
+export type AtpAssetFileUploadResponse = {
+  asset_id: string;
+  storage_mount_code: string;
+  storage_root_path: string;
+  uploaded_count: number;
+  success: boolean;
 };
 
 export type AtpAssetRunSummary = {

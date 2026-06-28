@@ -235,6 +235,80 @@ def test_create_release_from_archive_detects_storage_path_conflict(tmp_path) -> 
         session.close()
 
 
+def test_upload_asset_archive_and_list_asset_files(tmp_path) -> None:
+    testing_session = _build_sessionmaker()
+    session: Session = testing_session()
+    try:
+        _seed_vfs_mount(session, root_dir=tmp_path / "vfs")
+        asset = atp_asset_service.create_asset(
+            session,
+            AtpAssetCreateRequest(
+                code="ATP-ASSET-DIRECT-UPLOAD",
+                name="直接上传模型",
+                voltage_level="220",
+                tower_type="sihuita",
+                scene_type="raoji3",
+            ),
+            actor_user_id="tester",
+        )
+        assert asset is not None
+
+        uploaded = atp_asset_service.upload_asset_archive(
+            session,
+            asset_id=asset.id,
+            archive_filename="model.zip",
+            archive_content=_build_zip({"work.atp": b"ATP INPUT", "docs/readme.txt": b"docs"}),
+            actor_user_id="tester",
+        )
+
+        assert uploaded.success is True
+        assert uploaded.storage_root_path == f"/atp-library/assets/{asset.id}"
+
+        files = atp_asset_service.list_asset_files(session, asset_id=asset.id)
+        assert files.asset_id == asset.id
+        assert files.release_id is None
+        assert files.total == 3
+        assert [item.relative_path for item in files.items] == ["docs", "docs/readme.txt", "work.atp"]
+    finally:
+        session.close()
+
+
+def test_list_asset_files_falls_back_to_latest_release(tmp_path) -> None:
+    testing_session = _build_sessionmaker()
+    session: Session = testing_session()
+    try:
+        _seed_vfs_mount(session, root_dir=tmp_path / "vfs")
+        asset = atp_asset_service.create_asset(
+            session,
+            AtpAssetCreateRequest(
+                code="ATP-ASSET-LEGACY-FALLBACK",
+                name="旧版本模型",
+                voltage_level="220",
+                tower_type="sihuita",
+                scene_type="raoji3",
+            ),
+            actor_user_id="tester",
+        )
+        assert asset is not None
+
+        release = atp_asset_service.create_release_from_archive(
+            session,
+            asset_id=asset.id,
+            release_tag="v1",
+            archive_filename="release.zip",
+            archive_content=_build_zip({"work.atp": b"ATP INPUT", "docs/readme.txt": b"docs"}),
+            actor_user_id="tester",
+        )
+
+        files = atp_asset_service.list_asset_files(session, asset_id=asset.id)
+        assert files.asset_id == asset.id
+        assert files.release_id == release.id
+        assert files.total == 3
+        assert [item.relative_path for item in files.items] == ["docs", "docs/readme.txt", "work.atp"]
+    finally:
+        session.close()
+
+
 def test_list_assets_paginates_after_filtering(tmp_path) -> None:
     testing_session = _build_sessionmaker()
     session: Session = testing_session()

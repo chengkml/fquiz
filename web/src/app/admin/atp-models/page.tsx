@@ -19,7 +19,6 @@ import {
   Breadcrumb,
   Typography,
   Upload,
-  message,
   type CardProps,
 } from "antd";
 import { UploadOutlined, FolderOutlined, FileOutlined, TableOutlined, FolderOpenOutlined, HomeOutlined } from "@ant-design/icons";
@@ -31,7 +30,7 @@ import { useAuth } from "@/components/auth-provider";
 import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { readApiError } from "@/lib/api";
-import type { AtpAssetListResponse, AtpAssetSummary, AtpAssetFileEntry } from "@/types/auth";
+import type { AtpAssetListResponse, AtpAssetSummary } from "@/types/auth";
 
 const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
@@ -229,20 +228,18 @@ export default function AtpModelsPage() {
       const createdAsset = await response.json();
 
       if (values.files.length > 0) {
+        const formData = new FormData();
         const JSZip = (await import("jszip")).default;
         const zip = new JSZip();
-
         for (const file of values.files) {
           const path = (file as any).webkitRelativePath || file.name;
           zip.file(path, file);
         }
-
         const zipBlob = await zip.generateAsync({ type: "blob" });
-        const formData = new FormData();
         formData.append("archive", zipBlob, "model.zip");
 
         const uploadResponse = await fetchWithAuth(
-          `/api/v1/atp/assets/${createdAsset.id}/releases/upload`,
+          `/api/v1/atp/assets/${createdAsset.id}/files/upload`,
           {
             method: "POST",
             body: formData,
@@ -536,10 +533,10 @@ export default function AtpModelsPage() {
 
   const filesQueries = useQueries({
     queries: assetsInCurrentPath.map((asset) => ({
-      queryKey: ["atp-asset-files", asset.id, asset.active_release_id],
-      enabled: Boolean(user && canRead && asset.active_release_id && fileViewPath.length >= 4),
+      queryKey: ["atp-asset-files", asset.id],
+      enabled: Boolean(user && canRead && fileViewPath.length >= 4),
       queryFn: async () => {
-        const response = await fetchWithAuth(`/api/v1/atp/assets/${asset.id}/releases/${asset.active_release_id}/files`);
+        const response = await fetchWithAuth(`/api/v1/atp/assets/${asset.id}/files`);
         if (!response.ok) {
           return { assetId: asset.id, items: [] };
         }

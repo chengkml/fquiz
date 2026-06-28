@@ -26,6 +26,8 @@ class AtpAssetSummary(BaseModel):
     active_release_no: int | None = None
     active_release_id: str | None = None
     active_release_tag: str | None = None
+    storage_mount_code: str | None = None
+    storage_root_path: str | None = None
     release_count: int = 0
     run_count: int = 0
     last_run_status: AtpAssetRunStatus | None = None
@@ -151,11 +153,20 @@ class AtpAssetFileEntry(BaseModel):
 
 
 class AtpAssetFileListResponse(BaseModel):
-    release_id: str
+    asset_id: str
+    release_id: str | None = None
     storage_mount_code: str
     storage_root_path: str
     items: list[AtpAssetFileEntry]
     total: int
+
+
+class AtpAssetFileUploadResponse(BaseModel):
+    asset_id: str
+    storage_mount_code: str
+    storage_root_path: str
+    uploaded_count: int
+    success: bool = True
 
 
 class AtpAssetRunSummary(BaseModel):

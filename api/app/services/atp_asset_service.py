@@ -15,6 +15,7 @@ import time
 import zipfile
 from dataclasses import dataclass
 from typing import Any
+from uuid import uuid4
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
@@ -29,6 +30,7 @@ from ..schemas.atp_asset import (
     AtpAssetDetail,
     AtpAssetFileEntry,
     AtpAssetFileListResponse,
+    AtpAssetFileUploadResponse,
     AtpAssetListResponse,
     AtpAssetReleaseCreateRequest,
     AtpAssetReleaseDetail,
@@ -65,6 +67,7 @@ VALID_RUNNER_KIND = {"atp", "egm", "hybrid"}
 VALID_RUN_STATUS = {"pending", "running", "success", "failed"}
 LOG_MAX_CHARS = 200_000
 ATP_ASSET_RELEASES_ROOT = "/atp-library"
+ATP_ASSET_FILES_ROOT = "/atp-library/assets"
 
 
 @dataclass(slots=True)
@@ -355,6 +358,14 @@ def _build_release_storage_root(asset_code: str, release_no: int, voltage_level:
     return normalize_virtual_path(f"{ATP_ASSET_RELEASES_ROOT}/{voltage_segment}/{tower_segment}/r{release_no}")
 
 
+def _build_asset_storage_root(asset: AtpAsset) -> str:
+    return normalize_virtual_path(f"{ATP_ASSET_FILES_ROOT}/{asset.id}")
+
+
+def _asset_storage_mount() -> str:
+    return "main"
+
+
 def _write_archive_to_storage(
     driver: StorageDriver,
     *,
@@ -364,9 +375,9 @@ def _write_archive_to_storage(
 ) -> int:
     filename = (archive_filename or "").strip().lower()
     if filename and not filename.endswith(".zip"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Release ZIP 包必须是 zip 格式")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ZIP 包必须是 zip 格式")
     if not archive_content:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Release ZIP 包不能为空")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ZIP 包不能为空")
 
     driver.ensure_directory(storage_root_path)
     ensured_directories = {normalize_virtual_path(storage_root_path)}
@@ -398,11 +409,39 @@ def _write_archive_to_storage(
                 )
                 extracted_count += 1
     except zipfile.BadZipFile as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Release ZIP 文件损坏: {exc}") from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"ZIP 文件损坏: {exc}") from exc
 
     if extracted_count <= 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Release ZIP 包中没有可导入文件")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ZIP 包中没有可导入文件")
     return extracted_count
+
+
+def _read_upload_file_bytes(file: Any) -> tuple[str, bytes, str | None]:
+    filename = (getattr(file, "filename", None) or "").strip() or "upload.zip"
+    content_type = getattr(file, "content_type", None)
+    try:
+        content = file.file.read()
+    finally:
+        try:
+            file.file.close()
+        except Exception:
+            pass
+    return filename, content, content_type
+
+
+def _write_archive_to_asset_storage(
+    driver: StorageDriver,
+    *,
+    asset_storage_root: str,
+    archive_filename: str,
+    archive_content: bytes,
+) -> int:
+    return _write_archive_to_storage(
+        driver,
+        storage_root_path=asset_storage_root,
+        archive_filename=archive_filename,
+        archive_content=archive_content,
+    )
 
 
 def _resolve_runner_kind_from_tree(tree: StorageTree) -> str:
@@ -584,6 +623,8 @@ def serialize_asset(
         active_release_no=item.active_release_no,
         active_release_id=active_release.id if active_release else None,
         active_release_tag=active_release.release_tag if active_release else None,
+        storage_mount_code=_asset_storage_mount(),
+        storage_root_path=_build_asset_storage_root(item),
         release_count=release_count,
         run_count=run_count,
         last_run_status=last_run_status,  # type: ignore[arg-type]
@@ -838,6 +879,108 @@ def create_asset(db: Session, payload: AtpAssetCreateRequest, *, actor_user_id: 
     return serialize_asset(saved, release_count=0, run_count=0, last_run_status=None, last_run_date=None, active_release=None)
 
 
+def upload_asset_archive(
+    db: Session,
+    *,
+    asset_id: str,
+    archive_filename: str,
+    archive_content: bytes,
+    actor_user_id: str,
+) -> AtpAssetFileUploadResponse:
+    asset = get_asset_by_id(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+
+    storage_mount_code = _asset_storage_mount()
+    storage_root_path = _build_asset_storage_root(asset)
+    mount = _resolve_mount(db, storage_mount_code)
+    driver = _build_driver_or_400(mount)
+    root_parent = _parent_virtual_path(storage_root_path)
+    root_name = PurePosixPath(storage_root_path).name or asset.id
+    staging_root_path = normalize_virtual_path(f"{root_parent}/{root_name}.__upload__{uuid4().hex}")
+    backup_root_path = normalize_virtual_path(f"{root_parent}/{root_name}.__backup__{uuid4().hex}")
+    backup_exists = False
+    try:
+        uploaded_count = _write_archive_to_asset_storage(
+            driver,
+            asset_storage_root=staging_root_path,
+            archive_filename=archive_filename,
+            archive_content=archive_content,
+        )
+
+        try:
+            driver.list_dir(storage_root_path)
+            backup_exists = True
+        except StoragePathNotFoundError:
+            backup_exists = False
+
+        if backup_exists:
+            driver.move_path(
+                storage_root_path,
+                is_dir=True,
+                target_parent_path=root_parent,
+                new_name=PurePosixPath(backup_root_path).name,
+            )
+
+        try:
+            driver.move_path(
+                staging_root_path,
+                is_dir=True,
+                target_parent_path=root_parent,
+                new_name=root_name,
+            )
+        except Exception:
+            if backup_exists:
+                try:
+                    driver.move_path(
+                        backup_root_path,
+                        is_dir=True,
+                        target_parent_path=root_parent,
+                        new_name=root_name,
+                    )
+                except Exception:
+                    pass
+            raise
+    finally:
+        try:
+            driver.delete_path(staging_root_path, is_dir=True, recursive=True)
+        except Exception:
+            pass
+        if backup_exists:
+            try:
+                driver.delete_path(backup_root_path, is_dir=True, recursive=True)
+            except Exception:
+                pass
+
+    try:
+        tree = _walk_storage_tree(driver, storage_root_path)
+    except HTTPException:
+        tree = StorageTree(files=[], directories=[], file_paths=set(), dir_paths=set(), max_depth=0)
+
+    asset.active_release_no = None
+    asset.update_user = actor_user_id
+    asset.update_date = utcnow()
+    db.commit()
+
+    _publish_change(
+        "asset.files_uploaded",
+        {
+            "action": "files_uploaded",
+            "asset_id": asset.id,
+            "storage_root_path": storage_root_path,
+            "file_count": len(tree.files),
+        },
+    )
+
+    return AtpAssetFileUploadResponse(
+        asset_id=asset.id,
+        storage_mount_code=storage_mount_code,
+        storage_root_path=storage_root_path,
+        uploaded_count=uploaded_count,
+        success=True,
+    )
+
+
 def update_asset(
     db: Session,
     asset_id: str,
@@ -890,6 +1033,12 @@ def delete_asset(db: Session, asset_id: str) -> bool:
         return False
 
     # Delete physical files for all releases before deleting database records
+    try:
+        asset_mount = _resolve_mount(db, _asset_storage_mount())
+        asset_driver = _build_driver_or_400(asset_mount)
+        asset_driver.delete_path(_build_asset_storage_root(item), is_dir=True, recursive=True)
+    except Exception:
+        pass
     for release in item.releases:
         try:
             mount = _resolve_mount(db, release.storage_mount_code)
@@ -1296,9 +1445,74 @@ def list_release_files(db: Session, *, release_id: str) -> AtpAssetFileListRespo
     ]
     merged_items = sorted([*dir_items, *items], key=lambda entry: (not entry.is_dir, entry.relative_path))
     return AtpAssetFileListResponse(
+        asset_id=release.asset_id,
         release_id=release.id,
         storage_mount_code=release.storage_mount_code,
         storage_root_path=release.storage_root_path,
+        items=merged_items,
+        total=len(merged_items),
+    )
+
+
+def list_asset_files(db: Session, *, asset_id: str) -> AtpAssetFileListResponse:
+    asset = get_asset_by_id(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+
+    storage_mount_code = _asset_storage_mount()
+    storage_root_path = _build_asset_storage_root(asset)
+    mount = _resolve_mount(db, storage_mount_code)
+    driver = _build_driver_or_400(mount)
+    try:
+        tree = _walk_storage_tree(driver, storage_root_path)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_404_NOT_FOUND:
+            fallback_release = db.execute(
+                select(AtpAssetRelease)
+                .options(joinedload(AtpAssetRelease.asset))
+                .where(AtpAssetRelease.asset_id == asset.id)
+                .order_by(AtpAssetRelease.is_active.desc(), AtpAssetRelease.release_no.desc(), AtpAssetRelease.id.desc())
+            ).scalars().first()
+            if fallback_release:
+                return list_release_files(db, release_id=fallback_release.id)
+            return AtpAssetFileListResponse(
+                asset_id=asset.id,
+                release_id=None,
+                storage_mount_code=storage_mount_code,
+                storage_root_path=storage_root_path,
+                items=[],
+                total=0,
+            )
+        raise
+
+    items = [
+        AtpAssetFileEntry(
+            relative_path=_relative_from_root(storage_root_path, item.path),
+            name=item.name,
+            is_dir=False,
+            size=item.size,
+            mime_type=item.mime_type,
+            file_role=_infer_asset_file_role(asset, _relative_from_root(storage_root_path, item.path), False),
+        )
+        for item in tree.files
+    ]
+    dir_items = [
+        AtpAssetFileEntry(
+            relative_path=path,
+            name=path.split("/")[-1],
+            is_dir=True,
+            size=0,
+            mime_type=None,
+            file_role=_infer_asset_file_role(asset, path, True),
+        )
+        for path in tree.directories
+    ]
+    merged_items = sorted([*dir_items, *items], key=lambda entry: (not entry.is_dir, entry.relative_path))
+    return AtpAssetFileListResponse(
+        asset_id=asset.id,
+        release_id=None,
+        storage_mount_code=storage_mount_code,
+        storage_root_path=storage_root_path,
         items=merged_items,
         total=len(merged_items),
     )
@@ -1330,6 +1544,21 @@ def _infer_file_role(release: AtpAssetRelease, relative_path: str, is_dir: bool)
         return "script"
     if lower.endswith(".atp"):
         return "atp"
+    return "other"
+
+
+def _infer_asset_file_role(asset: AtpAsset, relative_path: str, is_dir: bool) -> str | None:
+    if is_dir:
+        return None
+    lower = relative_path.lower()
+    if lower.endswith(".atp"):
+        return "atp"
+    if lower.endswith(".py"):
+        return "script"
+    if lower.endswith(("tpbig.exe", "rjtzl.exe")):
+        return "executable"
+    if lower.endswith((".doc", ".docx", ".txt", ".md", ".pdf")):
+        return "doc"
     return "other"
 
 
