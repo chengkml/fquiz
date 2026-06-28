@@ -351,11 +351,26 @@ export default function AiChatPage() {
           borderRight: "1px solid var(--ant-color-border-secondary)",
         }}
       >
-        {/* Header */}
-        <div className="ai-chat-sidebar-header" style={{ padding: "16px", borderBottom: "1px solid var(--ant-color-border-secondary)" }}>
+        {/* Header with new conversation button */}
+        <div
+          className="ai-chat-sidebar-header"
+          style={{
+            padding: "16px",
+            borderBottom: "1px solid var(--ant-color-border-secondary)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
           <Text strong style={{ fontSize: 16 }}>
             AI 问答助手
           </Text>
+          <Button
+            type="text"
+            icon={<PlusOutlined />}
+            onClick={() => createConvMutation.mutate("新对话")}
+            loading={createConvMutation.isPending}
+          />
         </div>
 
         {/* Conversation List */}
@@ -443,21 +458,11 @@ export default function AiChatPage() {
           )}
         </div>
 
-        {/* New Conversation Button */}
+        {/* Bottom branding */}
         <div className="ai-chat-new-conversation-button-container" style={{ padding: "16px", borderTop: "1px solid var(--ant-color-border-secondary)" }}>
-          <Button
-            type="default"
-            block
-            icon={<PlusOutlined />}
-            onClick={() => createConvMutation.mutate("新对话")}
-            loading={createConvMutation.isPending}
-            style={{
-              height: 40,
-              borderRadius: 8,
-            }}
-          >
-            新建对话
-          </Button>
+          <Text style={{ fontSize: 13, color: "var(--ant-color-text-secondary)", textAlign: "center", display: "block" }}>
+            AI问答助手
+          </Text>
         </div>
       </div>
 
