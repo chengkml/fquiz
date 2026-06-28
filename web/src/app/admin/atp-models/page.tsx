@@ -803,9 +803,6 @@ export default function AtpModelsPage() {
                   ))}
                 </div>
               )}
-              <div style={{ marginTop: 8, color: '#999', fontSize: '12px' }}>
-                支持选择整个目录，将保留原始目录结构
-              </div>
             </div>
           </Form.Item>
         </Form>
