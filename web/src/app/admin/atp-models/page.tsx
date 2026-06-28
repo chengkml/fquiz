@@ -34,7 +34,6 @@ import type { AtpAssetListResponse, AtpAssetSummary } from "@/types/auth";
 const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 type AssetFormValues = {
-  description: string;
   voltage_level: string;
   tower_type: string;
   scene_type: string;
@@ -43,7 +42,6 @@ type AssetFormValues = {
 };
 
 const EMPTY_FORM: AssetFormValues = {
-  description: "",
   voltage_level: "",
   tower_type: "",
   scene_type: "",
@@ -201,7 +199,7 @@ export default function AtpModelsPage() {
       const payload = {
         code: generateCode(),
         name: generateName(values),
-        description: values.description.trim(),
+        description: "",
         voltage_level: values.voltage_level.trim() || null,
         tower_type: values.tower_type.trim() || null,
         scene_type: values.scene_type.trim() || null,
@@ -740,72 +738,37 @@ export default function AtpModelsPage() {
           }}
           autoComplete="off"
         >
-          <Form.Item name="voltage_level" label="电压等级" rules={[{ required: true, message: "请选择或新建电压等级" }]}>
+          <Form.Item name="voltage_level" label="电压等级" rules={[{ required: true, message: "请选择电压等级" }]}>
             <Select
               showSearch
               allowClear
-              placeholder="请选择或新建电压等级"
+              placeholder="请选择电压等级"
               options={voltageLevelOptions}
-              dropdownRender={(menu) => (
-                <>
-                  {menu}
-                  <div style={{ padding: '8px 12px', color: '#999', fontSize: '12px' }}>
-                    可直接输入新建选项
-                  </div>
-                </>
-              )}
             />
           </Form.Item>
-          <Form.Item name="tower_type" label="塔型" rules={[{ required: true, message: "请选择或新建塔型" }]}>
+          <Form.Item name="tower_type" label="塔型" rules={[{ required: true, message: "请选择塔型" }]}>
             <Select
               showSearch
               allowClear
-              placeholder="请选择或新建塔型"
+              placeholder="请选择塔型"
               options={towerTypeOptions}
-              dropdownRender={(menu) => (
-                <>
-                  {menu}
-                  <div style={{ padding: '8px 12px', color: '#999', fontSize: '12px' }}>
-                    可直接输入新建选项
-                  </div>
-                </>
-              )}
             />
           </Form.Item>
-          <Form.Item name="scene_type" label="场景" rules={[{ required: true, message: "请选择或新建场景" }]}>
+          <Form.Item name="scene_type" label="场景" rules={[{ required: true, message: "请选择场景" }]}>
             <Select
               showSearch
               allowClear
-              placeholder="请选择或新建场景"
+              placeholder="请选择场景"
               options={sceneTypeOptions}
-              dropdownRender={(menu) => (
-                <>
-                  {menu}
-                  <div style={{ padding: '8px 12px', color: '#999', fontSize: '12px' }}>
-                    可直接输入新建选项
-                  </div>
-                </>
-              )}
             />
           </Form.Item>
-          <Form.Item name="arrester_config" label="避雷器装设组合" rules={[{ required: true, message: "请选择或新建避雷器装设组合" }]}>
+          <Form.Item name="arrester_config" label="避雷器装设组合" rules={[{ required: true, message: "请选择避雷器装设组合" }]}>
             <Select
               showSearch
               allowClear
-              placeholder="请选择或新建避雷器装设组合"
+              placeholder="请选择避雷器装设组合"
               options={arresterConfigOptions}
-              dropdownRender={(menu) => (
-                <>
-                  {menu}
-                  <div style={{ padding: '8px 12px', color: '#999', fontSize: '12px' }}>
-                    可直接输入新建选项
-                  </div>
-                </>
-              )}
             />
-          </Form.Item>
-          <Form.Item name="description" label="描述">
-            <Input.TextArea rows={3} />
           </Form.Item>
           <Form.Item label="上传模型文件" required>
             <div>
