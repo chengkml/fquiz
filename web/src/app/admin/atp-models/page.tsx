@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, useQueries } from "@tanstack/react-query";
 import {
   Button,
   Card,
@@ -529,25 +529,24 @@ export default function AtpModelsPage() {
     value: string;
     item?: AtpAssetSummary;
     isDir?: boolean;
+    relativePath?: string;
   };
 
-  const [selectedAssetForFiles, setSelectedAssetForFiles] = useState<string | null>(null);
-  const [currentFilePath, setCurrentFilePath] = useState<string>("");
+  const [assetsInCurrentPath, setAssetsInCurrentPath] = useState<AtpAssetSummary[]>([]);
 
-  const filesQuery = useQuery({
-    queryKey: ["atp-asset-files", selectedAssetForFiles],
-    enabled: Boolean(user && canRead && selectedAssetForFiles && fileViewPath.length >= 5),
-    queryFn: async () => {
-      if (!selectedAssetForFiles) return null;
-      const asset = assetItems.find((item) => item.id === selectedAssetForFiles);
-      if (!asset || !asset.active_release_id) return null;
-
-      const response = await fetchWithAuth(`/api/v1/atp/assets/${selectedAssetForFiles}/releases/${asset.active_release_id}/files`);
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-      return (await response.json()) as { items: Array<{ relative_path: string; name: string; is_dir: boolean }> };
-    },
+  const filesQueries = useQueries({
+    queries: assetsInCurrentPath.map((asset) => ({
+      queryKey: ["atp-asset-files", asset.id, asset.active_release_id],
+      enabled: Boolean(user && canRead && asset.active_release_id && fileViewPath.length >= 4),
+      queryFn: async () => {
+        const response = await fetchWithAuth(`/api/v1/atp/assets/${asset.id}/releases/${asset.active_release_id}/files`);
+        if (!response.ok) {
+          return { assetId: asset.id, items: [] };
+        }
+        const data = (await response.json()) as { items: Array<{ relative_path: string; name: string; is_dir: boolean }> };
+        return { assetId: asset.id, items: data.items || [] };
+      },
+    })),
   });
 
   const getFileViewItems = useCallback((): FileViewItem[] => {
@@ -638,75 +637,112 @@ export default function AtpModelsPage() {
         }));
     }
 
-    if (currentLevel === 4) {
+    if (currentLevel >= 4) {
       const voltage = fileViewPath[0];
       const tower = fileViewPath[1];
       const scene = fileViewPath[2];
       const arrester = fileViewPath[3];
-      return assetItems
-        .filter(
-          (item) =>
-            (item.voltage_level || "未分类") === voltage &&
-            (item.tower_type || "未分类") === tower &&
-            (item.scene_type || "未分类") === scene &&
-            (item.arrester_config || "未分类") === arrester
-        )
-        .map((item) => ({
-          type: "folder" as const,
-          name: item.name,
-          displayName: item.name,
-          value: item.id,
-          item,
-        }));
-    }
 
-    if (currentLevel >= 5) {
-      const assetId = fileViewPath[4];
-      if (selectedAssetForFiles !== assetId) {
-        setSelectedAssetForFiles(assetId);
+      const matchingAssets = assetItems.filter(
+        (item) =>
+          (item.voltage_level || "未分类") === voltage &&
+          (item.tower_type || "未分类") === tower &&
+          (item.scene_type || "未分类") === scene &&
+          (item.arrester_config || "未分类") === arrester
+      );
+
+      if (JSON.stringify(matchingAssets.map(a => a.id)) !== JSON.stringify(assetsInCurrentPath.map(a => a.id))) {
+        setAssetsInCurrentPath(matchingAssets);
         return [];
       }
 
-      if (filesQuery.isLoading || !filesQuery.data) {
+      const allFilesLoaded = filesQueries.every((q) => !q.isLoading);
+      if (!allFilesLoaded || filesQueries.some((q) => q.isLoading)) {
         return [];
       }
 
-      const pathInAsset = fileViewPath.slice(5).join("/");
-      const items = filesQuery.data.items || [];
+      const allFiles: Array<{ name: string; relativePath: string; isDir: boolean; assetId: string }> = [];
+      filesQueries.forEach((query) => {
+        if (query.data && query.data.items) {
+          query.data.items.forEach((file) => {
+            allFiles.push({
+              name: file.name,
+              relativePath: file.relative_path,
+              isDir: file.is_dir,
+              assetId: query.data.assetId,
+            });
+          });
+        }
+      });
 
-      return items
-        .filter((file) => {
-          if (pathInAsset === "") {
-            return !file.relative_path.includes("/") || file.relative_path.split("/").length === 1;
+      if (currentLevel === 4) {
+        const rootFiles = allFiles.filter((file) => {
+          return !file.relativePath.includes("/");
+        });
+
+        const fileMap = new Map<string, typeof rootFiles[0]>();
+        rootFiles.forEach((file) => {
+          if (!fileMap.has(file.name) || file.isDir) {
+            fileMap.set(file.name, file);
           }
-          const prefix = pathInAsset + "/";
-          if (!file.relative_path.startsWith(prefix)) {
+        });
+
+        return Array.from(fileMap.values())
+          .sort((a, b) => {
+            if (a.isDir === b.isDir) return a.name.localeCompare(b.name, "zh-CN");
+            return a.isDir ? -1 : 1;
+          })
+          .map((file) => ({
+            type: file.isDir ? ("folder" as const) : ("file" as const),
+            name: file.name,
+            displayName: file.name,
+            value: file.relativePath,
+            isDir: file.isDir,
+            relativePath: file.relativePath,
+          }));
+      } else {
+        const pathInAsset = fileViewPath.slice(4).join("/");
+        const prefix = pathInAsset + "/";
+
+        const filesInPath = allFiles.filter((file) => {
+          if (!file.relativePath.startsWith(prefix)) {
             return false;
           }
-          const remainder = file.relative_path.substring(prefix.length);
-          return !remainder.includes("/") || remainder.split("/").length === 1;
-        })
-        .map((file) => ({
-          type: file.is_dir ? ("folder" as const) : ("file" as const),
-          name: file.name,
-          displayName: file.name,
-          value: file.relative_path,
-          isDir: file.is_dir,
-        }));
+          const remainder = file.relativePath.substring(prefix.length);
+          return !remainder.includes("/");
+        });
+
+        const fileMap = new Map<string, typeof filesInPath[0]>();
+        filesInPath.forEach((file) => {
+          if (!fileMap.has(file.name) || file.isDir) {
+            fileMap.set(file.name, file);
+          }
+        });
+
+        return Array.from(fileMap.values())
+          .sort((a, b) => {
+            if (a.isDir === b.isDir) return a.name.localeCompare(b.name, "zh-CN");
+            return a.isDir ? -1 : 1;
+          })
+          .map((file) => ({
+            type: file.isDir ? ("folder" as const) : ("file" as const),
+            name: file.name,
+            displayName: file.name,
+            value: file.relativePath,
+            isDir: file.isDir,
+            relativePath: file.relativePath,
+          }));
+      }
     }
 
     return [];
-  }, [assetItems, fileViewPath, selectedAssetForFiles, filesQuery.data, filesQuery.isLoading]);
+  }, [assetItems, fileViewPath, assetsInCurrentPath, filesQueries]);
 
   const fileViewItems = useMemo(() => getFileViewItems(), [getFileViewItems]);
 
   const handleFileViewItemClick = (item: FileViewItem) => {
     if (item.type === "folder") {
-      if (fileViewPath.length >= 5 && item.isDir) {
-        setFileViewPath([...fileViewPath, item.name]);
-      } else {
-        setFileViewPath([...fileViewPath, item.value]);
-      }
+      setFileViewPath([...fileViewPath, item.name]);
     }
   };
 
@@ -723,12 +759,7 @@ export default function AtpModelsPage() {
     if (index === 1) return formatDimensionValue(fileViewPath[1], DEFAULT_TOWER_TYPES);
     if (index === 2) return formatDimensionValue(fileViewPath[2], DEFAULT_SCENE_TYPES);
     if (index === 3) return formatDimensionValue(fileViewPath[3], DEFAULT_ARRESTER_CONFIGS);
-    if (index === 4) {
-      const modelId = fileViewPath[4];
-      const model = assetItems.find((item) => item.id === modelId);
-      return model ? model.name : fileViewPath[4];
-    }
-    if (index >= 5) {
+    if (index >= 4) {
       return fileViewPath[index];
     }
     return "";
