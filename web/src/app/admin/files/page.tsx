@@ -563,7 +563,7 @@ export default function AdminFilesPage() {
           <Button
             type="text"
             color="gray"
-            size="1"
+            size="small"
             onClick={() => {
               setCurrentPath(crumb.path);
               resetActionPanels();
@@ -737,7 +737,7 @@ export default function AdminFilesPage() {
                   <Button
                     type="button"
                     color="blue"
-                    size="1"
+                    size="small"
                     variant="soft"
                     onClick={() => handleOpenDirectory(item)}
                     icon={<FolderOpenOutlined />}
@@ -747,7 +747,7 @@ export default function AdminFilesPage() {
                   <Button
                     type="button"
                     color="gray"
-                    size="1"
+                    size="small"
                     variant="soft"
                     onClick={() => void handleDownloadDirectory(item)}
                     icon={<DownloadOutlined />}
@@ -759,7 +759,7 @@ export default function AdminFilesPage() {
                 <Button
                   type="button"
                   color="gray"
-                  size="1"
+                  size="small"
                   variant="soft"
                   onClick={() => void handleDownloadFile(item)}
                   icon={<DownloadOutlined />}
@@ -791,7 +791,7 @@ export default function AdminFilesPage() {
                   <Button
                     type="button"
                     color="gray"
-                    size="1"
+                    size="small"
                     variant="soft"
                     icon={<MoreOutlined />}
                   >
@@ -848,7 +848,7 @@ export default function AdminFilesPage() {
             <Button
               type="button"
               color="gray"
-              size="1"
+              size="small"
               variant="soft"
               onClick={() => void refreshCurrentPath()}
               disabled={filesQuery.isFetching}
@@ -861,7 +861,7 @@ export default function AdminFilesPage() {
               <Button
                 type="button"
                 color="blue"
-                size="1"
+                size="small"
                 variant="soft"
                 onClick={() => {
                   setCreateDirectoryModalOpen(true);
@@ -887,7 +887,7 @@ export default function AdminFilesPage() {
                 <Button
                   type="button"
                   color="blue"
-                  size="1"
+                  size="small"
                   variant="solid"
                   disabled={uploadMutation.isPending || !activeMountCode}
                   icon={<UploadOutlined />}
