@@ -64,7 +64,7 @@ VALID_RELEASE_STATUS = {"draft", "released", "archived"}
 VALID_RUNNER_KIND = {"atp", "egm", "hybrid"}
 VALID_RUN_STATUS = {"pending", "running", "success", "failed"}
 LOG_MAX_CHARS = 200_000
-ATP_ASSET_RELEASES_ROOT = "/atp-library/releases"
+ATP_ASSET_RELEASES_ROOT = "/atp-library"
 
 
 @dataclass(slots=True)
@@ -349,9 +349,11 @@ def _sanitize_storage_segment(value: str, *, fallback: str) -> str:
     return normalized or fallback
 
 
-def _build_release_storage_root(asset_code: str, release_no: int) -> str:
+def _build_release_storage_root(asset_code: str, release_no: int, voltage_level: str, tower_type: str) -> str:
     asset_segment = _sanitize_storage_segment(asset_code, fallback="asset")
-    return normalize_virtual_path(f"{ATP_ASSET_RELEASES_ROOT}/{asset_segment}/r{release_no}")
+    voltage_segment = _sanitize_storage_segment(voltage_level, fallback="unknown-voltage")
+    tower_segment = _sanitize_storage_segment(tower_type, fallback="unknown-tower")
+    return normalize_virtual_path(f"{ATP_ASSET_RELEASES_ROOT}/{voltage_segment}/{tower_segment}/{asset_segment}/r{release_no}")
 
 
 def _write_archive_to_storage(
@@ -1045,7 +1047,7 @@ def create_release_from_archive(
     next_release_no = int(
         db.scalar(select(func.max(AtpAssetRelease.release_no)).where(AtpAssetRelease.asset_id == asset_id)) or 0
     ) + 1
-    storage_root_path = _build_release_storage_root(asset.code, next_release_no)
+    storage_root_path = _build_release_storage_root(asset.code, next_release_no, voltage_level, tower_type)
 
     mount = _resolve_mount(db, "main")
     driver = _build_driver_or_400(mount)

@@ -140,14 +140,14 @@ def test_create_release_from_archive_extracts_zip_and_inherits_asset_dimensions(
 
         assert created.release_no == 1
         assert created.release_tag == "首版"
-        assert created.storage_root_path == "/atp-library/releases/ATP-ASSET-UPLOAD/r1"
+        assert created.storage_root_path == "/atp-library/220/sihuita/ATP-ASSET-UPLOAD/r1"
         assert created.entry_file == "work.atp"
         assert created.runner_kind == "hybrid"
         assert created.voltage_level == "220"
         assert created.tower_type == "sihuita"
         assert created.scene_type == "raoji3"
-        assert (tmp_path / "vfs" / "atp-library" / "releases" / "ATP-ASSET-UPLOAD" / "r1" / "work.atp").exists()
-        assert (tmp_path / "vfs" / "atp-library" / "releases" / "ATP-ASSET-UPLOAD" / "r1" / "EGM" / "config.txt").exists()
+        assert (tmp_path / "vfs" / "atp-library" / "220" / "sihuita" / "ATP-ASSET-UPLOAD" / "r1" / "work.atp").exists()
+        assert (tmp_path / "vfs" / "atp-library" / "220" / "sihuita" / "ATP-ASSET-UPLOAD" / "r1" / "EGM" / "config.txt").exists()
     finally:
         session.close()
 
