@@ -1,12 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   Card,
   Col,
-  Dropdown,
   Empty,
   Form,
   Input,
@@ -16,12 +14,12 @@ import {
   Space,
   Spin,
   Table,
-  Tag,
   Typography,
+  Upload,
+  message,
   type CardProps,
-  type MenuProps,
 } from "antd";
-import { EditOutlined, MoreOutlined } from "@ant-design/icons";
+import { UploadOutlined, InboxOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType, type RefAttributes } from "react";
 
@@ -31,7 +29,6 @@ import { CreatableSingleSelect } from "@/components/creatable-single-select";
 import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { readApiError } from "@/lib/api";
-import { getAtpAssetStatusDisplay } from "@/lib/atp-asset-display";
 import type { AtpAssetListResponse, AtpAssetSummary } from "@/types/auth";
 
 const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
@@ -42,6 +39,7 @@ type AssetFormValues = {
   tower_type: string;
   scene_type: string;
   arrester_config: string;
+  files: File[];
 };
 
 const EMPTY_FORM: AssetFormValues = {
@@ -50,6 +48,7 @@ const EMPTY_FORM: AssetFormValues = {
   tower_type: "",
   scene_type: "",
   arrester_config: "",
+  files: [],
 };
 
 function formatDateTime(value: string | null | undefined): string {
@@ -61,16 +60,6 @@ function formatDateTime(value: string | null | undefined): string {
     return value;
   }
   return date.toLocaleString("zh-CN", { hour12: false });
-}
-
-function toFormValues(item: AtpAssetSummary): AssetFormValues {
-  return {
-    description: item.description,
-    voltage_level: item.voltage_level ?? "",
-    tower_type: item.tower_type ?? "",
-    scene_type: item.scene_type ?? "",
-    arrester_config: item.arrester_config ?? "",
-  };
 }
 
 function generateName(values: AssetFormValues): string {
@@ -85,18 +74,6 @@ function generateName(values: AssetFormValues): string {
 
 function generateCode(): string {
   return `atp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
-
-function buildPayload(values: AssetFormValues) {
-  return {
-    code: generateCode(),
-    name: generateName(values),
-    description: values.description.trim(),
-    voltage_level: values.voltage_level.trim() || null,
-    tower_type: values.tower_type.trim() || null,
-    scene_type: values.scene_type.trim() || null,
-    arrester_config: values.arrester_config.trim() || null,
-  };
 }
 
 const DEFAULT_VOLTAGE_LEVELS = [
@@ -179,8 +156,8 @@ export default function AtpModelsPage() {
   const [keywordInput, setKeywordInput] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
   const keywordDebounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [editingAsset, setEditingAsset] = useState<AtpAssetSummary | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [fileList, setFileList] = useState<File[]>([]);
   const [tableScrollY, setTableScrollY] = useState(ATP_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const viewMode: "table" | "card" = isMobile ? "card" : "table";
@@ -219,36 +196,69 @@ export default function AtpModelsPage() {
     },
   });
 
-  const saveMutation = useMutation({
+  const createAssetMutation = useMutation({
     mutationFn: async (values: AssetFormValues) => {
-      const payload = buildPayload(values);
-      const response = editingAsset
-        ? await fetchWithAuth(`/api/v1/atp/assets/${editingAsset.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          })
-        : await fetchWithAuth("/api/v1/atp/assets", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
+      const payload = {
+        code: generateCode(),
+        name: generateName(values),
+        description: values.description.trim(),
+        voltage_level: values.voltage_level.trim() || null,
+        tower_type: values.tower_type.trim() || null,
+        scene_type: values.scene_type.trim() || null,
+        arrester_config: values.arrester_config.trim() || null,
+      };
+
+      const response = await fetchWithAuth("/api/v1/atp/assets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
       if (!response.ok) {
         throw new Error(await readApiError(response));
       }
-      return await response.json();
+
+      const createdAsset = await response.json();
+
+      if (values.files.length > 0) {
+        const JSZip = (await import("jszip")).default;
+        const zip = new JSZip();
+
+        for (const file of values.files) {
+          const path = (file as any).webkitRelativePath || file.name;
+          zip.file(path, file);
+        }
+
+        const zipBlob = await zip.generateAsync({ type: "blob" });
+        const formData = new FormData();
+        formData.append("archive", zipBlob, "model.zip");
+
+        const uploadResponse = await fetchWithAuth(
+          `/api/v1/atp/assets/${createdAsset.id}/releases/upload`,
+          {
+            method: "POST",
+            body: formData,
+          }
+        );
+
+        if (!uploadResponse.ok) {
+          throw new Error(await readApiError(uploadResponse));
+        }
+      }
+
+      return createdAsset;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["atp-assets"] });
-      setSuccess(editingAsset ? "模型已更新" : "模型已创建");
+      setSuccess("模型已创建并上传");
       setError("");
       setModalOpen(false);
-      setEditingAsset(null);
+      setFileList([]);
       form.resetFields();
     },
     onError: (candidate) => {
       setSuccess("");
-      setError(candidate instanceof Error ? candidate.message : "保存模型失败");
+      setError(candidate instanceof Error ? candidate.message : "创建模型失败");
     },
   });
 
@@ -273,23 +283,15 @@ export default function AtpModelsPage() {
   const openCreateModal = useCallback(() => {
     setError("");
     setSuccess("");
-    setEditingAsset(null);
+    setFileList([]);
     form.setFieldsValue(EMPTY_FORM);
     setModalOpen(true);
   }, [form]);
 
-  const openEditModal = useCallback((item: AtpAssetSummary) => {
-    setError("");
-    setSuccess("");
-    setEditingAsset(item);
-    form.setFieldsValue(toFormValues(item));
-    setModalOpen(true);
-  }, [form]);
-
   const closeModal = () => {
-    if (saveMutation.isPending) return;
+    if (createAssetMutation.isPending) return;
     setModalOpen(false);
-    setEditingAsset(null);
+    setFileList([]);
     form.resetFields();
   };
 
@@ -454,123 +456,73 @@ export default function AtpModelsPage() {
   const columns = useMemo<ColumnsType<AtpAssetSummary>>(
     () => [
       {
-        title: "模型",
-        key: "asset",
-        width: 200,
-        render: (_, item) => (
-          <Space direction="vertical" size={0}>
-            <Typography.Text strong>{item.name}</Typography.Text>
-            <Typography.Text type="secondary" code>
-              {item.code}
-            </Typography.Text>
-          </Space>
-        ),
+        title: "电压等级",
+        dataIndex: "voltage_level",
+        width: 120,
+        render: (value: string | null) => value || "-",
       },
       {
-        title: "状态",
-        dataIndex: "status",
-        width: 96,
-        align: "center",
-        render: (value: string) => {
-          const display = getAtpAssetStatusDisplay(value);
-          return <Tag color={display.color}>{display.label}</Tag>;
-        },
+        title: "塔型",
+        dataIndex: "tower_type",
+        width: 120,
+        render: (value: string | null) => value || "-",
       },
       {
-        title: "业务维度",
-        key: "dimensions",
-        width: 220,
-        render: (_, item) => (
-          <Space size={[4, 4]} wrap>
-            <Tag>{item.voltage_level || "未设置电压等级"}</Tag>
-            <Tag>{item.tower_type || "未设置塔型"}</Tag>
-            <Tag>{item.scene_type || "未设置场景"}</Tag>
-            <Tag>{item.arrester_config || "未设置避雷器"}</Tag>
-          </Space>
-        ),
+        title: "场景",
+        dataIndex: "scene_type",
+        width: 120,
+        render: (value: string | null) => value || "-",
+      },
+      {
+        title: "避雷器组合",
+        dataIndex: "arrester_config",
+        width: 120,
+        render: (value: string | null) => value || "-",
+      },
+      {
+        title: "描述",
+        dataIndex: "description",
+        ellipsis: true,
+        render: (value: string) => value || "-",
       },
       {
         title: "更新时间",
-        key: "update_date",
-        width: 170,
         dataIndex: "update_date",
+        width: 170,
         render: (value: string) => formatDateTime(value),
       },
       {
         title: "操作",
         key: "actions",
-        width: 180,
+        width: 100,
         render: (_, item) => {
           const deleteLoading = deleteMutation.isPending;
           const rowBusy = deleteLoading;
 
           return (
-            <Space wrap>
-              <Link href={`/admin/atp-models/${item.id}`}>
-                <Button size="small" type="primary">
-                  详情
-                </Button>
-              </Link>
-              <Button
-                size="small"
-                disabled={!canManage || rowBusy}
-                onClick={() => openEditModal(item)}
-              >
-                编辑
+            <Popconfirm
+              title="删除模型"
+              description="这会同时删除其版本与运行记录。"
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true, loading: deleteLoading }}
+              onConfirm={() => deleteMutation.mutate(item.id)}
+              disabled={!canManage || rowBusy}
+            >
+              <Button danger size="small" loading={deleteLoading} disabled={!canManage || rowBusy}>
+                删除
               </Button>
-              <Popconfirm
-                title="删除模型"
-                description="这会同时删除其版本与运行记录。"
-                okText="删除"
-                cancelText="取消"
-                okButtonProps={{ danger: true, loading: deleteLoading }}
-                onConfirm={() => deleteMutation.mutate(item.id)}
-                disabled={!canManage || rowBusy}
-              >
-                <Button danger size="small" loading={deleteLoading} disabled={!canManage || rowBusy}>
-                  删除
-                </Button>
-              </Popconfirm>
-            </Space>
+            </Popconfirm>
           );
         },
       },
     ],
-    [canManage, deleteMutation, openEditModal],
+    [canManage, deleteMutation],
   );
 
   const renderAtpModelCard = (item: AtpAssetSummary) => {
     const deleteLoading = deleteMutation.isPending;
     const rowBusy = deleteLoading;
-    const statusDisplay = getAtpAssetStatusDisplay(item.status);
-
-    const moreMenuItems: MenuProps["items"] = [
-      {
-        key: "detail",
-        label: (
-          <Link href={`/admin/atp-models/${item.id}`}>
-            详情
-          </Link>
-        ),
-        disabled: rowBusy,
-      },
-      {
-        key: "delete",
-        label: "删除",
-        danger: true,
-        disabled: !canManage || rowBusy,
-        onClick: () => {
-          Modal.confirm({
-            title: "删除模型",
-            content: "这会同时删除其版本与运行记录。",
-            okText: "删除",
-            cancelText: "取消",
-            okButtonProps: { danger: true },
-            onOk: () => deleteMutation.mutate(item.id),
-          });
-        },
-      },
-    ];
 
     return (
       <AntCard
@@ -578,43 +530,53 @@ export default function AtpModelsPage() {
         className="admin-atp-models-model-card"
         size="small"
         title={
-          <Space className="min-w-0" size={8}>
-            <Typography.Text strong ellipsis={{ tooltip: item.name }}>
-              {item.name}
-            </Typography.Text>
-            <Tag color={statusDisplay.color}>{statusDisplay.label}</Tag>
-          </Space>
+          <Typography.Text strong ellipsis={{ tooltip: item.name }}>
+            {item.name}
+          </Typography.Text>
         }
         extra={
-          <Space size={4}>
-            <Button
-              type="text"
-              size="small"
-              disabled={!canManage || rowBusy}
-              icon={<EditOutlined />}
-              onClick={() => openEditModal(item)}
-            />
-            <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
-              <Button type="text" size="small" disabled={rowBusy} icon={<MoreOutlined />} />
-            </Dropdown>
-          </Space>
+          <Button
+            danger
+            size="small"
+            disabled={!canManage || rowBusy}
+            loading={deleteLoading}
+            onClick={() => {
+              Modal.confirm({
+                title: "删除模型",
+                content: "这会同时删除其版本与运行记录。",
+                okText: "删除",
+                cancelText: "取消",
+                okButtonProps: { danger: true },
+                onOk: () => deleteMutation.mutate(item.id),
+              });
+            }}
+          >
+            删除
+          </Button>
         }
       >
         <Space direction="vertical" size={10} style={{ width: "100%" }}>
           <div className="admin-atp-models-model-card-field">
-            <Typography.Text type="secondary">模型编码</Typography.Text>
-            <Typography.Text code ellipsis={{ tooltip: item.code }}>
-              {item.code}
-            </Typography.Text>
+            <Typography.Text type="secondary">电压等级</Typography.Text>
+            <Typography.Text>{item.voltage_level || "-"}</Typography.Text>
           </div>
           <div className="admin-atp-models-model-card-field">
-            <Typography.Text type="secondary">业务维度</Typography.Text>
-            <Space size={[4, 4]} wrap>
-              <Tag>{item.voltage_level || "未设置电压等级"}</Tag>
-              <Tag>{item.tower_type || "未设置塔型"}</Tag>
-              <Tag>{item.scene_type || "未设置场景"}</Tag>
-              <Tag>{item.arrester_config || "未设置避雷器"}</Tag>
-            </Space>
+            <Typography.Text type="secondary">塔型</Typography.Text>
+            <Typography.Text>{item.tower_type || "-"}</Typography.Text>
+          </div>
+          <div className="admin-atp-models-model-card-field">
+            <Typography.Text type="secondary">场景</Typography.Text>
+            <Typography.Text>{item.scene_type || "-"}</Typography.Text>
+          </div>
+          <div className="admin-atp-models-model-card-field">
+            <Typography.Text type="secondary">避雷器组合</Typography.Text>
+            <Typography.Text>{item.arrester_config || "-"}</Typography.Text>
+          </div>
+          <div className="admin-atp-models-model-card-field">
+            <Typography.Text type="secondary">描述</Typography.Text>
+            <Typography.Text ellipsis={{ tooltip: item.description }}>
+              {item.description || "-"}
+            </Typography.Text>
           </div>
           <div className="admin-atp-models-model-card-field">
             <Typography.Text type="secondary">更新时间</Typography.Text>
@@ -645,7 +607,7 @@ export default function AtpModelsPage() {
         ref={pageCardRef}
         className="admin-atp-models-page-card"
         title="ATP 模型管理"
-        extra={(
+        extra={
           <Space>
             {assetsQuery.isFetching && <Spin size="small" />}
             <Button
@@ -656,7 +618,7 @@ export default function AtpModelsPage() {
               新建模型
             </Button>
           </Space>
-        )}
+        }
       >
         {viewMode === "card" ? (
           <Form layout="vertical" style={{ marginBottom: 16 }}>
@@ -759,50 +721,67 @@ export default function AtpModelsPage() {
       </AntCard>
 
       <Modal
-        title={editingAsset ? "编辑 ATP 模型" : "新建 ATP 模型"}
+        title="新建 ATP 模型"
         open={modalOpen}
         onCancel={closeModal}
         onOk={() => void form.submit()}
-        confirmLoading={saveMutation.isPending}
+        confirmLoading={createAssetMutation.isPending}
         destroyOnClose
         width={760}
-        okText={saveMutation.isPending ? "提交中..." : editingAsset ? "保存修改" : "创建模型"}
+        okText={createAssetMutation.isPending ? "提交中..." : "创建模型"}
         cancelText="取消"
       >
-        <Form<AssetFormValues>
+        <Form
           form={form}
           layout="vertical"
           initialValues={EMPTY_FORM}
-          onFinish={(values) => void saveMutation.mutateAsync(values)}
+          onFinish={(values) => {
+            values.files = fileList;
+            void createAssetMutation.mutateAsync(values);
+          }}
           autoComplete="off"
         >
-          <Row gutter={16}>
-            <Col xs={24} md={12}>
-              <Form.Item name="voltage_level" label="电压等级" rules={[{ required: true, message: "请选择或新建电压等级" }]}>
-                <CreatableSingleSelect options={voltageLevelOptions} placeholder="请选择或新建电压等级" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item name="tower_type" label="塔型" rules={[{ required: true, message: "请选择或新建塔型" }]}>
-                <CreatableSingleSelect options={towerTypeOptions} placeholder="请选择或新建塔型" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item name="scene_type" label="场景" rules={[{ required: true, message: "请选择或新建场景" }]}>
-                <CreatableSingleSelect options={sceneTypeOptions} placeholder="请选择或新建场景" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item name="arrester_config" label="避雷器装设组合" rules={[{ required: true, message: "请选择或新建避雷器装设组合" }]}>
-                <CreatableSingleSelect options={arresterConfigOptions} placeholder="请选择或新建避雷器装设组合" />
-              </Form.Item>
-            </Col>
-            <Col span={24}>
-              <Form.Item name="description" label="描述">
-                <Input.TextArea rows={3} />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item name="voltage_level" label="电压等级" rules={[{ required: true, message: "请选择或新建电压等级" }]}>
+            <CreatableSingleSelect options={voltageLevelOptions} placeholder="请选择或新建电压等级" />
+          </Form.Item>
+          <Form.Item name="tower_type" label="塔型" rules={[{ required: true, message: "请选择或新建塔型" }]}>
+            <CreatableSingleSelect options={towerTypeOptions} placeholder="请选择或新建塔型" />
+          </Form.Item>
+          <Form.Item name="scene_type" label="场景" rules={[{ required: true, message: "请选择或新建场景" }]}>
+            <CreatableSingleSelect options={sceneTypeOptions} placeholder="请选择或新建场景" />
+          </Form.Item>
+          <Form.Item name="arrester_config" label="避雷器装设组合" rules={[{ required: true, message: "请选择或新建避雷器装设组合" }]}>
+            <CreatableSingleSelect options={arresterConfigOptions} placeholder="请选择或新建避雷器装设组合" />
+          </Form.Item>
+          <Form.Item name="description" label="描述">
+            <Input.TextArea rows={3} />
+          </Form.Item>
+          <Form.Item label="上传模型文件" required>
+            <Upload.Dragger
+              beforeUpload={(file) => {
+                setFileList((prev) => [...prev, file]);
+                return false;
+              }}
+              onRemove={(uploadFile) => {
+                setFileList((prev) => prev.filter((f) => f.name !== uploadFile.name));
+              }}
+              fileList={fileList.map((file) => ({
+                uid: file.name,
+                name: (file as any).webkitRelativePath || file.name,
+                status: "done" as const,
+              }))}
+              directory
+              multiple
+            >
+              <p className="ant-upload-drag-icon">
+                <InboxOutlined />
+              </p>
+              <p className="ant-upload-text">点击或拖拽文件夹到此处上传</p>
+              <p className="ant-upload-hint">
+                支持上传整个目录，将保留原始目录结构
+              </p>
+            </Upload.Dragger>
+          </Form.Item>
         </Form>
       </Modal>
     </div>
