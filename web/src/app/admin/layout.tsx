@@ -5,32 +5,17 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { usePathname } from "next/navigation";
 import Icon, {
-  ApartmentOutlined,
-  AppstoreOutlined,
   BellOutlined,
-  CalendarOutlined,
-  ConsoleSqlOutlined,
-  DatabaseOutlined,
-  DeploymentUnitOutlined,
-  ExperimentOutlined,
-  FileTextOutlined,
-  FolderOpenOutlined,
-  GlobalOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuOutlined,
   MenuUnfoldOutlined,
   MoonOutlined,
-  NodeIndexOutlined,
-  RadarChartOutlined,
-  SafetyCertificateOutlined,
-  SettingOutlined,
   SunOutlined,
   SyncOutlined,
-  TeamOutlined,
-  ThunderboltOutlined,
   UserOutlined,
 } from "@ant-design/icons";
+import { resolveIcon } from "@/lib/icon-registry";
 import {
   Avatar,
   Badge,
@@ -101,52 +86,34 @@ function isActivePath(pathname: string, menuPath: string | null): boolean {
 
 type AntdMenuItems = NonNullable<MenuProps["items"]>;
 
-const MENU_ICON_COMPONENTS = {
-  // Existing seed data uses a mix of lucide-like names and Ant icon names.
-  Users: TeamOutlined,
-  ShieldCheck: SafetyCertificateOutlined,
-  MenuSquare: AppstoreOutlined,
-  Settings2: SettingOutlined,
-  Network: NodeIndexOutlined,
-  Zap: ThunderboltOutlined,
-  Map: GlobalOutlined,
-  DeploymentUnitOutlined,
-  RadarChart: RadarChartOutlined,
-  CalendarClock: CalendarOutlined,
-  Experiment: ExperimentOutlined,
-  Apartment: ApartmentOutlined,
-  FolderTree: FolderOpenOutlined,
-  Database: DatabaseOutlined,
-  FileText: FileTextOutlined,
-  Terminal: ConsoleSqlOutlined,
-  Bell: BellOutlined,
-  TeamOutlined,
-  SafetyCertificateOutlined,
-  AppstoreOutlined,
-  SettingOutlined,
-  NodeIndexOutlined,
-  ThunderboltOutlined,
-  GlobalOutlined,
-  RadarChartOutlined,
-  CalendarOutlined,
-  ExperimentOutlined,
-  ApartmentOutlined,
-  FolderOpenOutlined,
-  DatabaseOutlined,
-  FileTextOutlined,
-  ConsoleSqlOutlined,
-  BellOutlined,
-} as const;
+const LEGACY_ICON_ALIASES: Record<string, string> = {
+  Users: 'TeamOutlined',
+  ShieldCheck: 'SafetyCertificateOutlined',
+  MenuSquare: 'AppstoreOutlined',
+  Settings2: 'SettingOutlined',
+  Network: 'NodeIndexOutlined',
+  Zap: 'ThunderboltOutlined',
+  Map: 'GlobalOutlined',
+  RadarChart: 'RadarChartOutlined',
+  CalendarClock: 'CalendarOutlined',
+  Experiment: 'ExperimentOutlined',
+  Apartment: 'ApartmentOutlined',
+  FolderTree: 'FolderOpenOutlined',
+  Database: 'DatabaseOutlined',
+  FileText: 'FileTextOutlined',
+  Terminal: 'ConsoleSqlOutlined',
+  Bell: 'BellOutlined',
+};
 
 function resolveMenuIcon(icon: string | null): ReactNode {
-  const iconName = icon?.trim();
-  if (iconName) {
-    const IconComponent = MENU_ICON_COMPONENTS[iconName as keyof typeof MENU_ICON_COMPONENTS];
-    if (IconComponent) {
-      return <IconComponent />;
-    }
+  if (!icon) return null;
+  const name = icon.trim();
+  const canonicalName = LEGACY_ICON_ALIASES[name] ?? name;
+  const IconComponent = resolveIcon(canonicalName);
+  if (IconComponent) {
+    return <IconComponent />;
   }
-  return <AppstoreOutlined />;
+  return null;
 }
 
 function buildMenuItems(items: MenuTreeItem[]): AntdMenuItems {

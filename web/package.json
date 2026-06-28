@@ -11,6 +11,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@ant-design/icons": "^6.3.2",
     "@antv/x6": "^3.1.7",
     "@tanstack/react-query": "^5.90.5",
     "antd": "^5.29.3",

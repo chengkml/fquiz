@@ -29,6 +29,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType, type RefAttributes } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { IconPicker } from "@/components/icon-picker";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
 import { useMobileDetection } from "@/hooks/use-mobile-detection";
@@ -914,7 +915,7 @@ export default function AdminMenusPage() {
             </Col>
             <Col xs={24} md={12}>
               <Form.Item label="图标名" name="icon">
-                <Input placeholder="AppstoreOutlined" />
+                <IconPicker />
               </Form.Item>
             </Col>
 
