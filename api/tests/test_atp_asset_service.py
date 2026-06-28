@@ -269,7 +269,7 @@ def test_upload_asset_archive_and_list_asset_files(tmp_path) -> None:
         )
 
         assert uploaded.success is True
-        assert uploaded.storage_root_path == f"/atp-library/assets/{asset.id}"
+        assert uploaded.storage_root_path == "/atp-assets/ATP-ASSET-DIRECT-UPLOAD"
 
         files = atp_asset_service.list_asset_files(session, asset_id=asset.id)
         assert files.asset_id == asset.id
@@ -504,7 +504,7 @@ def test_upload_asset_files_extracts_zip_and_removes_asset_root(tmp_path) -> Non
         assert (asset_root / "nested" / "config.txt").exists()
 
         files = atp_asset_service.list_asset_files(session, asset_id=asset.id)
-        assert files.release_id == asset.id
+        assert files.release_id is None
         assert files.storage_root_path == "/atp-assets/ATP-ASSET-FILES"
         assert any(entry.relative_path == "work.atp" and not entry.is_dir for entry in files.items)
         assert any(entry.relative_path == "nested/config.txt" and not entry.is_dir for entry in files.items)

@@ -925,8 +925,6 @@ export type AtpAssetSummary = {
   active_release_no: number | null;
   active_release_id: string | null;
   active_release_tag: string | null;
-  storage_mount_code: string | null;
-  storage_root_path: string | null;
   release_count: number;
   run_count: number;
   last_run_status: AtpAssetRunStatus | null;

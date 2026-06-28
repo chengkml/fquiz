@@ -1512,7 +1512,20 @@ def list_asset_files(db: Session, *, asset_id: str) -> AtpAssetFileListResponse:
     storage_mount_code, storage_root_path = _resolve_asset_file_location(db, asset, allow_legacy_release_root=True)
     mount = _resolve_mount(db, storage_mount_code)
     driver = _build_driver_or_400(mount)
-    tree = _walk_storage_tree(driver, storage_root_path)
+    try:
+        tree = _walk_storage_tree(driver, storage_root_path)
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_404_NOT_FOUND:
+            raise
+        fallback_release = db.execute(
+            select(AtpAssetRelease)
+            .options(joinedload(AtpAssetRelease.asset))
+            .where(AtpAssetRelease.asset_id == asset.id)
+            .order_by(AtpAssetRelease.is_active.desc(), AtpAssetRelease.release_no.desc(), AtpAssetRelease.id.desc())
+        ).scalars().first()
+        if fallback_release:
+            return list_release_files(db, release_id=fallback_release.id)
+        tree = StorageTree(files=[], directories=[], file_paths=set(), dir_paths=set(), max_depth=0)
     items = [
         AtpAssetFileEntry(
             relative_path=_relative_from_root(storage_root_path, item.path),
