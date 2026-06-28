@@ -727,7 +727,6 @@ export default function AtpModelsPage() {
         onOk={() => void form.submit()}
         confirmLoading={createAssetMutation.isPending}
         destroyOnClose
-        width={760}
         okText={createAssetMutation.isPending ? "提交中..." : "创建模型"}
         cancelText="取消"
       >
