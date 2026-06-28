@@ -11,17 +11,20 @@ import {
   Modal,
   Popconfirm,
   Row,
+  Segmented,
   Select,
   Space,
   Spin,
   Table,
+  Tree,
   Typography,
   Upload,
   message,
   type CardProps,
 } from "antd";
-import { UploadOutlined } from "@ant-design/icons";
+import { UploadOutlined, FolderOutlined, FileOutlined, TableOutlined, ApartmentOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import type { DataNode } from "antd/es/tree";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType, type RefAttributes } from "react";
 
 import { AdminPageLoading } from "@/components/admin-page-loading";
@@ -165,6 +168,8 @@ export default function AtpModelsPage() {
   const [tableScrollY, setTableScrollY] = useState(ATP_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const viewMode: "table" | "card" = isMobile ? "card" : "table";
+  const [displayMode, setDisplayMode] = useState<"list" | "tree">("list");
+  const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [cardViewPage, setCardViewPage] = useState(1);
   const [allLoadedAssets, setAllLoadedAssets] = useState<AtpAssetSummary[]>([]);
@@ -518,6 +523,102 @@ export default function AtpModelsPage() {
     [canManage, deleteMutation],
   );
 
+  const buildTreeData = useCallback(() => {
+    const treeMap = new Map<string, DataNode>();
+
+    assetItems.forEach((item) => {
+      const voltage = item.voltage_level || "未分类";
+      const tower = item.tower_type || "未分类";
+      const scene = item.scene_type || "未分类";
+      const arrester = item.arrester_config || "未分类";
+
+      const voltageKey = `voltage-${voltage}`;
+      const towerKey = `${voltageKey}-tower-${tower}`;
+      const sceneKey = `${towerKey}-scene-${scene}`;
+      const arresterKey = `${sceneKey}-arrester-${arrester}`;
+      const itemKey = `${arresterKey}-item-${item.id}`;
+
+      if (!treeMap.has(voltageKey)) {
+        treeMap.set(voltageKey, {
+          key: voltageKey,
+          title: formatDimensionValue(voltage, DEFAULT_VOLTAGE_LEVELS),
+          icon: <FolderOutlined />,
+          children: [],
+        });
+      }
+
+      const voltageNode = treeMap.get(voltageKey)!;
+      let towerNode = voltageNode.children?.find((n) => n.key === towerKey);
+      if (!towerNode) {
+        towerNode = {
+          key: towerKey,
+          title: formatDimensionValue(tower, DEFAULT_TOWER_TYPES),
+          icon: <FolderOutlined />,
+          children: [],
+        };
+        voltageNode.children = [...(voltageNode.children || []), towerNode];
+      }
+
+      let sceneNode = towerNode.children?.find((n) => n.key === sceneKey);
+      if (!sceneNode) {
+        sceneNode = {
+          key: sceneKey,
+          title: formatDimensionValue(scene, DEFAULT_SCENE_TYPES),
+          icon: <FolderOutlined />,
+          children: [],
+        };
+        towerNode.children = [...(towerNode.children || []), sceneNode];
+      }
+
+      let arresterNode = sceneNode.children?.find((n) => n.key === arresterKey);
+      if (!arresterNode) {
+        arresterNode = {
+          key: arresterKey,
+          title: formatDimensionValue(arrester, DEFAULT_ARRESTER_CONFIGS),
+          icon: <FolderOutlined />,
+          children: [],
+        };
+        sceneNode.children = [...(sceneNode.children || []), arresterNode];
+      }
+
+      const deleteLoading = deleteMutation.isPending;
+      const itemNode: DataNode = {
+        key: itemKey,
+        title: (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span>{item.name}</span>
+            <Space size="small">
+              <Typography.Text type="secondary" style={{ fontSize: "12px" }}>
+                {formatDateTime(item.update_date)}
+              </Typography.Text>
+              <Popconfirm
+                title="删除模型"
+                description="这会同时删除其版本与运行记录。"
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true, loading: deleteLoading }}
+                onConfirm={() => deleteMutation.mutate(item.id)}
+                disabled={!canManage || deleteLoading}
+              >
+                <Button danger size="small" loading={deleteLoading} disabled={!canManage || deleteLoading} onClick={(e) => e.stopPropagation()}>
+                  删除
+                </Button>
+              </Popconfirm>
+            </Space>
+          </div>
+        ),
+        icon: <FileOutlined />,
+        isLeaf: true,
+      };
+
+      arresterNode.children = [...(arresterNode.children || []), itemNode];
+    });
+
+    return Array.from(treeMap.values());
+  }, [assetItems, canManage, deleteMutation]);
+
+  const treeData = useMemo(() => buildTreeData(), [buildTreeData]);
+
   const renderAtpModelCard = (item: AtpAssetSummary) => {
     const deleteLoading = deleteMutation.isPending;
     const rowBusy = deleteLoading;
@@ -600,13 +701,25 @@ export default function AtpModelsPage() {
         className="admin-atp-models-page-card"
         title="ATP 模型管理"
         extra={
-          <Button
-            type="primary"
-            disabled={!canManage}
-            onClick={openCreateModal}
-          >
-            新建模型
-          </Button>
+          <Space>
+            {!isMobile && (
+              <Segmented
+                value={displayMode}
+                onChange={(value) => setDisplayMode(value as "list" | "tree")}
+                options={[
+                  { label: "列表视图", value: "list", icon: <TableOutlined /> },
+                  { label: "树形视图", value: "tree", icon: <ApartmentOutlined /> },
+                ]}
+              />
+            )}
+            <Button
+              type="primary"
+              disabled={!canManage}
+              onClick={openCreateModal}
+            >
+              新建模型
+            </Button>
+          </Space>
         }
       >
         {viewMode === "card" ? (
@@ -633,7 +746,29 @@ export default function AtpModelsPage() {
           </Form>
         )}
 
-        {viewMode === "table" ? (
+        {displayMode === "tree" && viewMode === "table" ? (
+          <div className="admin-atp-models-tree-view mt-4" style={{ maxHeight: `${tableScrollY}px`, overflow: "auto" }}>
+            {assetsQuery.isLoading || assetsQuery.isFetching ? (
+              <div style={{ textAlign: "center", padding: "40px 0" }}>
+                <Spin tip="加载中..." />
+              </div>
+            ) : treeData.length === 0 ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="未找到符合筛选条件的 ATP 模型。"
+              />
+            ) : (
+              <Tree
+                showIcon
+                expandedKeys={expandedKeys}
+                onExpand={(keys) => setExpandedKeys(keys)}
+                treeData={treeData}
+                blockNode
+                style={{ backgroundColor: "#fff" }}
+              />
+            )}
+          </div>
+        ) : viewMode === "table" ? (
           <div
             ref={tableScrollAnchorRef}
             className="admin-atp-models-table-anchor mt-4"
