@@ -67,6 +67,13 @@ def _build_zip(entries: dict[str, bytes]) -> bytes:
     return buffer.getvalue()
 
 
+class _DummyUploadFile:
+    def __init__(self, filename: str, content: bytes, content_type: str = "application/octet-stream") -> None:
+        self.filename = filename
+        self.content_type = content_type
+        self.file = io.BytesIO(content)
+
+
 def test_create_release_auto_detects_entry_file_and_manifest(tmp_path) -> None:
     testing_session = _build_sessionmaker()
     session: Session = testing_session()
@@ -450,5 +457,59 @@ def test_delete_asset_removes_storage_files(tmp_path) -> None:
 
         # Verify files are deleted
         assert not storage_path.exists()
+    finally:
+        session.close()
+
+
+def test_upload_asset_files_extracts_zip_and_removes_asset_root(tmp_path) -> None:
+    testing_session = _build_sessionmaker()
+    session: Session = testing_session()
+    try:
+        _seed_vfs_mount(session, root_dir=tmp_path / "vfs")
+        asset = atp_asset_service.create_asset(
+            session,
+            AtpAssetCreateRequest(
+                code="ATP-ASSET-FILES",
+                name="资产文件上传",
+                voltage_level="220",
+                tower_type="sihuita",
+                scene_type="raoji3",
+            ),
+            actor_user_id="tester",
+        )
+        assert asset is not None
+
+        updated = atp_asset_service.upload_asset_files(
+            session,
+            asset_id=asset.id,
+            files=[
+                _DummyUploadFile(
+                    "model.zip",
+                    _build_zip(
+                        {
+                            "work.atp": b"ATP INPUT",
+                            "nested/config.txt": b"nested config",
+                        }
+                    ),
+                )
+            ],
+            actor_user_id="tester",
+        )
+
+        assert updated.storage_mount_code == "main"
+        assert updated.storage_root_path == "/atp-assets/ATP-ASSET-FILES"
+
+        asset_root = tmp_path / "vfs" / "atp-assets" / "ATP-ASSET-FILES"
+        assert (asset_root / "work.atp").exists()
+        assert (asset_root / "nested" / "config.txt").exists()
+
+        files = atp_asset_service.list_asset_files(session, asset_id=asset.id)
+        assert files.release_id == asset.id
+        assert files.storage_root_path == "/atp-assets/ATP-ASSET-FILES"
+        assert any(entry.relative_path == "work.atp" and not entry.is_dir for entry in files.items)
+        assert any(entry.relative_path == "nested/config.txt" and not entry.is_dir for entry in files.items)
+
+        assert atp_asset_service.delete_asset(session, asset.id) is True
+        assert not asset_root.exists()
     finally:
         session.close()

@@ -22,6 +22,8 @@ class AtpAssetSummary(BaseModel):
     tower_type: str | None = None
     scene_type: str | None = None
     arrester_config: str | None = None
+    storage_mount_code: str | None = None
+    storage_root_path: str | None = None
     latest_release_no: int = 0
     active_release_no: int | None = None
     active_release_id: str | None = None
@@ -56,6 +58,8 @@ class AtpAssetCreateRequest(BaseModel):
     tower_type: str | None = Field(default=None, max_length=64)
     scene_type: str | None = Field(default=None, max_length=32)
     arrester_config: str | None = Field(default=None, max_length=64)
+    storage_mount_code: str | None = Field(default=None, max_length=64)
+    storage_root_path: str | None = Field(default=None, max_length=2048)
 
 
 class AtpAssetUpdateRequest(BaseModel):
@@ -66,6 +70,8 @@ class AtpAssetUpdateRequest(BaseModel):
     tower_type: str | None = Field(default=None, max_length=64)
     scene_type: str | None = Field(default=None, max_length=32)
     arrester_config: str | None = Field(default=None, max_length=64)
+    storage_mount_code: str | None = Field(default=None, max_length=64)
+    storage_root_path: str | None = Field(default=None, max_length=2048)
 
 
 class AtpAssetReleaseSummary(BaseModel):

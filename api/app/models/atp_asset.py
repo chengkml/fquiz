@@ -31,6 +31,8 @@ class AtpAsset(Base):
     tower_type: Mapped[str | None] = mapped_column(String(64), index=True)
     scene_type: Mapped[str | None] = mapped_column(String(32), index=True)
     arrester_config: Mapped[str | None] = mapped_column(String(64), index=True)
+    storage_mount_code: Mapped[str | None] = mapped_column(String(64), index=True)
+    storage_root_path: Mapped[str | None] = mapped_column(String(2048), index=True)
     tags_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     latest_release_no: Mapped[int] = mapped_column(Integer, default=0)
     active_release_no: Mapped[int | None] = mapped_column(Integer)

@@ -21,7 +21,7 @@ import {
   Upload,
   type CardProps,
 } from "antd";
-import { UploadOutlined, FolderOutlined, FileOutlined, TableOutlined, FolderOpenOutlined, HomeOutlined } from "@ant-design/icons";
+import { UploadOutlined, FolderOutlined, FileOutlined, TableOutlined, FolderOpenOutlined, HomeOutlined, DeleteOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType, type RefAttributes } from "react";
 
@@ -30,7 +30,7 @@ import { useAuth } from "@/components/auth-provider";
 import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { readApiError } from "@/lib/api";
-import type { AtpAssetListResponse, AtpAssetSummary } from "@/types/auth";
+import type { AtpAssetListResponse, AtpAssetSummary, AtpAssetFileListResponse } from "@/types/auth";
 
 const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
@@ -49,6 +49,11 @@ const EMPTY_FORM: AssetFormValues = {
   arrester_config: "",
   files: [],
 };
+
+function getUploadRelativePath(file: File): string {
+  const candidate = file as File & { webkitRelativePath?: string };
+  return candidate.webkitRelativePath || file.name;
+}
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) {
@@ -205,6 +210,10 @@ export default function AtpModelsPage() {
 
   const createAssetMutation = useMutation({
     mutationFn: async (values: AssetFormValues) => {
+      if (values.files.length === 0) {
+        throw new Error("请先选择模型文件");
+      }
+
       const payload = {
         code: generateCode(),
         name: generateName(values),
@@ -229,17 +238,12 @@ export default function AtpModelsPage() {
 
       if (values.files.length > 0) {
         const formData = new FormData();
-        const JSZip = (await import("jszip")).default;
-        const zip = new JSZip();
         for (const file of values.files) {
-          const path = (file as any).webkitRelativePath || file.name;
-          zip.file(path, file);
+          formData.append("files", file);
         }
-        const zipBlob = await zip.generateAsync({ type: "blob" });
-        formData.append("archive", zipBlob, "model.zip");
 
         const uploadResponse = await fetchWithAuth(
-          `/api/v1/atp/assets/${createdAsset.id}/files/upload`,
+          `/api/v1/atp/assets/${createdAsset.id}/files`,
           {
             method: "POST",
             body: formData,
@@ -255,7 +259,7 @@ export default function AtpModelsPage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["atp-assets"] });
-      setSuccess("模型已创建并上传");
+      setSuccess("模型已创建并上传文件");
       setError("");
       setModalOpen(false);
       setFileList([]);
@@ -501,14 +505,14 @@ export default function AtpModelsPage() {
           return (
             <Popconfirm
               title="删除模型"
-              description="这会同时删除其版本与运行记录。"
+              description="这会同时删除其文件与运行记录。"
               okText="删除"
               cancelText="取消"
               okButtonProps={{ danger: true, loading: deleteLoading }}
               onConfirm={() => deleteMutation.mutate(item.id)}
               disabled={!canManage || rowBusy}
             >
-              <Button danger size="small" loading={deleteLoading} disabled={!canManage || rowBusy}>
+              <Button danger size="small" icon={<DeleteOutlined />} loading={deleteLoading} disabled={!canManage || rowBusy}>
                 删除
               </Button>
             </Popconfirm>
@@ -529,24 +533,42 @@ export default function AtpModelsPage() {
     relativePath?: string;
   };
 
-  const [assetsInCurrentPath, setAssetsInCurrentPath] = useState<AtpAssetSummary[]>([]);
+  const matchingAssets = useMemo(() => {
+    if (fileViewPath.length < 4) {
+      return [];
+    }
+
+    const voltage = fileViewPath[0];
+    const tower = fileViewPath[1];
+    const scene = fileViewPath[2];
+    const arrester = fileViewPath[3];
+
+    return assetItems.filter(
+      (item) =>
+        (item.voltage_level || "未分类") === voltage &&
+        (item.tower_type || "未分类") === tower &&
+        (item.scene_type || "未分类") === scene &&
+        (item.arrester_config || "未分类") === arrester
+    );
+  }, [assetItems, fileViewPath]);
 
   const filesQueries = useQueries({
-    queries: assetsInCurrentPath.map((asset) => ({
+    queries: matchingAssets.map((asset) => ({
       queryKey: ["atp-asset-files", asset.id],
-      enabled: Boolean(user && canRead && fileViewPath.length >= 4),
+      enabled: Boolean(user && canRead && displayMode === "file" && fileViewPath.length >= 4),
       queryFn: async () => {
         const response = await fetchWithAuth(`/api/v1/atp/assets/${asset.id}/files`);
         if (!response.ok) {
-          return { assetId: asset.id, items: [] };
+          return { asset_id: asset.id, release_id: null, storage_mount_code: "", storage_root_path: "", items: [], total: 0 } satisfies AtpAssetFileListResponse;
         }
-        const data = (await response.json()) as { items: Array<{ relative_path: string; name: string; is_dir: boolean }> };
-        return { assetId: asset.id, items: data.items || [] };
+        return (await response.json()) as AtpAssetFileListResponse;
       },
     })),
   });
 
-  const getFileViewItems = useCallback((): FileViewItem[] => {
+  const isFileViewLoading = displayMode === "file" && fileViewPath.length >= 4 && filesQueries.some((query) => query.isLoading);
+
+  const fileViewItems = useMemo<FileViewItem[]>(() => {
     const currentLevel = fileViewPath.length;
 
     if (currentLevel === 0) {
@@ -635,47 +657,27 @@ export default function AtpModelsPage() {
     }
 
     if (currentLevel >= 4) {
-      const voltage = fileViewPath[0];
-      const tower = fileViewPath[1];
-      const scene = fileViewPath[2];
-      const arrester = fileViewPath[3];
-
-      const matchingAssets = assetItems.filter(
-        (item) =>
-          (item.voltage_level || "未分类") === voltage &&
-          (item.tower_type || "未分类") === tower &&
-          (item.scene_type || "未分类") === scene &&
-          (item.arrester_config || "未分类") === arrester
-      );
-
-      if (JSON.stringify(matchingAssets.map(a => a.id)) !== JSON.stringify(assetsInCurrentPath.map(a => a.id))) {
-        setAssetsInCurrentPath(matchingAssets);
+      if (filesQueries.some((query) => query.isLoading)) {
         return [];
       }
 
-      const allFilesLoaded = filesQueries.every((q) => !q.isLoading);
-      if (!allFilesLoaded || filesQueries.some((q) => q.isLoading)) {
-        return [];
-      }
-
-      const allFiles: Array<{ name: string; relativePath: string; isDir: boolean; assetId: string }> = [];
-      filesQueries.forEach((query) => {
-        if (query.data && query.data.items) {
-          query.data.items.forEach((file) => {
-            allFiles.push({
-              name: file.name,
-              relativePath: file.relative_path,
-              isDir: file.is_dir,
-              assetId: query.data.assetId,
-            });
-          });
+      const allFiles: Array<{ name: string; relativePath: string; isDir: boolean }> = [];
+      filesQueries.forEach((query, index) => {
+        const asset = matchingAssets[index];
+        if (!asset || !query.data?.items) {
+          return;
         }
+        query.data.items.forEach((file) => {
+          allFiles.push({
+            name: file.name,
+            relativePath: file.relative_path,
+            isDir: file.is_dir,
+          });
+        });
       });
 
       if (currentLevel === 4) {
-        const rootFiles = allFiles.filter((file) => {
-          return !file.relativePath.includes("/");
-        });
+        const rootFiles = allFiles.filter((file) => !file.relativePath.includes("/"));
 
         const fileMap = new Map<string, typeof rootFiles[0]>();
         rootFiles.forEach((file) => {
@@ -697,45 +699,43 @@ export default function AtpModelsPage() {
             isDir: file.isDir,
             relativePath: file.relativePath,
           }));
-      } else {
-        const pathInAsset = fileViewPath.slice(4).join("/");
-        const prefix = pathInAsset + "/";
-
-        const filesInPath = allFiles.filter((file) => {
-          if (!file.relativePath.startsWith(prefix)) {
-            return false;
-          }
-          const remainder = file.relativePath.substring(prefix.length);
-          return !remainder.includes("/");
-        });
-
-        const fileMap = new Map<string, typeof filesInPath[0]>();
-        filesInPath.forEach((file) => {
-          if (!fileMap.has(file.name) || file.isDir) {
-            fileMap.set(file.name, file);
-          }
-        });
-
-        return Array.from(fileMap.values())
-          .sort((a, b) => {
-            if (a.isDir === b.isDir) return a.name.localeCompare(b.name, "zh-CN");
-            return a.isDir ? -1 : 1;
-          })
-          .map((file) => ({
-            type: file.isDir ? ("folder" as const) : ("file" as const),
-            name: file.name,
-            displayName: file.name,
-            value: file.relativePath,
-            isDir: file.isDir,
-            relativePath: file.relativePath,
-          }));
       }
+
+      const pathInAsset = fileViewPath.slice(4).join("/");
+      const prefix = pathInAsset + "/";
+
+      const filesInPath = allFiles.filter((file) => {
+        if (!file.relativePath.startsWith(prefix)) {
+          return false;
+        }
+        const remainder = file.relativePath.substring(prefix.length);
+        return !remainder.includes("/");
+      });
+
+      const fileMap = new Map<string, typeof filesInPath[0]>();
+      filesInPath.forEach((file) => {
+        if (!fileMap.has(file.name) || file.isDir) {
+          fileMap.set(file.name, file);
+        }
+      });
+
+      return Array.from(fileMap.values())
+        .sort((a, b) => {
+          if (a.isDir === b.isDir) return a.name.localeCompare(b.name, "zh-CN");
+          return a.isDir ? -1 : 1;
+        })
+        .map((file) => ({
+          type: file.isDir ? ("folder" as const) : ("file" as const),
+          name: file.name,
+          displayName: file.name,
+          value: file.relativePath,
+          isDir: file.isDir,
+          relativePath: file.relativePath,
+        }));
     }
 
     return [];
-  }, [assetItems, fileViewPath, assetsInCurrentPath, filesQueries]);
-
-  const fileViewItems = useMemo(() => getFileViewItems(), [getFileViewItems]);
+  }, [assetItems, fileViewPath, matchingAssets, filesQueries]);
 
   const handleFileViewItemClick = (item: FileViewItem) => {
     if (item.type === "folder") {
@@ -785,7 +785,7 @@ export default function AtpModelsPage() {
             onClick={() => {
               Modal.confirm({
                 title: "删除模型",
-                content: "这会同时删除其版本与运行记录。",
+                content: "这会同时删除其文件与运行记录。",
                 okText: "删除",
                 cancelText: "取消",
                 okButtonProps: { danger: true },
@@ -917,7 +917,7 @@ export default function AtpModelsPage() {
               />
             </div>
             <div style={{ maxHeight: `${tableScrollY}px`, overflow: "auto", border: "1px solid #f0f0f0", borderRadius: "4px" }}>
-              {assetsQuery.isLoading || assetsQuery.isFetching ? (
+              {assetsQuery.isLoading || assetsQuery.isFetching || isFileViewLoading ? (
                 <div style={{ textAlign: "center", padding: "40px 0" }}>
                   <Spin tip="加载中..." />
                 </div>
@@ -972,7 +972,7 @@ export default function AtpModelsPage() {
                           {item.item && (
                             <Popconfirm
                               title="删除模型"
-                              description="这会同时删除其版本与运行记录。"
+                              description="这会同时删除其文件与运行记录。"
                               okText="删除"
                               cancelText="取消"
                               okButtonProps={{ danger: true }}
@@ -1124,14 +1124,12 @@ export default function AtpModelsPage() {
             <div>
               <Upload
                 beforeUpload={(file) => {
-                  setFileList((prev) => [...prev, file]);
+                  setFileList([file]);
                   return false;
                 }}
-                directory
-                multiple
                 showUploadList={false}
               >
-                <Button icon={<UploadOutlined />}>选择文件夹</Button>
+                <Button icon={<UploadOutlined />}>选择文件</Button>
               </Upload>
               {fileList.length > 0 && (
                 <div style={{
@@ -1154,7 +1152,7 @@ export default function AtpModelsPage() {
                       borderBottom: index < fileList.length - 1 ? '1px solid #f0f0f0' : 'none',
                       wordBreak: 'break-all'
                     }}>
-                      {(file as any).webkitRelativePath || file.name}
+                      {getUploadRelativePath(file)}
                     </div>
                   ))}
                 </div>

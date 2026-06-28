@@ -55,6 +55,7 @@ from .storage_driver import (
     StorageObject,
     StoragePathNotFoundError,
     build_storage_driver,
+    join_virtual_path,
     normalize_virtual_path,
 )
 
@@ -67,7 +68,7 @@ VALID_RUNNER_KIND = {"atp", "egm", "hybrid"}
 VALID_RUN_STATUS = {"pending", "running", "success", "failed"}
 LOG_MAX_CHARS = 200_000
 ATP_ASSET_RELEASES_ROOT = "/atp-library"
-ATP_ASSET_FILES_ROOT = "/atp-library/assets"
+ATP_ASSET_FILES_ROOT = "/atp-assets"
 
 
 @dataclass(slots=True)
@@ -358,12 +359,38 @@ def _build_release_storage_root(asset_code: str, release_no: int, voltage_level:
     return normalize_virtual_path(f"{ATP_ASSET_RELEASES_ROOT}/{voltage_segment}/{tower_segment}/r{release_no}")
 
 
-def _build_asset_storage_root(asset: AtpAsset) -> str:
-    return normalize_virtual_path(f"{ATP_ASSET_FILES_ROOT}/{asset.id}")
+def _build_asset_storage_root(asset_code: str) -> str:
+    asset_segment = _sanitize_storage_segment(asset_code, fallback="asset")
+    return normalize_virtual_path(f"{ATP_ASSET_FILES_ROOT}/{asset_segment}")
 
 
-def _asset_storage_mount() -> str:
-    return "main"
+def _check_asset_storage_path_conflict(db: Session, storage_root_path: str, current_asset_id: str | None = None) -> None:
+    asset_stmt = select(AtpAsset).where(AtpAsset.storage_root_path == storage_root_path)
+    release_stmt = select(AtpAssetRelease).where(AtpAssetRelease.storage_root_path == storage_root_path)
+    if current_asset_id:
+        asset_stmt = asset_stmt.where(AtpAsset.id != current_asset_id)
+        release_stmt = release_stmt.where(AtpAssetRelease.asset_id != current_asset_id)
+
+    existing_asset = db.execute(asset_stmt).scalar_one_or_none()
+    existing_release = db.execute(release_stmt).scalar_one_or_none()
+    if existing_asset or existing_release:
+        conflict_code = existing_asset.code if existing_asset else existing_release.asset.code
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"存储路径冲突：该路径已被模型 {conflict_code} 占用。",
+        )
+
+
+def _resolve_asset_file_location(db: Session, asset: AtpAsset, *, allow_legacy_release_root: bool) -> tuple[str, str]:
+    fallback_release = next((release for release in asset.releases if release.is_active), None)
+    if allow_legacy_release_root and fallback_release is None and asset.releases:
+        fallback_release = asset.releases[0]
+
+    storage_mount_code = asset.storage_mount_code or (fallback_release.storage_mount_code if fallback_release else None) or "main"
+    storage_root_path = asset.storage_root_path or (fallback_release.storage_root_path if fallback_release else None)
+    if storage_root_path is None:
+        storage_root_path = _build_asset_storage_root(asset.code)
+    return storage_mount_code, storage_root_path
 
 
 def _write_archive_to_storage(
@@ -609,6 +636,7 @@ def serialize_asset(
     last_run_date: datetime | None,
     active_release: AtpAssetRelease | None,
 ) -> AtpAssetSummary:
+    fallback_release = active_release or (item.releases[0] if item.releases else None)
     return AtpAssetSummary(
         id=item.id,
         code=item.code,
@@ -619,12 +647,12 @@ def serialize_asset(
         tower_type=item.tower_type,
         scene_type=item.scene_type,
         arrester_config=item.arrester_config,
+        storage_mount_code=item.storage_mount_code or (fallback_release.storage_mount_code if fallback_release else None),
+        storage_root_path=item.storage_root_path or (fallback_release.storage_root_path if fallback_release else None),
         latest_release_no=item.latest_release_no,
         active_release_no=item.active_release_no,
         active_release_id=active_release.id if active_release else None,
         active_release_tag=active_release.release_tag if active_release else None,
-        storage_mount_code=_asset_storage_mount(),
-        storage_root_path=_build_asset_storage_root(item),
         release_count=release_count,
         run_count=run_count,
         last_run_status=last_run_status,  # type: ignore[arg-type]
@@ -852,6 +880,10 @@ def create_asset(db: Session, payload: AtpAssetCreateRequest, *, actor_user_id: 
         return None
 
     now = utcnow()
+    storage_mount_code = _normalize_optional_str(payload.storage_mount_code) or "main"
+    storage_root_path = _normalize_optional_str(payload.storage_root_path)
+    if storage_root_path is None:
+        storage_root_path = _build_asset_storage_root(payload.code.strip())
     item = AtpAsset(
         code=payload.code.strip(),
         name=payload.name.strip(),
@@ -861,6 +893,8 @@ def create_asset(db: Session, payload: AtpAssetCreateRequest, *, actor_user_id: 
         tower_type=_normalize_optional_str(payload.tower_type),
         scene_type=_normalize_optional_str(payload.scene_type),
         arrester_config=_normalize_optional_str(payload.arrester_config),
+        storage_mount_code=storage_mount_code,
+        storage_root_path=storage_root_path,
         latest_release_no=0,
         active_release_no=None,
         create_user=actor_user_id,
@@ -868,6 +902,7 @@ def create_asset(db: Session, payload: AtpAssetCreateRequest, *, actor_user_id: 
         create_date=now,
         update_date=now,
     )
+    _check_asset_storage_path_conflict(db, storage_root_path)
     db.add(item)
     db.commit()
 
@@ -891,8 +926,8 @@ def upload_asset_archive(
     if not asset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
 
-    storage_mount_code = _asset_storage_mount()
-    storage_root_path = _build_asset_storage_root(asset)
+    storage_mount_code = "main"
+    storage_root_path = _build_asset_storage_root(asset.code)
     mount = _resolve_mount(db, storage_mount_code)
     driver = _build_driver_or_400(mount)
     root_parent = _parent_virtual_path(storage_root_path)
@@ -1007,6 +1042,13 @@ def update_asset(
         item.scene_type = _normalize_optional_str(update_data["scene_type"])
     if "arrester_config" in update_data:
         item.arrester_config = _normalize_optional_str(update_data["arrester_config"])
+    if "storage_mount_code" in update_data:
+        item.storage_mount_code = _normalize_optional_str(update_data["storage_mount_code"])
+    if "storage_root_path" in update_data:
+        next_storage_root_path = _normalize_optional_str(update_data["storage_root_path"])
+        if next_storage_root_path is not None:
+            _check_asset_storage_path_conflict(db, next_storage_root_path, asset_id)
+        item.storage_root_path = next_storage_root_path
 
     item.update_user = actor_user_id
     item.update_date = utcnow()
@@ -1032,11 +1074,20 @@ def delete_asset(db: Session, asset_id: str) -> bool:
     if not item:
         return False
 
+    if item.storage_root_path:
+        try:
+            mount_code = item.storage_mount_code or "main"
+            mount = _resolve_mount(db, mount_code)
+            driver = _build_driver_or_400(mount)
+            driver.delete_path(item.storage_root_path, is_dir=True, recursive=True)
+        except Exception:
+            pass
+
     # Delete physical files for all releases before deleting database records
     try:
-        asset_mount = _resolve_mount(db, _asset_storage_mount())
+        asset_mount = _resolve_mount(db, item.storage_mount_code or "main")
         asset_driver = _build_driver_or_400(asset_mount)
-        asset_driver.delete_path(_build_asset_storage_root(item), is_dir=True, recursive=True)
+        asset_driver.delete_path(_build_asset_storage_root(item.code), is_dir=True, recursive=True)
     except Exception:
         pass
     for release in item.releases:
@@ -1458,33 +1509,10 @@ def list_asset_files(db: Session, *, asset_id: str) -> AtpAssetFileListResponse:
     asset = get_asset_by_id(db, asset_id)
     if not asset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
-
-    storage_mount_code = _asset_storage_mount()
-    storage_root_path = _build_asset_storage_root(asset)
+    storage_mount_code, storage_root_path = _resolve_asset_file_location(db, asset, allow_legacy_release_root=True)
     mount = _resolve_mount(db, storage_mount_code)
     driver = _build_driver_or_400(mount)
-    try:
-        tree = _walk_storage_tree(driver, storage_root_path)
-    except HTTPException as exc:
-        if exc.status_code == status.HTTP_404_NOT_FOUND:
-            fallback_release = db.execute(
-                select(AtpAssetRelease)
-                .options(joinedload(AtpAssetRelease.asset))
-                .where(AtpAssetRelease.asset_id == asset.id)
-                .order_by(AtpAssetRelease.is_active.desc(), AtpAssetRelease.release_no.desc(), AtpAssetRelease.id.desc())
-            ).scalars().first()
-            if fallback_release:
-                return list_release_files(db, release_id=fallback_release.id)
-            return AtpAssetFileListResponse(
-                asset_id=asset.id,
-                release_id=None,
-                storage_mount_code=storage_mount_code,
-                storage_root_path=storage_root_path,
-                items=[],
-                total=0,
-            )
-        raise
-
+    tree = _walk_storage_tree(driver, storage_root_path)
     items = [
         AtpAssetFileEntry(
             relative_path=_relative_from_root(storage_root_path, item.path),
@@ -1515,6 +1543,84 @@ def list_asset_files(db: Session, *, asset_id: str) -> AtpAssetFileListResponse:
         storage_root_path=storage_root_path,
         items=merged_items,
         total=len(merged_items),
+    )
+
+
+def upload_asset_files(
+    db: Session,
+    *,
+    asset_id: str,
+    files: list[Any],
+    actor_user_id: str,
+) -> AtpAssetSummary:
+    asset = get_asset_by_id(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+    mount_code, storage_root_path = _resolve_asset_file_location(db, asset, allow_legacy_release_root=False)
+    if asset.storage_root_path is None:
+        storage_root_path = _build_asset_storage_root(asset.code)
+    _check_asset_storage_path_conflict(db, storage_root_path, asset_id)
+    mount = _resolve_mount(db, mount_code)
+    driver = _build_driver_or_400(mount)
+    driver.ensure_directory(storage_root_path)
+
+    def _write_upload_file(upload: Any, *, base_root: str) -> None:
+        raw_name = (getattr(upload, "filename", "") or "").strip()
+        if not raw_name:
+            return
+        try:
+            content = upload.file.read()
+        finally:
+            try:
+                upload.file.close()
+            except Exception:
+                pass
+
+        content_type = getattr(upload, "content_type", None) or mimetypes.guess_type(raw_name)[0]
+        lower_name = raw_name.lower()
+        if lower_name.endswith(".zip"):
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                for member in archive.infolist():
+                    if member.is_dir():
+                        continue
+                    relative_path = _normalize_archive_member_path(member.filename)
+                    if relative_path is None:
+                        continue
+                    target_path = normalize_virtual_path(f"{base_root.rstrip('/')}/{relative_path}")
+                    parent_path = _parent_virtual_path(target_path)
+                    driver.ensure_directory(parent_path)
+                    driver.write_file(
+                        target_path,
+                        content=archive.read(member),
+                        content_type=mimetypes.guess_type(relative_path)[0],
+                    )
+            return
+
+        relative_path = _normalize_archive_member_path(raw_name) or raw_name
+        target_path = normalize_virtual_path(f"{base_root.rstrip('/')}/{relative_path}")
+        parent_path = _parent_virtual_path(target_path)
+        driver.ensure_directory(parent_path)
+        driver.write_file(target_path, content=content, content_type=content_type)
+
+    for file in files:
+        _write_upload_file(file, base_root=storage_root_path)
+
+    asset.storage_mount_code = mount.code
+    asset.storage_root_path = storage_root_path
+    asset.update_user = actor_user_id
+    asset.update_date = utcnow()
+    db.commit()
+
+    saved = get_asset_by_id(db, asset_id)
+    if not saved:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Asset load failed")
+    return serialize_asset(
+        saved,
+        release_count=len(saved.releases),
+        run_count=len(saved.runs),
+        last_run_status=saved.runs[0].status if saved.runs else None,
+        last_run_date=saved.runs[0].create_date if saved.runs else None,
+        active_release=next((release for release in saved.releases if release.is_active), None),
     )
 
 

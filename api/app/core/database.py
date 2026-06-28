@@ -389,6 +389,41 @@ def _ensure_atp_simulation_run_column_compatibility() -> None:
         )
 
 
+def _ensure_atp_asset_column_compatibility() -> None:
+    """
+    Keep `atp_asset` columns aligned with the current ORM mapping.
+    """
+    if not database_url.startswith("postgresql"):
+        return
+
+    schema = settings.resolved_db_schema
+    with engine.begin() as connection:
+        db_inspector = inspect(connection)
+        if not db_inspector.has_table("atp_asset", schema=schema):
+            return
+
+        column_names = {
+            column["name"]
+            for column in db_inspector.get_columns("atp_asset", schema=schema)
+        }
+
+        if "storage_mount_code" not in column_names:
+            connection.execute(
+                text("ALTER TABLE atp_asset ADD COLUMN IF NOT EXISTS storage_mount_code VARCHAR(64)"),
+            )
+            logger.warning(
+                "Detected missing atp_asset.storage_mount_code; added nullable mount code column.",
+            )
+
+        if "storage_root_path" not in column_names:
+            connection.execute(
+                text("ALTER TABLE atp_asset ADD COLUMN IF NOT EXISTS storage_root_path VARCHAR(2048)"),
+            )
+            logger.warning(
+                "Detected missing atp_asset.storage_root_path; added nullable storage root path column.",
+            )
+
+
 def _ensure_tower_model_column_compatibility() -> None:
     """
     Keep `tower_model` columns aligned with the current ORM mapping.
@@ -586,6 +621,7 @@ def init_db() -> None:
     _ensure_user_email_nullable()
     _ensure_elevation_dataset_column_compatibility()
     _ensure_atp_simulation_run_column_compatibility()
+    _ensure_atp_asset_column_compatibility()
     _ensure_tower_model_column_compatibility()
     _ensure_tower_profile_column_compatibility()
     Base.metadata.create_all(bind=engine)

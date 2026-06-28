@@ -919,6 +919,8 @@ export type AtpAssetSummary = {
   tower_type: string | null;
   scene_type: string | null;
   arrester_config: string | null;
+  storage_mount_code: string | null;
+  storage_root_path: string | null;
   latest_release_no: number;
   active_release_no: number | null;
   active_release_id: string | null;

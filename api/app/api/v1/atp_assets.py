@@ -9,7 +9,6 @@ from ...schemas.atp_asset import (
     AtpAssetCreateRequest,
     AtpAssetDetail,
     AtpAssetFileListResponse,
-    AtpAssetFileUploadResponse,
     AtpAssetListResponse,
     AtpAssetReleaseCreateRequest,
     AtpAssetReleaseDetail,
@@ -40,9 +39,9 @@ from ...services.atp_asset_service import (
     run_release,
     serialize_asset,
     serialize_release_detail,
+    upload_asset_files,
     update_asset,
     update_release,
-    upload_asset_archive,
 )
 
 router = APIRouter(prefix="/atp", tags=["atp-assets"], dependencies=[Depends(require_enabled_menu_route)])
@@ -91,28 +90,20 @@ def create_atp_asset_endpoint(
     return AtpAssetDetail(**created.model_dump())
 
 
-@router.post("/assets/{asset_id}/files/upload", response_model=AtpAssetFileUploadResponse)
+@router.post("/assets/{asset_id}/files", response_model=AtpAssetDetail)
 def upload_atp_asset_files_endpoint(
     asset_id: str,
-    archive: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
     current_user: CurrentUser = Depends(require_permission("atp.manage")),
     db: Session = Depends(get_db),
-) -> AtpAssetFileUploadResponse:
-    try:
-        archive_content = archive.file.read()
-    finally:
-        try:
-            archive.file.close()
-        except Exception:
-            pass
-
-    return upload_asset_archive(
+) -> AtpAssetDetail:
+    updated = upload_asset_files(
         db,
         asset_id=asset_id,
-        archive_filename=archive.filename or "model.zip",
-        archive_content=archive_content,
+        files=files,
         actor_user_id=current_user.user.id,
     )
+    return AtpAssetDetail(**updated.model_dump())
 
 
 @router.get("/assets/{asset_id}", response_model=AtpAssetDetail)
@@ -159,6 +150,15 @@ def delete_atp_asset_endpoint(
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
     return {"success": True}
+
+
+@router.get("/assets/{asset_id}/files", response_model=AtpAssetFileListResponse)
+def get_atp_asset_files(
+    asset_id: str,
+    _: CurrentUser = Depends(require_any_permission("atp.read", "atp.run", "atp.manage")),
+    db: Session = Depends(get_db),
+) -> AtpAssetFileListResponse:
+    return list_asset_files(db, asset_id=asset_id)
 
 
 @router.get("/assets/{asset_id}/releases", response_model=AtpAssetReleaseListResponse)
