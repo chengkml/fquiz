@@ -596,43 +596,15 @@ export default function AtpModelsPage() {
       const voltage = fileViewPath[0];
       const tower = fileViewPath[1];
       const scene = fileViewPath[2];
-      const arresterSet = new Set<string>();
-      assetItems
+      return assetItems
         .filter(
           (item) =>
             (item.voltage_level || "未分类") === voltage &&
             (item.tower_type || "未分类") === tower &&
             (item.scene_type || "未分类") === scene
         )
-        .forEach((item) => {
-          const arrester = item.arrester_config || "未分类";
-          arresterSet.add(arrester);
-        });
-      return Array.from(arresterSet)
-        .sort((a, b) => a.localeCompare(b, "zh-CN"))
-        .map((arrester) => ({
-          type: "folder" as const,
-          name: arrester,
-          displayName: formatDimensionValue(arrester, DEFAULT_ARRESTER_CONFIGS),
-          value: arrester,
-        }));
-    }
-
-    if (currentLevel === 4) {
-      const voltage = fileViewPath[0];
-      const tower = fileViewPath[1];
-      const scene = fileViewPath[2];
-      const arrester = fileViewPath[3];
-      return assetItems
-        .filter(
-          (item) =>
-            (item.voltage_level || "未分类") === voltage &&
-            (item.tower_type || "未分类") === tower &&
-            (item.scene_type || "未分类") === scene &&
-            (item.arrester_config || "未分类") === arrester
-        )
         .map((item) => ({
-          type: "file" as const,
+          type: "folder" as const,
           name: item.name,
           displayName: item.name,
           value: item.id,
@@ -663,7 +635,11 @@ export default function AtpModelsPage() {
     if (index === 0) return formatDimensionValue(fileViewPath[0], DEFAULT_VOLTAGE_LEVELS);
     if (index === 1) return formatDimensionValue(fileViewPath[1], DEFAULT_TOWER_TYPES);
     if (index === 2) return formatDimensionValue(fileViewPath[2], DEFAULT_SCENE_TYPES);
-    if (index === 3) return formatDimensionValue(fileViewPath[3], DEFAULT_ARRESTER_CONFIGS);
+    if (index === 3) {
+      const modelId = fileViewPath[3];
+      const model = assetItems.find((item) => item.id === modelId);
+      return model ? model.name : fileViewPath[3];
+    }
     return "";
   };
 
