@@ -141,6 +141,12 @@ function buildDimensionOptions(items: AtpAssetSummary[], picker: (item: AtpAsset
     .map((value) => ({ label: optionsMap.get(value) || value, value }));
 }
 
+function formatDimensionValue(value: string | null, defaults: Array<{ label: string; value: string }>): string {
+  if (!value) return "-";
+  const option = defaults.find((opt) => opt.value === value);
+  return option ? option.label : value;
+}
+
 const ATP_TABLE_MIN_SCROLL_Y = 180;
 const ATP_TABLE_VIEWPORT_GAP = 40;
 const ATP_TABLE_FALLBACK_RESERVE = 220;
@@ -457,25 +463,25 @@ export default function AtpModelsPage() {
         title: "电压等级",
         dataIndex: "voltage_level",
         width: 120,
-        render: (value: string | null) => value || "-",
+        render: (value: string | null) => formatDimensionValue(value, DEFAULT_VOLTAGE_LEVELS),
       },
       {
         title: "塔型",
         dataIndex: "tower_type",
         width: 120,
-        render: (value: string | null) => value || "-",
+        render: (value: string | null) => formatDimensionValue(value, DEFAULT_TOWER_TYPES),
       },
       {
         title: "场景",
         dataIndex: "scene_type",
         width: 120,
-        render: (value: string | null) => value || "-",
+        render: (value: string | null) => formatDimensionValue(value, DEFAULT_SCENE_TYPES),
       },
       {
         title: "避雷器组合",
         dataIndex: "arrester_config",
         width: 120,
-        render: (value: string | null) => value || "-",
+        render: (value: string | null) => formatDimensionValue(value, DEFAULT_ARRESTER_CONFIGS),
       },
       {
         title: "更新时间",
@@ -550,19 +556,19 @@ export default function AtpModelsPage() {
         <Space direction="vertical" size={10} style={{ width: "100%" }}>
           <div className="admin-atp-models-model-card-field">
             <Typography.Text type="secondary">电压等级</Typography.Text>
-            <Typography.Text>{item.voltage_level || "-"}</Typography.Text>
+            <Typography.Text>{formatDimensionValue(item.voltage_level, DEFAULT_VOLTAGE_LEVELS)}</Typography.Text>
           </div>
           <div className="admin-atp-models-model-card-field">
             <Typography.Text type="secondary">塔型</Typography.Text>
-            <Typography.Text>{item.tower_type || "-"}</Typography.Text>
+            <Typography.Text>{formatDimensionValue(item.tower_type, DEFAULT_TOWER_TYPES)}</Typography.Text>
           </div>
           <div className="admin-atp-models-model-card-field">
             <Typography.Text type="secondary">场景</Typography.Text>
-            <Typography.Text>{item.scene_type || "-"}</Typography.Text>
+            <Typography.Text>{formatDimensionValue(item.scene_type, DEFAULT_SCENE_TYPES)}</Typography.Text>
           </div>
           <div className="admin-atp-models-model-card-field">
             <Typography.Text type="secondary">避雷器组合</Typography.Text>
-            <Typography.Text>{item.arrester_config || "-"}</Typography.Text>
+            <Typography.Text>{formatDimensionValue(item.arrester_config, DEFAULT_ARRESTER_CONFIGS)}</Typography.Text>
           </div>
           <div className="admin-atp-models-model-card-field">
             <Typography.Text type="secondary">更新时间</Typography.Text>
