@@ -821,7 +821,7 @@ export default function AtpModelsPage() {
                 ]}
               />
             </div>
-            <div style={{ maxHeight: `${tableScrollY}px`, overflow: "auto" }}>
+            <div style={{ maxHeight: `${tableScrollY}px`, overflow: "auto", border: "1px solid #f0f0f0", borderRadius: "4px" }}>
               {assetsQuery.isLoading || assetsQuery.isFetching ? (
                 <div style={{ textAlign: "center", padding: "40px 0" }}>
                   <Spin tip="加载中..." />
@@ -832,36 +832,48 @@ export default function AtpModelsPage() {
                   description="当前目录为空"
                 />
               ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "16px" }}>
+                <div>
                   {fileViewItems.map((item, index) =>
                     item.type === "folder" ? (
-                      <Card
+                      <div
                         key={index}
-                        hoverable
                         onClick={() => handleFileViewItemClick(item)}
-                        style={{ cursor: "pointer" }}
-                        bodyStyle={{ padding: "16px" }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          padding: "12px 16px",
+                          cursor: "pointer",
+                          borderBottom: index < fileViewItems.length - 1 ? "1px solid #f0f0f0" : "none",
+                          transition: "background-color 0.2s",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = "#f5f5f5";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = "transparent";
+                        }}
                       >
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
-                          <FolderOutlined style={{ fontSize: "48px", color: "#faad14" }} />
-                          <Typography.Text ellipsis={{ tooltip: item.displayName }} style={{ width: "100%", textAlign: "center" }}>
-                            {item.displayName}
-                          </Typography.Text>
-                        </div>
-                      </Card>
+                        <FolderOutlined style={{ fontSize: "20px", color: "#faad14", marginRight: "12px" }} />
+                        <Typography.Text style={{ flex: 1 }}>{item.displayName}</Typography.Text>
+                      </div>
                     ) : (
-                      <Card
+                      <div
                         key={index}
-                        bodyStyle={{ padding: "16px" }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          padding: "12px 16px",
+                          borderBottom: index < fileViewItems.length - 1 ? "1px solid #f0f0f0" : "none",
+                        }}
                       >
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
-                          <FileOutlined style={{ fontSize: "48px", color: "#1890ff" }} />
-                          <Typography.Text ellipsis={{ tooltip: item.displayName }} style={{ width: "100%", textAlign: "center" }}>
-                            {item.displayName}
-                          </Typography.Text>
-                          <Typography.Text type="secondary" style={{ fontSize: "12px" }}>
-                            {item.item && formatDateTime(item.item.update_date)}
-                          </Typography.Text>
+                        <FileOutlined style={{ fontSize: "20px", color: "#1890ff", marginRight: "12px" }} />
+                        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <div style={{ display: "flex", flexDirection: "column" }}>
+                            <Typography.Text>{item.displayName}</Typography.Text>
+                            <Typography.Text type="secondary" style={{ fontSize: "12px" }}>
+                              {item.item && formatDateTime(item.item.update_date)}
+                            </Typography.Text>
+                          </div>
                           {item.item && (
                             <Popconfirm
                               title="删除模型"
@@ -878,7 +890,7 @@ export default function AtpModelsPage() {
                             </Popconfirm>
                           )}
                         </div>
-                      </Card>
+                      </div>
                     )
                   )}
                 </div>
