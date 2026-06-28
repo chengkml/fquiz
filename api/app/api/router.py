@@ -16,6 +16,7 @@ from .v1.lines import router as lines_router
 from .v1.scheduled_tasks import router as scheduled_tasks_router
 from .v1.system_messages import router as system_messages_router
 from .v1.system_params import router as system_params_router
+from .v1.task_logs import router as task_logs_router
 from .v1.task_monitor import router as task_monitor_router
 from .v1.tower_models import router as tower_models_router
 from .v1.tower_profiles import router as tower_profiles_router
@@ -33,6 +34,7 @@ v1_router.include_router(atp_assets_router)
 v1_router.include_router(dimensions_router)
 v1_router.include_router(documents_router)
 v1_router.include_router(task_monitor_router)
+v1_router.include_router(task_logs_router)
 v1_router.include_router(scheduled_tasks_router)
 v1_router.include_router(system_messages_router)
 v1_router.include_router(system_params_router)

@@ -12,6 +12,7 @@ import {
   Empty,
   Form,
   Input,
+  Modal,
   Row,
   Select,
   Space,
@@ -169,6 +170,10 @@ export default function AdminTaskMonitorPage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const pageCardRef = useRef<HTMLDivElement | null>(null);
   const { current: paginationCurrent, pageSize: paginationPageSize } = pagination;
+  const [logModalVisible, setLogModalVisible] = useState(false);
+  const [logModalContent, setLogModalContent] = useState("");
+  const [logModalTaskId, setLogModalTaskId] = useState("");
+  const [logModalLoading, setLogModalLoading] = useState(false);
 
   const resetTaskListPagination = useCallback(() => {
     setPagination((prev) => ({ ...prev, current: 1 }));
@@ -176,6 +181,34 @@ export default function AdminTaskMonitorPage() {
     setAllLoadedTasks([]);
     setIsLoadingMore(false);
   }, []);
+
+  const handleViewLog = async (taskId: string) => {
+    setLogModalTaskId(taskId);
+    setLogModalVisible(true);
+    setLogModalLoading(true);
+    setLogModalContent("");
+
+    try {
+      const response = await fetchWithAuth(`/api/v1/admin/task-logs/${encodeURIComponent(taskId)}`);
+      if (!response.ok) {
+        const errorText = await readApiError(response);
+        throw new Error(errorText);
+      }
+      const data = await response.json();
+      setLogModalContent(data.log_content || "日志内容为空");
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "获取日志失败";
+      setLogModalContent(`错误：${errorMessage}`);
+    } finally {
+      setLogModalLoading(false);
+    }
+  };
+
+  const handleCloseLogModal = () => {
+    setLogModalVisible(false);
+    setLogModalTaskId("");
+    setLogModalContent("");
+  };
 
   const workersOverviewQuery = useQuery({
     queryKey: ["flower-workers-overview"],
@@ -318,8 +351,19 @@ export default function AdminTaskMonitorPage() {
             "-"
           ),
       },
+      {
+        title: "操作",
+        key: "actions",
+        width: 100,
+        fixed: "right",
+        render: (_: unknown, record: TaskTableRow) => (
+          <Button size="small" onClick={() => handleViewLog(record.task_id)}>
+            查看日志
+          </Button>
+        ),
+      },
     ],
-    [],
+    [handleViewLog],
   );
 
   const filteredWorkers = useMemo(() => {
@@ -615,6 +659,11 @@ export default function AdminTaskMonitorPage() {
             </Typography.Text>
           </div>
         )}
+        <div style={{ marginTop: 8 }}>
+          <Button size="small" block onClick={() => handleViewLog(task.task_id)}>
+            查看日志
+          </Button>
+        </div>
       </Space>
     </AntCard>
   );
@@ -897,6 +946,41 @@ export default function AdminTaskMonitorPage() {
           </div>
         ) : null}
       </AntCard>
+
+      <Modal
+        title={`任务执行日志 - ${logModalTaskId}`}
+        open={logModalVisible}
+        onCancel={handleCloseLogModal}
+        footer={[
+          <Button key="close" onClick={handleCloseLogModal}>
+            关闭
+          </Button>,
+        ]}
+        width={800}
+        style={{ top: 20 }}
+      >
+        {logModalLoading ? (
+          <div style={{ textAlign: "center", padding: "40px 0" }}>
+            <Spin tip="加载日志中..." />
+          </div>
+        ) : (
+          <pre
+            style={{
+              maxHeight: "60vh",
+              overflow: "auto",
+              padding: "16px",
+              backgroundColor: "#f5f5f5",
+              borderRadius: "4px",
+              fontSize: "12px",
+              lineHeight: "1.5",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+            }}
+          >
+            {logModalContent}
+          </pre>
+        )}
+      </Modal>
     </div>
   );
 }
