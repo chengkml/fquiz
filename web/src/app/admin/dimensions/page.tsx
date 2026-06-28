@@ -98,6 +98,8 @@ export default function AdminDimensionsPage() {
     const params = new URLSearchParams();
     params.set("limit", String(paginationPageSize));
     params.set("offset", String((paginationCurrent - 1) * paginationPageSize));
+    params.set("sort_by", "dimension_type");
+    params.set("sort_order", "asc");
     if (selectedDimensionType) {
       params.set("dimension_type", selectedDimensionType);
     }
