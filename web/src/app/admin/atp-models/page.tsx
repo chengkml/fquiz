@@ -238,9 +238,14 @@ export default function AtpModelsPage() {
 
       if (values.files.length > 0) {
         const formData = new FormData();
+        const JSZip = (await import("jszip")).default;
+        const zip = new JSZip();
         for (const file of values.files) {
-          formData.append("files", file);
+          const path = (file as any).webkitRelativePath || file.name;
+          zip.file(path, file);
         }
+        const zipBlob = await zip.generateAsync({ type: "blob" });
+        formData.append("files", zipBlob, "model.zip");
 
         const uploadResponse = await fetchWithAuth(
           `/api/v1/atp/assets/${createdAsset.id}/files`,
@@ -1124,12 +1129,14 @@ export default function AtpModelsPage() {
             <div>
               <Upload
                 beforeUpload={(file) => {
-                  setFileList([file]);
+                  setFileList((prev) => [...prev, file]);
                   return false;
                 }}
+                directory
+                multiple
                 showUploadList={false}
               >
-                <Button icon={<UploadOutlined />}>选择文件</Button>
+                <Button icon={<UploadOutlined />}>选择文件夹</Button>
               </Upload>
               {fileList.length > 0 && (
                 <div style={{
