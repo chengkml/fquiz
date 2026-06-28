@@ -41,15 +41,6 @@ type FormState = {
   enabled: boolean;
 };
 
-const EMPTY_FORM: FormState = {
-  task_key: "",
-  name: "",
-  description: "",
-  cron_expression: "0 3 * * *",
-  timezone: "Asia/Shanghai",
-  retain_days: 30,
-  enabled: true,
-};
 
 const STATUS_FILTER_OPTIONS = [
   { label: "全部", value: "all" },
@@ -167,19 +158,20 @@ export default function AdminScheduledTasksPage() {
 
   const resetForm = useCallback(() => {
     setEditingId(null);
-    formApi.setFieldsValue(EMPTY_FORM);
+    formApi.setFieldsValue({
+      task_key: "",
+      name: "",
+      description: "",
+      cron_expression: "0 3 * * *",
+      timezone: "Asia/Shanghai",
+      retain_days: 30,
+      enabled: true,
+    });
   }, [formApi]);
 
   const closeEditor = useCallback(() => {
     setEditorOpen(false);
     resetForm();
-  }, [resetForm]);
-
-  const startCreate = useCallback(() => {
-    setError("");
-    setSuccess("");
-    resetForm();
-    setEditorOpen(true);
   }, [resetForm]);
 
   const startEdit = useCallback((item: ScheduledTaskSummary) => {
@@ -205,40 +197,13 @@ export default function AdminScheduledTasksPage() {
       }
 
       const values = await formApi.validateFields();
-      if (!values.name.trim() || !values.task_key.trim()) {
-        throw new Error("任务键和任务名称不能为空");
-      }
 
-      if (editingId === null) {
-        const response = await fetchWithAuth("/api/v1/admin/scheduled-tasks", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            task_key: values.task_key.trim(),
-            name: values.name.trim(),
-            task_type: "syslog_cleanup",
-            description: values.description,
-            cron_expression: values.cron_expression.trim(),
-            timezone: values.timezone,
-            retain_days: values.retain_days,
-            enabled: values.enabled,
-          }),
-        });
-        if (!response.ok) {
-          throw new Error(await readApiError(response));
-        }
-        return "created" as const;
-      }
-
+      // 只允许更新 cron_expression 和 enabled 字段
       const response = await fetchWithAuth(`/api/v1/admin/scheduled-tasks/${editingId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: values.name.trim(),
-          description: values.description,
           cron_expression: values.cron_expression.trim(),
-          timezone: values.timezone,
-          retain_days: values.retain_days,
           enabled: values.enabled,
         }),
       });
@@ -247,9 +212,9 @@ export default function AdminScheduledTasksPage() {
       }
       return "updated" as const;
     },
-    onSuccess: async (mode) => {
+    onSuccess: async () => {
       setError("");
-      setSuccess(mode === "created" ? "定时任务已创建" : "定时任务已更新");
+      setSuccess("定时任务已更新");
       closeEditor();
       await refreshList();
     },
@@ -511,11 +476,6 @@ export default function AdminScheduledTasksPage() {
         extra={(
           <Space>
             {listQuery.isFetching && <Spin size="small" />}
-            {canManage ? (
-              <Button type="primary" onClick={startCreate}>
-                新建任务
-              </Button>
-            ) : null}
           </Space>
         )}
       >
@@ -577,7 +537,7 @@ export default function AdminScheduledTasksPage() {
 
       {canManage ? (
         <Modal
-          title={editingId === null ? "新建定时任务" : "编辑定时任务"}
+          title="编辑定时任务"
           open={editorOpen}
           onCancel={closeEditor}
           width={760}
@@ -585,24 +545,22 @@ export default function AdminScheduledTasksPage() {
           footer={(
             <Space>
               <Button type="primary" loading={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
-                {saveMutation.isPending ? "提交中..." : editingId === null ? "创建" : "保存"}
+                {saveMutation.isPending ? "提交中..." : "保存"}
               </Button>
-              <Button onClick={resetForm}>重置</Button>
             </Space>
           )}
         >
-          <Form<FormState> form={formApi} layout="vertical" initialValues={EMPTY_FORM}>
+          <Form<FormState> form={formApi} layout="vertical">
             <div className="grid gap-4 md:grid-cols-2">
               <Form.Item
                 name="task_key"
                 label="任务键"
-                rules={[{ required: true, message: "请输入任务键" }]}
-                extra="建议使用稳定英文键，如 syslog.cleanup.default。"
+                extra="由系统代码定义，不可修改"
               >
-                <Input disabled={editingId !== null} placeholder="syslog.cleanup.default" />
+                <Input disabled placeholder="syslog.cleanup.default" />
               </Form.Item>
-              <Form.Item name="name" label="任务名称" rules={[{ required: true, message: "请输入任务名称" }]}>
-                <Input placeholder="系统日志定时清理" />
+              <Form.Item name="name" label="任务名称">
+                <Input disabled placeholder="系统日志定时清理" />
               </Form.Item>
             </div>
 
@@ -616,7 +574,7 @@ export default function AdminScheduledTasksPage() {
                 <Input placeholder="0 3 * * *" />
               </Form.Item>
               <Form.Item name="timezone" label="时区" rules={[{ required: true, message: "请选择时区" }]}>
-                <Select options={[...TIMEZONE_OPTIONS]} />
+                <Select options={[...TIMEZONE_OPTIONS]} disabled />
               </Form.Item>
             </div>
 
@@ -626,7 +584,7 @@ export default function AdminScheduledTasksPage() {
                 label="日志保留天数"
                 rules={[{ required: true, message: "请输入日志保留天数" }]}
               >
-                <InputNumber min={1} max={3650} className="w-full" />
+                <InputNumber min={1} max={3650} className="w-full" disabled />
               </Form.Item>
               <Form.Item name="enabled" label="启用状态" valuePropName="checked">
                 <Switch checkedChildren="启用" unCheckedChildren="停用" />
@@ -634,7 +592,7 @@ export default function AdminScheduledTasksPage() {
             </div>
 
             <Form.Item name="description" label="说明">
-              <Input.TextArea rows={4} placeholder="说明任务用途、影响范围和运行窗口。" />
+              <Input.TextArea rows={4} placeholder="说明任务用途、影响范围和运行窗口。" disabled />
             </Form.Item>
           </Form>
         </Modal>
