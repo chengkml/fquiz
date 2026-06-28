@@ -557,6 +557,7 @@ export default function AiChatPage() {
 
             {/* Input Area for new conversation */}
             <div
+              className="ai-chat-input-area"
               style={{
                 padding: "16px 24px",
                 borderTop: "1px solid var(--ant-color-border-secondary)",
@@ -565,6 +566,7 @@ export default function AiChatPage() {
             >
               <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
                 <TextArea
+                  className="ai-chat-textarea"
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
                   placeholder="输入您的问题...（Shift + Enter 换行，Enter 发送）"
@@ -583,6 +585,7 @@ export default function AiChatPage() {
                   }}
                 />
                 <Button
+                  className="ai-chat-send-button"
                   type="primary"
                   icon={<SendOutlined />}
                   loading={sendMessageMutation.isPending || createConvMutation.isPending}
