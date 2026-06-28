@@ -128,7 +128,7 @@ function renderTaskSourceTag(source: string) {
 }
 
 function renderWorkerStatusTag(status: string) {
-  return (status || "").toUpperCase() === "ONLINE" ? <Tag color="green">在线</Tag> : <Tag color="default">离线</Tag>;
+  return (status || "").toUpperCase() === "ONLINE" ? <Tag color="green">在线</Tag> : <Tag color="red">离线</Tag>;
 }
 
 function renderQueueTags(queueNames: string[]) {
