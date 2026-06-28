@@ -4,30 +4,36 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   Card,
+  Col,
   Dropdown,
   Empty,
   Form,
   Input,
   Modal,
   Popconfirm,
+  Row,
   Select,
   Space,
   Spin,
   Table,
   Tag,
   Typography,
+  type CardProps,
   type MenuProps,
 } from "antd";
-import { MoreOutlined, PlusOutlined } from "@ant-design/icons";
+import { MoreOutlined, EditOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import Link from "next/link";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ComponentType, type RefAttributes } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { useToastFeedback } from "@/hooks/use-toast-feedback";
 import { useTopicSubscription } from "@/hooks/use-topic-subscription";
+import { useMobileDetection } from "@/hooks/use-mobile-detection";
 import { readApiError } from "@/lib/api";
 import type { DimensionItem, DimensionItemListResponse } from "@/types/dimension";
+
+const AntCard = Card as unknown as ComponentType<CardProps & RefAttributes<HTMLDivElement>>;
 
 type CreateDimensionValues = {
   dimension_type: string;
@@ -57,10 +63,13 @@ function statusLabel(enabled: boolean): string {
 }
 
 const DIMENSIONS_TABLE_MIN_SCROLL_Y = 180;
+const DIMENSIONS_TABLE_VIEWPORT_GAP = 40;
+const DIMENSIONS_TABLE_FALLBACK_RESERVE = 220;
 
 export default function AdminDimensionsPage() {
   const { user, initializing, fetchWithAuth, hasPermission } = useAuth();
   const queryClient = useQueryClient();
+  const isMobile = useMobileDetection();
 
   const [createForm] = Form.useForm<CreateDimensionValues>();
   const [editForm] = Form.useForm<EditDimensionValues>();
@@ -69,9 +78,14 @@ export default function AdminDimensionsPage() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<DimensionItem | null>(null);
   const [selectedDimensionType, setSelectedDimensionType] = useState<string | undefined>(undefined);
-  const [pagination, setPagination] = useState({ current: 1, pageSize: 50 });
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
   const [tableScrollY, setTableScrollY] = useState(DIMENSIONS_TABLE_MIN_SCROLL_Y);
   const tableScrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const viewMode: "table" | "card" = isMobile ? "card" : "table";
+  const [cardViewPage, setCardViewPage] = useState(1);
+  const [allLoadedDimensions, setAllLoadedDimensions] = useState<DimensionItem[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const pageCardRef = useRef<HTMLDivElement | null>(null);
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -113,6 +127,66 @@ export default function AdminDimensionsPage() {
   );
 
   const dimensions = useMemo(() => dimensionsQuery.data?.items ?? [], [dimensionsQuery.data?.items]);
+
+  // Update allLoadedDimensions when dimensions data changes in card view
+  useEffect(() => {
+    if (viewMode !== "card" || dimensionsQuery.isLoading) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      if (cardViewPage === 1) {
+        setAllLoadedDimensions(() => dimensions);
+      } else {
+        setAllLoadedDimensions((prev) => {
+          if (dimensions.length === 0) {
+            return prev;
+          }
+          const existingIds = new Set(prev.map(d => d.id));
+          const newDimensions = dimensions.filter(d => !existingIds.has(d.id));
+          return [...prev, ...newDimensions];
+        });
+      }
+      setIsLoadingMore(false);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [dimensions, dimensionsQuery.isLoading, viewMode, cardViewPage]);
+
+  // Handle infinite scroll for card view
+  useEffect(() => {
+    if (viewMode !== "card") return;
+
+    const pageCard = pageCardRef.current;
+    if (!pageCard) return;
+
+    const cardBody = pageCard.querySelector<HTMLElement>(".ant-card-body");
+    if (!cardBody) return;
+
+    const handleScroll = () => {
+      if (isLoadingMore || dimensionsQuery.isLoading) return;
+
+      const scrollTop = cardBody.scrollTop;
+      const scrollHeight = cardBody.scrollHeight;
+      const clientHeight = cardBody.clientHeight;
+
+      if (scrollTop + clientHeight >= scrollHeight - 100) {
+        const total = dimensionsQuery.data?.total ?? 0;
+        const loadedCount = allLoadedDimensions.length;
+
+        if (loadedCount < total) {
+          setIsLoadingMore(true);
+          setCardViewPage((prev) => prev + 1);
+          setPagination((prev) => ({ ...prev, current: prev.current + 1 }));
+        }
+      }
+    };
+
+    cardBody.addEventListener("scroll", handleScroll);
+    return () => cardBody.removeEventListener("scroll", handleScroll);
+  }, [viewMode, isLoadingMore, dimensionsQuery.isLoading, dimensionsQuery.data?.total, allLoadedDimensions.length]);
 
   const uniqueDimensionTypes = useMemo(() => {
     const types = new Set(dimensions.map((d) => d.dimension_type));
@@ -263,6 +337,74 @@ export default function AdminDimensionsPage() {
     clearSuccess: () => setSuccess(""),
   });
 
+  const updateTableScrollY = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const anchorTop = anchor.getBoundingClientRect().top;
+    const tableWrapper = anchor.querySelector<HTMLElement>(".ant-table-wrapper");
+    const tableBody = anchor.querySelector<HTMLElement>(".ant-table-body");
+
+    let nextHeight = Math.floor(window.innerHeight - anchorTop - DIMENSIONS_TABLE_FALLBACK_RESERVE);
+    if (tableWrapper) {
+      const wrapperRect = tableWrapper.getBoundingClientRect();
+      const bodyHeight = tableBody?.getBoundingClientRect().height ?? DIMENSIONS_TABLE_MIN_SCROLL_Y;
+      const nonBodyHeight = Math.max(0, wrapperRect.height - bodyHeight);
+      const topGap = Math.max(0, wrapperRect.top - anchorTop);
+      nextHeight = Math.floor(window.innerHeight - anchorTop - topGap - nonBodyHeight - DIMENSIONS_TABLE_VIEWPORT_GAP);
+    }
+
+    const clampedHeight = Math.max(DIMENSIONS_TABLE_MIN_SCROLL_Y, nextHeight);
+    setTableScrollY((previous) => (Math.abs(previous - clampedHeight) <= 1 ? previous : clampedHeight));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.requestAnimationFrame(updateTableScrollY);
+  }, [anyError, paginationCurrent, paginationPageSize, dimensions.length, dimensionsQuery.isFetching, updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onViewportChange = () => {
+      window.requestAnimationFrame(updateTableScrollY);
+    };
+
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [updateTableScrollY]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const anchor = tableScrollAnchorRef.current;
+    if (!anchor) {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateTableScrollY);
+    });
+    resizeObserver.observe(anchor);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updateTableScrollY]);
+
   const columns: ColumnsType<DimensionItem> = [
     {
       title: "维度类型",
@@ -372,6 +514,104 @@ export default function AdminDimensionsPage() {
     },
   ];
 
+  const renderDimensionCard = (item: DimensionItem) => {
+    const deleteLoading = deletingId === item.id;
+    const rowBusy = deleteLoading;
+
+    const moreMenuItems: MenuProps["items"] = [
+      {
+        key: "delete",
+        label: "删除",
+        danger: true,
+        disabled: rowBusy,
+        onClick: () => {
+          Modal.confirm({
+            title: `确认删除维度项 ${item.name}（${item.code}）？`,
+            okText: "删除",
+            cancelText: "取消",
+            okButtonProps: { danger: true },
+            onOk: () => deleteDimensionMutation.mutate(item.id),
+          });
+        },
+      },
+      {
+        key: "toggle-status",
+        label: item.is_enabled ? "禁用" : "启用",
+        disabled: rowBusy,
+        onClick: () => {
+          updateDimensionMutation.mutate({
+            itemId: item.id,
+            payload: {
+              code: item.code,
+              name: item.name,
+              parent_id: item.parent_id || undefined,
+              description: item.description || undefined,
+              is_enabled: !item.is_enabled,
+              sort_order: item.sort_order,
+            },
+          });
+        },
+      },
+    ];
+
+    const parent = item.parent_id ? dimensions.find((d) => d.id === item.parent_id) : null;
+
+    return (
+      <AntCard
+        key={item.id}
+        className="admin-dimensions-dimension-card"
+        size="small"
+        title={
+          <Space className="min-w-0" size={8}>
+            <Typography.Text strong>{item.name}</Typography.Text>
+            <Tag color={item.is_enabled ? "green" : "default"}>{statusLabel(item.is_enabled)}</Tag>
+          </Space>
+        }
+        extra={
+          <Space size={4}>
+            <Button
+              type="text"
+              size="small"
+              disabled={rowBusy || !canManage}
+              icon={<EditOutlined />}
+              onClick={() => openEditModal(item)}
+            />
+            <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
+              <Button type="text" size="small" disabled={rowBusy || !canManage} icon={<MoreOutlined />} />
+            </Dropdown>
+          </Space>
+        }
+      >
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <div className="admin-dimensions-dimension-card-field">
+            <Typography.Text type="secondary">维度类型</Typography.Text>
+            <Typography.Text>{dimensionTypeLabel(item.dimension_type)}</Typography.Text>
+          </div>
+          <div className="admin-dimensions-dimension-card-field">
+            <Typography.Text type="secondary">维度编码</Typography.Text>
+            <Typography.Text>{item.code}</Typography.Text>
+          </div>
+          <div className="admin-dimensions-dimension-card-field">
+            <Typography.Text type="secondary">父维度</Typography.Text>
+            <Typography.Text ellipsis={{ tooltip: parent ? `${parent.name} (${parent.code})` : "-" }}>
+              {parent ? `${parent.name} (${parent.code})` : "-"}
+            </Typography.Text>
+          </div>
+          <div className="admin-dimensions-dimension-card-field">
+            <Typography.Text type="secondary">描述</Typography.Text>
+            <Typography.Text ellipsis={{ tooltip: item.description || "-" }}>
+              {item.description || "-"}
+            </Typography.Text>
+          </div>
+          <div className="admin-dimensions-dimension-card-field">
+            <Typography.Text type="secondary">排序</Typography.Text>
+            <Typography.Text>{item.sort_order}</Typography.Text>
+          </div>
+        </Space>
+      </AntCard>
+    );
+  };
+
   if (initializing) {
     return (
       <div className="flex min-h-[240px] items-center justify-center">
@@ -410,64 +650,127 @@ export default function AdminDimensionsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <Card
+      <AntCard
+        ref={pageCardRef}
+        className="admin-dimensions-page-card"
         title="维度管理"
         extra={
           canManage && (
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
+            <Button type="primary" onClick={openCreateModal}>
               新增维度项
             </Button>
           )
         }
       >
-        <Form layout="inline" style={{ marginBottom: 16 }}>
-          <Form.Item label="维度类型">
-            <Select
-              value={selectedDimensionType}
-              allowClear
-              placeholder="全部"
-              options={uniqueDimensionTypes.map((type) => ({ value: type, label: type }))}
-              onChange={(value) => {
-                setSelectedDimensionType(value);
-                setPagination((prev) => ({ ...prev, current: 1 }));
-              }}
-              style={{ width: 180 }}
-            />
-          </Form.Item>
-        </Form>
+        {viewMode === "card" ? (
+          <Form layout="vertical" style={{ marginBottom: 16 }}>
+            <Form.Item style={{ marginBottom: 0 }}>
+              <Select
+                value={selectedDimensionType}
+                allowClear
+                placeholder="全部维度类型"
+                options={uniqueDimensionTypes.map((type) => ({ value: type, label: type }))}
+                onChange={(value) => {
+                  setSelectedDimensionType(value);
+                  setPagination((prev) => ({ ...prev, current: 1 }));
+                  setCardViewPage(1);
+                  setAllLoadedDimensions([]);
+                }}
+              />
+            </Form.Item>
+          </Form>
+        ) : (
+          <Form layout="inline" style={{ rowGap: 12 }}>
+            <Form.Item label="维度类型" style={{ width: 260 }}>
+              <Select
+                value={selectedDimensionType}
+                allowClear
+                placeholder="全部"
+                options={uniqueDimensionTypes.map((type) => ({ value: type, label: type }))}
+                onChange={(value) => {
+                  setSelectedDimensionType(value);
+                  setPagination((prev) => ({ ...prev, current: 1 }));
+                }}
+              />
+            </Form.Item>
+          </Form>
+        )}
 
-        <div ref={tableScrollAnchorRef}>
-          <Table<DimensionItem>
-            rowKey="id"
-            dataSource={dimensions}
-            columns={columns}
-            loading={dimensionsQuery.isLoading}
-            tableLayout="fixed"
-            pagination={{
-              current: pagination.current,
-              pageSize: pagination.pageSize,
-              total: Math.max(dimensionsQuery.data?.total ?? 0, 1),
-              showSizeChanger: true,
-              pageSizeOptions: [20, 50, 100, 200],
-              showTotal: () => `共 ${dimensionsQuery.data?.total ?? 0} 条`,
-              hideOnSinglePage: false,
-              style: { marginBottom: 0 },
-              onChange: (page, pageSize) => {
-                setPagination({ current: page, pageSize });
-              },
-            }}
-            scroll={{ y: tableScrollY }}
-            locale={{
-              emptyText: (
+        {viewMode === "table" ? (
+          <div
+            ref={tableScrollAnchorRef}
+            className="admin-dimensions-table-anchor mt-4"
+            style={{ "--admin-dimensions-table-body-min-height": `${tableScrollY}px` } as CSSProperties}
+          >
+            <Table<DimensionItem>
+              rowKey="id"
+              dataSource={dimensions}
+              columns={columns}
+              loading={dimensionsQuery.isLoading}
+              tableLayout="fixed"
+              pagination={{
+                current: pagination.current,
+                pageSize: pagination.pageSize,
+                total: Math.max(dimensionsQuery.data?.total ?? 0, 1),
+                showSizeChanger: true,
+                pageSizeOptions: [10, 20, 50, 100],
+                showTotal: () => `共 ${dimensionsQuery.data?.total ?? 0} 条`,
+                hideOnSinglePage: false,
+                style: { marginBottom: 0 },
+                onChange: (page, pageSize) => {
+                  setPagination({ current: page, pageSize });
+                },
+              }}
+              scroll={{ y: tableScrollY }}
+              locale={{
+                emptyText: (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="未找到符合筛选条件的维度项。"
+                  />
+                ),
+              }}
+            />
+          </div>
+        ) : (
+          <div className="admin-dimensions-card-view">
+            {dimensionsQuery.isLoading && allLoadedDimensions.length === 0 ? (
+              <div className="admin-dimensions-card-view-state">
+                <Spin tip="加载中..." />
+              </div>
+            ) : allLoadedDimensions.length === 0 ? (
+              <div className="admin-dimensions-card-view-state">
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                   description="未找到符合筛选条件的维度项。"
                 />
-              ),
-            }}
-          />
-        </div>
-      </Card>
+              </div>
+            ) : (
+              <div className="admin-dimensions-card-view-content">
+                <Row gutter={[12, 12]}>
+                  {allLoadedDimensions.map((item) => (
+                    <Col key={item.id} xs={24} sm={24} md={12} lg={8} xl={6}>
+                      {renderDimensionCard(item)}
+                    </Col>
+                  ))}
+                </Row>
+                {isLoadingMore && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Spin tip="加载更多..." />
+                  </div>
+                )}
+                {allLoadedDimensions.length >= (dimensionsQuery.data?.total ?? 0) && allLoadedDimensions.length > 0 && (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <Typography.Text type="secondary">
+                      已加载全部 {allLoadedDimensions.length} 条数据
+                    </Typography.Text>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </AntCard>
 
       <Modal
         title="新增维度项"
@@ -475,7 +778,7 @@ export default function AdminDimensionsPage() {
         destroyOnClose
         onCancel={closeCreateModal}
         onOk={() => createForm.submit()}
-        okText="创建"
+        okText="创建维度项"
         cancelText="取消"
         confirmLoading={createDimensionMutation.isPending}
       >
