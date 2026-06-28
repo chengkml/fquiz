@@ -99,6 +99,35 @@ import ShareAltOutlined from "@ant-design/icons/ShareAltOutlined";
 import BranchesOutlined from "@ant-design/icons/BranchesOutlined";
 import CodeOutlined from "@ant-design/icons/CodeOutlined";
 import CommentOutlined from "@ant-design/icons/CommentOutlined";
+import FileExcelOutlined from "@ant-design/icons/FileExcelOutlined";
+import AreaChartOutlined from "@ant-design/icons/AreaChartOutlined";
+import NumberOutlined from "@ant-design/icons/NumberOutlined";
+import DotChartOutlined from "@ant-design/icons/DotChartOutlined";
+import FileOutlined from "@ant-design/icons/FileOutlined";
+import FolderOutlined from "@ant-design/icons/FolderOutlined";
+import FilePdfOutlined from "@ant-design/icons/FilePdfOutlined";
+import FileImageOutlined from "@ant-design/icons/FileImageOutlined";
+import FileSearchOutlined from "@ant-design/icons/FileSearchOutlined";
+import ScissorOutlined from "@ant-design/icons/ScissorOutlined";
+import SafetyOutlined from "@ant-design/icons/SafetyOutlined";
+import ShopOutlined from "@ant-design/icons/ShopOutlined";
+import CrownOutlined from "@ant-design/icons/CrownOutlined";
+import ContactsOutlined from "@ant-design/icons/ContactsOutlined";
+import BuildOutlined from "@ant-design/icons/BuildOutlined";
+import ApiOutlined from "@ant-design/icons/ApiOutlined";
+import CloudOutlined from "@ant-design/icons/CloudOutlined";
+import ClusterOutlined from "@ant-design/icons/ClusterOutlined";
+import NotificationOutlined from "@ant-design/icons/NotificationOutlined";
+import SendOutlined from "@ant-design/icons/SendOutlined";
+import WechatOutlined from "@ant-design/icons/WechatOutlined";
+import CustomerServiceOutlined from "@ant-design/icons/CustomerServiceOutlined";
+import DownloadOutlined from "@ant-design/icons/DownloadOutlined";
+import UploadOutlined from "@ant-design/icons/UploadOutlined";
+import SwapOutlined from "@ant-design/icons/SwapOutlined";
+import ShrinkOutlined from "@ant-design/icons/ShrinkOutlined";
+import RobotOutlined from "@ant-design/icons/RobotOutlined";
+import BulbOutlined from "@ant-design/icons/BulbOutlined";
+import FireOutlined from "@ant-design/icons/FireOutlined";
 
 // ─── 导出类型 ───
 
@@ -203,6 +232,36 @@ export const ICON_MAP: Record<string, ComponentType<{ className?: string; style?
   BranchesOutlined,
   CodeOutlined,
   CommentOutlined,
+  // 补充图标
+  FileExcelOutlined,
+  AreaChartOutlined,
+  NumberOutlined,
+  DotChartOutlined,
+  FileOutlined,
+  FolderOutlined,
+  FilePdfOutlined,
+  FileImageOutlined,
+  FileSearchOutlined,
+  ScissorOutlined,
+  SafetyOutlined,
+  ShopOutlined,
+  CrownOutlined,
+  ContactsOutlined,
+  BuildOutlined,
+  ApiOutlined,
+  CloudOutlined,
+  ClusterOutlined,
+  NotificationOutlined,
+  SendOutlined,
+  WechatOutlined,
+  CustomerServiceOutlined,
+  DownloadOutlined,
+  UploadOutlined,
+  SwapOutlined,
+  ShrinkOutlined,
+  RobotOutlined,
+  BulbOutlined,
+  FireOutlined,
 };
 
 /** 分类图标列表 — 供图标选择器 UI 使用 */
@@ -221,6 +280,10 @@ export const ICON_CATEGORIES: IconCategory[] = [
       { name: "KeyOutlined", label: "密钥", component: KeyOutlined },
       { name: "AuditOutlined", label: "审计", component: AuditOutlined },
       { name: "IdcardOutlined", label: "身份", component: IdcardOutlined },
+      { name: "SafetyOutlined", label: "安全", component: SafetyOutlined },
+      { name: "ShopOutlined", label: "租户/组织", component: ShopOutlined },
+      { name: "CrownOutlined", label: "管理/特权", component: CrownOutlined },
+      { name: "ContactsOutlined", label: "通讯录", component: ContactsOutlined },
     ],
   },
   {
@@ -237,6 +300,9 @@ export const ICON_CATEGORIES: IconCategory[] = [
       { name: "LineChartOutlined", label: "折线图", component: LineChartOutlined },
       { name: "FieldTimeOutlined", label: "定时任务", component: FieldTimeOutlined },
       { name: "AlertOutlined", label: "告警", component: AlertOutlined },
+      { name: "AreaChartOutlined", label: "面积图", component: AreaChartOutlined },
+      { name: "NumberOutlined", label: "数值统计", component: NumberOutlined },
+      { name: "DotChartOutlined", label: "散点图", component: DotChartOutlined },
     ],
   },
   {
@@ -253,6 +319,13 @@ export const ICON_CATEGORIES: IconCategory[] = [
       { name: "TableOutlined", label: "表格", component: TableOutlined },
       { name: "FileAddOutlined", label: "新建文件", component: FileAddOutlined },
       { name: "PaperClipOutlined", label: "附件", component: PaperClipOutlined },
+      { name: "FileExcelOutlined", label: "Excel表格", component: FileExcelOutlined },
+      { name: "FileOutlined", label: "通用文件", component: FileOutlined },
+      { name: "FolderOutlined", label: "文件夹", component: FolderOutlined },
+      { name: "FilePdfOutlined", label: "PDF文档", component: FilePdfOutlined },
+      { name: "FileImageOutlined", label: "图片", component: FileImageOutlined },
+      { name: "FileSearchOutlined", label: "文件搜索", component: FileSearchOutlined },
+      { name: "ScissorOutlined", label: "剪切", component: ScissorOutlined },
     ],
   },
   {
@@ -327,6 +400,21 @@ export const ICON_CATEGORIES: IconCategory[] = [
       { name: "BranchesOutlined", label: "分支/流程", component: BranchesOutlined },
       { name: "CodeOutlined", label: "代码", component: CodeOutlined },
       { name: "CommentOutlined", label: "评论/备注", component: CommentOutlined },
+      { name: "BuildOutlined", label: "构建/部署", component: BuildOutlined },
+      { name: "ApiOutlined", label: "API接口", component: ApiOutlined },
+      { name: "CloudOutlined", label: "云服务", component: CloudOutlined },
+      { name: "ClusterOutlined", label: "集群", component: ClusterOutlined },
+      { name: "NotificationOutlined", label: "通知推送", component: NotificationOutlined },
+      { name: "SendOutlined", label: "发送", component: SendOutlined },
+      { name: "WechatOutlined", label: "微信", component: WechatOutlined },
+      { name: "CustomerServiceOutlined", label: "客服", component: CustomerServiceOutlined },
+      { name: "DownloadOutlined", label: "下载", component: DownloadOutlined },
+      { name: "UploadOutlined", label: "上传", component: UploadOutlined },
+      { name: "SwapOutlined", label: "交换/切换", component: SwapOutlined },
+      { name: "ShrinkOutlined", label: "收缩", component: ShrinkOutlined },
+      { name: "RobotOutlined", label: "机器人/AI", component: RobotOutlined },
+      { name: "BulbOutlined", label: "灵感/提示", component: BulbOutlined },
+      { name: "FireOutlined", label: "热门/紧急", component: FireOutlined },
     ],
   },
 ];
