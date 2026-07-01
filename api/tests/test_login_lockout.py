@@ -72,7 +72,7 @@ class LoginLockoutTestCase(unittest.TestCase):
                 # 5th attempt should lock account and return 403
                 else:
                     self.assertEqual(exc_context.exception.status_code, 403)
-                    self.assertIn("locked", exc_context.exception.detail.lower())
+                    self.assertIn("锁定", exc_context.exception.detail)
 
             # Verify user is locked
             db.refresh(test_user)
@@ -89,7 +89,7 @@ class LoginLockoutTestCase(unittest.TestCase):
                     ip_address=None,
                 )
             self.assertEqual(exc_context.exception.status_code, 403)
-            self.assertIn("locked", exc_context.exception.detail.lower())
+            self.assertIn("锁定", exc_context.exception.detail)
 
         finally:
             db.close()

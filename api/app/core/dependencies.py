@@ -106,12 +106,12 @@ def get_current_user(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
+            detail="未找到用户",
         )
     if not is_user_enabled(user.status):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User is disabled",
+            detail="用户已被禁用",
         )
 
     authz = get_user_authorization(db, user.id)
@@ -129,7 +129,7 @@ def require_permission(permission_code: str):
         if permission_code not in current_user.permission_codes:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Missing permission: {permission_code}",
+                detail=f"缺少权限：{permission_code}",
             )
         return current_user
 
@@ -146,7 +146,7 @@ def require_any_permission(*permission_codes: str) -> Callable[[CurrentUser], Cu
             return current_user
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Missing any permission: {', '.join(required)}",
+            detail=f"缺少任一权限：{', '.join(required)}",
         )
 
     return dependency
@@ -161,6 +161,6 @@ def require_enabled_menu_route(
     if menu_path and not _enabled_menu_path_exists(db, menu_path):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Menu is disabled",
+            detail="菜单已被禁用",
         )
     return current_user

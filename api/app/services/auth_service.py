@@ -52,7 +52,7 @@ def register_user(
     if duplicate:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Email or username already exists",
+            detail="邮箱或用户名已存在",
         )
 
     role: Role | None = None
@@ -116,7 +116,7 @@ def login_user(
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid user_id or password",
+            detail="用户ID或密码错误",
         )
 
     # Check if account is locked
@@ -137,7 +137,7 @@ def login_user(
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Account is locked. Please try again in {remaining_seconds} seconds.",
+            detail=f"账户已被锁定，请在 {remaining_seconds} 秒后重试",
         )
 
     # Verify password
@@ -163,7 +163,7 @@ def login_user(
             db.commit()
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Too many failed login attempts. Account locked for 30 minutes.",
+                detail="登录失败次数过多，账户已被锁定 30 分钟",
             )
 
         write_audit_log(
@@ -179,7 +179,7 @@ def login_user(
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid user_id or password",
+            detail="用户ID或密码错误",
         )
 
     if not is_user_enabled(user.status):
@@ -196,7 +196,7 @@ def login_user(
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User is disabled",
+            detail="用户已被禁用",
         )
 
     # Reset failed login attempts on successful login
@@ -222,7 +222,7 @@ def refresh_user_session(
     if not refresh_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing refresh token",
+            detail="缺少刷新令牌",
         )
 
     now = utcnow()
@@ -239,7 +239,7 @@ def refresh_user_session(
     if not session:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh session",
+            detail="刷新会话无效",
         )
 
     session.revoked_at = now
@@ -308,12 +308,12 @@ def issue_auth_result_for_user(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            ,
         )
     if not is_user_enabled(user.status):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User is disabled",
+            detail="用户已被禁用",
         )
 
     refresh_token = create_refresh_token()

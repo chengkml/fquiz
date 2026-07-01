@@ -133,7 +133,7 @@ def logout(
         user_id=None,
     )
     _clear_refresh_cookie(request, response)
-    return MessageResponse(message="Logged out")
+    return MessageResponse(message="已退出登录")
 
 
 @router.get("/me", response_model=UserPublic)

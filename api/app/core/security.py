@@ -70,13 +70,13 @@ def decode_access_token(token: str) -> dict[str, Any]:
     except jwt.PyJWTError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired access token",
+            detail="访问令牌无效或已过期",
         ) from exc
 
     if not payload.get("sub"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid access token payload",
+            detail="访问令牌载荷无效",
         )
     return payload
 
